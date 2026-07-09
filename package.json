@@ -1,0 +1,22 @@
+{
+  "name": "ludo-arena",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ludo Arena — Mini App Ludo pour MiniPay (Celo). Monorepo : moteur de jeu, serveur temps réel, frontend, smart contracts.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "dev:server": "npm run dev -w apps/server",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "simulate": "npm run simulate -w packages/game-engine"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
