@@ -49,7 +49,7 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
         <div className="gamemsg">
           <span>{message}</span>
           <small>
-            Lancer #{lastDice?.index ?? 0} · commit {match.fairnessCommit.slice(0, 10)}… ·{' '}
+            {t('rollNo')} #{lastDice?.index ?? 0} · commit {match.fairnessCommit.slice(0, 10)}… ·{' '}
             <a onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>{t('verify')}</a>
           </small>
         </div>

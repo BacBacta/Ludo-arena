@@ -6,27 +6,27 @@ interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
 }
 
-/// @title LudoEscrow — escrow des mises pour parties Ludo Arena 1v1
-/// @notice Verrouille les mises des deux joueurs, règle le gagnant sur signature
-///         de l'arbitre (clé serveur). L'arbitre ne peut désigner qu'un des deux
-///         joueurs : il ne peut jamais détourner les fonds.
-/// @dev Invariants : payout + rake == pot ; un gameId ne se règle qu'une fois ;
-///      rake plafonné à MAX_RAKE_BPS (constant).
+/// @title LudoEscrow — stake escrow for Ludo Arena 1v1 games
+/// @notice Locks both players' stakes, settles the winner upon the arbiter's
+///         (server key) signature. The arbiter can only designate one of the
+///         two players: it can never divert the funds.
+/// @dev Invariants: payout + rake == pot; a gameId settles only once;
+///      rake capped at MAX_RAKE_BPS (constant).
 contract LudoEscrow {
     // ---------- Config ----------
-    uint256 public constant MAX_RAKE_BPS = 1_000; // 10 % max, immuable
-    uint256 public constant JOIN_TIMEOUT = 120;   // secondes avant refundExpired
+    uint256 public constant MAX_RAKE_BPS = 1_000; // 10% max, immutable
+    uint256 public constant JOIN_TIMEOUT = 120;   // seconds before refundExpired
 
-    address public immutable arbiter;   // clé serveur qui signe les résultats
-    address public immutable treasury;  // reçoit le rake
-    uint256 public immutable rakeBps;   // ex. 900 = 9 %
+    address public immutable arbiter;   // server key that signs results
+    address public immutable treasury;  // receives the rake
+    uint256 public immutable rakeBps;   // e.g. 900 = 9%
 
-    // ---------- État ----------
+    // ---------- State ----------
     enum Status { None, WaitingOpponent, Active, Settled, Refunded }
 
     struct Game {
         address token;      // stablecoin (cUSD/USDC/USDT)
-        uint96 stake;       // mise par joueur
+        uint96 stake;       // stake per player
         address playerA;
         address playerB;
         uint40 createdAt;
@@ -35,7 +35,7 @@ contract LudoEscrow {
 
     mapping(bytes32 => Game) public games;
 
-    // ---------- Événements ----------
+    // ---------- Events ----------
     event Joined(bytes32 indexed gameId, address indexed player, address token, uint96 stake);
     event Settled(bytes32 indexed gameId, address indexed winner, uint256 payout, uint256 rake);
     event Refunded(bytes32 indexed gameId);
@@ -56,8 +56,8 @@ contract LudoEscrow {
         rakeBps = _rakeBps;
     }
 
-    /// @notice Rejoint (ou crée) la partie `gameId` en verrouillant sa mise.
-    ///         Le premier appel fixe token + stake ; le second doit matcher.
+    /// @notice Joins (or creates) game `gameId` by locking one's stake.
+    ///         The first call sets token + stake; the second must match.
     function join(bytes32 gameId, address token, uint96 stake) external {
         if (stake == 0) revert BadStake();
         Game storage g = games[gameId];
@@ -81,7 +81,7 @@ contract LudoEscrow {
         emit Joined(gameId, msg.sender, token, stake);
     }
 
-    /// @notice Règle la partie. `sig` = signature ECDSA de l'arbitre sur
+    /// @notice Settles the game. `sig` = the arbiter's ECDSA signature over
     ///         keccak256(abi.encode(DOMAIN, gameId, winner)).
     function settle(bytes32 gameId, address winner, bytes calldata sig) external {
         Game storage g = games[gameId];
@@ -101,7 +101,7 @@ contract LudoEscrow {
         emit Settled(gameId, winner, payout, rake);
     }
 
-    /// @notice Rembourse playerA si personne n'a rejoint après JOIN_TIMEOUT.
+    /// @notice Refunds playerA if nobody joined after JOIN_TIMEOUT.
     function refundExpired(bytes32 gameId) external {
         Game storage g = games[gameId];
         if (g.status != Status.WaitingOpponent) revert BadStatus();

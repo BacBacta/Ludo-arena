@@ -1,6 +1,6 @@
 /**
- * État global — un seul reducer, pas de dépendance externe.
- * Toute mutation d'écran/solde passe par dispatch (traçable, testable).
+ * Global state — a single reducer, no external dependency.
+ * Every screen/balance mutation goes through dispatch (traceable, testable).
  */
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from 'react';
 import type { GameState, Seat } from '@ludo/game-engine';
@@ -73,7 +73,7 @@ export function reducer(s: AppState, a: Action): AppState {
       return {
         ...s,
         match: a.match,
-        // débit de la mise au verrouillage (simulé tant que E3.2 n'est pas branché)
+        // stake debited on lock (simulated until E3.2 is wired)
         balanceCents: s.balanceCents - a.match.stakeCents,
       };
     case 'GAME_STATE':
@@ -132,5 +132,5 @@ export function useAppDispatch(): Dispatch<Action> {
 }
 
 export function fmtCents(cents: number): string {
-  return (cents / 100).toFixed(2).replace('.', ',');
+  return (cents / 100).toFixed(2);
 }

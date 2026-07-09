@@ -5,7 +5,7 @@ import { StoreProvider } from './state/store';
 import './styles/global.css';
 
 const root = document.getElementById('root');
-if (!root) throw new Error('#root introuvable');
+if (!root) throw new Error('#root not found');
 
 createRoot(root).render(
   <StrictMode>

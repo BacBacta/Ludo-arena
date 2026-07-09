@@ -1,6 +1,6 @@
 /**
- * Serveur de jeu Ludo Arena — Node + ws.
- * v1 : état en mémoire (sessions, files, rooms). Persistance Redis/Postgres : BACKLOG E2.1.
+ * Ludo Arena game server — Node + ws.
+ * v1: in-memory state (sessions, queues, rooms). Redis/Postgres persistence: BACKLOG E2.1.
  */
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
@@ -46,14 +46,14 @@ wss.on('connection', (ws) => {
   ws.on('message', (data) => {
     const msg = parseClientMsg(data.toString());
     if (!msg) {
-      send(ws, { t: 'error', code: 'BAD_MESSAGE', message: 'Message invalide.' });
+      send(ws, { t: 'error', code: 'BAD_MESSAGE', message: 'Invalid message.' });
       return;
     }
 
     if (msg.t === 'hello') {
       const existing = msg.sessionToken ? sessions.get(msg.sessionToken) : undefined;
       if (existing) {
-        // reprise de session (reconnexion)
+        // session resume (reconnection)
         existing.ws = ws;
         existing.alive = true;
         session = existing;
@@ -71,7 +71,7 @@ wss.on('connection', (ws) => {
         ws,
         wallet: msg.wallet,
         entropy: msg.entropy,
-        name: NAMES[idx] ?? 'Joueur',
+        name: NAMES[idx] ?? 'Player',
         flag: FLAGS[idx] ?? '🌍',
         elo: 1200,
         stake: null,
@@ -90,7 +90,7 @@ wss.on('connection', (ws) => {
     }
 
     if (!session) {
-      send(ws, { t: 'error', code: 'BAD_STATE', message: 'hello requis d’abord.' });
+      send(ws, { t: 'error', code: 'BAD_STATE', message: 'hello required first.' });
       return;
     }
 
@@ -101,7 +101,7 @@ wss.on('connection', (ws) => {
 
       case 'queue.join': {
         if (session.room) {
-          session.send({ t: 'error', code: 'BAD_STATE', message: 'Déjà en partie.' });
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
           break;
         }
         session.stake = msg.stake;
@@ -131,7 +131,7 @@ wss.on('connection', (ws) => {
         break;
 
       case 'game.rematch':
-        // v1 : re-queue même mise (revanche instantanée : BACKLOG E4)
+        // v1: re-queue at the same stake (instant rematch: BACKLOG E4)
         if (!session.room && session.stake !== null) {
           const pair = matchmaker.join(session.stake, {
             session,
@@ -150,8 +150,8 @@ wss.on('connection', (ws) => {
     session.ws = null;
     session.alive = false;
     matchmaker.leaveAll(session);
-    // La room continue : horloge + auto-move gèrent l'absence (déconnexion ≠ forfait).
-    // Nettoyage des sessions orphelines après 10 min.
+    // The room keeps running: clock + auto-move handle absence (disconnection != forfeit).
+    // Orphan sessions are cleaned up after 10 min.
     const s = session;
     setTimeout(() => {
       if (!s.alive && !s.room) sessions.delete(s.id);

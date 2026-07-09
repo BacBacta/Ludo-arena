@@ -1,14 +1,14 @@
 # @ludo/contracts
 
-Contrats Solidity de Ludo Arena (Foundry).
+Ludo Arena Solidity contracts (Foundry).
 
 ```bash
-# Prérequis : foundryup (https://getfoundry.sh)
-forge install foundry-rs/forge-std   # première fois
+# Prerequisite: foundryup (https://getfoundry.sh)
+forge install foundry-rs/forge-std   # first time
 forge build
 forge test -vv
 ```
 
-Note : `test/LudoEscrow.t.sol` dépend de forge-std (installé par `forge install`, non versionné).
-Voir `docs/SMART_CONTRACTS.md` à la racine pour le cycle de vie, les invariants et les limites v1.
-Ce package n'est pas branché sur `npm run typecheck` (toolchain séparée Foundry) — la CI contrats est à ajouter (BACKLOG E3).
+Note: `test/LudoEscrow.t.sol` depends on forge-std (installed by `forge install`, not versioned).
+See `docs/SMART_CONTRACTS.md` at the repo root for lifecycle, invariants and v1 limits.
+This package is not wired into `npm run typecheck` (separate Foundry toolchain) — contracts CI is still to add (BACKLOG E3).

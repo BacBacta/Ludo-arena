@@ -37,7 +37,7 @@ export default function App() {
         sessionRef.current = new LocalBotSession(ev, stake);
         return;
       }
-      // PvP : serveur temps réel, repli sur bot local si indisponible
+      // PvP: real-time server, falls back to the local bot if unreachable
       sessionRef.current = new RemoteSession(ev, stake, SERVER_URL, () => {
         dispatch({ type: 'TOAST', message: t('offline') });
         sessionRef.current = new LocalBotSession(ev, stake);

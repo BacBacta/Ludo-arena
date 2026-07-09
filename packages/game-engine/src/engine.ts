@@ -1,7 +1,7 @@
 /**
- * Moteur de règles Ludo Blitz — PUR et DÉTERMINISTE.
- * Aucun Math.random, aucun I/O : le dé est toujours injecté par l'appelant
- * (serveur : commit-reveal ; client bot : RNG local).
+ * Ludo Blitz rules engine — PURE and DETERMINISTIC.
+ * No Math.random, no I/O: dice are always injected by the caller
+ * (server: commit-reveal; client bot: local RNG).
  */
 import {
   BLITZ,
@@ -33,15 +33,15 @@ export function otherSeat(seat: Seat): Seat {
   return seat === 0 ? 1 : 0;
 }
 
-/** Case absolue (0..51) occupée par un pion sur la piste, ou null (base/maison/arrivé). */
+/** Absolute cell (0..51) occupied by a token on the track, or null (base/home/finished). */
 export function absCell(seat: Seat, rel: number): number | null {
   if (rel < 0 || rel > LAST_TRACK_REL) return null;
   const startIdx = SEAT_START[seat];
-  if (startIdx === undefined) throw new Error(`seat invalide: ${seat}`);
+  if (startIdx === undefined) throw new Error(`invalid seat: ${seat}`);
   return (startIdx + rel) % TRACK_LEN;
 }
 
-/** Pions jouables pour `seat` avec le dé `die`. */
+/** Playable tokens for `seat` with die `die`. */
 export function legalMoves(state: GameState, seat: Seat, die: number): number[] {
   const out: number[] = [];
   const tokens = state.positions[seat];
@@ -52,19 +52,19 @@ export function legalMoves(state: GameState, seat: Seat, die: number): number[] 
       if (die === 6) out.push(ti);
       return;
     }
-    // Dépassement autorisé (BLITZ.allowOvershootFinish) : toujours jouable.
+    // Overshoot allowed (BLITZ.allowOvershootFinish): always playable.
     out.push(ti);
   });
   return out;
 }
 
 /**
- * Applique un lancer de dé. Si aucun coup n'est possible, le tour passe.
- * Retourne le nouvel état (phase awaiting-move si un choix existe).
+ * Applies a die roll. If no move is possible, the turn passes.
+ * Returns the new state (phase awaiting-move if a choice exists).
  */
 export function applyRoll(state: GameState, die: number): GameState {
-  if (state.phase !== 'awaiting-roll') throw new Error('BAD_STATE: pas en phase de lancer');
-  if (die < 1 || die > 6 || !Number.isInteger(die)) throw new Error(`dé invalide: ${die}`);
+  if (state.phase !== 'awaiting-roll') throw new Error('BAD_STATE: not in roll phase');
+  if (die < 1 || die > 6 || !Number.isInteger(die)) throw new Error(`invalid die: ${die}`);
   const legal = legalMoves(state, state.turn, die);
   const next: GameState = {
     ...state,
@@ -84,30 +84,30 @@ export function applyRoll(state: GameState, die: number): GameState {
   return next;
 }
 
-/** Joue le pion `token` avec le dé courant. */
+/** Plays token `token` with the current die. */
 export function applyMove(state: GameState, token: number): MoveResult {
   if (state.phase !== 'awaiting-move' || state.dice === null)
-    throw new Error('BAD_STATE: pas en phase de coup');
-  if (!state.legal.includes(token)) throw new Error(`ILLEGAL_MOVE: pion ${token}`);
+    throw new Error('BAD_STATE: not in move phase');
+  if (!state.legal.includes(token)) throw new Error(`ILLEGAL_MOVE: token ${token}`);
 
   const seat = state.turn;
   const die = state.dice;
   const positions = state.positions.map((row) => [...row]);
   const seatRow = positions[seat];
-  if (!seatRow) throw new Error('BAD_STATE: positions corrompues');
+  if (!seatRow) throw new Error('BAD_STATE: corrupted positions');
 
   let pos = seatRow[token];
-  if (pos === undefined) throw new Error(`token invalide: ${token}`);
+  if (pos === undefined) throw new Error(`invalid token: ${token}`);
 
   if (pos === -1) {
-    pos = 0; // sortie de base sur la case départ
+    pos = 0; // leaves base onto the start cell
   } else {
     pos = pos + die;
     if (pos >= FINISHED) pos = FINISHED;
   }
   seatRow[token] = pos;
 
-  // Capture (uniquement sur la piste, hors cases sûres)
+  // Capture (only on the track, outside safe cells)
   let capture = false;
   const cell = absCell(seat, pos);
   if (cell !== null && !SAFE_CELLS.has(cell)) {
@@ -140,7 +140,7 @@ export function applyMove(state: GameState, token: number): MoveResult {
   return { state: next, events: { capture, finished, extraTurn, won } };
 }
 
-/** Coup automatique (horloge expirée) : préfère finir > capturer > sortir > pion le plus avancé. */
+/** Automatic move (clock expired): prefers finish > capture > exit > most advanced token. */
 export function pickAutoMove(state: GameState, seat: Seat, die: number): number | null {
   const legal = legalMoves(state, seat, die);
   const first = legal[0];

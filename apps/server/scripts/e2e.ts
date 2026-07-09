@@ -1,7 +1,7 @@
 /**
- * Test e2e : deux clients WebSocket rejoignent la file (mise 25c) et jouent
- * une partie complete jusqu'au game.over. Verifie le flux protocole de bout en bout.
- * Usage : demarrer le serveur (npm run dev) puis `npm run e2e`.
+ * E2E test: two WebSocket clients join the queue (25c stake) and play
+ * a full game until game.over. Verifies the protocol flow end to end.
+ * Usage: start the server (npm run dev) then `npm run e2e`.
  */
 import WebSocket from 'ws';
 import { randomBytes } from 'node:crypto';
@@ -17,7 +17,7 @@ function makeClient(label: string): Promise<string> {
     let seat: Seat | null = null;
     let state: GameState | null = null;
 
-    const timer = setTimeout(() => reject(new Error(label + ': timeout e2e')), 90_000);
+    const timer = setTimeout(() => reject(new Error(label + ': e2e timeout')), 90_000);
 
     function send(obj: unknown): void {
       ws.send(JSON.stringify(obj));
@@ -51,12 +51,12 @@ function makeClient(label: string): Promise<string> {
           act();
           break;
         case 'game.dice':
-          // replique le lancer localement pour connaitre ses coups legaux
+          // replay the roll locally to learn our legal moves
           if (state && state.phase === 'awaiting-roll') {
             try {
               state = applyRoll(state, msg.value);
             } catch {
-              /* resync via prochain game.moved */
+              /* resync via next game.moved */
             }
             act();
           }
@@ -69,14 +69,14 @@ function makeClient(label: string): Promise<string> {
           const won = msg.winner === seat;
           ws.close();
           resolve(
-            label + ': winner=' + msg.winner + (won ? ' (gagne)' : ' (perd)') +
+            label + ': winner=' + msg.winner + (won ? ' (won)' : ' (lost)') +
             ' payout=' + msg.payoutCents + 'c rake=' + msg.rakeCents +
             'c seed=' + msg.fairnessReveal.serverSeed.slice(0, 8) + '...',
           );
           break;
         }
         case 'error':
-          // courses benignes (NOT_YOUR_TURN apres auto-play serveur) : ignore
+          // benign races (NOT_YOUR_TURN after server auto-play): ignore
           break;
         default:
           break;

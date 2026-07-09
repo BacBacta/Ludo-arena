@@ -1,5 +1,5 @@
 /**
- * Plateau SVG généré depuis les constantes du moteur (une seule source de vérité).
+ * SVG board generated from the engine constants (single source of truth).
  */
 import {
   BASE_SPOTS,
@@ -45,8 +45,8 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
 
   return (
     <div className="boardwrap">
-      <svg viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Plateau de Ludo">
-        {/* quadrants bases */}
+      <svg viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ludo board">
+        {/* base quadrants */}
         <rect x={0} y={9} width={6} height={6} rx={0.4} fill={ME_FILL} />
         <rect x={9} y={0} width={6} height={6} rx={0.4} fill={OPP_FILL} />
         <rect x={0} y={0} width={6} height={6} rx={0.4} fill="#3a4a42" />
@@ -56,7 +56,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
         <rect x={1} y={1} width={4} height={4} rx={0.3} fill="#2a3a32" />
         <rect x={10} y={10} width={4} height={4} rx={0.3} fill="#2a3a32" />
 
-        {/* piste */}
+        {/* track */}
         {TRACK.map(([x, y], i) => (
           <rect
             key={i}
@@ -79,7 +79,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
           );
         })}
 
-        {/* colonnes maison + cases départ */}
+        {/* home columns + start cells */}
         {HOME_COLUMNS.map((col, seat) =>
           col.map(([x, y], i) => (
             <rect
@@ -111,14 +111,14 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
           );
         })}
 
-        {/* centre */}
+        {/* center */}
         <rect x={6} y={6} width={3} height={3} fill="#16211C" />
         <polygon points="6,6 9,6 7.5,7.5" fill={OPP_FILL} />
         <polygon points="6,9 9,9 7.5,7.5" fill={ME_FILL} />
         <polygon points="6,6 6,9 7.5,7.5" fill="#3a4a42" />
         <polygon points="9,6 9,9 7.5,7.5" fill="#3a4a42" />
 
-        {/* pions */}
+        {/* tokens */}
         {game.positions.map((row, seat) =>
           row.map((pos, token) => {
             let [x, y] = tokenXY(seat as Seat, token, pos);

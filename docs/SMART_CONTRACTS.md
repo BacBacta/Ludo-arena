@@ -2,28 +2,28 @@
 
 ## LudoEscrow.sol
 
-Escrow minimaliste pour parties 1v1 misées en stablecoin (cUSD/USDC/USDT sur Celo).
+Minimal escrow for staked 1v1 games in stablecoins (cUSD/USDC/USDT on Celo).
 
-### Cycle de vie
+### Lifecycle
 
-1. Le serveur crée la partie off-chain et fournit un `gameId` (bytes32 unique) + le token + la mise.
-2. Chaque joueur appelle `join(gameId, token, stake)` (après `approve`). Le contrat verrouille les deux mises.
-3. Fin de partie : l'arbitre (clé serveur) signe `(gameId, winner)` en EIP-712 et n'importe qui peut soumettre `settle(gameId, winner, signature)`. Le contrat paie `pot - rake` au gagnant et le rake au trésor.
-4. Si l'adversaire ne rejoint jamais : `refundExpired(gameId)` rembourse après `JOIN_TIMEOUT`.
+1. The server creates the game off-chain and provides a `gameId` (unique bytes32) + token + stake.
+2. Each player calls `join(gameId, token, stake)` (after `approve`). The contract locks both stakes.
+3. Game end: the arbiter (server key) signs `(gameId, winner)` and anyone can submit `settle(gameId, winner, signature)`. The contract pays `pot - rake` to the winner and the rake to the treasury.
+4. If the opponent never joins: `refundExpired(gameId)` refunds after `JOIN_TIMEOUT`.
 
 ### Invariants
 
-- Le contrat ne peut JAMAIS payer plus que le pot verrouillé.
-- Le rake est plafonné à 10 % (constante, non modifiable sans redéploiement).
-- L'arbitre ne peut pas voler les fonds : il ne peut que désigner l'un des deux joueurs comme gagnant.
-- Un `gameId` ne peut être réglé qu'une fois.
+- The contract can NEVER pay out more than the locked pot.
+- The rake is capped at 10 % (constant, immutable without redeploy).
+- The arbiter cannot steal funds: it can only designate one of the two players as winner.
+- A `gameId` can only be settled once.
 
-### Limites connues (v1, acceptées)
+### Known limits (v1, accepted)
 
-- L'arbitre est un point de confiance central (il pourrait désigner le mauvais gagnant). Mitigation : fairness commit-reveal publique + logs signés + réputation. v2 possible : réseau d'arbitres ou preuve de partie.
-- Pas de partie 4 joueurs on-chain en v1.
+- The arbiter is a central trust point (it could designate the wrong winner). Mitigation: public commit-reveal fairness + signed logs + reputation. Possible v2: arbiter network or game proofs.
+- No on-chain 4-player games in v1.
 
-### Déploiement
+### Deployment
 
-Foundry. `forge build`, `forge test`, puis `forge script script/Deploy.s.sol --rpc-url $ALFAJORES_RPC --broadcast`.
-Adresses par réseau dans `deployments.json` (E3.1).
+Foundry. `forge build`, `forge test`, then `forge script script/Deploy.s.sol --rpc-url $ALFAJORES_RPC --broadcast`.
+Per-network addresses in `deployments.json` (E3.1).

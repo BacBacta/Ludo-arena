@@ -1,52 +1,52 @@
-# Protocole WebSocket
+# WebSocket protocol
 
-Source de vérité des types : `packages/shared/src/protocol.ts`. Tous les messages sont du JSON `{ t: string, ... }`.
+Source of truth for types: `packages/shared/src/protocol.ts`. All messages are JSON `{ t: string, ... }`.
 
-## Client → Serveur
-
-| t | Payload | Description |
-|---|---|---|
-| `hello` | `{ wallet?, sessionToken?, entropy }` | Première trame. `entropy` = 32 octets hex aléatoires (part client du commit-reveal). `sessionToken` pour reprendre une partie en cours. |
-| `queue.join` | `{ stake }` | Rejoint la file (stake en centimes de dollar : 0, 10, 25, 50, 100, 200). |
-| `queue.leave` | `{}` | Quitte la file. |
-| `game.roll` | `{}` | Demande le lancer (si c'est son tour et phase `awaiting-roll`). |
-| `game.move` | `{ token }` | Joue le pion `token` (0 ou 1). |
-| `game.rematch` | `{}` | Propose une revanche même mise. |
-| `ping` | `{}` | Keepalive (toutes les 20 s). |
-
-## Serveur → Client
+## Client → Server
 
 | t | Payload | Description |
 |---|---|---|
-| `hello.ok` | `{ sessionToken, elo, resumed? }` | Session établie. `resumed` contient l'état si une partie était en cours. |
-| `queue.ok` | `{ position }` | En file. |
-| `match.found` | `{ gameId, seat, opponent: { name, elo, flag }, stakeCents, potCents, fairnessCommit }` | Partie trouvée. `fairnessCommit` = hash du seed serveur, à afficher. |
-| `game.state` | `{ state }` | État complet (resync, début de partie). `state` = `GameState` du moteur. |
-| `game.dice` | `{ value, index, seat }` | Résultat d'un lancer (index = n° du lancer, vérifiable). |
-| `game.moved` | `{ seat, token, capture, finished, extraTurn, state }` | Coup appliqué. |
-| `game.turn` | `{ seat, deadlineTs }` | À qui de jouer + échéance de l'horloge (auto-move après). |
-| `game.over` | `{ winner, reason, payoutCents, rakeCents, eloDelta, fairnessReveal, txHash? }` | Fin. `fairnessReveal` = seed serveur + entropies (vérification). `reason` ∈ `finish` \| `timeout-forfeit` \| `resign`. |
-| `error` | `{ code, message }` | Codes : `BAD_STATE`, `NOT_YOUR_TURN`, `ILLEGAL_MOVE`, `LIMIT_REACHED`, `INSUFFICIENT_ESCROW`… |
-| `pong` | `{}` | Réponse keepalive. |
+| `hello` | `{ wallet?, sessionToken?, entropy }` | First frame. `entropy` = 32 random hex bytes (client share of commit-reveal). `sessionToken` to resume an in-progress game. |
+| `queue.join` | `{ stake }` | Joins the queue (stake in dollar cents: 0, 10, 25, 50, 100, 200). |
+| `queue.leave` | `{}` | Leaves the queue. |
+| `game.roll` | `{}` | Requests the roll (if it is their turn and phase is `awaiting-roll`). |
+| `game.move` | `{ token }` | Plays token `token` (0 or 1). |
+| `game.rematch` | `{}` | Offers a same-stake rematch. |
+| `ping` | `{}` | Keepalive (every 20 s). |
 
-## Séquence type (partie misée)
+## Server → Client
+
+| t | Payload | Description |
+|---|---|---|
+| `hello.ok` | `{ sessionToken, elo, resumed? }` | Session established. `resumed` carries state if a game was in progress. |
+| `queue.ok` | `{ position }` | Queued. |
+| `match.found` | `{ gameId, seat, opponent: { name, elo, flag }, stakeCents, potCents, fairnessCommit }` | Match found. `fairnessCommit` = hash of the server seed, to display. |
+| `game.state` | `{ state }` | Full state (resync, game start). `state` = engine `GameState`. |
+| `game.dice` | `{ value, index, seat }` | Roll result (index = roll number, verifiable). |
+| `game.moved` | `{ seat, token, capture, finished, extraTurn, state }` | Move applied. |
+| `game.turn` | `{ seat, deadlineTs }` | Whose turn + clock deadline (auto-move afterwards). |
+| `game.over` | `{ winner, reason, payoutCents, rakeCents, eloDelta, fairnessReveal, txHash? }` | End. `fairnessReveal` = server seed + entropies (verification). `reason` ∈ `finish` \| `timeout-forfeit` \| `resign`. |
+| `error` | `{ code, message }` | Codes: `BAD_STATE`, `NOT_YOUR_TURN`, `ILLEGAL_MOVE`, `LIMIT_REACHED`, `INSUFFICIENT_ESCROW`… |
+| `pong` | `{}` | Keepalive reply. |
+
+## Typical sequence (staked game)
 
 ```
 C→S hello{entropy}                    S→C hello.ok{sessionToken}
 C→S queue.join{stake:25}              S→C queue.ok
                                       S→C match.found{fairnessCommit,...}
-   [on-chain] les 2 clients appellent LudoEscrow.join(gameId) avec la mise
+   [on-chain] both clients call LudoEscrow.join(gameId) with the stake
                                       S→C game.state / game.turn
 C→S game.roll                         S→C game.dice{value:6,index:1}
 C→S game.move{token:0}                S→C game.moved{...} / game.turn
    ...                                ...
                                       S→C game.over{winner, fairnessReveal, txHash}
-   [on-chain] settle() déjà soumis par l'arbitre → payout instantané
+   [on-chain] settle() already submitted by the arbiter → instant payout
 ```
 
-## Règles de validation serveur
+## Server validation rules
 
-- Toute intention hors tour / hors phase → `error NOT_YOUR_TURN` / `BAD_STATE`, état renvoyé.
-- `game.move` avec un pion non listé dans `legalMoves` → `ILLEGAL_MOVE`.
-- Horloge : 15 000 ms par décision en Blitz. À expiration : auto-move (premier coup légal) ; 3 auto-moves consécutifs = forfait (`timeout-forfeit`).
-- Taille max d'une trame entrante : 1 Ko. Au-delà : fermeture.
+- Any out-of-turn / out-of-phase intent → `error NOT_YOUR_TURN` / `BAD_STATE`, state re-sent.
+- `game.move` with a token not listed in `legalMoves` → `ILLEGAL_MOVE`.
+- Clock: 15,000 ms per decision in Blitz. On expiry: auto-move (best legal move); 3 consecutive auto-moves = forfeit (`timeout-forfeit`).
+- Max inbound frame size: 1 KB. Beyond that: connection closed.

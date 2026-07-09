@@ -1,4 +1,4 @@
-/** Petits composants UI transverses : TopBar, Toast, FairnessModal. */
+/** Small cross-cutting UI components: TopBar, Toast, FairnessModal. */
 import { useEffect } from 'react';
 import { fmtCents, useAppDispatch, useAppState } from '../state/store';
 import { t } from '../lib/i18n';
@@ -38,17 +38,19 @@ export function FairnessModal() {
     <div className="modal" onClick={() => dispatch({ type: 'FAIR_MODAL', open: false })}>
       <div className="modal__card">
         <h3>{t('fairTitle')}</h3>
-        Avant la partie, le serveur publie l’empreinte de sa graine secrète :
-        <div className="hash">commit : {match?.fairnessCommit ?? '—'}</div>
-        Chaque dé = f(graine serveur, entropie des 2 joueurs, n° du lancer). En fin de partie la
-        graine est révélée : tu peux recalculer chaque lancer.
+        {t('fairBody1')}
+        <div className="hash">
+          {t('commitLabel')} {match?.fairnessCommit ?? '—'}
+        </div>
+        {t('fairBody2')}
         {result?.fairnessReveal && (
-          <div className="hash">seed révélé : {result.fairnessReveal.serverSeed}</div>
+          <div className="hash">
+            {t('seedLabel')} {result.fairnessReveal.serverSeed}
+          </div>
         )}
-        Les mises sont bloquées dans un smart contract escrow sur Celo — l’app ne détient jamais
-        ton argent.
+        {t('fairBody3')}
         <div style={{ marginTop: 10, textAlign: 'center' }} className="muted">
-          (toucher pour fermer)
+          {t('closeHint')}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 /**
- * Abstraction de partie : le GameScreen consomme la même interface
- * qu'il joue contre le bot local (LocalBotSession) ou en PvP (RemoteSession).
+ * Game session abstraction: GameScreen consumes the same interface
+ * whether it plays the local bot (LocalBotSession) or PvP (RemoteSession).
  */
 import {
   applyMove,
@@ -71,7 +71,7 @@ export class LocalBotSession implements GameSession {
         opponent: { name: 'Kwame', elo: 1255, flag: '🇨🇲' },
         stakeCents,
         potCents: pot,
-        fairnessCommit: 'local-bot (aléatoire client, non misé)',
+        fairnessCommit: 'local-bot (client randomness, unstaked)',
       });
       ev.onState(this.state);
       ev.onTurn(0, Date.now() + 15_000);
@@ -113,7 +113,7 @@ export class LocalBotSession implements GameSession {
         const pick = pickAutoMove(this.state, 1, value) ?? this.state.legal[0];
         if (pick !== undefined) setTimeout(() => this.applyMove(1, pick), 550);
       }
-      // seat 0 avec choix multiple : on attend le tap du joueur
+      // seat 0 with multiple choices: wait for the player's tap
     } else {
       this.afterTurnChange();
     }

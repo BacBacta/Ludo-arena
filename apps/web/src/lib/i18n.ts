@@ -1,4 +1,4 @@
-/** i18n minimal FR/EN. Extension PT/ES/SW : BACKLOG E6.1. */
+/** Minimal FR/EN i18n. PT/ES/SW extension: BACKLOG E6.1. */
 const dict = {
   fr: {
     play: 'JOUER ⚡',
@@ -31,7 +31,23 @@ const dict = {
     days: 'jours',
     streakHint: 'Reviens demain : ticket tournoi gratuit au jour 4',
     freeroll: '🏆 Freeroll du jour',
+    freerollDesc: 'Dotation 10 $ · gratuit · 18h00',
     privateTable: '👥 Table privée',
+    privateTableDesc: 'Invite un ami par lien WhatsApp',
+    challengeDesc: 'Capture 3 pions →',
+    challengeReward: '+1 ticket freeroll',
+    fairnote: 'Dés vérifiables (provably fair) · gains payés instantanément ·',
+    howItWorks: 'comment ça marche ?',
+    rollNo: 'Lancer',
+    league: 'Ligue Argent',
+    fairBody1: 'Avant la partie, le serveur publie l’empreinte de sa graine secrète :',
+    fairBody2:
+      'Chaque dé = f(graine serveur, entropie des 2 joueurs, n° du lancer). En fin de partie la graine est révélée : tu peux recalculer chaque lancer.',
+    fairBody3:
+      'Les mises sont bloquées dans un smart contract escrow sur Celo — l’app ne détient jamais ton argent.',
+    commitLabel: 'commit :',
+    seedLabel: 'graine révélée :',
+    closeHint: '(toucher pour fermer)',
     pot: 'Pot',
     you: 'Toi',
     linkCopied: 'Lien de défi copié — partage-le sur WhatsApp !',
@@ -69,7 +85,23 @@ const dict = {
     days: 'days',
     streakHint: 'Come back tomorrow: free tournament ticket on day 4',
     freeroll: '🏆 Daily freeroll',
+    freerollDesc: '$10 prize pool · free · 6pm',
     privateTable: '👥 Private table',
+    privateTableDesc: 'Invite a friend via WhatsApp link',
+    challengeDesc: 'Capture 3 tokens →',
+    challengeReward: '+1 freeroll ticket',
+    fairnote: 'Provably fair dice · winnings paid instantly ·',
+    howItWorks: 'how does it work?',
+    rollNo: 'Roll',
+    league: 'Silver League',
+    fairBody1: 'Before the game, the server publishes the hash of its secret seed:',
+    fairBody2:
+      'Each die = f(server seed, both players’ entropy, roll number). At game end the seed is revealed: you can recompute every roll.',
+    fairBody3:
+      'Stakes are locked in an escrow smart contract on Celo — the app never holds your money.',
+    commitLabel: 'commit:',
+    seedLabel: 'revealed seed:',
+    closeHint: '(tap to close)',
     pot: 'Pot',
     you: 'You',
     linkCopied: 'Challenge link copied — share it on WhatsApp!',

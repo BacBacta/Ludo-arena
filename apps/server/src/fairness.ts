@@ -1,8 +1,8 @@
 /**
- * Dés provably fair (commit-reveal).
- * Avant la partie : commit = sha256(serverSeed) est envoyé aux deux clients.
- * Dé n°i = 1 + (premiers 6 octets de sha256(serverSeed|entropyA|entropyB|i)) % 6.
- * En fin de partie, serverSeed est révélé : chacun peut tout recalculer.
+ * Provably fair dice (commit-reveal).
+ * Before the game: commit = sha256(serverSeed) is sent to both clients.
+ * Die #i = 1 + (first 6 bytes of sha256(serverSeed|entropyA|entropyB|i)) % 6.
+ * At game end, serverSeed is revealed: anyone can recompute everything.
  */
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -20,7 +20,7 @@ export function createFairness(entropyA: string, entropyB: string): Fairness {
 
 export function rollDie(f: Fairness, index: number): number {
   const h = sha256Hex(`${f.serverSeed}|${f.entropies[0]}|${f.entropies[1]}|${index}`);
-  const n = parseInt(h.slice(0, 12), 16); // 48 bits, biais négligeable sur %6
+  const n = parseInt(h.slice(0, 12), 16); // 48 bits, negligible bias on %6
   return 1 + (n % 6);
 }
 

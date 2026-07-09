@@ -1,6 +1,6 @@
 /**
- * Simulation de masse : 2 000 parties avec coups aleatoires.
- * Garantit la terminaison et donne les stats de duree. Utilisee en CI.
+ * Mass simulation: 2,000 games with random moves.
+ * Guarantees termination and reports duration stats. Used in CI.
  */
 import { applyMove, applyRoll, newGame, pickAutoMove } from '../src/index.js';
 import type { GameState } from '../src/index.js';
@@ -16,13 +16,14 @@ for (let i = 0; i < GAMES; i++) {
   let g: GameState = newGame();
   while (g.phase !== 'over') {
     if (g.rollCount >= MAX_ROLLS) {
-      console.error('ECHEC: partie ' + i + ' non terminee apres ' + MAX_ROLLS + ' lancers');
+      console.error('FAIL: game ' + i + ' not finished after ' + MAX_ROLLS + ' rolls');
       console.error(JSON.stringify(g));
       process.exit(1);
     }
     const die = 1 + Math.floor(Math.random() * 6);
     g = applyRoll(g, die);
     if (g.phase === 'awaiting-move') {
+      // 50% random move / 50% auto-move heuristic (covers both paths)
       const token =
         Math.random() < 0.5
           ? g.legal[Math.floor(Math.random() * g.legal.length)]!
@@ -37,6 +38,6 @@ for (let i = 0; i < GAMES; i++) {
 
 const avg = (totalRolls / GAMES).toFixed(1);
 console.log(
-  'OK - ' + GAMES + ' parties terminees. Lancers moyens: ' + avg +
-  ', max: ' + maxRolls + ', victoires: ' + wins[0] + '/' + wins[1],
+  'OK - ' + GAMES + ' games finished. Avg rolls: ' + avg +
+  ', max: ' + maxRolls + ', wins: ' + wins[0] + '/' + wins[1],
 );

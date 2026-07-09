@@ -1,38 +1,38 @@
-# Game design — résumé opérationnel
+# Game design — operational summary
 
-(Version complète : document Word « Ludo Arena — Conception », hors repo.)
+(Full version: "Ludo Arena — Design" Word document, outside the repo.)
 
-## Format cœur : Blitz 1v1
+## Core format: Blitz 1v1
 
-- 2 pions par joueur. Le pion 1 démarre sur la case départ, le pion 2 sort de la base avec un 6.
-- Piste standard de 52 cases, 8 cases sûres (étoiles), colonne maison de 5 cases.
-- Dépassement autorisé pour finir (pas de dé exact requis) → parties de 3-6 min (~68 lancers en moyenne, validé par simulation).
-- 6 ou capture = rejoue. Capture = pion adverse renvoyé en base (sauf case sûre).
-- Horloge 15 s/décision, auto-move à expiration, 3 auto-moves consécutifs = forfait.
-- Victoire : les 2 pions arrivés au centre.
+- 2 tokens per player. Token 1 starts on the start cell, token 2 leaves base with a 6.
+- Standard 52-cell track, 8 safe cells (stars), 5-cell home column.
+- Overshoot allowed to finish (no exact roll required) → 3-6 minute games (~68 rolls on average, validated by simulation).
+- 6 or capture = roll again. Capture = opponent token sent back to base (except on safe cells).
+- 15 s/decision clock, auto-move on expiry, 3 consecutive auto-moves = forfeit.
+- Win: both tokens reach the center.
 
-## Boucles de rétention
+## Retention loops
 
-| Boucle | Mécanique | KPI |
+| Loop | Mechanic | KPI |
 |---|---|---|
-| Session | revanche en 1 tap, matchmaking < 10 s | ≥ 3 parties/session |
-| Quotidienne | défi du jour, série de connexion, 1 freeroll/jour | D1 ≥ 40 % |
-| Hebdo | ligues à divisions (promotion/relégation lundi) | D7 ≥ 20 % |
-| Sociale | table privée par lien WhatsApp, parrainage 0,25 $ | K ≥ 0,3 |
+| Session | 1-tap rematch, matchmaking < 10 s | ≥ 3 games/session |
+| Daily | daily challenge, login streak, 1 freeroll/day | D1 ≥ 40 % |
+| Weekly | divisional leagues (promotion/relegation on Mondays) | D7 ≥ 20 % |
+| Social | private table via WhatsApp link, $0.25 referral | K ≥ 0.3 |
 
 ## Anti-churn
 
-- Matchmaking ELO ± 100.
-- 3 défaites misées consécutives → cashback 20 % du rake + ticket freeroll.
-- Limite de dépense quotidienne (défaut 2 $), auto-exclusion, pas de mécaniques casino.
-- Déconnexion ≠ défaite (auto-move, reconnexion 60 s).
+- ELO matchmaking ± 100.
+- 3 consecutive staked losses → 20 % rake cashback + freeroll ticket.
+- Daily spend limit (default $2), self-exclusion, no casino mechanics.
+- Disconnection ≠ loss (auto-move, 60 s reconnection).
 
-## Modèle économique (hybride 3 étages)
+## Business model (3-tier hybrid)
 
-1. Rake 8-10 % sur parties misées (0,10 – 2 $), 10-12 % sur tournois — **geo-gaté** selon la légalité.
-2. Pass de saison 0,99 $/mois + cosmétiques.
-3. Freerolls sponsorisés + programme d'incitation MiniPay (grants CELO indexés sur l'activité on-chain).
+1. 8-10 % rake on staked games ($0.10 – $2), 10-12 % on tournaments — **geo-gated** by legality.
+2. $0.99/month season pass + cosmetics.
+3. Sponsored freerolls + MiniPay incentive program (CELO grants indexed on real on-chain activity).
 
-## Ton UI
+## UI tone
 
-Premium sobre : fond vert forêt profond (#0E1512), cartes #16211C, accent or #F5B301, joueur #2E9E6B, adversaire #E8833A. Micro-animations discrètes, jamais de clignotements casino. Typo system-ui. FR/EN au lancement (puis PT/ES/SW).
+Understated premium: deep forest background (#0E1512), #16211C cards, gold accent #F5B301, player #2E9E6B, opponent #E8833A. Subtle micro-animations, never casino-style flashing. system-ui typography. FR/EN at launch (then PT/ES/SW).

@@ -3,12 +3,12 @@ export type Seat = 0 | 1;
 export type Phase = 'awaiting-roll' | 'awaiting-move' | 'over';
 
 export interface GameState {
-  /** positions[seat][token] — voir constants.ts pour l'encodage. */
+  /** positions[seat][token] — see constants.ts for the encoding. */
   positions: number[][];
   turn: Seat;
-  /** Dé courant (posé par applyRoll, consommé par applyMove). */
+  /** Current die (set by applyRoll, consumed by applyMove). */
   dice: number | null;
-  /** Pions jouables avec le dé courant (vide hors phase awaiting-move). */
+  /** Playable tokens with the current die (empty outside awaiting-move). */
   legal: number[];
   rollCount: number;
   phase: Phase;

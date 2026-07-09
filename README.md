@@ -1,66 +1,66 @@
 # 🎲 Ludo Arena
 
-**Mini App Ludo pour [MiniPay](https://minipay.to)** — parties Blitz 1v1 de 3-6 minutes, micro-mises en stablecoins sur Celo, dés provably fair, gains payés à la seconde.
+**Ludo Mini App for [MiniPay](https://minipay.to)** — 3-6 minute Blitz 1v1 matches, stablecoin micro-stakes on Celo, provably fair dice, winnings paid within seconds.
 
-> Voir `docs/GAME_DESIGN.md` pour le résumé de la conception produit (rétention, anti-churn, modèle économique).
+> See `docs/GAME_DESIGN.md` for the product design summary (retention, anti-churn, business model).
 
 ## Architecture
 
 ```
 ludo-arena/
 ├── apps/
-│   ├── web/            # Frontend React + Vite + viem (Mini App MiniPay)
-│   └── server/         # Serveur de jeu autoritaire (Node + WebSocket)
+│   ├── web/            # React + Vite + viem frontend (MiniPay Mini App)
+│   └── server/         # Authoritative game server (Node + WebSocket)
 ├── packages/
-│   ├── game-engine/    # Moteur de règles Ludo pur, déterministe, testé
-│   ├── shared/         # Types & protocole WebSocket partagés
-│   └── contracts/      # Smart contracts Solidity (escrow des mises, Celo)
-├── docs/               # Architecture, protocole, backlog, contrats
-└── AGENTS.md           # Guide pour les agents IA qui travaillent sur ce repo
+│   ├── game-engine/    # Pure, deterministic, tested Ludo rules engine
+│   ├── shared/         # Shared types & WebSocket protocol
+│   └── contracts/      # Solidity smart contracts (stake escrow, Celo)
+├── docs/               # Architecture, protocol, backlog, contracts
+└── AGENTS.md           # Guide for AI agents working on this repo
 ```
 
-**Principe central :** le serveur est **autoritaire** (les règles s'exécutent dans `game-engine` côté serveur, jamais côté client), le règlement financier est **on-chain** (contrat escrow), et l'aléatoire est **vérifiable** (commit-reveal, voir `docs/PROTOCOL.md`).
+**Core principle:** the server is **authoritative** (rules run in `game-engine` server-side, never trusted client-side), financial settlement is **on-chain** (escrow contract), and randomness is **verifiable** (commit-reveal, see `docs/PROTOCOL.md`).
 
-## Démarrage rapide
+## Quick start
 
 ```bash
 npm install
 
-# Frontend seul (mode bot hors-ligne inclus — jouable immédiatement)
+# Frontend only (offline bot mode included — playable immediately)
 npm run dev:web        # → http://localhost:5173
 
-# Serveur de jeu (PvP temps réel)
+# Game server (real-time PvP)
 npm run dev:server     # → ws://localhost:8787
 
-# Tests & vérifications
-npm test               # tests unitaires (moteur de jeu)
-npm run typecheck      # TypeScript strict sur tous les workspaces
-npm run simulate       # simulation de 2 000 parties (terminaison, stats)
+# Checks
+npm test               # unit tests (game engine)
+npm run typecheck      # strict TypeScript across all workspaces
+npm run simulate       # 2,000-game simulation (termination, stats)
 ```
 
-## Publier sur GitHub
+## Publish to GitHub
 
 ```bash
 gh repo create ludo-arena --private --source . --push
-# ou manuellement :
-git remote add origin git@github.com:<toi>/ludo-arena.git
+# or manually:
+git remote add origin git@github.com:<you>/ludo-arena.git
 git push -u origin main
 ```
 
 ## Stack
 
-| Couche | Choix | Pourquoi |
+| Layer | Choice | Why |
 |---|---|---|
-| Frontend | React 18, Vite, TypeScript strict, CSS design-tokens (pas de framework CSS lourd) | Bundle < 1 Mo exigé par les usages MiniPay (3G, Android entrée de gamme) |
-| Wallet | viem + provider injecté MiniPay (`window.ethereum.isMiniPay`) | Recommandation officielle MiniPay ; transactions legacy, feeCurrency cUSD |
-| Backend | Node 20+, `ws`, moteur partagé | Léger, messages < 200 octets/coup, reconnexion + auto-move |
-| Contrats | Solidity 0.8.x, Foundry | Escrow des mises, règlement signé par l'arbitre, rake configurable |
-| Qualité | TypeScript strict, Vitest, ESLint, Prettier, CI GitHub Actions | Standards par défaut du repo |
+| Frontend | React 18, Vite, strict TypeScript, CSS design tokens (no heavy CSS framework) | < 1 MB bundle required by MiniPay usage (3G, entry-level Android) |
+| Wallet | viem + MiniPay injected provider (`window.ethereum.isMiniPay`) | Official MiniPay recommendation; legacy transactions, cUSD feeCurrency |
+| Backend | Node 20+, `ws`, shared engine | Lightweight, < 200 bytes/move messages, reconnection + auto-move |
+| Contracts | Solidity 0.8.x, Foundry | Stake escrow, arbiter-signed settlement, configurable rake |
+| Quality | Strict TypeScript, Vitest, ESLint, Prettier, GitHub Actions CI | Repo defaults |
 
-## Statut
+## Status
 
-Scaffold complet fonctionnel : moteur testé, serveur PvP, frontend jouable (mode bot), contrat escrow. Le backlog d'implémentation restant (persistance, ELO stocké, tournois, i18n complet, audit contrat…) est dans `docs/BACKLOG.md` — chaque tâche est calibrée pour être confiée à un agent.
+Fully functional scaffold: tested engine, PvP server, playable frontend (bot mode), escrow contract. The remaining implementation backlog (persistence, stored ELO, tournaments, full i18n, contract audit…) lives in `docs/BACKLOG.md` — every task is sized to be handed to an agent.
 
-## Licence
+## License
 
-Propriétaire — © 2026 Mike / SwapPilot. Tous droits réservés.
+Proprietary — © 2026 Mike / SwapPilot. All rights reserved.

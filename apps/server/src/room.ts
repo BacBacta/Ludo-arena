@@ -1,6 +1,6 @@
 /**
- * Room = une partie 1v1. Le serveur est autoritaire :
- * il execute le moteur, tient l'horloge (auto-move) et gere les deconnexions.
+ * Room = one 1v1 match. The server is authoritative:
+ * it runs the engine, keeps the clock (auto-move) and handles disconnections.
  */
 import {
   applyMove,
@@ -47,26 +47,26 @@ export class Room {
     this.announceTurn();
   }
 
-  /** Le joueur au siege `seat` demande a lancer le de. */
+  /** The player at `seat` asks to roll the die. */
   roll(seat: Seat): void {
     if (this.over) return;
     if (this.state.turn !== seat || this.state.phase !== 'awaiting-roll') {
-      this.clients[seat].send({ t: 'error', code: 'NOT_YOUR_TURN', message: 'Pas ton tour.' });
+      this.clients[seat].send({ t: 'error', code: 'NOT_YOUR_TURN', message: 'Not your turn.' });
       return;
     }
     this.autoMoveStreak[seat] = 0;
     this.doRoll();
   }
 
-  /** Le joueur au siege `seat` joue le pion `token`. */
+  /** The player at `seat` plays token `token`. */
   move(seat: Seat, token: number): void {
     if (this.over) return;
     if (this.state.turn !== seat || this.state.phase !== 'awaiting-move') {
-      this.clients[seat].send({ t: 'error', code: 'NOT_YOUR_TURN', message: 'Pas ton tour.' });
+      this.clients[seat].send({ t: 'error', code: 'NOT_YOUR_TURN', message: 'Not your turn.' });
       return;
     }
     if (!this.state.legal.includes(token)) {
-      this.clients[seat].send({ t: 'error', code: 'ILLEGAL_MOVE', message: 'Coup illegal.' });
+      this.clients[seat].send({ t: 'error', code: 'ILLEGAL_MOVE', message: 'Illegal move.' });
       return;
     }
     this.autoMoveStreak[seat] = 0;
@@ -86,7 +86,7 @@ export class Room {
     return this.clients[seat];
   }
 
-  // ---------- interne ----------
+  // ---------- internal ----------
 
   private doRoll(): void {
     const seat = this.state.turn;
@@ -97,13 +97,13 @@ export class Room {
 
     if (this.state.phase === 'awaiting-move') {
       if (this.state.legal.length === 1) {
-        // un seul coup possible : auto-play immediat (fluidite)
+        // only one possible move: play it immediately (fluidity)
         this.applyAndBroadcast(seat, this.state.legal[0]!);
       } else {
         this.armClock();
       }
     } else {
-      // aucun coup possible, tour passe par le moteur
+      // no possible move, engine already passed the turn
       this.announceTurn();
     }
   }
@@ -149,7 +149,7 @@ export class Room {
     }
     if (this.state.phase === 'awaiting-roll') {
       this.doRoll();
-      // si le lancer ouvre un choix, on joue aussi automatiquement
+      // if the roll opened a choice, auto-play as well
       const after: GameState = this.state;
       if (after.phase === 'awaiting-move' && after.turn === seat) {
         const die = after.dice ?? 1;
@@ -186,7 +186,7 @@ export class Room {
           serverSeed: this.fairness.serverSeed,
           entropies: this.fairness.entropies,
         },
-        // txHash : ajoute quand l'arbitre on-chain sera branche (BACKLOG E3.3)
+        // txHash: added once the on-chain arbiter is wired (BACKLOG E3.3)
       });
     }
     this.onEnd?.(this);

@@ -2,7 +2,7 @@
   "name": "ludo-arena",
   "private": true,
   "version": "0.1.0",
-  "description": "Ludo Arena — Mini App Ludo pour MiniPay (Celo). Monorepo : moteur de jeu, serveur temps réel, frontend, smart contracts.",
+  "description": "Ludo Arena — Ludo Mini App for MiniPay (Celo). Monorepo: game engine, real-time server, frontend, smart contracts.",
   "workspaces": [
     "packages/*",
     "apps/*"

@@ -1,6 +1,6 @@
 /**
- * Géométrie du plateau — UNIQUE source de vérité (le SVG du frontend est généré depuis ce fichier).
- * Grille 15×15. Piste principale de 52 cases, sens horaire.
+ * Board geometry — SINGLE source of truth (the frontend SVG is generated from this file).
+ * 15x15 grid. 52-cell main track, clockwise.
  */
 export const TRACK: ReadonlyArray<readonly [number, number]> = [
   [1, 6], [2, 6], [3, 6], [4, 6], [5, 6],
@@ -19,44 +19,44 @@ export const TRACK: ReadonlyArray<readonly [number, number]> = [
 
 export const TRACK_LEN = 52;
 
-/** Index absolus des cases sûres (étoiles + cases départ). Pas de capture possible dessus. */
+/** Absolute indices of safe cells (stars + start cells). No captures possible there. */
 export const SAFE_CELLS: ReadonlySet<number> = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
 /**
- * Positions relatives d'un pion :
- *  -1            : en base
- *  0..50         : sur la piste (51 cases parcourues, relatives au départ du siège)
- *  51..55        : colonne maison (5 cases)
- *  56 (FINISHED) : arrivé au centre
+ * Relative token positions:
+ *  -1            : in base
+ *  0..50         : on the track (51 traversed cells, relative to the seat's start)
+ *  51..55        : home column (5 cells)
+ *  56 (FINISHED) : arrived at the center
  */
 export const LAST_TRACK_REL = 50;
 export const FIRST_HOME_REL = 51;
 export const FINISHED = 56;
 
-/** Case de départ absolue par siège (Blitz 1v1 : sièges diagonalement opposés). */
+/** Absolute start cell per seat (Blitz 1v1: diagonally opposite seats). */
 export const SEAT_START: readonly number[] = [0, 26];
 
-/** Colonnes maison par siège (coordonnées grille, de l'entrée vers le centre). */
+/** Home columns per seat (grid coordinates, from entrance toward the center). */
 export const HOME_COLUMNS: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
   [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]],
   [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]],
 ];
 
-/** Emplacements des pions en base (coordonnées grille, centres). */
+/** Base token spots (grid coordinates, centers). */
 export const BASE_SPOTS: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
   [[2.5, 11.5], [4.5, 11.5]],
   [[10.5, 2.5], [12.5, 2.5]],
 ];
 
-/** Config Blitz par défaut. */
+/** Default Blitz config. */
 export const BLITZ = {
   tokensPerPlayer: 2,
-  /** Le pion 0 démarre posé sur la case départ (accélère la partie). */
+  /** Token 0 starts already placed on the start cell (speeds the game up). */
   firstTokenStartsOnBoard: true,
-  /** Dépassement autorisé pour finir (pas de dé exact requis). */
+  /** Overshoot allowed to finish (no exact roll required). */
   allowOvershootFinish: true,
-  /** ms par décision avant auto-move. */
+  /** ms per decision before auto-move. */
   moveClockMs: 15_000,
-  /** auto-moves consécutifs avant forfait. */
+  /** consecutive auto-moves before forfeit. */
   forfeitAfterAutoMoves: 3,
 } as const;

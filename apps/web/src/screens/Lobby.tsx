@@ -55,24 +55,26 @@ export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
 
       <div className="minis">
         <div className="mini">
-          <b>{t('freeroll')}</b>Dotation 10 $ · gratuit · 18h00
+          <b>{t('freeroll')}</b>
+          {t('freerollDesc')}
         </div>
         <div className="mini">
-          <b>{t('privateTable')}</b>Invite un ami par lien WhatsApp
+          <b>{t('privateTable')}</b>
+          {t('privateTableDesc')}
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: 0 }}>
         <h3>{t('dailyChallenge')}</h3>
         <div style={{ fontSize: 13 }} className="muted">
-          Capture 3 pions → <b style={{ color: 'var(--accent)' }}>+1 ticket freeroll</b>
+          {t('challengeDesc')} <b style={{ color: 'var(--accent)' }}>{t('challengeReward')}</b>
           <span style={{ float: 'right' }}>{challengeProgress}/3</span>
         </div>
       </div>
 
       <div className="fairnote">
-        Dés vérifiables (provably fair) · gains payés instantanément ·{' '}
-        <a onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>comment ça marche ?</a>
+        {t('fairnote')}{' '}
+        <a onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>{t('howItWorks')}</a>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 /**
- * File d'attente par mise. v1 : premier arrivé, premier servi.
- * BACKLOG E2.3 : fenêtre ELO ± 100 avec élargissement progressif.
+ * Per-stake waiting queue. v1: first come, first served.
+ * BACKLOG E2.3: ELO window +/- 100 with progressive widening.
  */
 import type { StakeCents } from '@ludo/shared';
 

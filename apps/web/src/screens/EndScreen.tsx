@@ -36,7 +36,7 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
           )}
         </div>
         <small className="muted">
-          ELO {won ? `+${result.eloDelta}` : result.eloDelta} · Ligue Argent
+          ELO {won ? `+${result.eloDelta}` : result.eloDelta} · {t('league')}
         </small>
         <div style={{ width: '100%', maxWidth: 300 }}>
           <button className="btn" onClick={onRematch}>

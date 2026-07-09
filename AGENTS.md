@@ -1,56 +1,56 @@
-# Guide agents — Ludo Arena
+# Agent guide — Ludo Arena
 
-Ce fichier est la source de vérité pour tout agent (Claude Code, Copilot, Cursor…) travaillant sur ce repo.
+This file is the source of truth for any agent (Claude Code, Copilot, Cursor…) working on this repo.
 
-## Commandes
+## Commands
 
 ```bash
-npm install                 # racine, installe tous les workspaces
-npm run typecheck           # OBLIGATOIRE avant tout commit
-npm test                    # tests moteur (vitest)
-npm run simulate            # sanity-check : 2 000 parties doivent terminer
+npm install                 # root, installs all workspaces
+npm run typecheck           # MANDATORY before any commit
+npm test                    # engine tests (vitest)
+npm run simulate            # sanity check: 2,000 games must terminate
 npm run dev:web             # frontend http://localhost:5173
-npm run dev:server          # serveur ws://localhost:8787
+npm run dev:server          # server ws://localhost:8787
 ```
 
-## Règles d'or (non négociables)
+## Golden rules (non-negotiable)
 
-1. **Le moteur (`packages/game-engine`) est pur et déterministe.** Aucun `Math.random`, aucun I/O, aucune dépendance runtime. Le dé est toujours injecté. Toute modification des règles DOIT passer par ce package et être couverte par un test + la simulation.
-2. **Le serveur est autoritaire.** Le client n'envoie que des intentions (`roll`, `move`). Ne jamais faire confiance à un état envoyé par le client.
-3. **Aucune logique d'argent côté client.** Les soldes affichés viennent du wallet (viem) ou du serveur. Le règlement réel passe par `packages/contracts`.
-4. **Budget bundle frontend : 300 Ko gzippé max.** Pas de nouvelle dépendance UI sans justification écrite dans la PR. Pas de framework CSS. Les images sont des SVG inline.
-5. **Contraintes MiniPay** (docs/ARCHITECTURE.md §MiniPay) : transactions legacy uniquement (pas d'EIP-1559), `feeCurrency` cUSD, stablecoins cUSD/USDC/USDT uniquement, détection via `window.ethereum?.isMiniPay`.
-6. **TypeScript strict partout.** `any` interdit sauf commentaire `// justified-any:`.
-7. **Messages WebSocket** : toute évolution du protocole se fait dans `packages/shared/src/protocol.ts` d'abord, puis serveur, puis client — jamais l'inverse.
-8. **Jeu responsable** : ne jamais implémenter de fonctionnalité qui contourne les limites de mise, le cashback de protection ou l'auto-exclusion.
+1. **The engine (`packages/game-engine`) is pure and deterministic.** No `Math.random`, no I/O, no runtime dependency. Dice are always injected. Any rule change MUST go through this package and be covered by a test + the simulation.
+2. **The server is authoritative.** The client only sends intents (`roll`, `move`). Never trust state sent by a client.
+3. **No money logic client-side.** Displayed balances come from the wallet (viem) or the server. Real settlement goes through `packages/contracts`.
+4. **Frontend bundle budget: 300 KB gzipped max.** No new UI dependency without written justification in the PR. No CSS framework. Images are inline SVG.
+5. **MiniPay constraints** (docs/ARCHITECTURE.md §MiniPay): legacy transactions only (no EIP-1559), `feeCurrency` cUSD, stablecoins cUSD/USDC/USDT only, detection via `window.ethereum?.isMiniPay`.
+6. **Strict TypeScript everywhere.** `any` is forbidden except with a `// justified-any:` comment.
+7. **WebSocket messages**: any protocol evolution happens in `packages/shared/src/protocol.ts` FIRST, then server, then client — never the other way around.
+8. **Responsible gaming**: never implement a feature that bypasses stake limits, the protection cashback, or self-exclusion.
 
 ## Style
 
-- Prettier + ESLint (configs racine). Noms de fichiers `camelCase.ts`, composants React `PascalCase.tsx`.
-- Commits : Conventional Commits (`feat(web): …`, `fix(engine): …`, `chore(ci): …`).
-- Une PR = une tâche du backlog (`docs/BACKLOG.md`), avec critères d'acceptation cochés.
+- Prettier + ESLint (root configs). File names `camelCase.ts`, React components `PascalCase.tsx`.
+- Commits: Conventional Commits (`feat(web): …`, `fix(engine): …`, `chore(ci): …`).
+- One PR = one backlog task (`docs/BACKLOG.md`), with acceptance criteria checked off.
 
 ## Definition of Done
 
-- `npm run typecheck` et `npm test` passent.
-- Si le moteur est touché : `npm run simulate` passe (0 partie non terminée).
-- Si le protocole est touché : `docs/PROTOCOL.md` mis à jour.
-- Pas de secret ni de clé privée committé (`.env` seulement, `.env.example` à jour).
+- `npm run typecheck` and `npm test` pass.
+- If the engine is touched: `npm run simulate` passes (0 unfinished games).
+- If the protocol is touched: `docs/PROTOCOL.md` updated.
+- No secret or private key committed (`.env` only, `.env.example` up to date).
 
-## Carte du code
+## Code map
 
-| Où | Quoi |
+| Where | What |
 |---|---|
-| `packages/game-engine/src/engine.ts` | Toutes les règles du jeu (coups légaux, captures, victoire) |
-| `packages/game-engine/src/constants.ts` | Géométrie du plateau (piste 52 cases, cases sûres, colonnes maison) |
-| `packages/shared/src/protocol.ts` | Contrat de messages client ↔ serveur |
-| `apps/server/src/room.ts` | Cycle de vie d'une partie (timers, auto-move, déconnexions) |
-| `apps/server/src/fairness.ts` | Dés commit-reveal (seed serveur + entropies joueurs) |
-| `apps/web/src/state/store.tsx` | État global frontend (reducer unique) |
-| `apps/web/src/lib/bot.ts` | IA locale (mode hors-ligne / entraînement) |
-| `apps/web/src/lib/minipay.ts` | Intégration wallet MiniPay via viem |
-| `packages/contracts/src/LudoEscrow.sol` | Escrow des mises + règlement signé |
+| `packages/game-engine/src/engine.ts` | All game rules (legal moves, captures, win) |
+| `packages/game-engine/src/constants.ts` | Board geometry (52-cell track, safe cells, home columns) |
+| `packages/shared/src/protocol.ts` | Client ↔ server message contract |
+| `apps/server/src/room.ts` | Match lifecycle (clocks, auto-move, disconnections) |
+| `apps/server/src/fairness.ts` | Commit-reveal dice (server seed + player entropies) |
+| `apps/web/src/state/store.tsx` | Frontend global state (single reducer) |
+| `apps/web/src/lib/bot.ts` | Local AI (offline / practice mode) |
+| `apps/web/src/lib/minipay.ts` | MiniPay wallet integration via viem |
+| `packages/contracts/src/LudoEscrow.sol` | Stake escrow + signed settlement |
 
 ## Backlog
 
-Les tâches à implémenter sont dans `docs/BACKLOG.md`, ordonnées par priorité, avec critères d'acceptation. Prends la première tâche non cochée de l'épic en cours, sauf instruction contraire.
+Implementation tasks live in `docs/BACKLOG.md`, ordered by priority, with acceptance criteria. Pick the first unchecked task of the current epic unless instructed otherwise.

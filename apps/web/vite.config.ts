@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     target: 'es2020',
-    // Budget MiniPay : surveiller la taille (AGENTS.md règle 4)
+    // MiniPay budget: watch the size (AGENTS.md rule 4)
     chunkSizeWarningLimit: 300,
   },
   server: { port: 5173 },

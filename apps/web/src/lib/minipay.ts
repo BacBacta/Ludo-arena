@@ -1,7 +1,7 @@
 /**
- * Intégration wallet MiniPay via viem.
- * Contraintes officielles : transactions LEGACY uniquement, feeCurrency cUSD,
- * stablecoins cUSD/USDC/USDT. Voir docs/ARCHITECTURE.md §MiniPay.
+ * MiniPay wallet integration via viem.
+ * Official constraints: LEGACY transactions only, cUSD feeCurrency,
+ * cUSD/USDC/USDT stablecoins. See docs/ARCHITECTURE.md §MiniPay.
  */
 import { createWalletClient, custom, type Address, type WalletClient } from 'viem';
 import { celo, celoAlfajores } from 'viem/chains';
@@ -46,9 +46,9 @@ export async function connectWallet(testnet = false): Promise<{ client: WalletCl
 }
 
 /**
- * Verrouille la mise dans LudoEscrow (approve + join).
- * Implémentation complète : BACKLOG E3.2 (tx legacy, feeCurrency cUSD, états UI).
+ * Locks the stake in LudoEscrow (approve + join).
+ * Full implementation: BACKLOG E3.2 (legacy tx, cUSD feeCurrency, UI states).
  */
 export async function stakeInEscrow(): Promise<never> {
-  throw new Error('Non implémenté — voir docs/BACKLOG.md E3.2');
+  throw new Error('Not implemented — see docs/BACKLOG.md E3.2');
 }

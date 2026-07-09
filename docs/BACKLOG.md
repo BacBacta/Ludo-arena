@@ -1,55 +1,55 @@
-# Backlog d'implémentation
+# Implementation backlog
 
-Chaque tâche est autoportante et calibrée pour un agent. Cocher à la livraison. Respecter `AGENTS.md`.
+Each task is self-contained and sized for an agent. Check off on delivery. Follow `AGENTS.md`.
 
-## E1 — Fondations (fait dans le scaffold)
+## E1 — Foundations (done in the scaffold)
 
-- [x] Moteur de jeu pur + tests + simulation
-- [x] Protocole partagé typé
-- [x] Serveur ws : hello/queue/rooms/dés commit-reveal/auto-move
-- [x] Frontend : lobby, matchmaking, plateau SVG, fin de partie, mode bot
-- [x] Contrat LudoEscrow (create/join/settle/rake) + tests Foundry
+- [x] Pure game engine + tests + simulation
+- [x] Typed shared protocol
+- [x] ws server: hello/queue/rooms/commit-reveal dice/auto-move
+- [x] Frontend: lobby, matchmaking, SVG board, end screen, bot mode
+- [x] LudoEscrow contract (create/join/settle/rake) + Foundry tests
 - [x] CI (typecheck, tests, simulation, build)
 
-## E2 — PvP production-ready
+## E2 — Production-ready PvP
 
-- [ ] **E2.1 Persistance** : remplacer les Map en mémoire par Redis (sessions, files, rooms) + Postgres (joueurs, parties, ELO). Schéma dans la PR. *AC : un restart serveur ne tue pas les parties en cours.*
-- [ ] **E2.2 Reconnexion complète** : resume via sessionToken depuis le client (UI « reconnexion… »), resync d'état. *AC : couper le réseau 20 s en pleine partie → la partie continue.*
-- [ ] **E2.3 ELO persistant + matchmaking ±100** avec élargissement progressif (+50/5 s). *AC : test unitaire de la fenêtre.*
-- [ ] **E2.4 Rate limiting & taille de trame** (déjà borné à 1 Ko) + ban temporaire. *AC : test d'abus.*
+- [ ] **E2.1 Persistence**: replace in-memory Maps with Redis (sessions, queues, rooms) + Postgres (players, games, ELO). Schema in the PR. *AC: a server restart does not kill in-progress games.*
+- [ ] **E2.2 Full reconnection**: resume via sessionToken from the client ("reconnecting…" UI), state resync. *AC: cutting the network for 20 s mid-game → the game continues.*
+- [ ] **E2.3 Persistent ELO + ±100 matchmaking** with progressive widening (+50/5 s). *AC: unit test for the window.*
+- [ ] **E2.4 Rate limiting & frame size** (already capped at 1 KB) + temporary bans. *AC: abuse test.*
 
-## E3 — Intégration on-chain réelle
+## E3 — Real on-chain integration
 
-- [ ] **E3.1 Déploiement Alfajores** de LudoEscrow + script `forge script` + adresses dans `packages/contracts/deployments.json`.
-- [ ] **E3.2 Flux de mise côté web** : approve cUSD + `join(gameId)` via viem (tx legacy, feeCurrency cUSD), états UI (en attente de confirmation, verrouillé). *AC : partie misée complète sur Alfajores.*
-- [ ] **E3.3 Arbitre serveur** : signature EIP-712 du résultat, soumission `settle()`, retry + file de règlements. *AC : payout < 5 s après game.over en testnet.*
-- [ ] **E3.4 Timeout on-chain** : remboursement si l'adversaire ne join pas en 120 s (`refundExpired`).
+- [ ] **E3.1 Alfajores deployment** of LudoEscrow + `forge script` + addresses in `packages/contracts/deployments.json`.
+- [ ] **E3.2 Web-side staking flow**: approve cUSD + `join(gameId)` via viem (legacy tx, cUSD feeCurrency), UI states (awaiting confirmation, locked). *AC: full staked game on Alfajores.*
+- [ ] **E3.3 Server arbiter**: EIP-712 result signature, `settle()` submission, retry + settlement queue. *AC: payout < 5 s after game.over on testnet.*
+- [ ] **E3.4 On-chain timeout**: refund if the opponent never joins within 120 s (`refundExpired`).
 
-## E4 — Rétention
+## E4 — Retention
 
-- [ ] **E4.1 Défi du jour** (config serveur, progression, récompense ticket) + UI.
-- [ ] **E4.2 Série de connexion** (streak) persistée + récompenses J3/J7.
-- [ ] **E4.3 Ligue hebdomadaire** : divisions, classement, promotion/relégation cron lundi 00:00 UTC.
-- [ ] **E4.4 Table privée** : création de room par code/lien (`/g/ABC123`), partage WhatsApp.
-- [ ] **E4.5 Cashback anti-tilt** : détection 3 défaites misées consécutives → crédit 20 % rake + toast.
+- [ ] **E4.1 Daily challenge** (server config, progress, ticket reward) + UI.
+- [ ] **E4.2 Login streak** persisted + D3/D7 rewards.
+- [ ] **E4.3 Weekly league**: divisions, leaderboard, promotion/relegation cron Monday 00:00 UTC.
+- [ ] **E4.4 Private table**: room creation via code/link (`/g/ABC123`), WhatsApp sharing.
+- [ ] **E4.5 Anti-tilt cashback**: detect 3 consecutive staked losses → credit 20 % of rake + toast.
 
-## E5 — Confiance & conformité
+## E5 — Trust & compliance
 
-- [ ] **E5.1 Page de vérification des dés** : rejouer les hash côté client (WebCrypto) depuis `fairnessReveal`, UI pédagogique.
-- [ ] **E5.2 Limites de jeu responsable** côté serveur : mise max/jour par wallet (défaut 200 cents), auto-exclusion, page paramètres.
-- [ ] **E5.3 Anti multi-comptes v1** : empreinte device + refus de parties misées répétées contre le même wallet (> 3/jour).
-- [ ] **E5.4 Geo-gating** : header pays (CDN) → stakes désactivés si pays non autorisé (liste config).
+- [ ] **E5.1 Dice verification page**: replay hashes client-side (WebCrypto) from `fairnessReveal`, educational UI.
+- [ ] **E5.2 Responsible gaming limits** server-side: max daily stake per wallet (default 200 cents), self-exclusion, settings page.
+- [ ] **E5.3 Anti multi-accounting v1**: device fingerprint + refuse repeated staked games against the same wallet (> 3/day).
+- [ ] **E5.4 Geo-gating**: country header (CDN) → stakes disabled in unauthorized countries (config list).
 
 ## E6 — Polish & i18n
 
-- [ ] **E6.1 i18n complet** FR/EN (fichiers `apps/web/src/lib/i18n.ts`) puis PT/ES/SW.
-- [ ] **E6.2 Sons discrets** (dé, capture, victoire) — < 30 Ko au total, opt-out.
-- [ ] **E6.3 Animations de déplacement des pions** (interpolation case par case, 120 ms/case).
-- [ ] **E6.4 Onboarding première session** : partie de bienvenue gratuite dotée, tooltip unique.
-- [ ] **E6.5 PWA** : manifest + service worker (cache assets, offline vs bot).
+- [ ] **E6.1 Full i18n** FR/EN (files in `apps/web/src/lib/i18n.ts`) then PT/ES/SW.
+- [ ] **E6.2 Subtle sounds** (dice, capture, win) — < 30 KB total, opt-out.
+- [ ] **E6.3 Token movement animations** (cell-by-cell interpolation, 120 ms/cell).
+- [ ] **E6.4 First-session onboarding**: free sponsored welcome game, single tooltip.
+- [ ] **E6.5 PWA**: manifest + service worker (asset cache, offline vs bot).
 
-## E7 — Listing MiniPay
+## E7 — MiniPay listing
 
-- [ ] **E7.1 CGU + politique de confidentialité** (pages statiques, exigées par les ToS Mini Apps).
-- [ ] **E7.2 Test dans MiniPay** (mode dev, checklist docs.minipay.xyz), corrections container/viewport.
-- [ ] **E7.3 Soumission listing** + analytics d'activation (funnel première session).
+- [ ] **E7.1 ToS + privacy policy** (static pages, required by the Mini Apps ToS).
+- [ ] **E7.2 Testing inside MiniPay** (dev mode, docs.minipay.xyz checklist), container/viewport fixes.
+- [ ] **E7.3 Listing submission** + activation analytics (first-session funnel).

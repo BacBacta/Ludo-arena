@@ -1,21 +1,21 @@
 /**
- * Protocole WebSocket client ↔ serveur. Source de vérité : ce fichier.
- * Toute évolution : modifier ici D'ABORD, puis serveur, puis client (voir AGENTS.md).
+ * Client <-> server WebSocket protocol. Source of truth: this file.
+ * Any evolution: change here FIRST, then server, then client (see AGENTS.md).
  */
 import type { GameState, Seat } from '@ludo/game-engine';
 
-/** Mises autorisées, en cents de dollar (0 = entraînement). */
+/** Allowed stakes, in dollar cents (0 = practice). */
 export const ALLOWED_STAKES_CENTS = [0, 10, 25, 50, 100, 200] as const;
 export type StakeCents = (typeof ALLOWED_STAKES_CENTS)[number];
 
-/** Part de la maison, en points de base (900 = 9 %). */
+/** House share, in basis points (900 = 9%). */
 export const RAKE_BPS = 900;
 
 export function potCents(stake: StakeCents): number {
   return Math.floor(stake * 2 * (1 - RAKE_BPS / 10_000));
 }
 
-// ---------- Client → Serveur ----------
+// ---------- Client -> Server ----------
 
 export type ClientMsg =
   | { t: 'hello'; wallet?: string; sessionToken?: string; entropy: string }
@@ -26,7 +26,7 @@ export type ClientMsg =
   | { t: 'game.rematch' }
   | { t: 'ping' };
 
-// ---------- Serveur → Client ----------
+// ---------- Server -> Client ----------
 
 export interface OpponentInfo {
   name: string;
