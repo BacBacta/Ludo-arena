@@ -35,10 +35,10 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 
 ## E5 — Trust & compliance
 
-- [ ] **E5.1 Dice verification page**: replay hashes client-side (WebCrypto) from `fairnessReveal`, educational UI.
-- [ ] **E5.2 Responsible gaming limits** server-side: max daily stake per wallet (default 200 cents), self-exclusion, settings page.
-- [ ] **E5.3 Anti multi-accounting v1**: device fingerprint + refuse repeated staked games against the same wallet (> 3/day).
-- [ ] **E5.4 Geo-gating**: country header (CDN) → stakes disabled in unauthorized countries (config list).
+- [x] **E5.1 Dice verification page**: `apps/web/src/lib/fairnessVerify.ts` replays commit + every roll with WebCrypto from `fairnessReveal`; the fairness modal shows a per-roll played-vs-recomputed table with a verdict. *AC: verifier tested against the server algorithm incl. tampered commit/roll (`apps/web/test/fairnessVerify.test.ts`).*
+- [x] **E5.2 Responsible gaming limits** server-side: daily stake cap per player (default/max 200 c), self-exclusion, settings modal; enforced on every staked intent. *AC: daily total + reset + exclusion expiry tested on memory + Postgres.*
+- [x] **E5.3 Anti multi-accounting v1**: device fingerprint in hello + refuse same-device self-play and > `MAX_DAILY_GAMES_VS_SAME` (3) staked games vs the same wallet/day (private tables). *AC: pair-count store test.*
+- [x] **E5.4 Geo-gating**: CDN country header → staked play disabled in `BLOCKED_COUNTRIES`; `hello.ok.stakingBlocked` drives a lobby banner. *AC: `npm run geo-test -w apps/server`.*
 
 ## E6 — Polish & i18n
 
