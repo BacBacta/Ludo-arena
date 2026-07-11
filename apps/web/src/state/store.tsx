@@ -9,9 +9,14 @@ import type { GameResult, MatchInfo } from '../lib/session';
 
 export type Screen = 'lobby' | 'matchmaking' | 'game' | 'end';
 
+/** On-chain stake lifecycle for the current staked match (E3.2). */
+export type StakingState = 'idle' | 'approving' | 'joining' | 'locked' | 'failed';
+
 export interface AppState {
   screen: Screen;
   balanceCents: number;
+  /** True once the balance comes from a connected wallet (no simulated debits). */
+  walletBacked: boolean;
   stakeCents: StakeCents;
   streakDays: number;
   challengeProgress: number;
@@ -22,6 +27,7 @@ export interface AppState {
   result: GameResult | null;
   botMode: boolean;
   reconnecting: boolean;
+  staking: StakingState;
   toast: string | null;
   fairModalOpen: boolean;
 }
@@ -29,6 +35,7 @@ export interface AppState {
 export const initialState: AppState = {
   screen: 'lobby',
   balanceCents: 500,
+  walletBacked: false,
   stakeCents: 25,
   streakDays: 3,
   challengeProgress: 1,
@@ -39,6 +46,7 @@ export const initialState: AppState = {
   result: null,
   botMode: false,
   reconnecting: false,
+  staking: 'idle',
   toast: null,
   fairModalOpen: false,
 };
@@ -54,6 +62,8 @@ export type Action =
   | { type: 'GAME_OVER'; result: GameResult }
   | { type: 'RECONNECTING' }
   | { type: 'RESUME'; match: MatchInfo; game: GameState }
+  | { type: 'STAKING'; status: StakingState }
+  | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
   | { type: 'CLEAR_TOAST' }
@@ -72,13 +82,15 @@ export function reducer(s: AppState, a: Action): AppState {
         game: null,
         result: null,
         lastDice: null,
+        staking: 'idle',
       };
     case 'MATCH_FOUND':
       return {
         ...s,
         match: a.match,
-        // stake debited on lock (simulated until E3.2 is wired)
-        balanceCents: s.balanceCents - a.match.stakeCents,
+        // Wallet-backed games lock funds on-chain (balance refreshed from the
+        // wallet). Without a wallet, keep the simulated debit for the dev demo.
+        balanceCents: s.walletBacked ? s.balanceCents : s.balanceCents - a.match.stakeCents,
       };
     case 'GAME_STATE':
       return { ...s, screen: 'game', game: a.game };
@@ -95,21 +107,23 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, turnDeadlineTs: a.deadlineTs };
     case 'GAME_OVER': {
       const won = a.result.winner === (s.match?.seat ?? 0);
-      return {
-        ...s,
-        screen: 'end',
-        result: a.result,
-        reconnecting: false,
-        balanceCents: won ? s.balanceCents + a.result.payoutCents : s.balanceCents,
-      };
+      // On-chain payout is settled by the arbiter (E3.3) and reflected via
+      // SET_BALANCE; only the simulated dev path credits the balance here.
+      const balanceCents =
+        !s.walletBacked && won ? s.balanceCents + a.result.payoutCents : s.balanceCents;
+      return { ...s, screen: 'end', result: a.result, reconnecting: false, staking: 'idle', balanceCents };
     }
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':
-      // reconnection resync: no balance change (the stake was already debited)
+      // reconnection resync: no balance change (the stake was already locked)
       return { ...s, screen: 'game', match: a.match, game: a.game, reconnecting: false };
+    case 'STAKING':
+      return { ...s, staking: a.status };
+    case 'SET_BALANCE':
+      return { ...s, balanceCents: a.cents, walletBacked: true };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', match: null, game: null, result: null, reconnecting: false };
+      return { ...s, screen: 'lobby', match: null, game: null, result: null, reconnecting: false, staking: 'idle' };
     case 'TOAST':
       return { ...s, toast: a.message };
     case 'CLEAR_TOAST':

@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "stake-verify": "tsx scripts/stakeVerify.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

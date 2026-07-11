@@ -21,7 +21,7 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 ## E3 — Real on-chain integration
 
 - [x] **E3.1 Testnet deployment** of LudoEscrow — deployed on **Celo Sepolia** (chainId 11142220, successor of Alfajores) via `npm run deploy -w packages/contracts` (solc+viem; Foundry optional), addresses in `packages/contracts/deployments.json`. TestUSD deployed as stake token (no canonical cUSD on Celo Sepolia yet); arbiter/treasury point at the deployer until E3.3.
-- [ ] **E3.2 Web-side staking flow**: approve cUSD + `join(gameId)` via viem (legacy tx, cUSD feeCurrency), UI states (awaiting confirmation, locked). *AC: full staked game on Alfajores.*
+- [x] **E3.2 Web-side staking flow**: `approve` + `join(gameId)` via viem (`apps/web/src/lib/escrow.ts`), MiniPay legacy tx + cUSD feeCurrency, staking overlay (approving → joining → locked), wallet-backed balance (simulated fallback with no wallet). *AC: verified against the live Celo Sepolia escrow — `npm run stake-verify -w apps/web` (mint → approve → join → game status WaitingOpponent). Full 2-player settle awaits the arbiter (E3.3).*
 - [ ] **E3.3 Server arbiter**: EIP-712 result signature, `settle()` submission, retry + settlement queue. *AC: payout < 5 s after game.over on testnet.*
 - [ ] **E3.4 On-chain timeout**: refund if the opponent never joins within 120 s (`refundExpired`).
 

@@ -55,6 +55,11 @@ const dict = {
     offline: 'Serveur indisponible — partie contre l’IA',
     reconnecting: 'Reconnexion… la partie continue, ton horloge tourne.',
     connectionLost: 'Connexion perdue — retour à l’accueil',
+    stakingApprove: 'Autorisation du cUSD…',
+    stakingJoin: 'Verrouillage de ta mise dans l’escrow…',
+    stakingHint: 'Confirme la transaction dans MiniPay',
+    stakeFailed: 'Mise non verrouillée — partie annulée',
+    noWallet: 'Aucun wallet détecté — mode démo (mises simulées)',
   },
   en: {
     play: 'PLAY ⚡',
@@ -111,6 +116,11 @@ const dict = {
     offline: 'Server unreachable — playing vs AI',
     reconnecting: 'Reconnecting… the game goes on, your clock is running.',
     connectionLost: 'Connection lost — back to the lobby',
+    stakingApprove: 'Approving cUSD…',
+    stakingJoin: 'Locking your stake in escrow…',
+    stakingHint: 'Confirm the transaction in MiniPay',
+    stakeFailed: 'Stake not locked — match cancelled',
+    noWallet: 'No wallet detected — demo mode (simulated stakes)',
   },
 } as const;
 

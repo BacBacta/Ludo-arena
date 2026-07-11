@@ -3,8 +3,18 @@
  * Official constraints: LEGACY transactions only, cUSD feeCurrency,
  * cUSD/USDC/USDT stablecoins. See docs/ARCHITECTURE.md §MiniPay.
  */
-import { createWalletClient, custom, type Address, type WalletClient } from 'viem';
-import { celo, celoAlfajores } from 'viem/chains';
+import {
+  createPublicClient,
+  createWalletClient,
+  custom,
+  http,
+  type Address,
+  type PublicClient,
+  type WalletClient,
+} from 'viem';
+import { activeChain } from './chains';
+import { deploymentForChain } from './deployments';
+import { stakeInEscrow, tokenBalanceCents, type StakeStatus } from './escrow';
 
 declare global {
   interface Window {
@@ -34,21 +44,60 @@ export function hasInjectedWallet(): boolean {
   return Boolean(window.ethereum);
 }
 
-export async function connectWallet(testnet = false): Promise<{ client: WalletClient; address: Address } | null> {
+export interface Wallet {
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+  address: Address;
+}
+
+/** Connects the injected wallet on the active chain. null when none is present. */
+export async function connectWallet(): Promise<Wallet | null> {
   if (!window.ethereum) return null;
-  const client = createWalletClient({
-    chain: testnet ? celoAlfajores : celo,
-    transport: custom(window.ethereum),
-  });
-  const [address] = await client.requestAddresses();
+  const walletClient = createWalletClient({ chain: activeChain, transport: custom(window.ethereum) });
+  const [address] = await walletClient.requestAddresses();
   if (!address) return null;
-  return { client, address };
+  const publicClient = createPublicClient({ chain: activeChain, transport: http() });
+  // Celo chains add custom tx/block formatters, so the inferred client types
+  // diverge from viem's plain Wallet/PublicClient; flatten at this boundary.
+  return {
+    walletClient: walletClient as unknown as WalletClient,
+    publicClient: publicClient as unknown as PublicClient,
+    address,
+  };
 }
 
 /**
- * Locks the stake in LudoEscrow (approve + join).
- * Full implementation: BACKLOG E3.2 (legacy tx, cUSD feeCurrency, UI states).
+ * Locks the stake in LudoEscrow for `gameId` (approve + join). Under MiniPay,
+ * gas is paid in cUSD via a legacy tx (feeCurrency). Resolves the escrow +
+ * token from deployments.json for the connected chain.
  */
-export async function stakeInEscrow(): Promise<never> {
-  throw new Error('Not implemented — see docs/BACKLOG.md E3.2');
+export async function lockStake(
+  wallet: Wallet,
+  gameId: string,
+  stakeCents: number,
+  onStatus?: (s: StakeStatus) => void,
+): Promise<void> {
+  const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
+  const dep = deploymentForChain(chainId);
+  if (!dep) throw new Error(`No LudoEscrow deployment for chain ${chainId}`);
+  await stakeInEscrow({
+    walletClient: wallet.walletClient,
+    publicClient: wallet.publicClient,
+    account: wallet.address,
+    escrow: dep.escrow,
+    token: dep.stablecoin,
+    gameId,
+    stakeCents,
+    // MiniPay pays gas in cUSD; on Celo Sepolia the stake token doubles as gas token
+    feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
+    onStatus,
+  });
+}
+
+/** Wallet stake-token balance in USD cents, or null if the chain has no deployment. */
+export async function walletBalanceCents(wallet: Wallet): Promise<number | null> {
+  const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
+  const dep = deploymentForChain(chainId);
+  if (!dep) return null;
+  return tokenBalanceCents(wallet.publicClient, dep.stablecoin, wallet.address);
 }

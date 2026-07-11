@@ -30,6 +30,24 @@ export function Toast() {
   return <div className="toast">{toast}</div>;
 }
 
+export function StakingOverlay() {
+  const { staking, match } = useAppState();
+  if (staking !== 'approving' && staking !== 'joining') return null;
+  return (
+    <div className="modal">
+      <div className="modal__card" style={{ textAlign: 'center' }}>
+        <div className="spinner" style={{ margin: '4px auto 12px' }} />
+        <h3>{staking === 'approving' ? t('stakingApprove') : t('stakingJoin')}</h3>
+        {match && (
+          <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+            {fmtCents(match.stakeCents)} $ · {t('stakingHint')}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function FairnessModal() {
   const { fairModalOpen, match, result } = useAppState();
   const dispatch = useAppDispatch();

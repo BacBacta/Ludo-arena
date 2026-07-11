@@ -8,5 +8,6 @@ export default defineConfig({
     // MiniPay budget: watch the size (AGENTS.md rule 4)
     chunkSizeWarningLimit: 300,
   },
-  server: { port: 5173 },
+  // deployments.json lives in packages/contracts (single source of truth)
+  server: { port: 5173, fs: { allow: ['../..'] } },
 });
