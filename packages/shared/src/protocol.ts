@@ -143,6 +143,7 @@ export type ServerMsg =
       league?: LeagueState;
       cashbackCents?: number; // accumulated anti-tilt cashback (E4.5)
       limits?: LimitsState; // responsible-gaming state (E5.2)
+      stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
     }
   | { t: 'queue.ok'; position: number }
   // Private table created (E4.4); share `code` with a friend to join.

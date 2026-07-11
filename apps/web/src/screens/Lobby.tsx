@@ -10,12 +10,13 @@ export function Lobby({
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, cashbackCents, limits, balanceCents } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, cashbackCents, limits, stakingBlocked, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
 
-  /** Responsible-gaming gate (E5.2), also enforced server-side. */
+  /** Compliance + responsible-gaming gate, also enforced server-side. */
   function stakeBlockedMsg(): string | null {
     if (stakeCents === 0) return null;
+    if (stakingBlocked) return t('geoBlocked');
     if (limits.selfExcludedUntil) return `${t('rgExcludedUntil')} ${limits.selfExcludedUntil}`;
     if (limits.stakedTodayCents + stakeCents > limits.dailyLimitCents) return t('rgLimitHit');
     if (balanceCents < stakeCents) return t('insufficient');
@@ -60,6 +61,8 @@ export function Lobby({
           </div>
         )}
       </div>
+
+      {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
       <div className="card">
         <h3>{t('chooseStake')}</h3>

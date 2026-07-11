@@ -99,6 +99,7 @@ export default function App() {
         if (cents > 0) dispatch({ type: 'TOAST', message: `💛 ${t('cashbackToast')} +${(cents / 100).toFixed(2)} $` });
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
+      onGeo: (stakingBlocked) => dispatch({ type: 'GEO', stakingBlocked }),
       onRefunded: (txHash) => {
         dispatch({ type: 'REFUNDED', txHash });
         dispatch({ type: 'TOAST', message: t('refunded') });

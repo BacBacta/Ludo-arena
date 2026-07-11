@@ -56,6 +56,19 @@ interface Session extends Client {
   seat: Seat | null;
   alive: boolean;
   fingerprint?: string; // device fingerprint from hello (E5.3)
+  country?: string; // ISO country from the CDN header (E5.4)
+}
+
+// Geo-gating (E5.4): ISO country codes where staked play is disabled.
+const BLOCKED_COUNTRIES = new Set(
+  (process.env.BLOCKED_COUNTRIES ?? '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean),
+);
+function countryOf(headers: Record<string, string | string[] | undefined>): string | undefined {
+  const c = headers['cf-ipcountry'] ?? headers['x-vercel-ip-country'] ?? headers['x-country'];
+  return typeof c === 'string' && c.length === 2 ? c.toUpperCase() : undefined;
+}
+function isGeoBlocked(country: string | undefined): boolean {
+  return country !== undefined && BLOCKED_COUNTRIES.has(country);
 }
 
 const store = await createStore();
@@ -306,6 +319,7 @@ let connSeq = 0;
 
 wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress ?? 'unknown';
+  const country = countryOf(req.headers);
   if (limiter.isBanned(ip)) {
     send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Temporarily banned. Try again later.' });
     ws.close();
@@ -351,6 +365,7 @@ wss.on('connection', (ws, req) => {
       if (resumedSession) {
         session = resumedSession;
         if (msg.fingerprint) resumedSession.fingerprint = msg.fingerprint;
+        resumedSession.country = country;
         const rpid = playerId(resumedSession.wallet, resumedSession.id);
         send(ws, {
           t: 'hello.ok',
@@ -362,6 +377,7 @@ wss.on('connection', (ws, req) => {
           league: await store.getLeague(rpid),
           cashbackCents: await store.getCashback(rpid),
           limits: await store.getLimits(rpid, utcToday()),
+          stakingBlocked: isGeoBlocked(country),
         });
         return;
       }
@@ -383,6 +399,7 @@ wss.on('connection', (ws, req) => {
         stake: null,
       });
       session.fingerprint = msg.fingerprint;
+      session.country = country;
       sessions.set(id, session);
       persistSession(session);
       const pid = playerId(msg.wallet, id);
@@ -392,7 +409,7 @@ wss.on('connection', (ws, req) => {
       const league = await store.getLeague(pid);
       const cashbackCents = await store.getCashback(pid);
       const limits = await store.getLimits(pid, utcToday());
-      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, cashbackCents, limits });
+      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, cashbackCents, limits, stakingBlocked: isGeoBlocked(country) });
       return;
     }
 
@@ -578,6 +595,7 @@ async function collusionBlock(a: Session, b: Session, stake: StakeCents): Promis
 /** Responsible-gaming gate (E5.2): message if this stake must be blocked, else null. */
 async function stakeBlock(session: Session, stake: StakeCents): Promise<string | null> {
   if (stake <= 0) return null;
+  if (isGeoBlocked(session.country)) return 'Staked games are not available in your region.';
   const limits = await store.getLimits(playerId(session.wallet, session.id), utcToday());
   if (limits.selfExcludedUntil) return `Self-excluded until ${limits.selfExcludedUntil}.`;
   if (limits.stakedTodayCents + stake > limits.dailyLimitCents) {

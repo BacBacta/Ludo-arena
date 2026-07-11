@@ -11,6 +11,7 @@
     "reconnect-test": "tsx scripts/reconnectTest.ts",
     "abuse-test": "tsx scripts/abuseTest.ts",
     "private-table-test": "tsx scripts/privateTableTest.ts",
+    "geo-test": "tsx scripts/geoTest.ts",
     "settle-verify": "tsx scripts/settleVerify.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

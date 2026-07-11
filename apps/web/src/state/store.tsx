@@ -74,6 +74,8 @@ export interface AppState {
   cashbackCents: number;
   /** Responsible-gaming limits (E5.2). */
   limits: LimitsState;
+  /** Geo-gating (E5.4): staked play disabled in this region. */
+  stakingBlocked: boolean;
   match: MatchInfo | null;
   game: GameState | null;
   lastDice: { value: number; index: number; seat: Seat } | null;
@@ -106,6 +108,7 @@ export const initialState: AppState = {
   tickets: loadRetention().tickets,
   cashbackCents: loadRetention().cashbackCents,
   limits: loadRetention().limits,
+  stakingBlocked: false,
   match: null,
   game: null,
   lastDice: null,
@@ -143,6 +146,7 @@ export type Action =
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'CASHBACK'; totalCents: number }
   | { type: 'LIMITS_UPDATE'; limits: LimitsState }
+  | { type: 'GEO'; stakingBlocked: boolean }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
@@ -215,6 +219,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, cashbackCents: a.totalCents };
     case 'LIMITS_UPDATE':
       return { ...s, limits: a.limits };
+    case 'GEO':
+      return { ...s, stakingBlocked: a.stakingBlocked };
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':

@@ -64,6 +64,8 @@ export interface SessionEvents {
   onCashback(cents: number, totalCents: number): void;
   /** Responsible-gaming limits (E5.2). */
   onLimits(limits: LimitsState): void;
+  /** Geo-gating (E5.4): staked play disabled in this region. */
+  onGeo(stakingBlocked: boolean): void;
   /** The socket dropped mid-game; the session is retrying in the background. */
   onReconnecting(): void;
   /** Reconnected: full match context + state resync. */
@@ -358,6 +360,7 @@ export class RemoteSession implements GameSession {
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.cashbackCents !== undefined) this.ev.onCashback(0, msg.cashbackCents);
         if (msg.limits) this.ev.onLimits(msg.limits);
+        if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
         if (msg.resumed) {
           this.inGame = true;
           this.ev.onResumed(msg.resumed, msg.resumed.state);
