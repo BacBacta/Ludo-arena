@@ -32,6 +32,12 @@ try {
   // no .env file: rely on the ambient environment
 }
 
+/** .env template lines like `ARBITER_ADDRESS=` yield '' — treat empty as unset. */
+function env(name: string): string | undefined {
+  const v = process.env[name];
+  return v && v.trim() !== '' ? v : undefined;
+}
+
 // Hardhat/anvil default account #0 — local development only.
 const LOCAL_DEV_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 
@@ -90,28 +96,28 @@ const NETWORKS: Record<string, NetworkPreset> = {
   },
 };
 
-const networkName = process.env.NETWORK ?? 'localhost';
+const networkName = env('NETWORK') ?? 'localhost';
 const preset = NETWORKS[networkName];
 if (!preset) {
   console.error(`Unknown NETWORK '${networkName}'. Options: ${Object.keys(NETWORKS).join(', ')}`);
   process.exit(1);
 }
 
-const pk = (process.env.DEPLOYER_PRIVATE_KEY ??
-  (networkName === 'localhost' ? LOCAL_DEV_KEY : '')) as Hex;
-if (!pk) {
+const rawPk = env('DEPLOYER_PRIVATE_KEY') ?? (networkName === 'localhost' ? LOCAL_DEV_KEY : '');
+if (!rawPk) {
   console.error('DEPLOYER_PRIVATE_KEY is required for public networks (fund it on a faucet first).');
   process.exit(1);
 }
+const pk = (rawPk.startsWith('0x') ? rawPk : `0x${rawPk}`) as Hex;
 
 const account = privateKeyToAccount(pk);
-const rpc = process.env[preset.rpcEnv] ?? preset.defaultRpc;
+const rpc = env(preset.rpcEnv) ?? preset.defaultRpc;
 const publicClient = createPublicClient({ chain: preset.chain, transport: http(rpc) });
 const walletClient = createWalletClient({ account, chain: preset.chain, transport: http(rpc) });
 
-const arbiter = (process.env.ARBITER_ADDRESS ?? account.address) as Address;
-const treasury = (process.env.TREASURY_ADDRESS ?? account.address) as Address;
-const rakeBps = BigInt(process.env.RAKE_BPS ?? '900');
+const arbiter = (env('ARBITER_ADDRESS') ?? account.address) as Address;
+const treasury = (env('TREASURY_ADDRESS') ?? account.address) as Address;
+const rakeBps = BigInt(env('RAKE_BPS') ?? '900');
 
 console.log(`[deploy] network=${networkName} chainId=${preset.chain.id} rpc=${rpc}`);
 console.log(`[deploy] deployer=${account.address} arbiter=${arbiter} treasury=${treasury} rakeBps=${rakeBps}`);
@@ -128,7 +134,7 @@ async function deployContract(label: string, abi: typeof LudoEscrow.abi, bytecod
   return { address: receipt.contractAddress, txHash };
 }
 
-let stablecoin = (process.env.STABLECOIN ?? preset.stablecoin) as Address | undefined;
+let stablecoin = (env('STABLECOIN') ?? preset.stablecoin) as Address | undefined;
 let stablecoinTx: Hex | undefined;
 if (!stablecoin) {
   const deployed = await deployContract('TestUSD', TestUSD.abi, TestUSD.bytecode, []);
@@ -142,12 +148,26 @@ const escrow = await deployContract('LudoEscrow', LudoEscrow.abi, LudoEscrow.byt
   rakeBps,
 ]);
 
-// read back the immutables: fail loudly if the chain state disagrees
-const [onArbiter, onTreasury, onRake] = await Promise.all([
-  publicClient.readContract({ address: escrow.address, abi: LudoEscrow.abi, functionName: 'arbiter' }),
-  publicClient.readContract({ address: escrow.address, abi: LudoEscrow.abi, functionName: 'treasury' }),
-  publicClient.readContract({ address: escrow.address, abi: LudoEscrow.abi, functionName: 'rakeBps' }),
-]);
+// read back the immutables: fail loudly if the chain state disagrees.
+// Retried: load-balanced public RPCs may serve the read from a node that
+// has not seen the deployment block yet.
+async function readBack(functionName: string): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      return await publicClient.readContract({ address: escrow.address, abi: LudoEscrow.abi, functionName });
+    } catch (e) {
+      lastError = e;
+      await new Promise((r) => setTimeout(r, 2_000));
+    }
+  }
+  throw lastError;
+}
+const [onArbiter, onTreasury, onRake] = [
+  await readBack('arbiter'),
+  await readBack('treasury'),
+  await readBack('rakeBps'),
+];
 if (
   String(onArbiter).toLowerCase() !== arbiter.toLowerCase() ||
   String(onTreasury).toLowerCase() !== treasury.toLowerCase() ||

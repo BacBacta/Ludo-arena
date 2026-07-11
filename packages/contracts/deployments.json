@@ -10,5 +10,17 @@
     "treasury": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "rakeBps": 900,
     "deployedAt": "2026-07-11T16:30:28.475Z"
+  },
+  "celo-sepolia": {
+    "chainId": 11142220,
+    "escrow": "0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6",
+    "escrowTx": "0x2f03f33c86edb8d1d5dce947936719ad0f77f3794c5d1b5cfd040d9fc82dd774",
+    "stablecoin": "0x964cfee68776bb2aaeab8c8324600ec27650233f",
+    "stablecoinIsTestUSD": true,
+    "stablecoinTx": "0xe6c1f573b7c33e42cf870ed6177e11bdae6cea619c648fedb716f1106284dfe3",
+    "arbiter": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
+    "treasury": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
+    "rakeBps": 900,
+    "deployedAt": "2026-07-11T16:52:40.167Z"
   }
 }
