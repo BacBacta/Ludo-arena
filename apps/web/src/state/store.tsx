@@ -15,6 +15,7 @@ import {
   type StreakState,
 } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
+import { setSoundEnabled, soundEnabled } from '../lib/sound';
 
 const CACHE_KEY = 'ludo.retention';
 
@@ -95,6 +96,7 @@ export interface AppState {
   toast: string | null;
   fairModalOpen: boolean;
   settingsOpen: boolean;
+  soundOn: boolean;
 }
 
 export const initialState: AppState = {
@@ -124,6 +126,7 @@ export const initialState: AppState = {
   toast: null,
   fairModalOpen: false,
   settingsOpen: false,
+  soundOn: soundEnabled(),
 };
 
 export type Action =
@@ -152,7 +155,8 @@ export type Action =
   | { type: 'TOAST'; message: string }
   | { type: 'CLEAR_TOAST' }
   | { type: 'FAIR_MODAL'; open: boolean }
-  | { type: 'SETTINGS'; open: boolean };
+  | { type: 'SETTINGS'; open: boolean }
+  | { type: 'TOGGLE_SOUND' };
 
 export function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
@@ -240,6 +244,11 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, fairModalOpen: a.open };
     case 'SETTINGS':
       return { ...s, settingsOpen: a.open };
+    case 'TOGGLE_SOUND': {
+      const soundOn = !s.soundOn;
+      setSoundEnabled(soundOn);
+      return { ...s, soundOn };
+    }
     default:
       return s;
   }

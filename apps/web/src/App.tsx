@@ -15,6 +15,7 @@ import { EndScreen } from './screens/EndScreen';
 import { FairnessModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
 import { sendLimits } from './lib/session';
 import { connectWallet, lockStake, walletBalanceCents, type Wallet } from './lib/minipay';
+import { playCapture, playDice, playWin } from './lib/sound';
 import { t } from './lib/i18n';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
@@ -24,6 +25,7 @@ export default function App() {
   const dispatch = useAppDispatch();
   const sessionRef = useRef<GameSession | null>(null);
   const walletRef = useRef<Wallet | null>(null);
+  const matchSeatRef = useRef<number>(0);
 
   // Persist the latest retention state so the lobby shows it before reconnecting.
   useEffect(() => {
@@ -69,14 +71,22 @@ export default function App() {
   const makeEvents = useCallback((): SessionEvents => {
     return {
       onMatchFound: (match) => {
+        matchSeatRef.current = match.seat;
         dispatch({ type: 'MATCH_FOUND', match });
         if (match.stakeCents > 0) void stakeForMatch(match.gameId, match.stakeCents);
       },
       onState: (game) => dispatch({ type: 'GAME_STATE', game }),
-      onDice: (value, index, seat) => dispatch({ type: 'DICE', value, index, seat }),
-      onMoved: (game, capture) => dispatch({ type: 'MOVED', game, capture }),
+      onDice: (value, index, seat) => {
+        playDice();
+        dispatch({ type: 'DICE', value, index, seat });
+      },
+      onMoved: (game, capture) => {
+        if (capture) playCapture();
+        dispatch({ type: 'MOVED', game, capture });
+      },
       onTurn: (seat, deadlineTs) => dispatch({ type: 'TURN', seat, deadlineTs }),
       onOver: (result) => {
+        if (result.winner === (matchSeatRef.current ?? 0)) playWin();
         dispatch({ type: 'GAME_OVER', result });
         if (walletRef.current) void refreshBalance(walletRef.current);
       },
@@ -106,7 +116,10 @@ export default function App() {
         if (walletRef.current) void refreshBalance(walletRef.current);
       },
       onReconnecting: () => dispatch({ type: 'RECONNECTING' }),
-      onResumed: (match, game) => dispatch({ type: 'RESUME', match, game }),
+      onResumed: (match, game) => {
+        matchSeatRef.current = match.seat;
+        dispatch({ type: 'RESUME', match, game });
+      },
       onGone: () => {
         dispatch({ type: 'TOAST', message: t('connectionLost') });
         dispatch({ type: 'GO_LOBBY' });

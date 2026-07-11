@@ -5,15 +5,25 @@ import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { t } from '../lib/i18n';
 
 export function TopBar() {
-  const { balanceCents } = useAppState();
+  const { balanceCents, soundOn } = useAppState();
+  const dispatch = useAppDispatch();
   return (
     <div className="topbar">
       <div className="topbar__logo">
         LUDO <span>ARENA</span>
       </div>
-      <div className="topbar__balance">
-        <span className="topbar__dot" />
-        {fmtCents(balanceCents)} cUSD
+      <div className="topbar__right">
+        <button
+          className="soundtoggle"
+          title={soundOn ? t('soundOn') : t('soundOff')}
+          onClick={() => dispatch({ type: 'TOGGLE_SOUND' })}
+        >
+          {soundOn ? '🔊' : '🔈'}
+        </button>
+        <div className="topbar__balance">
+          <span className="topbar__dot" />
+          {fmtCents(balanceCents)} cUSD
+        </div>
       </div>
     </div>
   );

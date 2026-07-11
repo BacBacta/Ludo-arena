@@ -310,6 +310,14 @@ small.muted { font-size: 12px; }
   margin: 8px 0;
   color: var(--muted);
 }
+.topbar__right { display: flex; align-items: center; gap: 8px; }
+.soundtoggle {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
 .verify {
   margin: 10px 0;
   padding: 8px;
