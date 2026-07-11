@@ -1,5 +1,5 @@
 import { DIVISIONS } from '@ludo/shared';
-import { fmtCents, useAppDispatch, useAppState } from '../state/store';
+import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { activeChain } from '../lib/chains';
 import { t } from '../lib/i18n';
 
@@ -22,8 +22,8 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
         <div className="end__amount">
           {staked
             ? won
-              ? `+${fmtCents(result.payoutCents)} $`
-              : `−${fmtCents(match.stakeCents)} $`
+              ? `+${fmtUsd(result.payoutCents)}`
+              : `−${fmtUsd(match.stakeCents)}`
             : won
               ? '+50 XP'
               : '+20 XP'}
@@ -34,7 +34,7 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
           ) : won ? (
             <>
               <b>{t('paidInstant')}</b> {t('onWallet')} · {t('rakeIncluded')} (
-              {fmtCents(result.rakeCents)} $)
+              {fmtUsd(result.rakeCents)})
             </>
           ) : (
             t('lossSafety')

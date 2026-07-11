@@ -7,7 +7,7 @@ import {
   type JoinIntent,
   type SessionEvents,
 } from './lib/session';
-import { saveRetention, useAppDispatch, useAppState } from './state/store';
+import { fmtUsd, saveRetention, useAppDispatch, useAppState } from './state/store';
 import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
@@ -106,7 +106,7 @@ export default function App() {
       onTableCreated: (code) => dispatch({ type: 'TABLE_CREATED', code }),
       onCashback: (cents, totalCents) => {
         dispatch({ type: 'CASHBACK', totalCents });
-        if (cents > 0) dispatch({ type: 'TOAST', message: `💛 ${t('cashbackToast')} +${(cents / 100).toFixed(2)} $` });
+        if (cents > 0) dispatch({ type: 'TOAST', message: `💛 ${t('cashbackToast')} +${fmtUsd(cents)}` });
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
       onGeo: (stakingBlocked) => dispatch({ type: 'GEO', stakingBlocked }),

@@ -1,6 +1,6 @@
 /** Small cross-cutting UI components: TopBar, Toast, FairnessModal. */
 import { useEffect, useState } from 'react';
-import { fmtCents, useAppDispatch, useAppState } from '../state/store';
+import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { t } from '../lib/i18n';
 
@@ -65,12 +65,12 @@ export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?
               className={`stake${c === limits.dailyLimitCents ? ' stake--sel' : ''}`}
               onClick={() => onApply({ dailyLimitCents: c })}
             >
-              <b>{(c / 100).toFixed(2)}$</b>
+              <b>{fmtUsd(c)}</b>
             </div>
           ))}
         </div>
         <small className="muted">
-          {t('rgStakedToday')} {(limits.stakedTodayCents / 100).toFixed(2)}$ / {(limits.dailyLimitCents / 100).toFixed(2)}$
+          {t('rgStakedToday')} {fmtUsd(limits.stakedTodayCents)} / {fmtUsd(limits.dailyLimitCents)}
         </small>
 
         <div style={{ margin: '14px 0 4px', fontWeight: 700 }}>{t('rgSelfExclude')}</div>
@@ -132,7 +132,7 @@ export function StakingOverlay() {
         <h3>{staking === 'approving' ? t('stakingApprove') : t('stakingJoin')}</h3>
         {match && (
           <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
-            {fmtCents(match.stakeCents)} $ · {t('stakingHint')}
+            {fmtUsd(match.stakeCents)} · {t('stakingHint')}
           </div>
         )}
       </div>

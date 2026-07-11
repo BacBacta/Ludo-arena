@@ -481,8 +481,26 @@ const dict = { en, fr, pt, es, sw } as const;
 
 export type Lang = keyof typeof dict;
 
-const nav = (typeof navigator !== 'undefined' ? navigator.language : 'en').toLowerCase().slice(0, 2);
-export const lang: Lang = nav in dict ? (nav as Lang) : 'en';
+/**
+ * English by default (product requirement); other locales opt-in via
+ * ?lang=fr|pt|es|sw (persisted) — no silent browser-language switching.
+ */
+function resolveLang(): Lang {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('lang');
+    if (fromUrl && fromUrl in dict) {
+      localStorage.setItem('ludo.lang', fromUrl);
+      return fromUrl as Lang;
+    }
+    const stored = localStorage.getItem('ludo.lang');
+    if (stored && stored in dict) return stored as Lang;
+  } catch {
+    /* SSR/storage unavailable */
+  }
+  return 'en';
+}
+
+export const lang: Lang = resolveLang();
 
 export function t(key: TKey): string {
   return dict[lang][key] ?? en[key];

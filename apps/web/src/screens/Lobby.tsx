@@ -1,5 +1,5 @@
 import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@ludo/shared';
-import { fmtCents, useAppDispatch, useAppState } from '../state/store';
+import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { TopBar } from '../components/ui';
 import { t } from '../lib/i18n';
 
@@ -73,8 +73,8 @@ export function Lobby({
               className={`stake${s === stakeCents ? ' stake--sel' : ''}${s === 0 ? ' stake--free' : ''}`}
               onClick={() => dispatch({ type: 'SELECT_STAKE', stake: s })}
             >
-              <b>{s === 0 ? t('free') : `${fmtCents(s)}$`}</b>
-              <small>{s === 0 ? t('training') : `${t('win')} ${fmtCents(potCents(s))}$`}</small>
+              <b>{s === 0 ? t('free') : fmtUsd(s)}</b>
+              <small>{s === 0 ? t('training') : `${t('win')} ${fmtUsd(potCents(s))}`}</small>
             </div>
           ))}
         </div>
@@ -86,7 +86,7 @@ export function Lobby({
 
       {cashbackCents > 0 && (
         <div className="cashback">
-          💛 {t('cashbackHeld')} <b>{fmtCents(cashbackCents)} $</b>
+          💛 {t('cashbackHeld')} <b>{fmtUsd(cashbackCents)}</b>
         </div>
       )}
 

@@ -300,3 +300,8 @@ export function useAppDispatch(): Dispatch<Action> {
 export function fmtCents(cents: number): string {
   return (cents / 100).toFixed(2);
 }
+
+/** English money format: $0.25 (symbol first). */
+export function fmtUsd(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}

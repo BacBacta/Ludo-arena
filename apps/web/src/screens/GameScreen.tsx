@@ -1,4 +1,4 @@
-import { fmtCents, useAppDispatch, useAppState } from '../state/store';
+import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { Board } from '../components/Board';
 import { t } from '../lib/i18n';
 
@@ -31,7 +31,7 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
           {t('you')}
         </div>
         <div className="pot">
-          {match.stakeCents > 0 ? `${t('pot')} ${fmtCents(match.potCents)} $` : t('training')}
+          {match.stakeCents > 0 ? `${t('pot')} ${fmtUsd(match.potCents)}` : t('training')}
         </div>
         <div className={`player${game.turn !== mySeat ? ' player--turn' : ''}`}>
           <div className="player__chip" style={{ background: 'var(--opp)' }}>
