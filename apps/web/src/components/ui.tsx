@@ -96,6 +96,32 @@ export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?
   );
 }
 
+export function WelcomeModal({ onStartFree }: { onStartFree(): void }) {
+  const { onboardOpen } = useAppState();
+  const dispatch = useAppDispatch();
+  if (!onboardOpen) return null;
+  return (
+    <div className="modal" onClick={() => dispatch({ type: 'ONBOARD_DONE' })}>
+      <div className="modal__card" style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+        <h3>{t('welcomeTitle')}</h3>
+        <p style={{ fontSize: 14, margin: '8px 0 14px' }}>{t('welcomeBody')}</p>
+        <button
+          className="btn"
+          onClick={() => {
+            dispatch({ type: 'ONBOARD_DONE' });
+            onStartFree();
+          }}
+        >
+          {t('welcomeCta')}
+        </button>
+        <div style={{ marginTop: 10 }} className="muted">
+          {t('closeHint')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function StakingOverlay() {
   const { staking, match } = useAppState();
   if (staking !== 'approving' && staking !== 'joining') return null;

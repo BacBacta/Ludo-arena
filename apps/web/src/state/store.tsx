@@ -97,6 +97,24 @@ export interface AppState {
   fairModalOpen: boolean;
   settingsOpen: boolean;
   soundOn: boolean;
+  /** First-session welcome (E6.4): open until the player has been onboarded. */
+  onboardOpen: boolean;
+}
+
+const ONBOARD_KEY = 'ludo.onboarded';
+function firstSession(): boolean {
+  try {
+    return localStorage.getItem(ONBOARD_KEY) !== '1';
+  } catch {
+    return false;
+  }
+}
+function markOnboarded(): void {
+  try {
+    localStorage.setItem(ONBOARD_KEY, '1');
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export const initialState: AppState = {
@@ -127,6 +145,7 @@ export const initialState: AppState = {
   fairModalOpen: false,
   settingsOpen: false,
   soundOn: soundEnabled(),
+  onboardOpen: firstSession(),
 };
 
 export type Action =
@@ -156,7 +175,8 @@ export type Action =
   | { type: 'CLEAR_TOAST' }
   | { type: 'FAIR_MODAL'; open: boolean }
   | { type: 'SETTINGS'; open: boolean }
-  | { type: 'TOGGLE_SOUND' };
+  | { type: 'TOGGLE_SOUND' }
+  | { type: 'ONBOARD_DONE' };
 
 export function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
@@ -249,6 +269,9 @@ export function reducer(s: AppState, a: Action): AppState {
       setSoundEnabled(soundOn);
       return { ...s, soundOn };
     }
+    case 'ONBOARD_DONE':
+      markOnboarded();
+      return { ...s, onboardOpen: false };
     default:
       return s;
   }

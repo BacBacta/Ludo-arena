@@ -12,7 +12,7 @@ import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
 import { EndScreen } from './screens/EndScreen';
-import { FairnessModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
+import { FairnessModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits } from './lib/session';
 import { connectWallet, lockStake, walletBalanceCents, type Wallet } from './lib/minipay';
 import { playCapture, playDice, playWin } from './lib/sound';
@@ -231,6 +231,7 @@ export default function App() {
       {state.screen === 'matchmaking' && <Matchmaking />}
       {state.screen === 'game' && <GameScreen onRoll={roll} onMove={move} />}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
+      <WelcomeModal onStartFree={() => startMatch(0)} />
       <StakingOverlay />
       <FairnessModal />
       <SettingsModal onApply={applyLimits} />
