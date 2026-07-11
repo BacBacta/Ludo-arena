@@ -77,10 +77,20 @@ export type ClientMsg =
   | { t: 'hello'; wallet?: string; sessionToken?: string; entropy: string }
   | { t: 'queue.join'; stake: StakeCents }
   | { t: 'queue.leave' }
+  // Private tables (E4.4): create returns a code; a friend joins with it.
+  | { t: 'table.create'; stake: StakeCents }
+  | { t: 'table.join'; code: string }
   | { t: 'game.roll' }
   | { t: 'game.move'; token: number }
   | { t: 'game.rematch' }
   | { t: 'ping' };
+
+/** Private-table code: unambiguous charset, fixed length. */
+export const TABLE_CODE_LEN = 6;
+export const TABLE_CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export function isTableCode(s: string): boolean {
+  return s.length === TABLE_CODE_LEN && [...s].every((c) => TABLE_CODE_CHARS.includes(c));
+}
 
 // ---------- Server -> Client ----------
 
@@ -106,6 +116,8 @@ export interface ResumedGame {
 export type ServerMsg =
   | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame; challenge?: ChallengeState; streak?: StreakState; league?: LeagueState }
   | { t: 'queue.ok'; position: number }
+  // Private table created (E4.4); share `code` with a friend to join.
+  | { t: 'table.created'; code: string; stakeCents: StakeCents }
   | {
       t: 'match.found';
       gameId: string;
@@ -157,6 +169,7 @@ export type ErrorCode =
   | 'BAD_MESSAGE'
   | 'LIMIT_REACHED'
   | 'INSUFFICIENT_ESCROW'
+  | 'TABLE_NOT_FOUND'
   | 'INTERNAL';
 
 // ---------- Helpers ----------
@@ -178,7 +191,10 @@ export function parseClientMsg(raw: string): ClientMsg | null {
         ? m
         : null;
     case 'queue.join':
+    case 'table.create':
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
+    case 'table.join':
+      return typeof m.code === 'string' && isTableCode(m.code) ? m : null;
     case 'game.move':
       return Number.isInteger(m.token) && m.token >= 0 && m.token <= 3 ? m : null;
     case 'queue.leave':

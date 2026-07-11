@@ -9,6 +9,8 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `hello` | `{ wallet?, sessionToken?, entropy }` | First frame. `entropy` = 32 random hex bytes (client share of commit-reveal). `sessionToken` to resume an in-progress game. |
 | `queue.join` | `{ stake }` | Joins the queue (stake in dollar cents: 0, 10, 25, 50, 100, 200). |
 | `queue.leave` | `{}` | Leaves the queue. |
+| `table.create` | `{ stake }` | Creates a private table (E4.4); server replies `table.created` with a shareable code. |
+| `table.join` | `{ code }` | Joins a private table by its 6-char code; pairs with the host or returns `error TABLE_NOT_FOUND`. |
 | `game.roll` | `{}` | Requests the roll (if it is their turn and phase is `awaiting-roll`). |
 | `game.move` | `{ token }` | Plays token `token` (0 or 1). |
 | `game.rematch` | `{}` | Offers a same-stake rematch. |
@@ -20,6 +22,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 |---|---|---|
 | `hello.ok` | `{ sessionToken, elo, resumed?, challenge?, streak?, league? }` | Session established. If a game is in progress, `resumed` = `{ gameId, seat, state, stakeCents, potCents, opponent, fairnessCommit }` — everything needed to rebuild the game screen after a reconnection or a server restart. `challenge` = daily-challenge state (E4.1); `streak` = login-streak state (E4.2); `league` = weekly-league standings + top-5 board (E4.3). |
 | `queue.ok` | `{ position }` | Queued. |
+| `table.created` | `{ code, stakeCents }` | Private table created (E4.4); share `code` with a friend. |
 | `match.found` | `{ gameId, seat, opponent: { name, elo, flag }, stakeCents, potCents, fairnessCommit }` | Match found. `fairnessCommit` = hash of the server seed, to display. |
 | `game.state` | `{ state }` | Full state (resync, game start). `state` = engine `GameState`. |
 | `game.dice` | `{ value, index, seat }` | Roll result (index = roll number, verifiable). |

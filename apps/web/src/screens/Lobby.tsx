@@ -3,9 +3,23 @@ import { fmtCents, useAppDispatch, useAppState } from '../state/store';
 import { TopBar } from '../components/ui';
 import { t } from '../lib/i18n';
 
-export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
+export function Lobby({
+  onPlay,
+  onCreateTable,
+}: {
+  onPlay(stake: StakeCents): void;
+  onCreateTable(stake: StakeCents): void;
+}) {
   const { stakeCents, streak, challenge, league, tickets, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
+
+  function createTable() {
+    if (stakeCents > 0 && balanceCents < stakeCents) {
+      dispatch({ type: 'TOAST', message: t('insufficient') });
+      return;
+    }
+    onCreateTable(stakeCents);
+  }
 
   const lobbyStakes = ALLOWED_STAKES_CENTS.filter((s) => s <= 100);
 
@@ -63,7 +77,7 @@ export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
           <b>{t('freeroll')}</b>
           {t('freerollDesc')}
         </div>
-        <div className="mini">
+        <div className="mini mini--action" onClick={createTable}>
           <b>{t('privateTable')}</b>
           {t('privateTableDesc')}
         </div>

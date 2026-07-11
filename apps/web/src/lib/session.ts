@@ -56,6 +56,8 @@ export interface SessionEvents {
   onStreak(streak: StreakState): void;
   /** Weekly league standings (E4.3). */
   onLeague(league: LeagueState): void;
+  /** Private table created (E4.4): share the code with a friend. */
+  onTableCreated(code: string, stakeCents: StakeCents): void;
   /** The socket dropped mid-game; the session is retrying in the background. */
   onReconnecting(): void;
   /** Reconnected: full match context + state resync. */
@@ -172,6 +174,12 @@ export class LocalBotSession implements GameSession {
 
 // ---------------------------------------------------------------- Remote (ws)
 
+/** What the session does after hello (E4.4 adds private tables). */
+export type JoinIntent =
+  | { kind: 'queue' }
+  | { kind: 'create' }
+  | { kind: 'join'; code: string };
+
 const TOKEN_KEY = 'ludo.sessionToken';
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
@@ -191,6 +199,8 @@ export class RemoteSession implements GameSession {
     private readonly onUnavailable: () => void,
     /** Wallet address to settle to on-chain (E3.3); sent in hello. */
     private readonly walletAddress?: string,
+    /** What to do after hello: join the queue (default) or a private table. */
+    private readonly intent: JoinIntent = { kind: 'queue' },
   ) {
     this.entropy = (() => {
       const b = new Uint8Array(32);
@@ -215,7 +225,11 @@ export class RemoteSession implements GameSession {
         sessionToken: this.token() ?? undefined,
         wallet: this.walletAddress,
       });
-      if (initial) this.send({ t: 'queue.join', stake: this.stakeCents });
+      if (initial) {
+        if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });
+        else if (this.intent.kind === 'join') this.send({ t: 'table.join', code: this.intent.code });
+        else this.send({ t: 'queue.join', stake: this.stakeCents });
+      }
     };
     ws.onclose = () => {
       clearTimeout(failTimer);
@@ -316,6 +330,9 @@ export class RemoteSession implements GameSession {
         break;
       case 'league.update':
         this.ev.onLeague(msg.league);
+        break;
+      case 'table.created':
+        this.ev.onTableCreated(msg.code, msg.stakeCents);
         break;
       case 'error':
         this.ev.onInfo(msg.message);

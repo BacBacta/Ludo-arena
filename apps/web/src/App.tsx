@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { StakeCents } from '@ludo/shared';
-import { LocalBotSession, RemoteSession, type GameSession, type SessionEvents } from './lib/session';
+import {
+  LocalBotSession,
+  RemoteSession,
+  type GameSession,
+  type JoinIntent,
+  type SessionEvents,
+} from './lib/session';
 import { saveRetention, useAppDispatch, useAppState } from './state/store';
 import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
@@ -79,6 +85,7 @@ export default function App() {
         }
       },
       onSettled: (txHash) => dispatch({ type: 'SETTLED', txHash }),
+      onTableCreated: (code) => dispatch({ type: 'TABLE_CREATED', code }),
       onRefunded: (txHash) => {
         dispatch({ type: 'REFUNDED', txHash });
         dispatch({ type: 'TOAST', message: t('refunded') });
@@ -129,13 +136,58 @@ export default function App() {
     [dispatch, makeEvents, refreshBalance],
   );
 
+  // Private tables (E4.4): open a remote session with a create/join intent.
+  const openPrivate = useCallback(
+    async (stake: StakeCents, intent: JoinIntent) => {
+      sessionRef.current?.dispose();
+      dispatch({ type: 'START_MATCHMAKING', botMode: false });
+      if (stake > 0 && !walletRef.current) {
+        const wallet = await connectWallet().catch(() => null);
+        if (wallet) {
+          walletRef.current = wallet;
+          void refreshBalance(wallet);
+        } else {
+          dispatch({ type: 'TOAST', message: t('noWallet') });
+        }
+      }
+      const ev = makeEvents();
+      sessionRef.current = new RemoteSession(
+        ev,
+        stake,
+        SERVER_URL,
+        () => {
+          dispatch({ type: 'TOAST', message: t('offline') });
+          dispatch({ type: 'GO_LOBBY' });
+        },
+        walletRef.current?.address,
+        intent,
+      );
+    },
+    [dispatch, makeEvents, refreshBalance],
+  );
+
+  const createTable = useCallback(
+    (stake: StakeCents) => void openPrivate(stake, { kind: 'create' }),
+    [openPrivate],
+  );
+
+  // Join a table from a #/g/CODE link on first load.
+  useEffect(() => {
+    const m = /[#/]g\/([A-Z2-9]{6})/i.exec(window.location.hash || window.location.pathname);
+    if (m) {
+      history.replaceState(null, '', window.location.pathname); // clear the link
+      void openPrivate(0, { kind: 'join', code: m[1]!.toUpperCase() });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const roll = useCallback(() => sessionRef.current?.roll(), []);
   const move = useCallback((token: number) => sessionRef.current?.move(token), []);
   const rematch = useCallback(() => startMatch(state.stakeCents), [startMatch, state.stakeCents]);
 
   return (
     <>
-      {state.screen === 'lobby' && <Lobby onPlay={startMatch} />}
+      {state.screen === 'lobby' && <Lobby onPlay={startMatch} onCreateTable={createTable} />}
       {state.screen === 'matchmaking' && <Matchmaking />}
       {state.screen === 'game' && <GameScreen onRoll={roll} onMove={move} />}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}

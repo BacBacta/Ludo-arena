@@ -13,6 +13,8 @@ import {
   leaguePointsForWin,
   parseClientMsg,
   potCents,
+  TABLE_CODE_CHARS,
+  TABLE_CODE_LEN,
   type ResumedGame,
   type ServerMsg,
   type StakeCents,
@@ -57,6 +59,26 @@ const rooms = new Map<string, Room>();
 const matchmaker = new Matchmaker<Session>();
 // Per-room write chain: snapshots must reach the store in transition order.
 const roomWrites = new Map<string, Promise<void>>();
+// Private tables (E4.4): share code → host waiting for a friend to join.
+interface PrivateTable {
+  host: Session;
+  stake: StakeCents;
+  createdAt: number;
+}
+const privateTables = new Map<string, PrivateTable>();
+const TABLE_TTL_MS = 15 * 60_000;
+
+function generateTableCode(): string {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const bytes = randomBytes(TABLE_CODE_LEN);
+    let code = '';
+    for (let i = 0; i < TABLE_CODE_LEN; i++) {
+      code += TABLE_CODE_CHARS[bytes[i]! % TABLE_CODE_CHARS.length];
+    }
+    if (!privateTables.has(code)) return code;
+  }
+  throw new Error('could not allocate a table code');
+}
 
 // On-chain settlement (E3.3). null when no ARBITER_PRIVATE_KEY is configured.
 const arbiter = createArbiter();
@@ -253,6 +275,13 @@ const http = createServer((req, res) => {
 const wss = new WebSocketServer({ server: http, maxPayload: 1024 });
 const limiter = new RateLimiter();
 setInterval(() => limiter.prune(), 60_000);
+// Expire stale private tables (host gone or waited too long).
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, table] of privateTables) {
+    if (!table.host.alive || now - table.createdAt > TABLE_TTL_MS) privateTables.delete(code);
+  }
+}, 60_000);
 
 let connSeq = 0;
 
@@ -380,6 +409,34 @@ wss.on('connection', (ws, req) => {
         await store.queueRemove(session.id);
         break;
 
+      case 'table.create': {
+        if (session.room) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
+          break;
+        }
+        session.stake = msg.stake;
+        const code = generateTableCode();
+        privateTables.set(code, { host: session, stake: msg.stake, createdAt: Date.now() });
+        session.send({ t: 'table.created', code, stakeCents: msg.stake });
+        break;
+      }
+
+      case 'table.join': {
+        if (session.room) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
+          break;
+        }
+        const table = privateTables.get(msg.code);
+        if (!table || table.host === session || !table.host.alive || table.host.room) {
+          session.send({ t: 'error', code: 'TABLE_NOT_FOUND', message: 'Table not found or no longer available.' });
+          break;
+        }
+        privateTables.delete(msg.code);
+        session.stake = table.stake;
+        await startGame(table.stake, table.host, session);
+        break;
+      }
+
       case 'game.roll':
         if (session.room && session.seat !== null) session.room.roll(session.seat);
         break;
@@ -416,6 +473,10 @@ wss.on('connection', (ws, req) => {
     session.alive = false;
     matchmaker.leaveAll(session);
     store.queueRemove(session.id).catch((e) => console.error('[store] queueRemove', e));
+    // Drop private tables this session was hosting.
+    for (const [code, table] of privateTables) {
+      if (table.host === session) privateTables.delete(code);
+    }
     // The room keeps running: clock + auto-move handle absence (disconnection != forfeit).
     // The in-memory entry is dropped after 10 min; the store copy keeps its own TTL
     // so the token can still resume (fresh reconnect path) afterwards.

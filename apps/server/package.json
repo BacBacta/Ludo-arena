@@ -10,6 +10,7 @@
     "restart-test": "tsx scripts/restartTest.ts",
     "reconnect-test": "tsx scripts/reconnectTest.ts",
     "abuse-test": "tsx scripts/abuseTest.ts",
+    "private-table-test": "tsx scripts/privateTableTest.ts",
     "settle-verify": "tsx scripts/settleVerify.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

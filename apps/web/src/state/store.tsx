@@ -76,6 +76,8 @@ export interface AppState {
   botMode: boolean;
   reconnecting: boolean;
   staking: StakingState;
+  /** Private-table code shown while waiting for a friend to join (E4.4). */
+  privateCode: string | null;
   toast: string | null;
   fairModalOpen: boolean;
 }
@@ -99,6 +101,7 @@ export const initialState: AppState = {
   botMode: false,
   reconnecting: false,
   staking: 'idle',
+  privateCode: null,
   toast: null,
   fairModalOpen: false,
 };
@@ -120,6 +123,7 @@ export type Action =
   | { type: 'CHALLENGE_UPDATE'; challenge: ChallengeState }
   | { type: 'STREAK_UPDATE'; streak: StreakState }
   | { type: 'LEAGUE_UPDATE'; league: LeagueState }
+  | { type: 'TABLE_CREATED'; code: string }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
@@ -142,11 +146,13 @@ export function reducer(s: AppState, a: Action): AppState {
         refunded: false,
         lastDice: null,
         staking: 'idle',
+        privateCode: null,
       };
     case 'MATCH_FOUND':
       return {
         ...s,
         match: a.match,
+        privateCode: null, // friend joined; the game is starting
         // Wallet-backed games lock funds on-chain (balance refreshed from the
         // wallet). Without a wallet, keep the simulated debit for the dev demo.
         balanceCents: s.walletBacked ? s.balanceCents : s.balanceCents - a.match.stakeCents,
@@ -178,6 +184,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, streak: a.streak, tickets: a.streak.tickets };
     case 'LEAGUE_UPDATE':
       return { ...s, league: a.league };
+    case 'TABLE_CREATED':
+      return { ...s, screen: 'matchmaking', privateCode: a.code };
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':
@@ -188,7 +196,7 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_BALANCE':
       return { ...s, balanceCents: a.cents, walletBacked: true };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', match: null, game: null, result: null, reconnecting: false, staking: 'idle' };
+      return { ...s, screen: 'lobby', match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
     case 'TOAST':
       return { ...s, toast: a.message };
     case 'CLEAR_TOAST':

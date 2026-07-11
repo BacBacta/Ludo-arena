@@ -1,13 +1,38 @@
-import { useAppState } from '../state/store';
+import { useAppDispatch, useAppState } from '../state/store';
 import { t } from '../lib/i18n';
 
 export function Matchmaking() {
-  const { match } = useAppState();
+  const { match, privateCode } = useAppState();
+  const dispatch = useAppDispatch();
+
+  const link = privateCode ? `${window.location.origin}${window.location.pathname}#/g/${privateCode}` : '';
+  const shareUrl = `https://wa.me/?text=${encodeURIComponent(`${t('shareMsg')} ${link}`)}`;
+
+  function copyLink() {
+    navigator.clipboard?.writeText(link).then(
+      () => dispatch({ type: 'TOAST', message: t('linkCopied') }),
+      () => undefined,
+    );
+  }
+
   return (
     <div className="screen">
       <div className="center">
-        <div className="spinner" />
-        <div>{match ? t('found') : t('searching')}</div>
+        {privateCode && !match ? (
+          <div className="tablecard">
+            <div>{t('tableWaiting')}</div>
+            <div className="tablecode">{privateCode}</div>
+            <a className="btn" href={shareUrl} target="_blank" rel="noreferrer">
+              {t('shareWhatsapp')}
+            </a>
+            <button className="btn btn--ghost" onClick={copyLink}>
+              {t('copyLink')}
+            </button>
+          </div>
+        ) : (
+          <div className="spinner" />
+        )}
+        {!privateCode && <div>{match ? t('found') : t('searching')}</div>}
         {match && (
           <>
             <div className="vs">
