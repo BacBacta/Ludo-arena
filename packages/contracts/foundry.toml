@@ -10,3 +10,5 @@ optimizer_runs = 200
 [rpc_endpoints]
 alfajores = "${ALFAJORES_RPC}"
 celo = "${CELO_RPC}"
+sepolia = "${SEPOLIA_RPC}"
+celo-sepolia = "${CELO_SEPOLIA_RPC}"

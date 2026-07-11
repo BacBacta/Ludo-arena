@@ -1,0 +1,177 @@
+/**
+ * Deploys LudoEscrow (and TestUSD when no stablecoin is configured) and
+ * records the addresses in deployments.json (BACKLOG E3.1).
+ *
+ * Usage:
+ *   NETWORK=localhost npm run deploy -w packages/contracts
+ *   NETWORK=sepolia DEPLOYER_PRIVATE_KEY=0x… npm run deploy -w packages/contracts
+ *
+ * Env (see .env.example): DEPLOYER_PRIVATE_KEY, ARBITER_ADDRESS,
+ * TREASURY_ADDRESS, RAKE_BPS (default 900), STABLECOIN (skip TestUSD).
+ */
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  http,
+  type Address,
+  type Chain,
+  type Hex,
+} from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { compileAll } from './compile.js';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+try {
+  process.loadEnvFile(join(ROOT, '.env'));
+} catch {
+  // no .env file: rely on the ambient environment
+}
+
+// Hardhat/anvil default account #0 — local development only.
+const LOCAL_DEV_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+
+interface NetworkPreset {
+  chain: Chain;
+  rpcEnv: string;
+  defaultRpc: string;
+  /** Real stablecoin when the chain has one; otherwise TestUSD is deployed. */
+  stablecoin?: Address;
+}
+
+const NETWORKS: Record<string, NetworkPreset> = {
+  localhost: {
+    chain: defineChain({
+      id: 31_337,
+      name: 'localhost',
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+      rpcUrls: { default: { http: ['http://127.0.0.1:8545'] } },
+    }),
+    rpcEnv: 'LOCAL_RPC',
+    defaultRpc: 'http://127.0.0.1:8545',
+  },
+  sepolia: {
+    chain: defineChain({
+      id: 11_155_111,
+      name: 'Ethereum Sepolia',
+      nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+      rpcUrls: { default: { http: ['https://ethereum-sepolia-rpc.publicnode.com'] } },
+      blockExplorers: { default: { name: 'Etherscan', url: 'https://sepolia.etherscan.io' } },
+    }),
+    rpcEnv: 'SEPOLIA_RPC',
+    defaultRpc: 'https://ethereum-sepolia-rpc.publicnode.com',
+  },
+  'celo-sepolia': {
+    chain: defineChain({
+      id: 11_142_220,
+      name: 'Celo Sepolia',
+      nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+      rpcUrls: { default: { http: ['https://forno.celo-sepolia.celo-testnet.org'] } },
+      blockExplorers: { default: { name: 'Blockscout', url: 'https://celo-sepolia.blockscout.com' } },
+    }),
+    rpcEnv: 'CELO_SEPOLIA_RPC',
+    defaultRpc: 'https://forno.celo-sepolia.celo-testnet.org',
+  },
+  alfajores: {
+    chain: defineChain({
+      id: 44_787,
+      name: 'Celo Alfajores',
+      nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+      rpcUrls: { default: { http: ['https://alfajores-forno.celo-testnet.org'] } },
+      blockExplorers: { default: { name: 'Celoscan', url: 'https://alfajores.celoscan.io' } },
+    }),
+    rpcEnv: 'ALFAJORES_RPC',
+    defaultRpc: 'https://alfajores-forno.celo-testnet.org',
+    stablecoin: '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1', // cUSD
+  },
+};
+
+const networkName = process.env.NETWORK ?? 'localhost';
+const preset = NETWORKS[networkName];
+if (!preset) {
+  console.error(`Unknown NETWORK '${networkName}'. Options: ${Object.keys(NETWORKS).join(', ')}`);
+  process.exit(1);
+}
+
+const pk = (process.env.DEPLOYER_PRIVATE_KEY ??
+  (networkName === 'localhost' ? LOCAL_DEV_KEY : '')) as Hex;
+if (!pk) {
+  console.error('DEPLOYER_PRIVATE_KEY is required for public networks (fund it on a faucet first).');
+  process.exit(1);
+}
+
+const account = privateKeyToAccount(pk);
+const rpc = process.env[preset.rpcEnv] ?? preset.defaultRpc;
+const publicClient = createPublicClient({ chain: preset.chain, transport: http(rpc) });
+const walletClient = createWalletClient({ account, chain: preset.chain, transport: http(rpc) });
+
+const arbiter = (process.env.ARBITER_ADDRESS ?? account.address) as Address;
+const treasury = (process.env.TREASURY_ADDRESS ?? account.address) as Address;
+const rakeBps = BigInt(process.env.RAKE_BPS ?? '900');
+
+console.log(`[deploy] network=${networkName} chainId=${preset.chain.id} rpc=${rpc}`);
+console.log(`[deploy] deployer=${account.address} arbiter=${arbiter} treasury=${treasury} rakeBps=${rakeBps}`);
+
+const { LudoEscrow, TestUSD } = compileAll();
+
+async function deployContract(label: string, abi: typeof LudoEscrow.abi, bytecode: Hex, args: unknown[]): Promise<{ address: Address; txHash: Hex }> {
+  const txHash = await walletClient.deployContract({ abi, bytecode, args });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  if (receipt.status !== 'success' || !receipt.contractAddress) {
+    throw new Error(`${label}: deployment failed (tx ${txHash})`);
+  }
+  console.log(`[deploy] ${label} → ${receipt.contractAddress} (tx ${txHash})`);
+  return { address: receipt.contractAddress, txHash };
+}
+
+let stablecoin = (process.env.STABLECOIN ?? preset.stablecoin) as Address | undefined;
+let stablecoinTx: Hex | undefined;
+if (!stablecoin) {
+  const deployed = await deployContract('TestUSD', TestUSD.abi, TestUSD.bytecode, []);
+  stablecoin = deployed.address;
+  stablecoinTx = deployed.txHash;
+}
+
+const escrow = await deployContract('LudoEscrow', LudoEscrow.abi, LudoEscrow.bytecode, [
+  arbiter,
+  treasury,
+  rakeBps,
+]);
+
+// read back the immutables: fail loudly if the chain state disagrees
+const [onArbiter, onTreasury, onRake] = await Promise.all([
+  publicClient.readContract({ address: escrow.address, abi: LudoEscrow.abi, functionName: 'arbiter' }),
+  publicClient.readContract({ address: escrow.address, abi: LudoEscrow.abi, functionName: 'treasury' }),
+  publicClient.readContract({ address: escrow.address, abi: LudoEscrow.abi, functionName: 'rakeBps' }),
+]);
+if (
+  String(onArbiter).toLowerCase() !== arbiter.toLowerCase() ||
+  String(onTreasury).toLowerCase() !== treasury.toLowerCase() ||
+  BigInt(onRake as bigint) !== rakeBps
+) {
+  throw new Error('post-deploy verification failed: on-chain config does not match');
+}
+console.log('[deploy] on-chain config verified (arbiter, treasury, rakeBps)');
+
+// merge into deployments.json keyed by network name
+const deploymentsPath = join(ROOT, 'deployments.json');
+const deployments: Record<string, unknown> = existsSync(deploymentsPath)
+  ? (JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, unknown>)
+  : {};
+deployments[networkName] = {
+  chainId: preset.chain.id,
+  escrow: escrow.address,
+  escrowTx: escrow.txHash,
+  stablecoin,
+  ...(stablecoinTx ? { stablecoinIsTestUSD: true, stablecoinTx } : {}),
+  arbiter,
+  treasury,
+  rakeBps: Number(rakeBps),
+  deployedAt: new Date().toISOString(),
+};
+writeFileSync(deploymentsPath, JSON.stringify(deployments, null, 2) + '\n');
+console.log(`[deploy] addresses saved to packages/contracts/deployments.json ('${networkName}')`);

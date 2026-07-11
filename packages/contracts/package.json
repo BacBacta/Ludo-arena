@@ -1,0 +1,20 @@
+{
+  "name": "@ludo/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "tsx script/deploy.ts",
+    "smoke": "tsx script/smoke.ts",
+    "node": "hardhat node",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "hardhat": "^2.22.0",
+    "solc": "0.8.24",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "viem": "^2.21.0"
+  }
+}
