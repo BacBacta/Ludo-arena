@@ -15,7 +15,7 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 
 - [x] **E2.1 Persistence**: replace in-memory Maps with Redis (sessions, queues, rooms) + Postgres (players, games, ELO). Schema in `apps/server/src/store/persistent.ts`. *AC: a server restart does not kill in-progress games — verified by `npm run restart-test -w apps/server` (needs `docker compose up -d`).*
 - [x] **E2.2 Full reconnection**: resume via sessionToken from the client ("reconnecting…" UI), state resync. *AC: cutting the network for 20 s mid-game → the game continues — verified by `npm run reconnect-test -w apps/server` (no infra needed).*
-- [ ] **E2.3 Persistent ELO + ±100 matchmaking** with progressive widening (+50/5 s). *AC: unit test for the window.*
+- [x] **E2.3 Persistent ELO + ±100 matchmaking** with progressive widening (+50/5 s). *AC: unit test for the window — `apps/server/test/matchmaking.test.ts` (persistent ELO landed with E2.1: Postgres `players`, wallet-linked).*
 - [ ] **E2.4 Rate limiting & frame size** (already capped at 1 KB) + temporary bans. *AC: abuse test.*
 
 ## E3 — Real on-chain integration

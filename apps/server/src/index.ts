@@ -236,6 +236,7 @@ wss.on('connection', (ws) => {
         const pair = matchmaker.join(msg.stake, {
           session,
           entropy: session.entropy,
+          elo: session.elo,
           enqueuedAt: Date.now(),
         });
         if (!pair) {
@@ -267,6 +268,7 @@ wss.on('connection', (ws) => {
           const pair = matchmaker.join(session.stake, {
             session,
             entropy: session.entropy,
+            elo: session.elo,
             enqueuedAt: Date.now(),
           });
           if (pair) {
@@ -377,6 +379,15 @@ async function startGame(stake: StakeCents, a: Session, b: Session): Promise<voi
 function send(ws: WebSocket, msg: ServerMsg): void {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
 }
+
+// ELO windows widen while players wait: re-check the queues every second.
+setInterval(() => {
+  for (const { stake, pair } of matchmaker.sweep()) {
+    Promise.all([store.queueRemove(pair[0].session.id), store.queueRemove(pair[1].session.id)])
+      .then(() => startGame(stake, pair[0].session, pair[1].session))
+      .catch((e) => console.error('[ludo-server] sweep startGame', e));
+  }
+}, 1_000);
 
 http.listen(PORT, () => {
   console.log(`[ludo-server] ws://localhost:${PORT} (health: http://localhost:${PORT}/health)`);
