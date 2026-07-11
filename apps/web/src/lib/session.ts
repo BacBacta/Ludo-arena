@@ -9,6 +9,7 @@ import {
   pickAutoMove,
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
+import { deviceFingerprint } from './fingerprint';
 import {
   RAKE_BPS,
   type ChallengeState,
@@ -225,7 +226,7 @@ export function sendLimits(
       /* storage unavailable */
     }
     ws.onopen = () => {
-      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress }));
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
       ws.send(JSON.stringify({ t: 'limits.set', ...payload }));
     };
     ws.onmessage = (e) => {
@@ -289,6 +290,7 @@ export class RemoteSession implements GameSession {
         entropy: this.entropy,
         sessionToken: this.token() ?? undefined,
         wallet: this.walletAddress,
+        fingerprint: deviceFingerprint(),
       });
       if (initial) {
         if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });

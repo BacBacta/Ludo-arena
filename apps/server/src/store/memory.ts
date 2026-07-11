@@ -53,6 +53,7 @@ export class MemoryStore implements Store {
   private games = new Map<string, GameRecord>();
   private settlements = new Map<string, SettlementJob>();
   private meta = new Map<string, string>();
+  private pairGames = new Map<string, number>();
 
   async init(): Promise<void> {}
   async close(): Promise<void> {}
@@ -283,6 +284,18 @@ export class MemoryStore implements Store {
     if (!row) return;
     if (patch.dailyLimitCents !== undefined) row.dailyLimitCents = patch.dailyLimitCents;
     if (patch.selfExcludedUntil !== undefined) row.selfExcludedUntil = patch.selfExcludedUntil;
+  }
+
+  private pairKey(a: string, b: string, today: string): string {
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    return `${today}|${lo}|${hi}`;
+  }
+  async pairGamesToday(a: string, b: string, today: string): Promise<number> {
+    return this.pairGames.get(this.pairKey(a, b, today)) ?? 0;
+  }
+  async bumpPairGame(a: string, b: string, today: string): Promise<void> {
+    const key = this.pairKey(a, b, today);
+    this.pairGames.set(key, (this.pairGames.get(key) ?? 0) + 1);
   }
 
   async getMeta(key: string): Promise<string | null> {

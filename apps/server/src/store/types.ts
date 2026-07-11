@@ -126,6 +126,10 @@ export interface Store {
   addDailyStake(playerId: string, today: string, cents: number): Promise<void>;
   setLimits(playerId: string, patch: { dailyLimitCents?: number; selfExcludedUntil?: string | null }): Promise<void>;
 
+  // Anti multi-accounting (E5.3): count of staked games between two players today.
+  pairGamesToday(a: string, b: string, today: string): Promise<number>;
+  bumpPairGame(a: string, b: string, today: string): Promise<void>;
+
   // Generic key/value meta (e.g. the last-processed league week).
   getMeta(key: string): Promise<string | null>;
   setMeta(key: string, value: string): Promise<void>;

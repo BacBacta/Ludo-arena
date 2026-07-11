@@ -73,6 +73,15 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
+-- Anti multi-accounting (E5.3): staked games per day between a canonical pair.
+CREATE TABLE IF NOT EXISTS pair_games (
+  day DATE NOT NULL,
+  player_lo TEXT NOT NULL,
+  player_hi TEXT NOT NULL,
+  cnt INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, player_lo, player_hi)
+);
+
 CREATE TABLE IF NOT EXISTS games (
   id TEXT PRIMARY KEY,
   stake_cents INTEGER NOT NULL,
@@ -469,6 +478,23 @@ export class PersistentStore implements Store {
          updated_at = now()
        WHERE id = $1`,
       [playerId, patch.dailyLimitCents ?? null, patch.selfExcludedUntil !== undefined, patch.selfExcludedUntil ?? null],
+    );
+  }
+
+  async pairGamesToday(a: string, b: string, today: string): Promise<number> {
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    const res = await this.pool.query<{ cnt: number }>(
+      `SELECT cnt FROM pair_games WHERE day = $1::date AND player_lo = $2 AND player_hi = $3`,
+      [today, lo, hi],
+    );
+    return res.rows[0]?.cnt ?? 0;
+  }
+  async bumpPairGame(a: string, b: string, today: string): Promise<void> {
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    await this.pool.query(
+      `INSERT INTO pair_games (day, player_lo, player_hi, cnt) VALUES ($1::date, $2, $3, 1)
+       ON CONFLICT (day, player_lo, player_hi) DO UPDATE SET cnt = pair_games.cnt + 1`,
+      [today, lo, hi],
     );
   }
 

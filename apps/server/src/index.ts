@@ -11,6 +11,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import {
   isoWeek,
   leaguePointsForWin,
+  MAX_DAILY_GAMES_VS_SAME,
   parseClientMsg,
   potCents,
   TABLE_CODE_CHARS,
@@ -54,6 +55,7 @@ interface Session extends Client {
   room: Room | null;
   seat: Seat | null;
   alive: boolean;
+  fingerprint?: string; // device fingerprint from hello (E5.3)
 }
 
 const store = await createStore();
@@ -348,6 +350,7 @@ wss.on('connection', (ws, req) => {
       const resumedSession = msg.sessionToken ? await resumeSession(msg.sessionToken, ws) : null;
       if (resumedSession) {
         session = resumedSession;
+        if (msg.fingerprint) resumedSession.fingerprint = msg.fingerprint;
         const rpid = playerId(resumedSession.wallet, resumedSession.id);
         send(ws, {
           t: 'hello.ok',
@@ -379,6 +382,7 @@ wss.on('connection', (ws, req) => {
         elo,
         stake: null,
       });
+      session.fingerprint = msg.fingerprint;
       sessions.set(id, session);
       persistSession(session);
       const pid = playerId(msg.wallet, id);
@@ -467,6 +471,13 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedJoin });
           break;
         }
+        // Anti multi-accounting (E5.3): block same-device self-play and too many
+        // staked games against the same wallet today.
+        const collusion = await collusionBlock(table.host, session, table.stake);
+        if (collusion) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: collusion });
+          break;
+        }
         privateTables.delete(msg.code);
         session.stake = table.stake;
         await startGame(table.stake, table.host, session);
@@ -552,6 +563,18 @@ function resumedGame(s: Session): ResumedGame | undefined {
   };
 }
 
+/** Anti multi-accounting gate (E5.3): message if the pairing must be refused, else null. */
+async function collusionBlock(a: Session, b: Session, stake: StakeCents): Promise<string | null> {
+  if (stake <= 0) return null;
+  if (a.fingerprint && a.fingerprint === b.fingerprint) return 'Same-device play is not allowed for staked games.';
+  // Repeated-opponent cap is wallet-scoped (anon rows are ephemeral).
+  if (a.wallet && b.wallet) {
+    const played = await store.pairGamesToday(playerId(a.wallet, a.id), playerId(b.wallet, b.id), utcToday());
+    if (played >= MAX_DAILY_GAMES_VS_SAME) return 'Daily limit of staked games against this opponent reached.';
+  }
+  return null;
+}
+
 /** Responsible-gaming gate (E5.2): message if this stake must be blocked, else null. */
 async function stakeBlock(session: Session, stake: StakeCents): Promise<string | null> {
   if (stake <= 0) return null;
@@ -597,12 +620,13 @@ async function startGame(stake: StakeCents, a: Session, b: Session): Promise<voi
     store.getOrCreatePlayer(idA, { wallet: a.wallet, name: a.name, flag: a.flag }),
     store.getOrCreatePlayer(idB, { wallet: b.wallet, name: b.name, flag: b.flag }),
   ]);
-  // Count the stake toward each player's daily total (E5.2).
+  // Count the stake toward each player's daily total (E5.2) and the pair count (E5.3).
   if (stake > 0) {
     await Promise.all([
       store.addDailyStake(idA, utcToday(), stake),
       store.addDailyStake(idB, utcToday(), stake),
     ]);
+    if (a.wallet && b.wallet) await store.bumpPairGame(idA, idB, utcToday());
   }
   const room = new Room(gameId, stake, a, b, createFairness(a.entropy, b.entropy));
   a.room = room;

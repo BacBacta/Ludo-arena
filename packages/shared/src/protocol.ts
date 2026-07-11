@@ -38,6 +38,9 @@ export const ANTI_TILT = { losses: 3, rakeShareBps: 2000 } as const; // 20% of r
 export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 200;
 export const MAX_DAILY_STAKE_LIMIT_CENTS = 200;
 
+/** Anti multi-accounting (E5.3): max staked games per day against the same wallet. */
+export const MAX_DAILY_GAMES_VS_SAME = 3;
+
 export interface LimitsState {
   dailyLimitCents: number;
   stakedTodayCents: number;
@@ -88,7 +91,7 @@ export function potCents(stake: StakeCents): number {
 // ---------- Client -> Server ----------
 
 export type ClientMsg =
-  | { t: 'hello'; wallet?: string; sessionToken?: string; entropy: string }
+  | { t: 'hello'; wallet?: string; sessionToken?: string; entropy: string; fingerprint?: string }
   | { t: 'queue.join'; stake: StakeCents }
   | { t: 'queue.leave' }
   // Private tables (E4.4): create returns a code; a friend joins with it.
@@ -217,9 +220,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
   const m = obj as ClientMsg;
   switch (m.t) {
     case 'hello':
-      return typeof m.entropy === 'string' && m.entropy.length >= 16 && m.entropy.length <= 128
-        ? m
-        : null;
+      if (typeof m.entropy !== 'string' || m.entropy.length < 16 || m.entropy.length > 128) return null;
+      if (m.fingerprint !== undefined && (typeof m.fingerprint !== 'string' || m.fingerprint.length > 64)) return null;
+      return m;
     case 'queue.join':
     case 'table.create':
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

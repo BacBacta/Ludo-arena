@@ -257,6 +257,24 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
+    it('counts staked games per opponent pair, canonically, per day (E5.3)', async () => {
+      const store = make();
+      await store.init();
+      const a = '0xaaa' + Math.random().toString(16).slice(2, 6);
+      const b = '0xbbb' + Math.random().toString(16).slice(2, 6);
+      const day = '2026-09-01';
+
+      expect(await store.pairGamesToday(a, b, day)).toBe(0);
+      await store.bumpPairGame(a, b, day);
+      await store.bumpPairGame(b, a, day); // order-independent
+      expect(await store.pairGamesToday(a, b, day)).toBe(2);
+      expect(await store.pairGamesToday(b, a, day)).toBe(2);
+      // different day is separate
+      expect(await store.pairGamesToday(a, b, '2026-09-02')).toBe(0);
+
+      await store.close();
+    });
+
     it('meta key/value round-trips', async () => {
       const store = make();
       await store.init();
