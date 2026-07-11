@@ -47,7 +47,7 @@ export function Lobby({
   const inLeague = league.rank > 0 || league.points > 0;
 
   return (
-    <div className="screen">
+    <div className="screen screen--lobby">
       <TopBar />
 
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
@@ -69,8 +69,13 @@ export function Lobby({
         </div>
       </div>
 
-      <button className="btn" onClick={play}>
+      <button className="btn btn--hero" onClick={play}>
         {t('play')}
+        <small>
+          {stakeCents === 0
+            ? `${t('free')} · ${t('training')}`
+            : `${fmtUsd(stakeCents)} → ${t('win')} ${fmtUsd(potCents(stakeCents))}`}
+        </small>
       </button>
 
       {cashbackCents > 0 && (
@@ -114,9 +119,12 @@ export function Lobby({
 
       <div className="card">
         <h3>
-          <IconTrophy className="icon--gold" /> {DIVISIONS[league.division] ?? '—'} {t('league')}
+          <span className="chip-ic">
+            <IconTrophy />
+          </span>
+          {DIVISIONS[league.division] ?? '—'} {t('league')}
           {inLeague && (
-            <span style={{ float: 'right', color: 'var(--accent)' }}>
+            <span className="h3val">
               {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
             </span>
           )}
@@ -140,8 +148,11 @@ export function Lobby({
 
       <div className="card" style={{ marginBottom: 0 }}>
         <h3>
-          <IconTarget className="icon--opp" /> {t('dailyChallenge')}
-          <span style={{ float: 'right', color: 'var(--muted)', fontWeight: 600 }}>
+          <span className="chip-ic chip-ic--opp">
+            <IconTarget />
+          </span>
+          {t('dailyChallenge')}
+          <span className="h3val" style={{ color: 'var(--muted)' }}>
             {challenge.progress}/{challenge.target}
           </span>
         </h3>

@@ -11,6 +11,14 @@ export function TopBar() {
   return (
     <div className="topbar">
       <div className="topbar__logo">
+        <i className="logomark" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x={3} y={3} width={18} height={18} rx={5.5} fill="#0c130f" />
+            <circle cx={8.4} cy={8.4} r={1.8} fill="#f5b301" />
+            <circle cx={12} cy={12} r={1.8} fill="#f5b301" />
+            <circle cx={15.6} cy={15.6} r={1.8} fill="#f5b301" />
+          </svg>
+        </i>
         LUDO <span>ARENA</span>
       </div>
       <div className="topbar__right">

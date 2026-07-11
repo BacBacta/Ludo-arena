@@ -1,4 +1,5 @@
 import { useAppDispatch, useAppState } from '../state/store';
+import { IconUsers } from '../components/icons';
 import { t } from '../lib/i18n';
 
 export function Matchmaking() {
@@ -29,26 +30,29 @@ export function Matchmaking() {
               {t('copyLink')}
             </button>
           </div>
-        ) : (
-          <div className="spinner" />
-        )}
+        ) : !match ? (
+          <div className="radar" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <div className="radar__core">
+              <IconUsers />
+            </div>
+          </div>
+        ) : null}
         {!privateCode && <div>{match ? t('found') : t('searching')}</div>}
         {match && (
           <>
             <div className="vs">
               <div>
-                <div className="avatar avatar--me">🟢</div>
-                <div style={{ marginTop: 6 }}>
-                  {t('you')}
-                  <br />
-                  <small className="muted">ELO 1240</small>
-                </div>
+                <div className="avatar avatar--me" />
+                <div style={{ marginTop: 6 }}>{t('you')}</div>
               </div>
               <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--accent)' }}>VS</div>
               <div>
-                <div className="avatar avatar--opp">🟠</div>
+                <div className="avatar avatar--opp">{match.opponent.flag}</div>
                 <div style={{ marginTop: 6 }}>
-                  {match.opponent.name} {match.opponent.flag}
+                  {match.opponent.name}
                   <br />
                   <small className="muted">ELO {match.opponent.elo}</small>
                 </div>
