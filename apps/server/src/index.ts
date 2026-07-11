@@ -8,7 +8,15 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { parseClientMsg, potCents, type ResumedGame, type ServerMsg, type StakeCents } from '@ludo/shared';
+import {
+  isoWeek,
+  leaguePointsForWin,
+  parseClientMsg,
+  potCents,
+  type ResumedGame,
+  type ServerMsg,
+  type StakeCents,
+} from '@ludo/shared';
 
 /** Current UTC date (YYYY-MM-DD) for daily-challenge / streak resets. */
 function utcToday(): string {
@@ -176,6 +184,14 @@ function wireRoom(room: Room): void {
       .then(() => store.deleteRoom(result.gameId))
       .catch((e) => console.error('[store] onResult', e));
 
+    // Weekly league: award the winner league points and push their standings (E4.3).
+    const winnerId = result.winner === 0 ? idA : idB;
+    const winnerSession = sessions.get(result.players[result.winner].id);
+    store
+      .addLeaguePoints(winnerId, leaguePointsForWin(result.stakeCents))
+      .then((league) => winnerSession?.send({ t: 'league.update', league }))
+      .catch((e) => console.error('[league] addLeaguePoints', e));
+
     // Staked game with both wallets known → settle the payout on-chain (E3.3).
     const winnerWallet = result.players[result.winner].wallet;
     if (settlementQueue && result.stakeCents > 0 && pa.wallet && pb.wallet && winnerWallet) {
@@ -203,6 +219,24 @@ for (const snap of await store.loadRooms()) {
 }
 // Finish any settlements interrupted by the previous run.
 await settlementQueue?.resumePending();
+
+// Weekly league rollover (E4.3): runs when the ISO week changes (Mon 00:00 UTC).
+// Checked at boot and hourly so a restart never misses the boundary.
+async function maybeRolloverLeague(): Promise<void> {
+  const week = isoWeek(new Date());
+  const last = await store.getMeta('leagueWeek');
+  if (last === null) {
+    await store.setMeta('leagueWeek', week); // first boot: mark, don't roll over
+    return;
+  }
+  if (last !== week) {
+    const { promoted, relegated } = await store.rolloverLeagues();
+    await store.setMeta('leagueWeek', week);
+    console.log(`[league] rollover ${last} → ${week}: ${promoted} promoted, ${relegated} relegated`);
+  }
+}
+await maybeRolloverLeague().catch((e) => console.error('[league] rollover', e));
+setInterval(() => void maybeRolloverLeague().catch((e) => console.error('[league] rollover', e)), 3_600_000);
 
 // ---------- http + ws ----------
 
@@ -276,6 +310,7 @@ wss.on('connection', (ws, req) => {
           resumed: resumedGame(resumedSession),
           challenge: await store.getChallenge(rpid, utcToday()),
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
+          league: await store.getLeague(rpid),
         });
         return;
       }
@@ -302,7 +337,8 @@ wss.on('connection', (ws, req) => {
       const challenge = await store.getChallenge(pid, utcToday());
       // Streak is persisted only for wallet-linked players (anon rows are ephemeral).
       const streak = msg.wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
-      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak });
+      const league = await store.getLeague(pid);
+      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league });
       return;
     }
 

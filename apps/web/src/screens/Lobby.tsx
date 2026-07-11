@@ -1,10 +1,10 @@
-import { ALLOWED_STAKES_CENTS, potCents, type StakeCents } from '@ludo/shared';
+import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@ludo/shared';
 import { fmtCents, useAppDispatch, useAppState } from '../state/store';
 import { TopBar } from '../components/ui';
 import { t } from '../lib/i18n';
 
 export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
-  const { stakeCents, streak, challenge, tickets, balanceCents } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
 
   const lobbyStakes = ALLOWED_STAKES_CENTS.filter((s) => s <= 100);
@@ -68,6 +68,30 @@ export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
           {t('privateTableDesc')}
         </div>
       </div>
+
+      <div className="card">
+        <h3>
+          🏆 {DIVISIONS[league.division] ?? '—'} {t('league')}
+          <span style={{ float: 'right', color: 'var(--accent)' }}>
+            {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
+          </span>
+        </h3>
+        {league.top.length > 0 && (
+          <ol className="board">
+            {league.top.map((e, i) => (
+              <li key={i}>
+                <span>
+                  {i + 1}. {e.flag} {e.name}
+                </span>
+                <b>{e.points}</b>
+              </li>
+            ))}
+          </ol>
+        )}
+        <small className="muted">{t('leagueHint')}</small>
+      </div>
+
+      <div style={{ height: 14 }} />
 
       <div className="card" style={{ marginBottom: 0 }}>
         <h3>{t('dailyChallenge')}</h3>

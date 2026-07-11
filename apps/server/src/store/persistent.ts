@@ -9,7 +9,21 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
-import { DAILY_CHALLENGE, STREAK_REWARDS, type ChallengeState, type StakeCents, type StreakState } from '@ludo/shared';
+import {
+  DAILY_CHALLENGE,
+  DEFAULT_DIVISION,
+  DIVISIONS,
+  LEAGUE_PROMOTE,
+  LEAGUE_RELEGATE,
+  STREAK_REWARDS,
+  type ChallengeState,
+  type LeaderboardEntry,
+  type LeagueState,
+  type StakeCents,
+  type StreakState,
+} from '@ludo/shared';
+
+const LEADERBOARD_TOP = 5;
 
 const SESSION_TTL_S = 24 * 3600;
 
@@ -34,6 +48,16 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS freeroll_tickets INTEGER NOT NULL D
 -- Login streak (E4.2).
 ALTER TABLE players ADD COLUMN IF NOT EXISTS last_login DATE;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS streak_days INTEGER NOT NULL DEFAULT 0;
+
+-- Weekly league (E4.3).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS division INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS weekly_points INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS players_league_idx ON players(division, weekly_points DESC);
+
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS games (
   id TEXT PRIMARY KEY,
@@ -280,5 +304,93 @@ export class PersistentStore implements Store {
       [playerId, today, days, rewardGranted],
     );
     return { days, tickets: res.rows[0]?.freeroll_tickets ?? row.freeroll_tickets, rewardGranted };
+  }
+
+  private async leagueState(division: number, points: number): Promise<LeagueState> {
+    const [top, agg] = await Promise.all([
+      this.pool.query<{ name: string; flag: string; weekly_points: number }>(
+        `SELECT name, flag, weekly_points FROM players
+         WHERE division = $1 AND weekly_points > 0 ORDER BY weekly_points DESC LIMIT $2`,
+        [division, LEADERBOARD_TOP],
+      ),
+      this.pool.query<{ ahead: string; active: string }>(
+        `SELECT
+           count(*) FILTER (WHERE weekly_points > $2) AS ahead,
+           count(*) FILTER (WHERE weekly_points > 0) AS active
+         FROM players WHERE division = $1`,
+        [division, points],
+      ),
+    ]);
+    const ahead = Number(agg.rows[0]?.ahead ?? 0);
+    const active = Number(agg.rows[0]?.active ?? 0);
+    const entries: LeaderboardEntry[] = top.rows.map((r) => ({ name: r.name, flag: r.flag, points: r.weekly_points }));
+    return { division, points, rank: points > 0 ? ahead + 1 : 0, size: active, top: entries };
+  }
+
+  async addLeaguePoints(playerId: string, points: number): Promise<LeagueState> {
+    const res = await this.pool.query<{ division: number; weekly_points: number }>(
+      `UPDATE players SET weekly_points = weekly_points + $2, updated_at = now()
+       WHERE id = $1 RETURNING division, weekly_points`,
+      [playerId, points],
+    );
+    const row = res.rows[0];
+    if (!row) return this.leagueState(DEFAULT_DIVISION, 0);
+    return this.leagueState(row.division, row.weekly_points);
+  }
+
+  async getLeague(playerId: string): Promise<LeagueState> {
+    const res = await this.pool.query<{ division: number; weekly_points: number }>(
+      `SELECT division, weekly_points FROM players WHERE id = $1`,
+      [playerId],
+    );
+    const row = res.rows[0];
+    return this.leagueState(row?.division ?? DEFAULT_DIVISION, row?.weekly_points ?? 0);
+  }
+
+  async rolloverLeagues(): Promise<{ promoted: number; relegated: number }> {
+    const maxDiv = DIVISIONS.length - 1;
+    // Rank within each division by points; promote top N (below top division),
+    // relegate bottom N (above bottom division), excluding just-promoted rows.
+    const res = await this.pool.query<{ promoted: string; relegated: string }>(
+      `WITH ranked AS (
+         SELECT id, division,
+           row_number() OVER (PARTITION BY division ORDER BY weekly_points DESC) AS rn,
+           count(*) OVER (PARTITION BY division) AS n
+         FROM players WHERE weekly_points > 0
+       ),
+       moves AS (
+         SELECT id,
+           CASE
+             WHEN division < $1 AND rn <= $2 THEN division + 1
+             WHEN division > 0 AND rn > n - $3 THEN division - 1
+             ELSE division
+           END AS new_division,
+           division AS old_division
+         FROM ranked
+       ),
+       applied AS (
+         UPDATE players p SET division = m.new_division
+         FROM moves m WHERE p.id = m.id AND m.new_division <> m.old_division
+         RETURNING m.new_division > m.old_division AS up
+       )
+       SELECT
+         count(*) FILTER (WHERE up) AS promoted,
+         count(*) FILTER (WHERE NOT up) AS relegated
+       FROM applied`,
+      [maxDiv, LEAGUE_PROMOTE, LEAGUE_RELEGATE],
+    );
+    await this.pool.query(`UPDATE players SET weekly_points = 0 WHERE weekly_points <> 0`);
+    return { promoted: Number(res.rows[0]?.promoted ?? 0), relegated: Number(res.rows[0]?.relegated ?? 0) };
+  }
+
+  async getMeta(key: string): Promise<string | null> {
+    const res = await this.pool.query<{ value: string }>(`SELECT value FROM meta WHERE key = $1`, [key]);
+    return res.rows[0]?.value ?? null;
+  }
+  async setMeta(key: string, value: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2`,
+      [key, value],
+    );
   }
 }

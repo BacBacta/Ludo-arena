@@ -41,7 +41,9 @@ const dict = {
     fairnote: 'Dés vérifiables (provably fair) · gains payés instantanément ·',
     howItWorks: 'comment ça marche ?',
     rollNo: 'Lancer',
-    league: 'Ligue Argent',
+    league: 'Ligue',
+    lp: 'pts',
+    leagueHint: 'Top 3 promus · bas 3 relégués · reset lundi 00:00 UTC',
     fairBody1: 'Avant la partie, le serveur publie l’empreinte de sa graine secrète :',
     fairBody2:
       'Chaque dé = f(graine serveur, entropie des 2 joueurs, n° du lancer). En fin de partie la graine est révélée : tu peux recalculer chaque lancer.',
@@ -109,7 +111,9 @@ const dict = {
     fairnote: 'Provably fair dice · winnings paid instantly ·',
     howItWorks: 'how does it work?',
     rollNo: 'Roll',
-    league: 'Silver League',
+    league: 'League',
+    lp: 'pts',
+    leagueHint: 'Top 3 promoted · bottom 3 relegated · resets Mon 00:00 UTC',
     fairBody1: 'Before the game, the server publishes the hash of its secret seed:',
     fairBody2:
       'Each die = f(server seed, both players’ entropy, roll number). At game end the seed is revealed: you can recompute every roll.',

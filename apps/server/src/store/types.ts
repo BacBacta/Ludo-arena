@@ -5,7 +5,7 @@
  * in Postgres. MemoryStore keeps dev zero-config (no restart survival).
  */
 import type { GameState, Seat } from '@ludo/game-engine';
-import type { ChallengeState, GameOverReason, StakeCents, StreakState } from '@ludo/shared';
+import type { ChallengeState, GameOverReason, LeagueState, StakeCents, StreakState } from '@ludo/shared';
 
 /** Serializable part of a Session (the ws handle and Room ref are rebuilt live). */
 export interface SessionRecord {
@@ -105,6 +105,17 @@ export interface Store {
   // reset to 1 otherwise; milestone rewards (STREAK_REWARDS) granted on the
   // crossing login. No-op re-return if already logged in today.
   recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState>;
+
+  // Weekly league (E4.3). Points accumulate during the week; rolloverLeagues
+  // (weekly cron) promotes/relegates and resets. getLeague includes the
+  // division leaderboard.
+  addLeaguePoints(playerId: string, points: number): Promise<LeagueState>;
+  getLeague(playerId: string): Promise<LeagueState>;
+  rolloverLeagues(): Promise<{ promoted: number; relegated: number }>;
+
+  // Generic key/value meta (e.g. the last-processed league week).
+  getMeta(key: string): Promise<string | null>;
+  setMeta(key: string, value: string): Promise<void>;
 }
 
 /** Stable player id: wallet when known, otherwise anonymous per-session. */

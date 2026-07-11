@@ -4,7 +4,21 @@
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
-import { DAILY_CHALLENGE, STREAK_REWARDS, type ChallengeState, type StakeCents, type StreakState } from '@ludo/shared';
+import {
+  DAILY_CHALLENGE,
+  DEFAULT_DIVISION,
+  DIVISIONS,
+  LEAGUE_PROMOTE,
+  LEAGUE_RELEGATE,
+  STREAK_REWARDS,
+  type ChallengeState,
+  type LeaderboardEntry,
+  type LeagueState,
+  type StakeCents,
+  type StreakState,
+} from '@ludo/shared';
+
+const LEADERBOARD_TOP = 5;
 
 interface PlayerRow {
   wallet?: string;
@@ -17,6 +31,8 @@ interface PlayerRow {
   tickets: number;
   lastLogin?: string;
   streakDays: number;
+  division: number;
+  weeklyPoints: number;
 }
 
 export class MemoryStore implements Store {
@@ -26,6 +42,7 @@ export class MemoryStore implements Store {
   private players = new Map<string, PlayerRow>();
   private games = new Map<string, GameRecord>();
   private settlements = new Map<string, SettlementJob>();
+  private meta = new Map<string, string>();
 
   async init(): Promise<void> {}
   async close(): Promise<void> {}
@@ -74,7 +91,16 @@ export class MemoryStore implements Store {
   ): Promise<{ elo: number }> {
     const existing = this.players.get(id);
     if (existing) return { elo: existing.elo };
-    this.players.set(id, { ...defaults, elo: 1200, captures: 0, done: false, tickets: 0, streakDays: 0 });
+    this.players.set(id, {
+      ...defaults,
+      elo: 1200,
+      captures: 0,
+      done: false,
+      tickets: 0,
+      streakDays: 0,
+      division: DEFAULT_DIVISION,
+      weeklyPoints: 0,
+    });
     return { elo: 1200 };
   }
   async updateElo(id: string, elo: number): Promise<void> {
@@ -138,5 +164,65 @@ export class MemoryStore implements Store {
     const rewardGranted = STREAK_REWARDS[row.streakDays] ?? 0;
     row.tickets += rewardGranted;
     return { days: row.streakDays, tickets: row.tickets, rewardGranted };
+  }
+
+  private leagueState(division: number, points: number): LeagueState {
+    const inDivision = [...this.players.values()]
+      .filter((p) => p.division === division)
+      .sort((a, b) => b.weeklyPoints - a.weeklyPoints);
+    const top: LeaderboardEntry[] = inDivision
+      .filter((p) => p.weeklyPoints > 0)
+      .slice(0, LEADERBOARD_TOP)
+      .map((p) => ({ name: p.name, flag: p.flag, points: p.weeklyPoints }));
+    const ahead = inDivision.filter((p) => p.weeklyPoints > points).length;
+    const active = inDivision.filter((p) => p.weeklyPoints > 0).length;
+    return { division, points, rank: points > 0 ? ahead + 1 : 0, size: active, top };
+  }
+
+  async addLeaguePoints(playerId: string, points: number): Promise<LeagueState> {
+    const row = this.players.get(playerId);
+    if (!row) return this.leagueState(DEFAULT_DIVISION, 0);
+    row.weeklyPoints += points;
+    return this.leagueState(row.division, row.weeklyPoints);
+  }
+
+  async getLeague(playerId: string): Promise<LeagueState> {
+    const row = this.players.get(playerId);
+    return this.leagueState(row?.division ?? DEFAULT_DIVISION, row?.weeklyPoints ?? 0);
+  }
+
+  async rolloverLeagues(): Promise<{ promoted: number; relegated: number }> {
+    const maxDiv = DIVISIONS.length - 1;
+    // Snapshot standings first, then apply — so a promoted player is not
+    // re-processed by the next division's pass.
+    const moves = new Map<PlayerRow, number>();
+    for (let d = 0; d <= maxDiv; d++) {
+      const ranked = [...this.players.values()]
+        .filter((p) => p.division === d && p.weeklyPoints > 0)
+        .sort((a, b) => b.weeklyPoints - a.weeklyPoints);
+      const promote = d < maxDiv ? new Set(ranked.slice(0, LEAGUE_PROMOTE)) : new Set<PlayerRow>();
+      for (const p of promote) moves.set(p, d + 1);
+      if (d > 0) {
+        for (const p of ranked.slice(-LEAGUE_RELEGATE)) {
+          if (!promote.has(p)) moves.set(p, d - 1);
+        }
+      }
+    }
+    let promoted = 0;
+    let relegated = 0;
+    for (const [p, newDiv] of moves) {
+      if (newDiv > p.division) promoted++;
+      else relegated++;
+      p.division = newDiv;
+    }
+    for (const p of this.players.values()) p.weeklyPoints = 0;
+    return { promoted, relegated };
+  }
+
+  async getMeta(key: string): Promise<string | null> {
+    return this.meta.get(key) ?? null;
+  }
+  async setMeta(key: string, value: string): Promise<void> {
+    this.meta.set(key, value);
   }
 }

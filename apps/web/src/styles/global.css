@@ -310,6 +310,19 @@ small.muted { font-size: 12px; }
   margin: 8px 0;
   color: var(--muted);
 }
+.board {
+  list-style: none;
+  margin: 8px 0 6px;
+  font-size: 13px;
+}
+.board li {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+.board li:last-child { border-bottom: none; }
+.board b { color: var(--accent); }
 .reconnectbar {
   background: #3a2f14;
   border: 1px solid var(--accent);

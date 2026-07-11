@@ -165,6 +165,52 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
 
       await store.close();
     });
+
+    it('awards league points, ranks within a division, and rolls over promote/relegate', async () => {
+      const store = make();
+      await store.init();
+      const tag = Math.random().toString(16).slice(2, 8);
+      const ids = ['p1', 'p2', 'p3', 'p4', 'p5'].map((n) => `anon:${tag}-${n}`);
+      for (const id of ids) await store.getOrCreatePlayer(id, { name: id.slice(-2), flag: '🌍' });
+
+      // distinct weekly points in Silver (default division 1)
+      const pts = [50, 40, 30, 20, 10];
+      let leadState = await store.addLeaguePoints(ids[0]!, pts[0]!);
+      for (let i = 1; i < ids.length; i++) leadState = await store.addLeaguePoints(ids[i]!, pts[i]!);
+
+      const top = await store.getLeague(ids[0]!);
+      expect(top).toMatchObject({ division: 1, points: 50, rank: 1 });
+      expect(top.top[0]).toMatchObject({ points: 50 });
+      // leaderboard is descending
+      expect(top.top.map((e) => e.points)).toEqual([...top.top.map((e) => e.points)].sort((a, b) => b - a));
+
+      const mid = await store.getLeague(ids[2]!); // 30 pts → 2 players ahead
+      expect(mid).toMatchObject({ points: 30, rank: 3 });
+
+      const { promoted, relegated } = await store.rolloverLeagues();
+      // top 3 promote to Gold(2); bottom 3 relegate but the middle (p3) is
+      // already promoted → only p4,p5 relegate to Bronze(0)
+      expect(promoted).toBe(3);
+      expect(relegated).toBe(2);
+      expect((await store.getLeague(ids[0]!)).division).toBe(2);
+      expect((await store.getLeague(ids[2]!)).division).toBe(2);
+      expect((await store.getLeague(ids[4]!)).division).toBe(0);
+      // points reset after rollover
+      expect((await store.getLeague(ids[0]!)).points).toBe(0);
+
+      await store.close();
+    });
+
+    it('meta key/value round-trips', async () => {
+      const store = make();
+      await store.init();
+      expect(await store.getMeta('leagueWeek')).toBeDefined();
+      await store.setMeta('leagueWeek', '2026-W28');
+      expect(await store.getMeta('leagueWeek')).toBe('2026-W28');
+      await store.setMeta('leagueWeek', '2026-W29');
+      expect(await store.getMeta('leagueWeek')).toBe('2026-W29');
+      await store.close();
+    });
   });
 }
 

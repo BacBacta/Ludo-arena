@@ -1,9 +1,10 @@
+import { DIVISIONS } from '@ludo/shared';
 import { fmtCents, useAppDispatch, useAppState } from '../state/store';
 import { activeChain } from '../lib/chains';
 import { t } from '../lib/i18n';
 
 export function EndScreen({ onRematch }: { onRematch(): void }) {
-  const { result, match, settleTxHash, refunded } = useAppState();
+  const { result, match, settleTxHash, refunded, league } = useAppState();
   const dispatch = useAppDispatch();
   if (!result || !match) return null;
 
@@ -40,7 +41,7 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
           )}
         </div>
         <small className="muted">
-          ELO {won ? `+${result.eloDelta}` : result.eloDelta} · {t('league')}
+          ELO {won ? `+${result.eloDelta}` : result.eloDelta} · {DIVISIONS[league.division] ?? ''} {t('league')}
         </small>
         {refunded ? (
           <small className="muted">

@@ -4,7 +4,14 @@
  */
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from 'react';
 import type { GameState, Seat } from '@ludo/game-engine';
-import { DAILY_CHALLENGE, type ChallengeState, type StakeCents, type StreakState } from '@ludo/shared';
+import {
+  DAILY_CHALLENGE,
+  DEFAULT_DIVISION,
+  type ChallengeState,
+  type LeagueState,
+  type StakeCents,
+  type StreakState,
+} from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
 
 const CACHE_KEY = 'ludo.retention';
@@ -13,12 +20,14 @@ const CACHE_KEY = 'ludo.retention';
 interface RetentionCache {
   challenge: ChallengeState;
   streak: StreakState;
+  league: LeagueState;
   tickets: number;
 }
 
 const DEFAULT_RETENTION: RetentionCache = {
   challenge: { progress: 0, target: DAILY_CHALLENGE.captures, completed: false, tickets: 0 },
   streak: { days: 0, tickets: 0, rewardGranted: 0 },
+  league: { division: DEFAULT_DIVISION, points: 0, rank: 0, size: 0, top: [] },
   tickets: 0,
 };
 
@@ -52,6 +61,7 @@ export interface AppState {
   stakeCents: StakeCents;
   challenge: ChallengeState;
   streak: StreakState;
+  league: LeagueState;
   /** Total freeroll tickets; fed by both challenge and streak updates. */
   tickets: number;
   match: MatchInfo | null;
@@ -77,6 +87,7 @@ export const initialState: AppState = {
   stakeCents: 25,
   challenge: loadRetention().challenge,
   streak: loadRetention().streak,
+  league: loadRetention().league,
   tickets: loadRetention().tickets,
   match: null,
   game: null,
@@ -108,6 +119,7 @@ export type Action =
   | { type: 'REFUNDED'; txHash: string }
   | { type: 'CHALLENGE_UPDATE'; challenge: ChallengeState }
   | { type: 'STREAK_UPDATE'; streak: StreakState }
+  | { type: 'LEAGUE_UPDATE'; league: LeagueState }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
@@ -164,6 +176,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, challenge: a.challenge, tickets: a.challenge.tickets };
     case 'STREAK_UPDATE':
       return { ...s, streak: a.streak, tickets: a.streak.tickets };
+    case 'LEAGUE_UPDATE':
+      return { ...s, league: a.league };
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':

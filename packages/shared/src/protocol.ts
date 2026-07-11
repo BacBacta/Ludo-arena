@@ -30,6 +30,41 @@ export interface StreakState {
   rewardGranted: number; // tickets granted by this login's milestone (0 if none)
 }
 
+/** Weekly league (E4.3): divisions bottom→top; new players start in Silver. */
+export const DIVISIONS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond'] as const;
+export const DEFAULT_DIVISION = 1; // Silver
+export const LEAGUE_PROMOTE = 3; // top N of a division promote each week
+export const LEAGUE_RELEGATE = 3; // bottom N relegate
+
+/** League points for a win, with a small stake bonus. */
+export function leaguePointsForWin(stakeCents: number): number {
+  return 10 + Math.floor(stakeCents / 25) * 2;
+}
+
+export interface LeaderboardEntry {
+  name: string;
+  flag: string;
+  points: number;
+}
+
+export interface LeagueState {
+  division: number; // index into DIVISIONS
+  points: number; // weekly points
+  rank: number; // 1-based within the division (0 if unranked)
+  size: number; // active players in the division this week
+  top: LeaderboardEntry[]; // top of the division this week
+}
+
+/** ISO-8601 week id (e.g. "2026-W28"), UTC — the league rollover boundary. */
+export function isoWeek(date: Date): string {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = d.getUTCDay() || 7; // Mon=1..Sun=7
+  d.setUTCDate(d.getUTCDate() + 4 - day); // nearest Thursday
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
 /** Winner payout = pot − rake, matching the server/escrow rounding (rake is floored). */
 export function potCents(stake: StakeCents): number {
   const pot = stake * 2;
@@ -69,7 +104,7 @@ export interface ResumedGame {
 }
 
 export type ServerMsg =
-  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame; challenge?: ChallengeState; streak?: StreakState }
+  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame; challenge?: ChallengeState; streak?: StreakState; league?: LeagueState }
   | { t: 'queue.ok'; position: number }
   | {
       t: 'match.found';
@@ -110,6 +145,8 @@ export type ServerMsg =
   | { t: 'game.refunded'; gameId: string; txHash: string }
   // Daily challenge progress/ticket update (E4.1).
   | { t: 'challenge.update'; challenge: ChallengeState }
+  // Weekly league standings after a game (E4.3).
+  | { t: 'league.update'; league: LeagueState }
   | { t: 'error'; code: ErrorCode; message: string }
   | { t: 'pong' };
 
