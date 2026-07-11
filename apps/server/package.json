@@ -9,6 +9,7 @@
     "e2e": "tsx scripts/e2e.ts",
     "restart-test": "tsx scripts/restartTest.ts",
     "reconnect-test": "tsx scripts/reconnectTest.ts",
+    "abuse-test": "tsx scripts/abuseTest.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

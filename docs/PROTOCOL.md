@@ -50,3 +50,4 @@ C→S game.move{token:0}                S→C game.moved{...} / game.turn
 - `game.move` with a token not listed in `legalMoves` → `ILLEGAL_MOVE`.
 - Clock: 15,000 ms per decision in Blitz. On expiry: auto-move (best legal move); 3 consecutive auto-moves = forfeit (`timeout-forfeit`).
 - Max inbound frame size: 1 KB. Beyond that: connection closed.
+- Rate limiting: token bucket per connection (burst 100, sustained 30 msg/s); flooded messages are silently dropped. Three drained periods → 5 min IP ban (`error LIMIT_REACHED`, connection closed; new connections from the IP are rejected while banned).

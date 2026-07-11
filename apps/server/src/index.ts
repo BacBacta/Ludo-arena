@@ -11,6 +11,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { parseClientMsg, potCents, type ResumedGame, type ServerMsg, type StakeCents } from '@ludo/shared';
 import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
+import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
 import { createFairness } from './fairness.js';
 import { createStore, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
@@ -159,13 +160,38 @@ const http = createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server: http, maxPayload: 1024 });
+const limiter = new RateLimiter();
+setInterval(() => limiter.prune(), 60_000);
 
-wss.on('connection', (ws) => {
+let connSeq = 0;
+
+wss.on('connection', (ws, req) => {
+  const ip = req.socket.remoteAddress ?? 'unknown';
+  if (limiter.isBanned(ip)) {
+    send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Temporarily banned. Try again later.' });
+    ws.close();
+    return;
+  }
+  const connKey = `${ip}#${++connSeq}`;
+
+  // Without a listener, a ws-level error (e.g. an oversized frame, code 1009)
+  // becomes an unhandled 'error' event and would crash the whole process.
+  ws.on('error', (e) => console.warn('[ludo-server] ws error:', e.message));
+
   let session: Session | null = null;
   // Handlers await store lookups; chain them so messages keep arrival order.
   let inbox = Promise.resolve();
 
   ws.on('message', (data) => {
+    const verdict = limiter.allow(connKey, ip);
+    if (verdict !== 'ok') {
+      // silent drop while over rate (no error amplification); one notice on ban
+      if (verdict === 'ban') {
+        send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Rate limit exceeded — temporarily banned.' });
+        ws.close();
+      }
+      return;
+    }
     inbox = inbox
       .then(() => handle(data.toString()))
       .catch((e) => {
@@ -284,6 +310,7 @@ wss.on('connection', (ws) => {
   }
 
   ws.on('close', () => {
+    limiter.release(connKey);
     if (!session) return;
     session.ws = null;
     session.alive = false;
