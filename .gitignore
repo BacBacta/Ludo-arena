@@ -13,3 +13,4 @@ broadcast/
 *.tsbuildinfo
 .vercel
 .env*
+.flytoken
