@@ -1,6 +1,7 @@
 /**
  * SVG board generated from the engine constants (single source of truth).
  */
+import { useEffect, useRef, useState } from 'react';
 import {
   BASE_SPOTS,
   FINISHED,
@@ -12,6 +13,50 @@ import {
   TRACK_LEN,
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
+
+const STEP_MS = 120; // per-cell interpolation (E6.3)
+
+/**
+ * Display positions that step one cell at a time toward the real ones, so a
+ * token visibly walks the track. Forward track/home moves animate; base exits,
+ * captures and resets snap. Honours prefers-reduced-motion.
+ */
+function useAnimatedPositions(positions: number[][]): number[][] {
+  const [display, setDisplay] = useState(positions);
+  const ref = useRef(display);
+  ref.current = display;
+
+  useEffect(() => {
+    const reduce =
+      typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const differs = positions.some((row, s) => row.some((tgt, k) => tgt !== ref.current[s]?.[k]));
+    if (!differs) return;
+    if (reduce) {
+      setDisplay(positions.map((row) => [...row]));
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = (): void => {
+      let changed = false;
+      const next = ref.current.map((row, seat) =>
+        row.map((d, token) => {
+          const tgt = positions[seat]?.[token] ?? d;
+          if (d === tgt) return d;
+          changed = true;
+          return tgt > d && d >= 0 ? d + 1 : tgt; // walk forward, else snap
+        }),
+      );
+      if (changed) {
+        setDisplay(next);
+        timer = setTimeout(tick, STEP_MS);
+      }
+    };
+    tick();
+    return () => clearTimeout(timer);
+  }, [positions]);
+
+  return display;
+}
 
 const ME_FILL = '#2E9E6B';
 const ME_STROKE = '#0f3d28';
@@ -42,6 +87,7 @@ export interface BoardProps {
 
 export function Board({ game, mySeat, onTokenTap }: BoardProps) {
   const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
+  const positions = useAnimatedPositions(game.positions);
 
   return (
     <div className="boardwrap">
@@ -119,7 +165,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
         <polygon points="9,6 9,9 7.5,7.5" fill="#3a4a42" />
 
         {/* tokens */}
-        {game.positions.map((row, seat) =>
+        {positions.map((row, seat) =>
           row.map((pos, token) => {
             let [x, y] = tokenXY(seat as Seat, token, pos);
             const other = row[1 - token];
