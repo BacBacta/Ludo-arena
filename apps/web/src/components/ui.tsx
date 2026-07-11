@@ -1,6 +1,7 @@
 /** Small cross-cutting UI components: TopBar, Toast, FairnessModal. */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { fmtCents, useAppDispatch, useAppState } from '../state/store';
+import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { t } from '../lib/i18n';
 
 export function TopBar() {
@@ -49,23 +50,71 @@ export function StakingOverlay() {
 }
 
 export function FairnessModal() {
-  const { fairModalOpen, match, result } = useAppState();
+  const { fairModalOpen, match, result, diceHistory } = useAppState();
   const dispatch = useAppDispatch();
+  const [report, setReport] = useState<FairnessReport | null>(null);
+
+  const reveal = result?.fairnessReveal;
+  const commit = match?.fairnessCommit;
+  useEffect(() => {
+    setReport(null);
+    if (!fairModalOpen || !reveal || !commit) return;
+    let live = true;
+    void verifyFairness(commit, reveal, diceHistory).then((r) => {
+      if (live) setReport(r);
+    });
+    return () => {
+      live = false;
+    };
+  }, [fairModalOpen, reveal, commit, diceHistory]);
+
   if (!fairModalOpen) return null;
   return (
     <div className="modal" onClick={() => dispatch({ type: 'FAIR_MODAL', open: false })}>
-      <div className="modal__card">
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
         <h3>{t('fairTitle')}</h3>
         {t('fairBody1')}
         <div className="hash">
-          {t('commitLabel')} {match?.fairnessCommit ?? '—'}
+          {t('commitLabel')} {commit ?? '—'}
         </div>
         {t('fairBody2')}
-        {result?.fairnessReveal && (
+        {reveal && (
           <div className="hash">
-            {t('seedLabel')} {result.fairnessReveal.serverSeed}
+            {t('seedLabel')} {reveal.serverSeed}
           </div>
         )}
+
+        {reveal && (
+          <div className="verify">
+            {!report ? (
+              <div className="muted">{t('verifying')}</div>
+            ) : (
+              <>
+                <div className={report.allOk ? 'verify__ok' : 'verify__bad'}>
+                  {report.allOk ? t('verifyPass') : t('verifyFail')}
+                </div>
+                <div className="muted" style={{ fontSize: 11 }}>
+                  {t('commitLabel')} {report.commitOk ? '✓' : '✗'}
+                </div>
+                {report.rolls.length > 0 && (
+                  <table className="verify__rolls">
+                    <tbody>
+                      {report.rolls.map((r) => (
+                        <tr key={r.index}>
+                          <td>#{r.index}</td>
+                          <td>🎲 {r.played}</td>
+                          <td>= {r.computed}</td>
+                          <td>{r.ok ? '✓' : '✗'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {t('fairBody3')}
         <div style={{ marginTop: 10, textAlign: 'center' }} className="muted">
           {t('closeHint')}

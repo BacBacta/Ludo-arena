@@ -310,6 +310,23 @@ small.muted { font-size: 12px; }
   margin: 8px 0;
   color: var(--muted);
 }
+.verify {
+  margin: 10px 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--card-2);
+}
+.verify__ok { color: var(--me); font-weight: 700; }
+.verify__bad { color: #e5484d; font-weight: 700; }
+.verify__rolls {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  border-collapse: collapse;
+}
+.verify__rolls td { padding: 1px 4px; }
+.verify__rolls tr td:last-child { text-align: right; color: var(--me); }
 .cashback {
   margin-top: 10px;
   text-align: center;

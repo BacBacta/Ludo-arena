@@ -71,6 +71,8 @@ export interface AppState {
   match: MatchInfo | null;
   game: GameState | null;
   lastDice: { value: number; index: number; seat: Seat } | null;
+  /** All rolls this game, for client-side fairness verification (E5.1). */
+  diceHistory: Array<{ index: number; value: number; seat: Seat }>;
   turnDeadlineTs: number | null;
   result: GameResult | null;
   /** On-chain payout tx hash once the arbiter settle() is mined (E3.3). */
@@ -99,6 +101,7 @@ export const initialState: AppState = {
   match: null,
   game: null,
   lastDice: null,
+  diceHistory: [],
   turnDeadlineTs: null,
   result: null,
   settleTxHash: null,
@@ -151,6 +154,7 @@ export function reducer(s: AppState, a: Action): AppState {
         settleTxHash: null,
         refunded: false,
         lastDice: null,
+        diceHistory: [],
         staking: 'idle',
         privateCode: null,
       };
@@ -166,7 +170,11 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'GAME_STATE':
       return { ...s, screen: 'game', game: a.game };
     case 'DICE':
-      return { ...s, lastDice: { value: a.value, index: a.index, seat: a.seat } };
+      return {
+        ...s,
+        lastDice: { value: a.value, index: a.index, seat: a.seat },
+        diceHistory: [...s.diceHistory, { index: a.index, value: a.value, seat: a.seat }],
+      };
     case 'MOVED':
       // Challenge progress is server-authoritative (CHALLENGE_UPDATE), not derived here.
       return { ...s, game: a.game };
