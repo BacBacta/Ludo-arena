@@ -33,6 +33,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `game.refunded` | `{ gameId, txHash }` | Stake refunded on-chain (E3.4): the opponent never joined within the 120 s escrow timeout, so the lone staker got their stake back via `refundExpired`. |
 | `challenge.update` | `{ challenge: { progress, target, completed, tickets } }` | Daily-challenge progress after a capture (E4.1); on completion `completed` flips and `tickets` increments. |
 | `league.update` | `{ league: { division, points, rank, size, top[] } }` | Weekly-league standings after a win (E4.3), sent to the winner. |
+| `cashback` | `{ cents, totalCents }` | Anti-tilt cashback granted after 3 consecutive staked losses (E4.5): 20 % of the accumulated rake. |
 | `error` | `{ code, message }` | Codes: `BAD_STATE`, `NOT_YOUR_TURN`, `ILLEGAL_MOVE`, `LIMIT_REACHED`, `INSUFFICIENT_ESCROW`… |
 | `pong` | `{}` | Keepalive reply. |
 

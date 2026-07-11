@@ -30,6 +30,10 @@ export interface StreakState {
   rewardGranted: number; // tickets granted by this login's milestone (0 if none)
 }
 
+/** Anti-tilt cashback (E4.5): after N consecutive staked losses, refund a
+ *  share of the rake those games paid. */
+export const ANTI_TILT = { losses: 3, rakeShareBps: 2000 } as const; // 20% of rake
+
 /** Weekly league (E4.3): divisions bottom→top; new players start in Silver. */
 export const DIVISIONS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond'] as const;
 export const DEFAULT_DIVISION = 1; // Silver
@@ -114,7 +118,16 @@ export interface ResumedGame {
 }
 
 export type ServerMsg =
-  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame; challenge?: ChallengeState; streak?: StreakState; league?: LeagueState }
+  | {
+      t: 'hello.ok';
+      sessionToken: string;
+      elo: number;
+      resumed?: ResumedGame;
+      challenge?: ChallengeState;
+      streak?: StreakState;
+      league?: LeagueState;
+      cashbackCents?: number; // accumulated anti-tilt cashback (E4.5)
+    }
   | { t: 'queue.ok'; position: number }
   // Private table created (E4.4); share `code` with a friend to join.
   | { t: 'table.created'; code: string; stakeCents: StakeCents }
@@ -159,6 +172,8 @@ export type ServerMsg =
   | { t: 'challenge.update'; challenge: ChallengeState }
   // Weekly league standings after a game (E4.3).
   | { t: 'league.update'; league: LeagueState }
+  // Anti-tilt cashback granted after a losing streak (E4.5).
+  | { t: 'cashback'; cents: number; totalCents: number }
   | { t: 'error'; code: ErrorCode; message: string }
   | { t: 'pong' };
 

@@ -5,6 +5,7 @@
  */
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import {
+  ANTI_TILT,
   DAILY_CHALLENGE,
   DEFAULT_DIVISION,
   DIVISIONS,
@@ -33,6 +34,9 @@ interface PlayerRow {
   streakDays: number;
   division: number;
   weeklyPoints: number;
+  lossStreak: number;
+  lostRakeCents: number;
+  cashbackCents: number;
 }
 
 export class MemoryStore implements Store {
@@ -100,6 +104,9 @@ export class MemoryStore implements Store {
       streakDays: 0,
       division: DEFAULT_DIVISION,
       weeklyPoints: 0,
+      lossStreak: 0,
+      lostRakeCents: 0,
+      cashbackCents: 0,
     });
     return { elo: 1200 };
   }
@@ -217,6 +224,30 @@ export class MemoryStore implements Store {
     }
     for (const p of this.players.values()) p.weeklyPoints = 0;
     return { promoted, relegated };
+  }
+
+  async applyAntiTilt(playerId: string, won: boolean, rakeCents: number): Promise<{ cents: number; totalCents: number }> {
+    const row = this.players.get(playerId);
+    if (!row) return { cents: 0, totalCents: 0 };
+    if (won) {
+      row.lossStreak = 0;
+      row.lostRakeCents = 0;
+      return { cents: 0, totalCents: row.cashbackCents };
+    }
+    row.lossStreak += 1;
+    row.lostRakeCents += rakeCents;
+    if (row.lossStreak >= ANTI_TILT.losses) {
+      const cents = Math.round((row.lostRakeCents * ANTI_TILT.rakeShareBps) / 10_000);
+      row.cashbackCents += cents;
+      row.lossStreak = 0;
+      row.lostRakeCents = 0;
+      return { cents, totalCents: row.cashbackCents };
+    }
+    return { cents: 0, totalCents: row.cashbackCents };
+  }
+
+  async getCashback(playerId: string): Promise<number> {
+    return this.players.get(playerId)?.cashbackCents ?? 0;
   }
 
   async getMeta(key: string): Promise<string | null> {

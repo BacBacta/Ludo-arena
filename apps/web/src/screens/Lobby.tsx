@@ -10,7 +10,7 @@ export function Lobby({
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, balanceCents } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, cashbackCents, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
 
   function createTable() {
@@ -69,6 +69,12 @@ export function Lobby({
       <button className="btn" onClick={play}>
         {t('play')}
       </button>
+
+      {cashbackCents > 0 && (
+        <div className="cashback">
+          💛 {t('cashbackHeld')} <b>{fmtCents(cashbackCents)} $</b>
+        </div>
+      )}
 
       <div style={{ height: 14 }} />
 

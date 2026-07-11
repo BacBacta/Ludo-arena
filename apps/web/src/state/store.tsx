@@ -22,6 +22,7 @@ interface RetentionCache {
   streak: StreakState;
   league: LeagueState;
   tickets: number;
+  cashbackCents: number;
 }
 
 const DEFAULT_RETENTION: RetentionCache = {
@@ -29,6 +30,7 @@ const DEFAULT_RETENTION: RetentionCache = {
   streak: { days: 0, tickets: 0, rewardGranted: 0 },
   league: { division: DEFAULT_DIVISION, points: 0, rank: 0, size: 0, top: [] },
   tickets: 0,
+  cashbackCents: 0,
 };
 
 function loadRetention(): RetentionCache {
@@ -64,6 +66,8 @@ export interface AppState {
   league: LeagueState;
   /** Total freeroll tickets; fed by both challenge and streak updates. */
   tickets: number;
+  /** Accumulated anti-tilt cashback in cents (E4.5). */
+  cashbackCents: number;
   match: MatchInfo | null;
   game: GameState | null;
   lastDice: { value: number; index: number; seat: Seat } | null;
@@ -91,6 +95,7 @@ export const initialState: AppState = {
   streak: loadRetention().streak,
   league: loadRetention().league,
   tickets: loadRetention().tickets,
+  cashbackCents: loadRetention().cashbackCents,
   match: null,
   game: null,
   lastDice: null,
@@ -124,6 +129,7 @@ export type Action =
   | { type: 'STREAK_UPDATE'; streak: StreakState }
   | { type: 'LEAGUE_UPDATE'; league: LeagueState }
   | { type: 'TABLE_CREATED'; code: string }
+  | { type: 'CASHBACK'; totalCents: number }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
@@ -186,6 +192,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, league: a.league };
     case 'TABLE_CREATED':
       return { ...s, screen: 'matchmaking', privateCode: a.code };
+    case 'CASHBACK':
+      return { ...s, cashbackCents: a.totalCents };
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':

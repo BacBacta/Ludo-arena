@@ -113,6 +113,12 @@ export interface Store {
   getLeague(playerId: string): Promise<LeagueState>;
   rolloverLeagues(): Promise<{ promoted: number; relegated: number }>;
 
+  // Anti-tilt cashback (E4.5). Call once per player per staked game: a win
+  // resets the streak; a loss accumulates the game's rake and, after
+  // ANTI_TILT.losses in a row, credits a share of it (returned as `cents`).
+  applyAntiTilt(playerId: string, won: boolean, rakeCents: number): Promise<{ cents: number; totalCents: number }>;
+  getCashback(playerId: string): Promise<number>;
+
   // Generic key/value meta (e.g. the last-processed league week).
   getMeta(key: string): Promise<string | null>;
   setMeta(key: string, value: string): Promise<void>;

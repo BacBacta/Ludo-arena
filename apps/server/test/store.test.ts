@@ -201,6 +201,34 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
+    it('cashes back 20% of rake after 3 staked losses, resets on a win', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'T', flag: '🌍' });
+
+      // rake 4 cents per staked loss (25c stake game)
+      expect(await store.applyAntiTilt(id, false, 4)).toMatchObject({ cents: 0, totalCents: 0 });
+      expect(await store.applyAntiTilt(id, false, 4)).toMatchObject({ cents: 0, totalCents: 0 });
+      // 3rd loss: 20% of 12 = round(2.4) = 2 cents cashback
+      expect(await store.applyAntiTilt(id, false, 4)).toMatchObject({ cents: 2, totalCents: 2 });
+      expect(await store.getCashback(id)).toBe(2);
+
+      // streak reset after the grant: two more losses don't trigger again
+      await store.applyAntiTilt(id, false, 4);
+      await store.applyAntiTilt(id, false, 4);
+      expect(await store.getCashback(id)).toBe(2);
+
+      // a win resets the accumulated rake, so the count starts over
+      expect(await store.applyAntiTilt(id, true, 0)).toMatchObject({ cents: 0, totalCents: 2 });
+      await store.applyAntiTilt(id, false, 10);
+      await store.applyAntiTilt(id, false, 10);
+      const third = await store.applyAntiTilt(id, false, 10); // 20% of 30 = 6
+      expect(third).toMatchObject({ cents: 6, totalCents: 8 });
+
+      await store.close();
+    });
+
     it('meta key/value round-trips', async () => {
       const store = make();
       await store.init();

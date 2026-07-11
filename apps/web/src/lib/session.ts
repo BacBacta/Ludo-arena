@@ -58,6 +58,8 @@ export interface SessionEvents {
   onLeague(league: LeagueState): void;
   /** Private table created (E4.4): share the code with a friend. */
   onTableCreated(code: string, stakeCents: StakeCents): void;
+  /** Anti-tilt cashback total (E4.5); `cents` > 0 means a new grant just landed. */
+  onCashback(cents: number, totalCents: number): void;
   /** The socket dropped mid-game; the session is retrying in the background. */
   onReconnecting(): void;
   /** Reconnected: full match context + state resync. */
@@ -289,6 +291,7 @@ export class RemoteSession implements GameSession {
         if (msg.challenge) this.ev.onChallenge(msg.challenge);
         if (msg.streak) this.ev.onStreak(msg.streak);
         if (msg.league) this.ev.onLeague(msg.league);
+        if (msg.cashbackCents !== undefined) this.ev.onCashback(0, msg.cashbackCents);
         if (msg.resumed) {
           this.inGame = true;
           this.ev.onResumed(msg.resumed, msg.resumed.state);
@@ -333,6 +336,9 @@ export class RemoteSession implements GameSession {
         break;
       case 'table.created':
         this.ev.onTableCreated(msg.code, msg.stakeCents);
+        break;
+      case 'cashback':
+        this.ev.onCashback(msg.cents, msg.totalCents);
         break;
       case 'error':
         this.ev.onInfo(msg.message);

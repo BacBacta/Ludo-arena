@@ -208,11 +208,25 @@ function wireRoom(room: Room): void {
 
     // Weekly league: award the winner league points and push their standings (E4.3).
     const winnerId = result.winner === 0 ? idA : idB;
+    const loserId = result.winner === 0 ? idB : idA;
     const winnerSession = sessions.get(result.players[result.winner].id);
+    const loserSession = sessions.get(result.players[result.winner === 0 ? 1 : 0].id);
     store
       .addLeaguePoints(winnerId, leaguePointsForWin(result.stakeCents))
       .then((league) => winnerSession?.send({ t: 'league.update', league }))
       .catch((e) => console.error('[league] addLeaguePoints', e));
+
+    // Anti-tilt cashback (E4.5): only for staked games — winner resets, loser
+    // accumulates rake and gets a cashback after 3 losses in a row.
+    if (result.stakeCents > 0) {
+      store.applyAntiTilt(winnerId, true, 0).catch((e) => console.error('[cashback] win', e));
+      store
+        .applyAntiTilt(loserId, false, result.rakeCents)
+        .then(({ cents, totalCents }) => {
+          if (cents > 0) loserSession?.send({ t: 'cashback', cents, totalCents });
+        })
+        .catch((e) => console.error('[cashback] loss', e));
+    }
 
     // Staked game with both wallets known → settle the payout on-chain (E3.3).
     const winnerWallet = result.players[result.winner].wallet;
@@ -340,6 +354,7 @@ wss.on('connection', (ws, req) => {
           challenge: await store.getChallenge(rpid, utcToday()),
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
           league: await store.getLeague(rpid),
+          cashbackCents: await store.getCashback(rpid),
         });
         return;
       }
@@ -367,7 +382,8 @@ wss.on('connection', (ws, req) => {
       // Streak is persisted only for wallet-linked players (anon rows are ephemeral).
       const streak = msg.wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
       const league = await store.getLeague(pid);
-      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league });
+      const cashbackCents = await store.getCashback(pid);
+      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, cashbackCents });
       return;
     }
 

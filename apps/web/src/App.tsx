@@ -26,8 +26,14 @@ export default function App() {
 
   // Persist the latest retention state so the lobby shows it before reconnecting.
   useEffect(() => {
-    saveRetention({ challenge: state.challenge, streak: state.streak, league: state.league, tickets: state.tickets });
-  }, [state.challenge, state.streak, state.league, state.tickets]);
+    saveRetention({
+      challenge: state.challenge,
+      streak: state.streak,
+      league: state.league,
+      tickets: state.tickets,
+      cashbackCents: state.cashbackCents,
+    });
+  }, [state.challenge, state.streak, state.league, state.tickets, state.cashbackCents]);
 
   const refreshBalance = useCallback(
     async (wallet: Wallet) => {
@@ -86,6 +92,10 @@ export default function App() {
       },
       onSettled: (txHash) => dispatch({ type: 'SETTLED', txHash }),
       onTableCreated: (code) => dispatch({ type: 'TABLE_CREATED', code }),
+      onCashback: (cents, totalCents) => {
+        dispatch({ type: 'CASHBACK', totalCents });
+        if (cents > 0) dispatch({ type: 'TOAST', message: `💛 ${t('cashbackToast')} +${(cents / 100).toFixed(2)} $` });
+      },
       onRefunded: (txHash) => {
         dispatch({ type: 'REFUNDED', txHash });
         dispatch({ type: 'TOAST', message: t('refunded') });

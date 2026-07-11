@@ -10,6 +10,7 @@ import { Redis } from 'ioredis';
 import pg from 'pg';
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import {
+  ANTI_TILT,
   DAILY_CHALLENGE,
   DEFAULT_DIVISION,
   DIVISIONS,
@@ -53,6 +54,11 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS streak_days INTEGER NOT NULL DEFAUL
 ALTER TABLE players ADD COLUMN IF NOT EXISTS division INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS weekly_points INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS players_league_idx ON players(division, weekly_points DESC);
+
+-- Anti-tilt cashback (E4.5).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS loss_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS lost_rake_cents INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS cashback_cents INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
@@ -381,6 +387,44 @@ export class PersistentStore implements Store {
     );
     await this.pool.query(`UPDATE players SET weekly_points = 0 WHERE weekly_points <> 0`);
     return { promoted: Number(res.rows[0]?.promoted ?? 0), relegated: Number(res.rows[0]?.relegated ?? 0) };
+  }
+
+  async applyAntiTilt(playerId: string, won: boolean, rakeCents: number): Promise<{ cents: number; totalCents: number }> {
+    if (won) {
+      const res = await this.pool.query<{ cashback_cents: number }>(
+        `UPDATE players SET loss_streak = 0, lost_rake_cents = 0 WHERE id = $1 RETURNING cashback_cents`,
+        [playerId],
+      );
+      return { cents: 0, totalCents: res.rows[0]?.cashback_cents ?? 0 };
+    }
+    // Increment streak + accumulate rake; if the threshold is hit, credit a
+    // share and reset — all in one statement.
+    const res = await this.pool.query<{ cashback_cents: number; granted: number }>(
+      `WITH cur AS (
+         SELECT loss_streak + 1 AS streak, lost_rake_cents + $2 AS rake FROM players WHERE id = $1
+       ),
+       calc AS (
+         SELECT streak >= $3 AS hit,
+           CASE WHEN streak >= $3 THEN round(rake * $4 / 10000.0) ELSE 0 END::int AS grant,
+           streak, rake FROM cur
+       )
+       UPDATE players p SET
+         loss_streak = CASE WHEN c.hit THEN 0 ELSE c.streak END,
+         lost_rake_cents = CASE WHEN c.hit THEN 0 ELSE c.rake END,
+         cashback_cents = p.cashback_cents + c.grant,
+         updated_at = now()
+       FROM calc c WHERE p.id = $1
+       RETURNING p.cashback_cents, c.grant AS granted`,
+      [playerId, rakeCents, ANTI_TILT.losses, ANTI_TILT.rakeShareBps],
+    );
+    const row = res.rows[0];
+    if (!row) return { cents: 0, totalCents: 0 };
+    return { cents: row.granted, totalCents: row.cashback_cents };
+  }
+
+  async getCashback(playerId: string): Promise<number> {
+    const res = await this.pool.query<{ cashback_cents: number }>(`SELECT cashback_cents FROM players WHERE id = $1`, [playerId]);
+    return res.rows[0]?.cashback_cents ?? 0;
   }
 
   async getMeta(key: string): Promise<string | null> {
