@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Hex } from 'viem';
-import { SettlementQueue, type ArbiterLike } from '../src/settlement.js';
+import { GameStatus, JOIN_TIMEOUT_S, SettlementQueue, type ArbiterLike } from '../src/settlement.js';
 import { MemoryStore } from '../src/store/memory.js';
 
 const WINNER = '0x1111111111111111111111111111111111111111';
-const TX = '0xabc' as Hex;
+const TX = '0xset' as Hex;
+const REFUND_TX = '0xref' as Hex;
 
 function makeArbiter(over: Partial<ArbiterLike> = {}): ArbiterLike {
   return {
     chainId: 11_142_220,
-    isSettleable: async () => true,
+    gameStatus: async () => ({ status: GameStatus.Active, createdAt: 0 }),
     submitSettle: async () => TX,
+    submitRefund: async () => REFUND_TX,
     ...over,
   };
 }
@@ -19,30 +21,86 @@ describe('SettlementQueue', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('settles a job, notifies, and persists the tx hash', async () => {
+  it('settles an Active job, notifies, and persists the tx hash', async () => {
     const store = new MemoryStore();
     const settled: Array<[string, string]> = [];
     const q = new SettlementQueue({
       store,
       arbiter: makeArbiter(),
       onSettled: (gameId, tx) => settled.push([gameId, tx]),
+      onRefunded: () => {},
     });
     await q.enqueue('g1', WINNER);
     await vi.runOnlyPendingTimersAsync();
 
     expect(settled).toEqual([['g1', TX]]);
-    expect(await store.listPendingSettlements()).toEqual([]); // no longer pending
+    expect(await store.listPendingSettlements()).toEqual([]);
   });
 
-  it('skips (marks failed) when the game is not Active on-chain', async () => {
+  it('marks failed (no submit) when nobody staked (status None)', async () => {
     const store = new MemoryStore();
-    const submit = vi.fn();
+    const submit = vi.fn(async () => TX);
     const q = new SettlementQueue({
       store,
-      arbiter: makeArbiter({ isSettleable: async () => false, submitSettle: submit }),
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.None, createdAt: 0 }), submitSettle: submit }),
       onSettled: () => {},
+      onRefunded: () => {},
     });
     await q.enqueue('g2', WINNER);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(await store.listPendingSettlements()).toEqual([]);
+  });
+
+  it('refunds a lone staker once the join timeout has elapsed (E3.4)', async () => {
+    const store = new MemoryStore();
+    const refunded: Array<[string, string]> = [];
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.WaitingOpponent, createdAt: 500 }) }),
+      onSettled: () => {},
+      onRefunded: (gameId, tx) => refunded.push([gameId, tx]),
+      now: () => 500 + JOIN_TIMEOUT_S + 1, // already past the timeout
+    });
+    await q.enqueue('g3', WINNER);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(refunded).toEqual([['g3', REFUND_TX]]);
+    expect(await store.listPendingSettlements()).toEqual([]);
+  });
+
+  it('waits for the timeout window before refunding, then refunds', async () => {
+    const store = new MemoryStore();
+    const refund = vi.fn(async () => REFUND_TX);
+    let now = 1_000;
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.WaitingOpponent, createdAt: 1_000 }), submitRefund: refund }),
+      onSettled: () => {},
+      onRefunded: () => {},
+      now: () => now,
+    });
+    await q.enqueue('g4', WINNER);
+    await vi.runOnlyPendingTimersAsync();
+    expect(refund).not.toHaveBeenCalled(); // still inside the 120 s window
+    expect(await store.listPendingSettlements()).toHaveLength(1); // rescheduled, still pending
+
+    now = 1_000 + JOIN_TIMEOUT_S + 1;
+    await vi.runAllTimersAsync();
+    expect(refund).toHaveBeenCalledOnce();
+  });
+
+  it('is idempotent when the game is already Settled on-chain', async () => {
+    const store = new MemoryStore();
+    const submit = vi.fn(async () => TX);
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.Settled, createdAt: 0 }), submitSettle: submit }),
+      onSettled: () => {},
+      onRefunded: () => {},
+    });
+    await q.enqueue('g5', WINNER);
     await vi.runOnlyPendingTimersAsync();
 
     expect(submit).not.toHaveBeenCalled();
@@ -62,9 +120,9 @@ describe('SettlementQueue', () => {
         },
       }),
       onSettled: () => {},
+      onRefunded: () => {},
     });
-    await q.enqueue('g3', WINNER);
-    // drive the backoff timers (1s, 2s, …) to completion
+    await q.enqueue('g6', WINNER);
     await vi.runAllTimersAsync();
 
     expect(calls).toBe(3);
@@ -81,24 +139,24 @@ describe('SettlementQueue', () => {
         },
       }),
       onSettled: () => {},
+      onRefunded: () => {},
     });
-    await q.enqueue('g4', WINNER);
+    await q.enqueue('g7', WINNER);
     await vi.runAllTimersAsync();
 
-    // failed jobs are not pending (won't be retried on next boot)
     expect(await store.listPendingSettlements()).toEqual([]);
   });
 
   it('resumePending re-processes jobs from a previous run on the same chain', async () => {
     const store = new MemoryStore();
-    await store.enqueueSettlement({ gameId: 'g5', winnerWallet: WINNER, chainId: 11_142_220, status: 'pending', attempts: 0 });
+    await store.enqueueSettlement({ gameId: 'g8', winnerWallet: WINNER, chainId: 11_142_220, status: 'pending', attempts: 0 });
     await store.enqueueSettlement({ gameId: 'other-chain', winnerWallet: WINNER, chainId: 42_220, status: 'pending', attempts: 0 });
     const settled: string[] = [];
-    const q = new SettlementQueue({ store, arbiter: makeArbiter(), onSettled: (g) => settled.push(g) });
+    const q = new SettlementQueue({ store, arbiter: makeArbiter(), onSettled: (g) => settled.push(g), onRefunded: () => {} });
 
     await q.resumePending();
     await vi.runOnlyPendingTimersAsync();
 
-    expect(settled).toEqual(['g5']); // only the matching-chain job
+    expect(settled).toEqual(['g8']);
   });
 });

@@ -62,6 +62,9 @@ const dict = {
     noWallet: 'Aucun wallet détecté — mode démo (mises simulées)',
     viewPayout: 'Voir le paiement on-chain',
     settled: '✓ Réglé on-chain',
+    refunded: '↩︎ Mise remboursée — l’adversaire n’a pas rejoint',
+    refundedNote: '↩︎ Mise remboursée on-chain',
+    viewTx: 'Voir la transaction',
   },
   en: {
     play: 'PLAY ⚡',
@@ -125,6 +128,9 @@ const dict = {
     noWallet: 'No wallet detected — demo mode (simulated stakes)',
     viewPayout: 'View on-chain payout',
     settled: '✓ Settled on-chain',
+    refunded: '↩︎ Stake refunded — opponent didn’t join',
+    refundedNote: '↩︎ Stake refunded on-chain',
+    viewTx: 'View transaction',
   },
 } as const;
 

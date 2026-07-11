@@ -58,6 +58,14 @@ const settlementQueue = arbiter
         }
         settlementNotify.delete(gameId);
       },
+      onRefunded: (gameId, txHash) => {
+        const info = settlementNotify.get(gameId);
+        if (!info) return;
+        for (const id of info.sessionIds) {
+          sessions.get(id)?.send({ t: 'game.refunded', gameId, txHash });
+        }
+        settlementNotify.delete(gameId);
+      },
     })
   : null;
 if (arbiter) console.log(`[ludo-server] settlement enabled — arbiter ${arbiter.address} on chain ${arbiter.chainId}`);

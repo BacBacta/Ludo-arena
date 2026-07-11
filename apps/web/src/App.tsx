@@ -63,6 +63,11 @@ export default function App() {
       },
       onInfo: (message) => dispatch({ type: 'TOAST', message }),
       onSettled: (txHash) => dispatch({ type: 'SETTLED', txHash }),
+      onRefunded: (txHash) => {
+        dispatch({ type: 'REFUNDED', txHash });
+        dispatch({ type: 'TOAST', message: t('refunded') });
+        if (walletRef.current) void refreshBalance(walletRef.current);
+      },
       onReconnecting: () => dispatch({ type: 'RECONNECTING' }),
       onResumed: (match, game) => dispatch({ type: 'RESUME', match, game }),
       onGone: () => {

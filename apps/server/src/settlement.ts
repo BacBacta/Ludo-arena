@@ -39,6 +39,7 @@ const CHAINS: Record<string, Chain> = { celo, 'celo-sepolia': celoSepolia };
 
 const SETTLE_ABI = [
   { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'sig', type: 'bytes' }], outputs: [] },
+  { type: 'function', name: 'refundExpired', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   {
     type: 'function', name: 'games', stateMutability: 'view', inputs: [{ name: '', type: 'bytes32' }],
     outputs: [
@@ -50,7 +51,16 @@ const SETTLE_ABI = [
 ] as const;
 
 const MAX_ATTEMPTS = 6;
-const GAME_ACTIVE = 1; // Status.Active
+/** Mirrors LudoEscrow.Status. */
+export enum GameStatus {
+  None = 0,
+  WaitingOpponent = 1,
+  Active = 2,
+  Settled = 3,
+  Refunded = 4,
+}
+/** LudoEscrow.JOIN_TIMEOUT (seconds) before refundExpired is allowed. */
+export const JOIN_TIMEOUT_S = 120;
 
 /** Canonical server gameId (16 bytes hex) → bytes32; must match web's escrow.ts. */
 export function gameIdToBytes32(gameId: string): Hex {
@@ -97,30 +107,39 @@ export class Arbiter {
     return this.account.signMessage({ message: { raw: inner } });
   }
 
-  /** True only when the escrow game is Active (both players staked on-chain). */
-  async isSettleable(gameId: string): Promise<boolean> {
+  /** On-chain escrow status + creation time (for the refund timeout). */
+  async gameStatus(gameId: string): Promise<{ status: GameStatus; createdAt: number }> {
     const game = await this.publicClient.readContract({
       address: this.escrow,
       abi: SETTLE_ABI,
       functionName: 'games',
       args: [gameIdToBytes32(gameId)],
     });
-    return game[5] === GAME_ACTIVE;
+    return { status: Number(game[5]) as GameStatus, createdAt: Number(game[4]) };
   }
 
-  async submitSettle(gameId: string, winner: Address): Promise<Hex> {
-    const sig = await this.signSettlement(gameId, winner);
+  private async submit(functionName: 'settle' | 'refundExpired', args: readonly unknown[]): Promise<Hex> {
     const hash = await this.walletClient.writeContract({
       account: this.account,
       chain: this.chain,
       address: this.escrow,
       abi: SETTLE_ABI,
-      functionName: 'settle',
-      args: [gameIdToBytes32(gameId), winner, sig],
-    });
+      functionName,
+      args,
+    } as never);
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== 'success') throw new Error(`settle reverted (tx ${hash})`);
+    if (receipt.status !== 'success') throw new Error(`${functionName} reverted (tx ${hash})`);
     return hash;
+  }
+
+  async submitSettle(gameId: string, winner: Address): Promise<Hex> {
+    const sig = await this.signSettlement(gameId, winner);
+    return this.submit('settle', [gameIdToBytes32(gameId), winner, sig]);
+  }
+
+  /** Refund the lone staker of an expired game (opponent never joined). */
+  async submitRefund(gameId: string): Promise<Hex> {
+    return this.submit('refundExpired', [gameIdToBytes32(gameId)]);
   }
 }
 
@@ -145,11 +164,12 @@ export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | n
   return new Arbiter(pk, chain, escrow, env.SETTLEMENT_RPC?.trim() || undefined);
 }
 
-/** The queue only needs these three from an arbiter (stubbable in tests). */
+/** The queue only needs these from an arbiter (stubbable in tests). */
 export interface ArbiterLike {
   readonly chainId: number;
-  isSettleable(gameId: string): Promise<boolean>;
+  gameStatus(gameId: string): Promise<{ status: GameStatus; createdAt: number }>;
   submitSettle(gameId: string, winner: Address): Promise<Hex>;
+  submitRefund(gameId: string): Promise<Hex>;
 }
 
 export interface SettlementDeps {
@@ -157,6 +177,10 @@ export interface SettlementDeps {
   arbiter: ArbiterLike;
   /** Notify the players once the payout tx is mined. */
   onSettled: (gameId: string, txHash: string) => void;
+  /** Notify once the lone staker has been refunded (opponent never joined). */
+  onRefunded: (gameId: string, txHash: string) => void;
+  /** Wall-clock seconds; injectable for tests. */
+  now?: () => number;
 }
 
 /** Persists and retries settlement jobs with exponential backoff. */
@@ -193,20 +217,53 @@ export class SettlementQueue {
     this.timers.clear();
   }
 
+  private nowS(): number {
+    return this.deps.now?.() ?? Math.floor(Date.now() / 1000);
+  }
+
+  /** Re-run the job later without counting an attempt (used for the refund wait). */
+  private reschedule(job: SettlementJob, delayMs: number): void {
+    const timer = setTimeout(() => {
+      this.timers.delete(timer);
+      void this.process(job);
+    }, delayMs);
+    this.timers.add(timer);
+  }
+
   private async process(job: SettlementJob): Promise<void> {
     const attempts = job.attempts + 1;
     try {
-      // Not Active means the players never staked on-chain (free/dev game or a
-      // missed join): nothing to settle, don't burn retries.
-      if (!(await this.deps.arbiter.isSettleable(job.gameId))) {
-        await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
-        console.warn(`[settlement] ${job.gameId} not Active on-chain; skipping`);
+      const { status, createdAt } = await this.deps.arbiter.gameStatus(job.gameId);
+
+      if (status === GameStatus.Active) {
+        const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
+        await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
+        this.deps.onSettled(job.gameId, txHash);
+        console.log(`[settlement] ${job.gameId} settled in tx ${txHash}`);
         return;
       }
-      const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
-      await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
-      this.deps.onSettled(job.gameId, txHash);
-      console.log(`[settlement] ${job.gameId} settled in tx ${txHash}`);
+
+      if (status === GameStatus.WaitingOpponent) {
+        // Only one player staked: refund them once JOIN_TIMEOUT elapses (E3.4).
+        const readyAt = createdAt + JOIN_TIMEOUT_S;
+        const waitS = readyAt - this.nowS();
+        if (waitS > 0) {
+          console.log(`[settlement] ${job.gameId} awaiting refund window (${waitS}s)`);
+          this.reschedule(job, (waitS + 3) * 1_000); // small buffer past the timeout
+          return;
+        }
+        const txHash = await this.deps.arbiter.submitRefund(job.gameId);
+        await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
+        this.deps.onRefunded(job.gameId, txHash);
+        console.log(`[settlement] ${job.gameId} refunded in tx ${txHash}`);
+        return;
+      }
+
+      // Already resolved on-chain, or nobody staked (None): nothing to do.
+      const terminal = status === GameStatus.Settled ? 'settled' : status === GameStatus.Refunded ? 'refunded' : 'failed';
+      await this.deps.store.markSettlement(job.gameId, terminal, attempts);
+      if (terminal === 'failed') console.warn(`[settlement] ${job.gameId} not stakeable (status ${status}); skipping`);
+      return;
     } catch (e) {
       console.error(`[settlement] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);
       if (attempts >= MAX_ATTEMPTS) {

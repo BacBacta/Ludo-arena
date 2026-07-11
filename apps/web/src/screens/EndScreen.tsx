@@ -3,11 +3,12 @@ import { activeChain } from '../lib/chains';
 import { t } from '../lib/i18n';
 
 export function EndScreen({ onRematch }: { onRematch(): void }) {
-  const { result, match, settleTxHash } = useAppState();
+  const { result, match, settleTxHash, refunded } = useAppState();
   const dispatch = useAppDispatch();
   if (!result || !match) return null;
 
   const explorer = activeChain.blockExplorers?.default.url;
+  const txLink = settleTxHash && explorer ? `${explorer}/tx/${settleTxHash}` : null;
 
   const won = result.winner === match.seat;
   const staked = match.stakeCents > 0;
@@ -41,16 +42,32 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
         <small className="muted">
           ELO {won ? `+${result.eloDelta}` : result.eloDelta} · {t('league')}
         </small>
-        {staked && won && settleTxHash && (
+        {refunded ? (
           <small className="muted">
-            {explorer ? (
-              <a href={`${explorer}/tx/${settleTxHash}`} target="_blank" rel="noreferrer">
-                {t('viewPayout')} ↗
-              </a>
-            ) : (
-              t('settled')
+            {t('refundedNote')}
+            {txLink && (
+              <>
+                {' · '}
+                <a href={txLink} target="_blank" rel="noreferrer">
+                  {t('viewTx')} ↗
+                </a>
+              </>
             )}
           </small>
+        ) : (
+          staked &&
+          won &&
+          settleTxHash && (
+            <small className="muted">
+              {txLink ? (
+                <a href={txLink} target="_blank" rel="noreferrer">
+                  {t('viewPayout')} ↗
+                </a>
+              ) : (
+                t('settled')
+              )}
+            </small>
+          )
         )}
         <div style={{ width: '100%', maxWidth: 300 }}>
           <button className="btn" onClick={onRematch}>

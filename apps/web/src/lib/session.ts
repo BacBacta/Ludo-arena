@@ -45,6 +45,8 @@ export interface SessionEvents {
   onInfo(message: string): void;
   /** On-chain settlement confirmed (E3.3): the payout tx is mined. */
   onSettled(txHash: string): void;
+  /** Stake refunded on-chain (E3.4): the opponent never joined. */
+  onRefunded(txHash: string): void;
   /** The socket dropped mid-game; the session is retrying in the background. */
   onReconnecting(): void;
   /** Reconnected: full match context + state resync. */
@@ -293,6 +295,9 @@ export class RemoteSession implements GameSession {
         break;
       case 'game.settled':
         this.ev.onSettled(msg.txHash);
+        break;
+      case 'game.refunded':
+        this.ev.onRefunded(msg.txHash);
         break;
       case 'error':
         this.ev.onInfo(msg.message);

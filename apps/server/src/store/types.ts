@@ -58,7 +58,7 @@ export interface SettlementJob {
   gameId: string;
   winnerWallet: string;
   chainId: number;
-  status: 'pending' | 'settled' | 'failed';
+  status: 'pending' | 'settled' | 'failed' | 'refunded';
   attempts: number;
   txHash?: string;
 }

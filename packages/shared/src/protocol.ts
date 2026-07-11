@@ -86,6 +86,9 @@ export type ServerMsg =
   // On-chain settlement confirmation, sent after game.over once the arbiter's
   // settle() tx is mined (E3.3). Decoupled so game.over is never blocked on chain latency.
   | { t: 'game.settled'; gameId: string; txHash: string; winner: Seat }
+  // Stake refunded on-chain because the opponent never joined within the escrow
+  // timeout (E3.4); the lone staker gets their stake back.
+  | { t: 'game.refunded'; gameId: string; txHash: string }
   | { t: 'error'; code: ErrorCode; message: string }
   | { t: 'pong' };
 
