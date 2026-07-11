@@ -98,6 +98,35 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.queueClear();
       await store.close();
     });
+
+    it('tracks daily-challenge captures, awards a ticket, resets next day', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'C', flag: '🌍' });
+      const day1 = '2026-07-11';
+      const day2 = '2026-07-12';
+
+      expect(await store.getChallenge(id, day1)).toMatchObject({ progress: 0, target: 3, completed: false, tickets: 0 });
+
+      const c1 = await store.addCapture(id, day1);
+      expect(c1).toMatchObject({ progress: 1, completed: false, tickets: 0 });
+      await store.addCapture(id, day1);
+      const c3 = await store.addCapture(id, day1); // third capture completes
+      expect(c3).toMatchObject({ progress: 3, completed: true, tickets: 1 });
+
+      // extra captures the same day: no double ticket
+      const c4 = await store.addCapture(id, day1);
+      expect(c4).toMatchObject({ progress: 4, completed: true, tickets: 1 });
+      expect(await store.getChallenge(id, day1)).toMatchObject({ progress: 4, completed: true, tickets: 1 });
+
+      // new day resets progress but keeps the ticket
+      expect(await store.getChallenge(id, day2)).toMatchObject({ progress: 0, completed: false, tickets: 1 });
+      const d2 = await store.addCapture(id, day2);
+      expect(d2).toMatchObject({ progress: 1, completed: false, tickets: 1 });
+
+      await store.close();
+    });
   });
 }
 

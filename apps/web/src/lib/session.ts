@@ -11,6 +11,7 @@ import {
 import type { GameState, Seat } from '@ludo/game-engine';
 import {
   RAKE_BPS,
+  type ChallengeState,
   type GameOverReason,
   type OpponentInfo,
   type ServerMsg,
@@ -47,6 +48,8 @@ export interface SessionEvents {
   onSettled(txHash: string): void;
   /** Stake refunded on-chain (E3.4): the opponent never joined. */
   onRefunded(txHash: string): void;
+  /** Daily challenge progress/tickets from the server (E4.1). */
+  onChallenge(challenge: ChallengeState): void;
   /** The socket dropped mid-game; the session is retrying in the background. */
   onReconnecting(): void;
   /** Reconnected: full match context + state resync. */
@@ -263,6 +266,7 @@ export class RemoteSession implements GameSession {
         }
         const wasReconnecting = this.attempts > 0;
         this.attempts = 0;
+        if (msg.challenge) this.ev.onChallenge(msg.challenge);
         if (msg.resumed) {
           this.inGame = true;
           this.ev.onResumed(msg.resumed, msg.resumed.state);
@@ -298,6 +302,9 @@ export class RemoteSession implements GameSession {
         break;
       case 'game.refunded':
         this.ev.onRefunded(msg.txHash);
+        break;
+      case 'challenge.update':
+        this.ev.onChallenge(msg.challenge);
         break;
       case 'error':
         this.ev.onInfo(msg.message);

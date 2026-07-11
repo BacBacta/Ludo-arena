@@ -4,8 +4,29 @@
  */
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from 'react';
 import type { GameState, Seat } from '@ludo/game-engine';
-import type { StakeCents } from '@ludo/shared';
+import { DAILY_CHALLENGE, type ChallengeState, type StakeCents } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
+
+const CHALLENGE_KEY = 'ludo.challenge';
+
+/** Last-known challenge state, cached so the lobby shows it before connecting. */
+function loadChallenge(): ChallengeState {
+  const fallback: ChallengeState = { progress: 0, target: DAILY_CHALLENGE.captures, completed: false, tickets: 0 };
+  try {
+    const raw = localStorage.getItem(CHALLENGE_KEY);
+    return raw ? (JSON.parse(raw) as ChallengeState) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveChallenge(challenge: ChallengeState): void {
+  try {
+    localStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenge));
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export type Screen = 'lobby' | 'matchmaking' | 'game' | 'end';
 
@@ -19,7 +40,7 @@ export interface AppState {
   walletBacked: boolean;
   stakeCents: StakeCents;
   streakDays: number;
-  challengeProgress: number;
+  challenge: ChallengeState;
   match: MatchInfo | null;
   game: GameState | null;
   lastDice: { value: number; index: number; seat: Seat } | null;
@@ -42,7 +63,7 @@ export const initialState: AppState = {
   walletBacked: false,
   stakeCents: 25,
   streakDays: 3,
-  challengeProgress: 1,
+  challenge: loadChallenge(),
   match: null,
   game: null,
   lastDice: null,
@@ -71,6 +92,7 @@ export type Action =
   | { type: 'STAKING'; status: StakingState }
   | { type: 'SETTLED'; txHash: string }
   | { type: 'REFUNDED'; txHash: string }
+  | { type: 'CHALLENGE_UPDATE'; challenge: ChallengeState }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
@@ -106,13 +128,9 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, screen: 'game', game: a.game };
     case 'DICE':
       return { ...s, lastDice: { value: a.value, index: a.index, seat: a.seat } };
-    case 'MOVED': {
-      const challengeProgress =
-        a.capture && a.game.turn !== undefined && s.challengeProgress < 3
-          ? s.challengeProgress + 1
-          : s.challengeProgress;
-      return { ...s, game: a.game, challengeProgress };
-    }
+    case 'MOVED':
+      // Challenge progress is server-authoritative (CHALLENGE_UPDATE), not derived here.
+      return { ...s, game: a.game };
     case 'TURN':
       return { ...s, turnDeadlineTs: a.deadlineTs };
     case 'GAME_OVER': {
@@ -127,6 +145,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, settleTxHash: a.txHash };
     case 'REFUNDED':
       return { ...s, settleTxHash: a.txHash, refunded: true };
+    case 'CHALLENGE_UPDATE':
+      return { ...s, challenge: a.challenge };
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':

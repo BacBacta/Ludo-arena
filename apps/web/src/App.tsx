@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import type { StakeCents } from '@ludo/shared';
 import { LocalBotSession, RemoteSession, type GameSession, type SessionEvents } from './lib/session';
-import { useAppDispatch, useAppState } from './state/store';
+import { saveChallenge, useAppDispatch, useAppState } from './state/store';
 import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
@@ -62,6 +62,10 @@ export default function App() {
         if (walletRef.current) void refreshBalance(walletRef.current);
       },
       onInfo: (message) => dispatch({ type: 'TOAST', message }),
+      onChallenge: (challenge) => {
+        dispatch({ type: 'CHALLENGE_UPDATE', challenge });
+        saveChallenge(challenge); // cache so the lobby shows it before the next connect
+      },
       onSettled: (txHash) => dispatch({ type: 'SETTLED', txHash }),
       onRefunded: (txHash) => {
         dispatch({ type: 'REFUNDED', txHash });

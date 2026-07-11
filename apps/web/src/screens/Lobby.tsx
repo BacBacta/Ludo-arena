@@ -4,7 +4,7 @@ import { TopBar } from '../components/ui';
 import { t } from '../lib/i18n';
 
 export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
-  const { stakeCents, streakDays, challengeProgress, balanceCents } = useAppState();
+  const { stakeCents, streakDays, challenge, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
 
   const lobbyStakes = ALLOWED_STAKES_CENTS.filter((s) => s <= 100);
@@ -67,9 +67,22 @@ export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
       <div className="card" style={{ marginBottom: 0 }}>
         <h3>{t('dailyChallenge')}</h3>
         <div style={{ fontSize: 13 }} className="muted">
-          {t('challengeDesc')} <b style={{ color: 'var(--accent)' }}>{t('challengeReward')}</b>
-          <span style={{ float: 'right' }}>{challengeProgress}/3</span>
+          {challenge.completed ? (
+            <b style={{ color: 'var(--accent)' }}>{t('challengeDone')}</b>
+          ) : (
+            <>
+              {t('challengeDesc')} <b style={{ color: 'var(--accent)' }}>{t('challengeReward')}</b>
+            </>
+          )}
+          <span style={{ float: 'right' }}>
+            {challenge.progress}/{challenge.target}
+          </span>
         </div>
+        {challenge.tickets > 0 && (
+          <div style={{ fontSize: 13, marginTop: 6 }}>
+            🎟️ {challenge.tickets} {t('tickets')}
+          </div>
+        )}
       </div>
 
       <div className="fairnote">

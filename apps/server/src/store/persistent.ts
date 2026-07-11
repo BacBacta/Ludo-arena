@@ -9,7 +9,7 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
-import type { StakeCents } from '@ludo/shared';
+import { DAILY_CHALLENGE, type ChallengeState, type StakeCents } from '@ludo/shared';
 
 const SESSION_TTL_S = 24 * 3600;
 
@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS players (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Daily challenge (E4.1). Added via ALTER so existing databases migrate.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS challenge_date DATE;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS challenge_captures INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS challenge_done BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS freeroll_tickets INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS games (
   id TEXT PRIMARY KEY,
@@ -207,5 +213,48 @@ export class PersistentStore implements Store {
       `UPDATE settlements SET status = $2, attempts = $3, tx_hash = COALESCE($4, tx_hash), updated_at = now() WHERE game_id = $1`,
       [gameId, status, attempts, txHash ?? null],
     );
+  }
+
+  private challengeFrom(row: { challenge_date: string | null; challenge_captures: number; challenge_done: boolean; freeroll_tickets: number } | undefined, today: string): ChallengeState {
+    const fresh = !row || row.challenge_date !== today;
+    return {
+      progress: fresh ? 0 : row!.challenge_captures,
+      target: DAILY_CHALLENGE.captures,
+      completed: fresh ? false : row!.challenge_done,
+      tickets: row?.freeroll_tickets ?? 0,
+    };
+  }
+
+  async getChallenge(playerId: string, today: string): Promise<ChallengeState> {
+    const res = await this.pool.query<{ challenge_date: string | null; challenge_captures: number; challenge_done: boolean; freeroll_tickets: number }>(
+      `SELECT to_char(challenge_date, 'YYYY-MM-DD') AS challenge_date, challenge_captures, challenge_done, freeroll_tickets FROM players WHERE id = $1`,
+      [playerId],
+    );
+    return this.challengeFrom(res.rows[0], today);
+  }
+
+  async addCapture(playerId: string, today: string): Promise<ChallengeState> {
+    // Day-reset + increment + award-on-completion in one statement.
+    const res = await this.pool.query<{ challenge_captures: number; challenge_done: boolean; freeroll_tickets: number }>(
+      `UPDATE players AS p SET
+         challenge_date = $2::date,
+         challenge_captures = c.captures,
+         challenge_done = c.done,
+         freeroll_tickets = p.freeroll_tickets + CASE WHEN c.done AND NOT c.was_done THEN $4 ELSE 0 END,
+         updated_at = now()
+       FROM (
+         SELECT
+           (CASE WHEN challenge_date = $2::date THEN challenge_captures ELSE 0 END) + 1 AS captures,
+           (CASE WHEN challenge_date = $2::date THEN challenge_done ELSE false END) AS was_done,
+           ((CASE WHEN challenge_date = $2::date THEN challenge_captures ELSE 0 END) + 1) >= $3 AS done
+         FROM players WHERE id = $1
+       ) AS c
+       WHERE p.id = $1
+       RETURNING p.challenge_captures, p.challenge_done, p.freeroll_tickets`,
+      [playerId, today, DAILY_CHALLENGE.captures, DAILY_CHALLENGE.rewardTickets],
+    );
+    const row = res.rows[0];
+    if (!row) return this.getChallenge(playerId, today); // no player row
+    return { progress: row.challenge_captures, target: DAILY_CHALLENGE.captures, completed: row.challenge_done, tickets: row.freeroll_tickets };
   }
 }

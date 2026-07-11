@@ -4,13 +4,17 @@
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
-import type { StakeCents } from '@ludo/shared';
+import { DAILY_CHALLENGE, type ChallengeState, type StakeCents } from '@ludo/shared';
 
 interface PlayerRow {
   wallet?: string;
   name: string;
   flag: string;
   elo: number;
+  challengeDate?: string;
+  captures: number;
+  done: boolean;
+  tickets: number;
 }
 
 export class MemoryStore implements Store {
@@ -68,7 +72,7 @@ export class MemoryStore implements Store {
   ): Promise<{ elo: number }> {
     const existing = this.players.get(id);
     if (existing) return { elo: existing.elo };
-    this.players.set(id, { ...defaults, elo: 1200 });
+    this.players.set(id, { ...defaults, elo: 1200, captures: 0, done: false, tickets: 0 });
     return { elo: 1200 };
   }
   async updateElo(id: string, elo: number): Promise<void> {
@@ -92,5 +96,32 @@ export class MemoryStore implements Store {
       job.attempts = attempts;
       if (txHash) job.txHash = txHash;
     }
+  }
+
+  async getChallenge(playerId: string, today: string): Promise<ChallengeState> {
+    const row = this.players.get(playerId);
+    const fresh = !row || row.challengeDate !== today;
+    return {
+      progress: fresh ? 0 : row.captures,
+      target: DAILY_CHALLENGE.captures,
+      completed: fresh ? false : row.done,
+      tickets: row?.tickets ?? 0,
+    };
+  }
+
+  async addCapture(playerId: string, today: string): Promise<ChallengeState> {
+    const row = this.players.get(playerId);
+    if (!row) return this.getChallenge(playerId, today);
+    if (row.challengeDate !== today) {
+      row.challengeDate = today;
+      row.captures = 0;
+      row.done = false;
+    }
+    row.captures += 1;
+    if (!row.done && row.captures >= DAILY_CHALLENGE.captures) {
+      row.done = true;
+      row.tickets += DAILY_CHALLENGE.rewardTickets;
+    }
+    return { progress: row.captures, target: DAILY_CHALLENGE.captures, completed: row.done, tickets: row.tickets };
   }
 }

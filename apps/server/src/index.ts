@@ -9,6 +9,11 @@ import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { parseClientMsg, potCents, type ResumedGame, type ServerMsg, type StakeCents } from '@ludo/shared';
+
+/** Current UTC date (YYYY-MM-DD) for daily-challenge resets. */
+function utcToday(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
@@ -125,6 +130,14 @@ function makeSession(id: string, ws: WebSocket | null, rec: Omit<SessionRecord, 
 function wireRoom(room: Room): void {
   rooms.set(room.gameId, room);
   room.onChange = persistRoom;
+  room.onCapture = (seat) => {
+    const s = sessions.get(room.client(seat).id);
+    if (!s) return;
+    store
+      .addCapture(playerId(s.wallet, s.id), utcToday())
+      .then((challenge) => s.send({ t: 'challenge.update', challenge }))
+      .catch((e) => console.error('[challenge] addCapture', e));
+  };
   room.onEnd = () => {
     rooms.delete(room.gameId);
     // Resolve players through the sessions map: covers both sessions wired at
@@ -257,6 +270,7 @@ wss.on('connection', (ws, req) => {
           sessionToken: resumedSession.id,
           elo: resumedSession.elo,
           resumed: resumedGame(resumedSession),
+          challenge: await store.getChallenge(playerId(resumedSession.wallet, resumedSession.id), utcToday()),
         });
         return;
       }
@@ -279,7 +293,8 @@ wss.on('connection', (ws, req) => {
       });
       sessions.set(id, session);
       persistSession(session);
-      send(ws, { t: 'hello.ok', sessionToken: id, elo });
+      const challenge = await store.getChallenge(playerId(msg.wallet, id), utcToday());
+      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge });
       return;
     }
 

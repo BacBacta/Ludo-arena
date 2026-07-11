@@ -11,6 +11,16 @@ export type StakeCents = (typeof ALLOWED_STAKES_CENTS)[number];
 /** House share, in basis points (900 = 9%). */
 export const RAKE_BPS = 900;
 
+/** Daily challenge (E4.1): capture N opponent tokens in a day → freeroll tickets. */
+export const DAILY_CHALLENGE = { captures: 3, rewardTickets: 1 } as const;
+
+export interface ChallengeState {
+  progress: number; // captures made today
+  target: number; // DAILY_CHALLENGE.captures
+  completed: boolean; // today's challenge done
+  tickets: number; // total freeroll tickets held
+}
+
 /** Winner payout = pot − rake, matching the server/escrow rounding (rake is floored). */
 export function potCents(stake: StakeCents): number {
   const pot = stake * 2;
@@ -50,7 +60,7 @@ export interface ResumedGame {
 }
 
 export type ServerMsg =
-  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame }
+  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame; challenge?: ChallengeState }
   | { t: 'queue.ok'; position: number }
   | {
       t: 'match.found';
@@ -89,6 +99,8 @@ export type ServerMsg =
   // Stake refunded on-chain because the opponent never joined within the escrow
   // timeout (E3.4); the lone staker gets their stake back.
   | { t: 'game.refunded'; gameId: string; txHash: string }
+  // Daily challenge progress/ticket update (E4.1).
+  | { t: 'challenge.update'; challenge: ChallengeState }
   | { t: 'error'; code: ErrorCode; message: string }
   | { t: 'pong' };
 

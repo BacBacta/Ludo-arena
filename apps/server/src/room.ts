@@ -54,6 +54,8 @@ export class Room {
   onChange?: (room: Room) => void;
   /** Fired once when the game finishes, before onEnd. */
   onResult?: (result: RoomResult) => void;
+  /** Fired when `seat` captures an opponent token (daily challenge, E4.1). */
+  onCapture?: (seat: Seat) => void;
 
   constructor(gameId: string, stakeCents: StakeCents, a: Client, b: Client, fairness: Fairness) {
     this.gameId = gameId;
@@ -194,6 +196,7 @@ export class Room {
       state,
     });
     this.onChange?.(this);
+    if (events.capture) this.onCapture?.(seat);
     if (events.won) {
       this.finish(seat, 'finish');
     } else {

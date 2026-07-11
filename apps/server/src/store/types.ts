@@ -5,7 +5,7 @@
  * in Postgres. MemoryStore keeps dev zero-config (no restart survival).
  */
 import type { GameState, Seat } from '@ludo/game-engine';
-import type { GameOverReason, StakeCents } from '@ludo/shared';
+import type { ChallengeState, GameOverReason, StakeCents } from '@ludo/shared';
 
 /** Serializable part of a Session (the ws handle and Room ref are rebuilt live). */
 export interface SessionRecord {
@@ -95,6 +95,11 @@ export interface Store {
   enqueueSettlement(job: SettlementJob): Promise<void>;
   listPendingSettlements(): Promise<SettlementJob[]>;
   markSettlement(gameId: string, status: SettlementJob['status'], attempts: number, txHash?: string): Promise<void>;
+
+  // Daily challenge (E4.1). `today` is a UTC date string (YYYY-MM-DD); progress
+  // resets when the stored day differs. Tickets persist across days.
+  getChallenge(playerId: string, today: string): Promise<ChallengeState>;
+  addCapture(playerId: string, today: string): Promise<ChallengeState>;
 }
 
 /** Stable player id: wallet when known, otherwise anonymous per-session. */
