@@ -11,8 +11,10 @@ export type StakeCents = (typeof ALLOWED_STAKES_CENTS)[number];
 /** House share, in basis points (900 = 9%). */
 export const RAKE_BPS = 900;
 
+/** Winner payout = pot − rake, matching the server/escrow rounding (rake is floored). */
 export function potCents(stake: StakeCents): number {
-  return Math.floor(stake * 2 * (1 - RAKE_BPS / 10_000));
+  const pot = stake * 2;
+  return pot - Math.floor((pot * RAKE_BPS) / 10_000);
 }
 
 // ---------- Client -> Server ----------
@@ -36,8 +38,19 @@ export interface OpponentInfo {
 
 export type GameOverReason = 'finish' | 'timeout-forfeit' | 'resign';
 
+/** Everything a client needs to rebuild the game screen after a reconnection. */
+export interface ResumedGame {
+  gameId: string;
+  seat: Seat;
+  state: GameState;
+  stakeCents: StakeCents;
+  potCents: number;
+  opponent: OpponentInfo;
+  fairnessCommit: string;
+}
+
 export type ServerMsg =
-  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: { gameId: string; seat: Seat; state: GameState } }
+  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame }
   | { t: 'queue.ok'; position: number }
   | {
       t: 'match.found';

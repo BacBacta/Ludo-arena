@@ -53,6 +53,8 @@ const dict = {
     linkCopied: 'Lien de défi copié — partage-le sur WhatsApp !',
     insufficient: 'Solde insuffisant — recharge ton wallet MiniPay',
     offline: 'Serveur indisponible — partie contre l’IA',
+    reconnecting: 'Reconnexion… la partie continue, ton horloge tourne.',
+    connectionLost: 'Connexion perdue — retour à l’accueil',
   },
   en: {
     play: 'PLAY ⚡',
@@ -107,6 +109,8 @@ const dict = {
     linkCopied: 'Challenge link copied — share it on WhatsApp!',
     insufficient: 'Insufficient balance — top up your MiniPay wallet',
     offline: 'Server unreachable — playing vs AI',
+    reconnecting: 'Reconnecting… the game goes on, your clock is running.',
+    connectionLost: 'Connection lost — back to the lobby',
   },
 } as const;
 

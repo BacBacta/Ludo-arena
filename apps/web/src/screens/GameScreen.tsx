@@ -5,7 +5,7 @@ import { t } from '../lib/i18n';
 const DICE_FACES = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'] as const;
 
 export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: number): void }) {
-  const { game, match, lastDice } = useAppState();
+  const { game, match, lastDice, reconnecting } = useAppState();
   const dispatch = useAppDispatch();
   if (!game || !match) return null;
 
@@ -22,6 +22,7 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
 
   return (
     <div className="screen">
+      {reconnecting && <div className="reconnectbar">📡 {t('reconnecting')}</div>}
       <div className="hud">
         <div className={`player${game.turn === mySeat ? ' player--turn' : ''}`}>
           <div className="player__chip" style={{ background: 'var(--me)' }}>

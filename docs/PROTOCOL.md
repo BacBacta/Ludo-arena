@@ -18,7 +18,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 
 | t | Payload | Description |
 |---|---|---|
-| `hello.ok` | `{ sessionToken, elo, resumed? }` | Session established. `resumed` carries state if a game was in progress. |
+| `hello.ok` | `{ sessionToken, elo, resumed? }` | Session established. If a game is in progress, `resumed` = `{ gameId, seat, state, stakeCents, potCents, opponent, fairnessCommit }` — everything needed to rebuild the game screen after a reconnection or a server restart. |
 | `queue.ok` | `{ position }` | Queued. |
 | `match.found` | `{ gameId, seat, opponent: { name, elo, flag }, stakeCents, potCents, fairnessCommit }` | Match found. `fairnessCommit` = hash of the server seed, to display. |
 | `game.state` | `{ state }` | Full state (resync, game start). `state` = engine `GameState`. |

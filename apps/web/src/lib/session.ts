@@ -43,6 +43,12 @@ export interface SessionEvents {
   onTurn(seat: Seat, deadlineTs: number): void;
   onOver(result: GameResult): void;
   onInfo(message: string): void;
+  /** The socket dropped mid-game; the session is retrying in the background. */
+  onReconnecting(): void;
+  /** Reconnected: full match context + state resync. */
+  onResumed(match: MatchInfo, state: GameState): void;
+  /** The in-progress game could not be resumed (gave up / session expired). */
+  onGone(): void;
 }
 
 export interface GameSession {
@@ -153,40 +159,55 @@ export class LocalBotSession implements GameSession {
 
 // ---------------------------------------------------------------- Remote (ws)
 
+const TOKEN_KEY = 'ludo.sessionToken';
+/** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
+const MAX_RECONNECT_ATTEMPTS = 12;
+
 export class RemoteSession implements GameSession {
-  private ws: WebSocket;
+  private ws: WebSocket | null = null;
   private disposed = false;
+  private inGame = false;
+  private attempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly entropy: string;
 
   constructor(
     private readonly ev: SessionEvents,
-    stakeCents: StakeCents,
-    serverUrl: string,
-    onUnavailable: () => void,
+    private readonly stakeCents: StakeCents,
+    private readonly serverUrl: string,
+    private readonly onUnavailable: () => void,
   ) {
-    const entropy = (() => {
+    this.entropy = (() => {
       const b = new Uint8Array(32);
       crypto.getRandomValues(b);
       return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
     })();
+    this.connect(true);
+  }
 
-    this.ws = new WebSocket(serverUrl);
+  private connect(initial: boolean): void {
+    const ws = new WebSocket(this.serverUrl);
+    this.ws = ws;
     const failTimer = setTimeout(() => {
-      if (this.ws.readyState !== WebSocket.OPEN) {
-        this.ws.close();
-        onUnavailable();
-      }
+      if (ws.readyState !== WebSocket.OPEN) ws.close();
     }, 2500);
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
       clearTimeout(failTimer);
-      this.send({ t: 'hello', entropy });
-      this.send({ t: 'queue.join', stake: stakeCents });
+      this.send({ t: 'hello', entropy: this.entropy, sessionToken: this.token() ?? undefined });
+      if (initial) this.send({ t: 'queue.join', stake: this.stakeCents });
     };
-    this.ws.onerror = () => {
+    ws.onclose = () => {
       clearTimeout(failTimer);
-      if (!this.disposed) onUnavailable();
+      if (this.disposed) return;
+      if (!this.inGame) {
+        // never reached a game: initial-connection failure → bot fallback
+        if (initial) this.onUnavailable();
+        return;
+      }
+      this.scheduleReconnect();
     };
-    this.ws.onmessage = (e) => {
+    ws.onmessage = (e) => {
       let msg: ServerMsg;
       try {
         msg = JSON.parse(String(e.data)) as ServerMsg;
@@ -197,9 +218,52 @@ export class RemoteSession implements GameSession {
     };
   }
 
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return;
+    this.attempts += 1;
+    if (this.attempts > MAX_RECONNECT_ATTEMPTS) {
+      this.inGame = false;
+      this.ev.onGone();
+      return;
+    }
+    if (this.attempts === 1) this.ev.onReconnecting();
+    const delay = Math.min(500 * 2 ** (this.attempts - 1), 4000);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.disposed) this.connect(false);
+    }, delay);
+  }
+
+  private token(): string | null {
+    try {
+      return sessionStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  }
+
   private handle(msg: ServerMsg): void {
     switch (msg.t) {
+      case 'hello.ok': {
+        try {
+          sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
+        } catch {
+          /* storage unavailable: reconnection within this session still works */
+        }
+        const wasReconnecting = this.attempts > 0;
+        this.attempts = 0;
+        if (msg.resumed) {
+          this.inGame = true;
+          this.ev.onResumed(msg.resumed, msg.resumed.state);
+        } else if (wasReconnecting && this.inGame) {
+          // the game ended (or expired) while we were away
+          this.inGame = false;
+          this.ev.onGone();
+        }
+        break;
+      }
       case 'match.found':
+        this.inGame = true;
         this.ev.onMatchFound(msg);
         break;
       case 'game.state':
@@ -215,6 +279,7 @@ export class RemoteSession implements GameSession {
         this.ev.onTurn(msg.seat, msg.deadlineTs);
         break;
       case 'game.over':
+        this.inGame = false;
         this.ev.onOver(msg);
         break;
       case 'error':
@@ -226,7 +291,7 @@ export class RemoteSession implements GameSession {
   }
 
   private send(msg: unknown): void {
-    if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
   roll(): void {
@@ -239,6 +304,7 @@ export class RemoteSession implements GameSession {
 
   dispose(): void {
     this.disposed = true;
-    this.ws.close();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.ws?.close();
   }
 }

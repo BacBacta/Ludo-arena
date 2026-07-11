@@ -8,6 +8,7 @@
     "start": "tsx src/index.ts",
     "e2e": "tsx scripts/e2e.ts",
     "restart-test": "tsx scripts/restartTest.ts",
+    "reconnect-test": "tsx scripts/reconnectTest.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

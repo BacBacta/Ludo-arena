@@ -8,7 +8,7 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { parseClientMsg, type ServerMsg, type StakeCents } from '@ludo/shared';
+import { parseClientMsg, potCents, type ResumedGame, type ServerMsg, type StakeCents } from '@ludo/shared';
 import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
 import { Room, type Client } from './room.js';
@@ -185,15 +185,12 @@ wss.on('connection', (ws) => {
       const resumedSession = msg.sessionToken ? await resumeSession(msg.sessionToken, ws) : null;
       if (resumedSession) {
         session = resumedSession;
-        const resumed =
-          resumedSession.room && resumedSession.seat !== null
-            ? {
-                gameId: resumedSession.room.gameId,
-                seat: resumedSession.seat,
-                state: resumedSession.room.getState(),
-              }
-            : undefined;
-        send(ws, { t: 'hello.ok', sessionToken: resumedSession.id, elo: resumedSession.elo, resumed });
+        send(ws, {
+          t: 'hello.ok',
+          sessionToken: resumedSession.id,
+          elo: resumedSession.elo,
+          resumed: resumedGame(resumedSession),
+        });
         return;
       }
       const id = randomBytes(16).toString('hex');
@@ -300,6 +297,21 @@ wss.on('connection', (ws) => {
   });
 });
 
+/** Full match context so a reconnecting client can rebuild its game screen. */
+function resumedGame(s: Session): ResumedGame | undefined {
+  if (!s.room || s.seat === null || s.room.isOver()) return undefined;
+  const opp = s.room.client(s.seat === 0 ? 1 : 0);
+  return {
+    gameId: s.room.gameId,
+    seat: s.seat,
+    state: s.room.getState(),
+    stakeCents: s.room.stakeCents,
+    potCents: potCents(s.room.stakeCents),
+    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag },
+    fairnessCommit: s.room.fairness.commit,
+  };
+}
+
 /** Look up a session token in memory, then in the store (post-restart). */
 async function resumeSession(token: string, ws: WebSocket): Promise<Session | null> {
   const existing = sessions.get(token);
@@ -340,7 +352,7 @@ async function startGame(stake: StakeCents, a: Session, b: Session): Promise<voi
   wireRoom(room);
   persistSession(a);
   persistSession(b);
-  const pot = room.stakeCents * 2 - Math.floor((room.stakeCents * 2 * 900) / 10_000);
+  const pot = potCents(stake);
   a.send({
     t: 'match.found',
     gameId,

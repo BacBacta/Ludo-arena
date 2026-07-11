@@ -25,6 +25,12 @@ export default function App() {
       onTurn: (seat, deadlineTs) => dispatch({ type: 'TURN', seat, deadlineTs }),
       onOver: (result) => dispatch({ type: 'GAME_OVER', result }),
       onInfo: (message) => dispatch({ type: 'TOAST', message }),
+      onReconnecting: () => dispatch({ type: 'RECONNECTING' }),
+      onResumed: (match, game) => dispatch({ type: 'RESUME', match, game }),
+      onGone: () => {
+        dispatch({ type: 'TOAST', message: t('connectionLost') });
+        dispatch({ type: 'GO_LOBBY' });
+      },
     };
   }, [dispatch]);
 

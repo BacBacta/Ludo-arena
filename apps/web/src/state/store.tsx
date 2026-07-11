@@ -21,6 +21,7 @@ export interface AppState {
   turnDeadlineTs: number | null;
   result: GameResult | null;
   botMode: boolean;
+  reconnecting: boolean;
   toast: string | null;
   fairModalOpen: boolean;
 }
@@ -37,6 +38,7 @@ export const initialState: AppState = {
   turnDeadlineTs: null,
   result: null,
   botMode: false,
+  reconnecting: false,
   toast: null,
   fairModalOpen: false,
 };
@@ -50,6 +52,8 @@ export type Action =
   | { type: 'MOVED'; game: GameState; capture: boolean }
   | { type: 'TURN'; seat: Seat; deadlineTs: number }
   | { type: 'GAME_OVER'; result: GameResult }
+  | { type: 'RECONNECTING' }
+  | { type: 'RESUME'; match: MatchInfo; game: GameState }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
   | { type: 'CLEAR_TOAST' }
@@ -90,16 +94,22 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'TURN':
       return { ...s, turnDeadlineTs: a.deadlineTs };
     case 'GAME_OVER': {
-      const won = a.result.winner === 0;
+      const won = a.result.winner === (s.match?.seat ?? 0);
       return {
         ...s,
         screen: 'end',
         result: a.result,
+        reconnecting: false,
         balanceCents: won ? s.balanceCents + a.result.payoutCents : s.balanceCents,
       };
     }
+    case 'RECONNECTING':
+      return { ...s, reconnecting: true };
+    case 'RESUME':
+      // reconnection resync: no balance change (the stake was already debited)
+      return { ...s, screen: 'game', match: a.match, game: a.game, reconnecting: false };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', match: null, game: null, result: null };
+      return { ...s, screen: 'lobby', match: null, game: null, result: null, reconnecting: false };
     case 'TOAST':
       return { ...s, toast: a.message };
     case 'CLEAR_TOAST':
