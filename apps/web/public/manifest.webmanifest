@@ -1,0 +1,14 @@
+{
+  "name": "Ludo Arena",
+  "short_name": "Ludo Arena",
+  "description": "Blitz 1v1 Ludo — stablecoin winnings, verifiable dice. MiniPay Mini App.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#16211C",
+  "theme_color": "#0E1512",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

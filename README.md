@@ -53,7 +53,7 @@ git push -u origin main
 
 | Layer | Choice | Why |
 |---|---|---|
-| Frontend | React 18, Vite, strict TypeScript, CSS design tokens (no heavy CSS framework) | < 1 MB bundle required by MiniPay usage (3G, entry-level Android) |
+| Frontend | React 18, Vite, strict TypeScript, CSS design tokens (no heavy CSS framework), PWA (offline app shell) | < 1 MB bundle required by MiniPay usage (3G, entry-level Android) |
 | Wallet | viem + MiniPay injected provider (`window.ethereum.isMiniPay`) | Official MiniPay recommendation; legacy transactions, cUSD feeCurrency |
 | Backend | Node 20+, `ws`, shared engine | Lightweight, < 200 bytes/move messages, reconnection + auto-move |
 | Contracts | Solidity 0.8.x, Foundry | Stake escrow, arbiter-signed settlement, configurable rake |

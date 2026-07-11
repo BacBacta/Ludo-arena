@@ -14,3 +14,10 @@ createRoot(root).render(
     </StoreProvider>
   </StrictMode>,
 );
+
+// PWA: offline app shell (E6.5). Dev uses HMR, so only register for the build.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+  });
+}

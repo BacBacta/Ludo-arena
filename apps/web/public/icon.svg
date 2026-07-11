@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Ludo Arena">
+  <rect width="512" height="512" rx="96" fill="#16211C" />
+  <rect x="96" y="96" width="320" height="320" rx="40" fill="#F4EFE6" />
+  <circle cx="176" cy="176" r="34" fill="#2E9E6B" />
+  <circle cx="336" cy="176" r="34" fill="#E8833A" />
+  <circle cx="256" cy="256" r="34" fill="#F5B301" />
+  <circle cx="176" cy="336" r="34" fill="#E8833A" />
+  <circle cx="336" cy="336" r="34" fill="#2E9E6B" />
+</svg>

@@ -42,11 +42,11 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 
 ## E6 — Polish & i18n
 
-- [ ] **E6.1 Full i18n** FR/EN (files in `apps/web/src/lib/i18n.ts`) then PT/ES/SW.
-- [ ] **E6.2 Subtle sounds** (dice, capture, win) — < 30 KB total, opt-out.
-- [ ] **E6.3 Token movement animations** (cell-by-cell interpolation, 120 ms/cell).
-- [ ] **E6.4 First-session onboarding**: free sponsored welcome game, single tooltip.
-- [ ] **E6.5 PWA**: manifest + service worker (asset cache, offline vs bot).
+- [x] **E6.1 Full i18n** FR/EN + PT/ES/SW (`apps/web/src/lib/i18n.ts`); English is the reference key set, every locale typed `Record<TKey,string>` so a gap fails typecheck; auto-detected with an EN fallback.
+- [x] **E6.2 Subtle sounds** (dice, capture, win) — Web Audio synthesis (0 asset bytes, ≪ 30 KB), opt-out toggle persisted.
+- [x] **E6.3 Token movement animations** — `useAnimatedPositions` steps one cell every 120 ms toward the real position (forward walks, resets snap; honours reduced-motion).
+- [x] **E6.4 First-session onboarding**: welcome message + a free sponsored practice game on the first session (localStorage-gated).
+- [x] **E6.5 PWA**: `manifest.webmanifest` + SVG icon + `sw.js` (network-first navigations, cache-first assets) registered in prod; offline → app shell loads → bot mode.
 
 ## E7 — MiniPay listing
 
