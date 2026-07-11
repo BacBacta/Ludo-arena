@@ -16,8 +16,8 @@ import type { ServerMsg } from '@ludo/shared';
 const PORT = 8790;
 const URL = `ws://localhost:${PORT}`;
 
-if (!process.env.REDIS_URL || !process.env.DATABASE_URL) {
-  console.error('restart-test needs REDIS_URL and DATABASE_URL (docker compose up -d).');
+if (!process.env.REDIS_URL) {
+  console.error('restart-test needs REDIS_URL (+ optional DATABASE_URL). Run: docker compose up -d.');
   process.exit(1);
 }
 
