@@ -11,3 +11,5 @@ cache/
 broadcast/
 .turbo/
 *.tsbuildinfo
+.vercel
+.env*

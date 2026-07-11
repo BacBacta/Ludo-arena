@@ -193,5 +193,10 @@ deployments[networkName] = {
   rakeBps: Number(rakeBps),
   deployedAt: new Date().toISOString(),
 };
-writeFileSync(deploymentsPath, JSON.stringify(deployments, null, 2) + '\n');
-console.log(`[deploy] addresses saved to packages/contracts/deployments.json ('${networkName}')`);
+const serialized = JSON.stringify(deployments, null, 2) + '\n';
+writeFileSync(deploymentsPath, serialized);
+// Keep the web's vendored copy in sync (it imports this, decoupled from the
+// contracts workspace so the Vercel build stays lean).
+const webCopy = join(ROOT, '..', '..', 'apps', 'web', 'src', 'deployments.json');
+if (existsSync(join(ROOT, '..', '..', 'apps', 'web', 'src'))) writeFileSync(webCopy, serialized);
+console.log(`[deploy] addresses saved to deployments.json + apps/web/src ('${networkName}')`);

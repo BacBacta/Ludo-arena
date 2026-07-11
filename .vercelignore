@@ -1,0 +1,9 @@
+# The web build only needs game-engine + shared. Excluding these keeps the
+# Vercel build lean (no hardhat/foundry, no server toolchain) and workspace
+# resolution finds exactly game-engine, shared and web.
+packages/contracts
+apps/server
+node_modules
+**/dist
+**/node_modules
+.git

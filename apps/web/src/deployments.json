@@ -1,0 +1,26 @@
+{
+  "localhost": {
+    "chainId": 31337,
+    "escrow": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+    "escrowTx": "0x924d74b5d4b134f8abcc8e2687ec1b23cbba7f5566fe83f0181074f4612f8e63",
+    "stablecoin": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+    "stablecoinIsTestUSD": true,
+    "stablecoinTx": "0x7590659fcb72fc370aa672b1b9ce2ffe96c97ec11568f139803fb5f9f0c1fe1d",
+    "arbiter": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "treasury": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "rakeBps": 900,
+    "deployedAt": "2026-07-11T16:30:28.475Z"
+  },
+  "celo-sepolia": {
+    "chainId": 11142220,
+    "escrow": "0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6",
+    "escrowTx": "0x2f03f33c86edb8d1d5dce947936719ad0f77f3794c5d1b5cfd040d9fc82dd774",
+    "stablecoin": "0x964cfee68776bb2aaeab8c8324600ec27650233f",
+    "stablecoinIsTestUSD": true,
+    "stablecoinTx": "0xe6c1f573b7c33e42cf870ed6177e11bdae6cea619c648fedb716f1106284dfe3",
+    "arbiter": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
+    "treasury": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
+    "rakeBps": 900,
+    "deployedAt": "2026-07-11T16:52:40.167Z"
+  }
+}

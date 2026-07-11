@@ -3,7 +3,9 @@
  * written by the deploy script (packages/contracts/deployments.json).
  */
 import type { Address } from 'viem';
-import raw from '../../../../packages/contracts/deployments.json';
+// Vendored copy of packages/contracts/deployments.json (kept in sync by the
+// deploy script) so the web build has no dependency on the contracts workspace.
+import raw from '../deployments.json';
 
 export interface Deployment {
   chainId: number;
