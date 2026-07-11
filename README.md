@@ -31,9 +31,11 @@ npm run dev:web        # → http://localhost:5173
 
 # Game server (real-time PvP)
 npm run dev:server     # → ws://localhost:8787
+# Optional persistence (restart survival): docker compose up -d
+# then set REDIS_URL + DATABASE_URL (see apps/server/.env.example)
 
 # Checks
-npm test               # unit tests (game engine)
+npm test               # unit tests (game engine + server store)
 npm run typecheck      # strict TypeScript across all workspaces
 npm run simulate       # 2,000-game simulation (termination, stats)
 ```

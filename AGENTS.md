@@ -45,6 +45,7 @@ npm run dev:server          # server ws://localhost:8787
 | `packages/game-engine/src/constants.ts` | Board geometry (52-cell track, safe cells, home columns) |
 | `packages/shared/src/protocol.ts` | Client ↔ server message contract |
 | `apps/server/src/room.ts` | Match lifecycle (clocks, auto-move, disconnections) |
+| `apps/server/src/store/` | Persistence: Redis (sessions, rooms, queues) + Postgres (players, games), in-memory fallback |
 | `apps/server/src/fairness.ts` | Commit-reveal dice (server seed + player entropies) |
 | `apps/web/src/state/store.tsx` | Frontend global state (single reducer) |
 | `apps/web/src/lib/bot.ts` | Local AI (offline / practice mode) |

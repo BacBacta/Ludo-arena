@@ -1,6 +1,8 @@
 /**
  * Room = one 1v1 match. The server is authoritative:
  * it runs the engine, keeps the clock (auto-move) and handles disconnections.
+ * Every state transition fires onChange so the store can snapshot the room
+ * (restart survival, BACKLOG E2.1).
  */
 import {
   applyMove,
@@ -12,14 +14,28 @@ import {
 import type { GameState, Seat } from '@ludo/game-engine';
 import { RAKE_BPS, type GameOverReason, type ServerMsg, type StakeCents } from '@ludo/shared';
 import { eloDelta } from './elo.js';
-import { createFairness, rollDie, type Fairness } from './fairness.js';
+import { rollDie, type Fairness } from './fairness.js';
+import type { RoomSnapshot } from './store/index.js';
 
 export interface Client {
   send(msg: ServerMsg): void;
+  id: string;
   wallet?: string;
   name: string;
   elo: number;
   flag: string;
+}
+
+export interface RoomResult {
+  gameId: string;
+  stakeCents: StakeCents;
+  winner: Seat;
+  reason: GameOverReason;
+  payoutCents: number;
+  rakeCents: number;
+  eloDelta: number;
+  fairness: Fairness;
+  players: [Client, Client];
 }
 
 export class Room {
@@ -31,20 +47,62 @@ export class Room {
   private diceIndex = 0;
   private clock: ReturnType<typeof setTimeout> | null = null;
   private autoMoveStreak: [number, number] = [0, 0];
+  private deadlineTs = 0;
   private over = false;
   onEnd?: (room: Room) => void;
+  /** Fired after every state transition; wire to the store for snapshots. */
+  onChange?: (room: Room) => void;
+  /** Fired once when the game finishes, before onEnd. */
+  onResult?: (result: RoomResult) => void;
 
-  constructor(gameId: string, stakeCents: StakeCents, a: Client, b: Client, entropyA: string, entropyB: string) {
+  constructor(gameId: string, stakeCents: StakeCents, a: Client, b: Client, fairness: Fairness) {
     this.gameId = gameId;
     this.stakeCents = stakeCents;
     this.clients = [a, b];
-    this.fairness = createFairness(entropyA, entropyB);
+    this.fairness = fairness;
     this.state = newGame();
+  }
+
+  /** Rebuild a room from a store snapshot (server restart). */
+  static fromSnapshot(snap: RoomSnapshot, a: Client, b: Client): Room {
+    const room = new Room(snap.gameId, snap.stakeCents, a, b, snap.fairness);
+    room.state = snap.state;
+    room.diceIndex = snap.diceIndex;
+    room.autoMoveStreak = [...snap.autoMoveStreak];
+    return room;
+  }
+
+  toSnapshot(): RoomSnapshot {
+    return {
+      gameId: this.gameId,
+      stakeCents: this.stakeCents,
+      state: this.state,
+      diceIndex: this.diceIndex,
+      autoMoveStreak: [...this.autoMoveStreak],
+      fairness: this.fairness,
+      players: [this.playerMeta(0), this.playerMeta(1)],
+    };
   }
 
   start(): void {
     this.broadcast({ t: 'game.state', state: this.state });
     this.announceTurn();
+    this.onChange?.(this);
+  }
+
+  /** Re-announce the turn after a restore (fresh clock, both clients resync). */
+  resume(): void {
+    if (this.over) return;
+    this.broadcast({ t: 'game.state', state: this.state });
+    this.announceTurn();
+  }
+
+  /** Swap in a live client (reconnection) and resync it. */
+  attach(seat: Seat, client: Client): void {
+    this.clients[seat] = client;
+    if (this.over) return;
+    client.send({ t: 'game.state', state: this.state });
+    client.send({ t: 'game.turn', seat: this.state.turn, deadlineTs: this.deadlineTs });
   }
 
   /** The player at `seat` asks to roll the die. */
@@ -86,7 +144,21 @@ export class Room {
     return this.clients[seat];
   }
 
+  isOver(): boolean {
+    return this.over;
+  }
+
+  /** Stop the clock without finishing (server shutdown). */
+  suspend(): void {
+    this.clearClock();
+  }
+
   // ---------- internal ----------
+
+  private playerMeta(seat: Seat): RoomSnapshot['players'][number] {
+    const c = this.clients[seat];
+    return { sessionId: c.id, wallet: c.wallet, name: c.name, flag: c.flag, elo: c.elo };
+  }
 
   private doRoll(): void {
     const seat = this.state.turn;
@@ -94,6 +166,7 @@ export class Room {
     const die = rollDie(this.fairness, this.diceIndex);
     this.state = applyRoll(this.state, die);
     this.broadcast({ t: 'game.dice', value: die, index: this.diceIndex, seat });
+    this.onChange?.(this);
 
     if (this.state.phase === 'awaiting-move') {
       if (this.state.legal.length === 1) {
@@ -120,6 +193,7 @@ export class Room {
       extraTurn: events.extraTurn,
       state,
     });
+    this.onChange?.(this);
     if (events.won) {
       this.finish(seat, 'finish');
     } else {
@@ -129,8 +203,8 @@ export class Room {
 
   private announceTurn(): void {
     if (this.over) return;
-    const deadlineTs = Date.now() + BLITZ.moveClockMs;
-    this.broadcast({ t: 'game.turn', seat: this.state.turn, deadlineTs });
+    this.deadlineTs = Date.now() + BLITZ.moveClockMs;
+    this.broadcast({ t: 'game.turn', seat: this.state.turn, deadlineTs: this.deadlineTs });
     this.armClock();
   }
 
@@ -189,6 +263,17 @@ export class Room {
         // txHash: added once the on-chain arbiter is wired (BACKLOG E3.3)
       });
     }
+    this.onResult?.({
+      gameId: this.gameId,
+      stakeCents: this.stakeCents,
+      winner,
+      reason,
+      payoutCents,
+      rakeCents,
+      eloDelta: delta,
+      fairness: this.fairness,
+      players: [this.clients[0], this.clients[1]],
+    });
     this.onEnd?.(this);
   }
 
