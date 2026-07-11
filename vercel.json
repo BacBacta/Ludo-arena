@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm install",
+  "buildCommand": "npm run build -w apps/web",
+  "outputDirectory": "apps/web/dist",
+  "rewrites": [{ "source": "/((?!assets/|.*\\.).*)", "destination": "/index.html" }],
+  "build": {
+    "env": {
+      "VITE_SERVER_URL": "wss://ludo-arena-server.fly.dev",
+      "VITE_CHAIN": "celo-sepolia"
+    }
+  }
+}
