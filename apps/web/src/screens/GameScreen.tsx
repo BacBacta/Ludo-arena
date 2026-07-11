@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BLITZ } from '@ludo/game-engine';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { Board } from '../components/Board';
+import { IconShield } from '../components/icons';
 import { t } from '../lib/i18n';
 
 /** Pip layouts for the SVG die faces (viewBox 0..100). */
@@ -112,7 +113,10 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
           </div>
           <div className={`player${!myTurn ? ' player--turn' : ''}`}>
             <TurnChip color="var(--opp)" active={!myTurn} deadlineTs={turnDeadlineTs} />
-            {match.opponent.name}
+            <span>
+              {match.opponent.flag} {match.opponent.name}
+              <span className="player__elo">{match.opponent.elo}</span>
+            </span>
           </div>
         </div>
 
@@ -130,7 +134,9 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
             <span>{message}</span>
             <small>
               {t('rollNo')} #{lastDice?.index ?? 0} ·{' '}
-              <a onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>🛡️ {t('verify')}</a>
+              <a onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>
+                <IconShield className="icon--me" /> {t('verify')}
+              </a>
             </small>
           </div>
         </div>

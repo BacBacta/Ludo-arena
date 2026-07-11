@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
+import { IconSoundOff, IconSoundOn } from './icons';
 import { t } from '../lib/i18n';
 
 export function TopBar() {
@@ -18,7 +19,7 @@ export function TopBar() {
           title={soundOn ? t('soundOn') : t('soundOff')}
           onClick={() => dispatch({ type: 'TOGGLE_SOUND' })}
         >
-          {soundOn ? '🔊' : '🔈'}
+          {soundOn ? <IconSoundOn /> : <IconSoundOff className="icon--muted" />}
         </button>
         <div className="topbar__balance">
           {/* gray dot + Demo label until a real wallet backs the balance */}

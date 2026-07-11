@@ -120,6 +120,19 @@ body {
 .muted { color: var(--muted); }
 small.muted { font-size: 12px; }
 
+/* inline SVG icon set */
+.icon {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.17em;
+  display: inline-block;
+}
+.icon--gold { color: var(--accent); }
+.icon--me { color: var(--me); }
+.icon--opp { color: var(--opp); }
+.icon--muted { color: var(--muted); }
+.player__elo { color: var(--muted); font-weight: 600; font-size: 11px; margin-left: 5px; }
+
 /* TopBar */
 .topbar {
   display: flex;
@@ -153,7 +166,9 @@ small.muted { font-size: 12px; }
   gap: 12px;
   margin-bottom: 14px;
 }
-.streak__fire { font-size: 26px; }
+.streak__fire { color: var(--accent); display: flex; }
+.streak__fire .icon { width: 26px; height: 26px; }
+.ticketcount { margin-left: auto; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 4px; }
 .streak b { font-size: 15px; }
 .streak small { color: var(--muted); display: block; font-size: 12px; margin-top: 2px; }
 
@@ -263,7 +278,20 @@ small.muted { font-size: 12px; }
   background: var(--card);
   border-radius: var(--radius);
   padding: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid #33443a;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.boardwrap--shake { animation: boardshake 0.3s ease; }
+@keyframes boardshake {
+  0%, 100% { transform: none; }
+  25% { transform: translate(3px, -2px); }
+  50% { transform: translate(-3px, 2px); }
+  75% { transform: translate(2px, 1px); }
+}
+.burst__p { animation: burstfly 0.55s ease-out forwards; }
+@keyframes burstfly {
+  from { transform: translate(0, 0); opacity: 1; }
+  to { transform: translate(var(--dx), var(--dy)); opacity: 0; }
 }
 .boardwrap svg { width: 100%; height: 100%; display: block; }
 .token { cursor: pointer; }
@@ -309,9 +337,42 @@ small.muted { font-size: 12px; }
 .gamemsg small a { color: var(--me); cursor: pointer; text-decoration: underline; }
 
 /* End */
+.screen--end { position: relative; overflow: hidden; }
 .end__emoji { font-size: 44px; }
 .end__title { font-size: 22px; font-weight: 800; }
-.end__amount { font-size: 40px; font-weight: 900; color: var(--accent); }
+.end__amount { font-size: 40px; font-weight: 900; color: var(--accent); font-variant-numeric: tabular-nums; }
+/* orchestrated entrance */
+.screen--end .center > * { animation: fadeup 0.45s ease both; }
+.screen--end .center > *:nth-child(1) { animation-delay: 0.05s; }
+.screen--end .center > *:nth-child(2) { animation-delay: 0.15s; }
+.screen--end .center > *:nth-child(3) { animation-delay: 0.25s; }
+.screen--end .center > *:nth-child(4) { animation-delay: 0.4s; }
+.screen--end .center > *:nth-child(5) { animation-delay: 0.5s; }
+.screen--end .center > *:nth-child(6) { animation-delay: 0.6s; }
+.screen--end .center > *:nth-child(7) { animation-delay: 0.7s; }
+@keyframes fadeup {
+  from { opacity: 0; transform: translateY(12px); }
+}
+.confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.confetti span {
+  position: absolute;
+  top: -20px;
+  border-radius: 2px;
+  animation: confall linear forwards;
+}
+@keyframes confall {
+  to { transform: translateY(105vh) rotate(560deg); opacity: 0.85; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti, .boardwrap--shake, .burst__p { animation: none !important; }
+  .confetti { display: none; }
+}
 .paynote {
   background: var(--card);
   border: 1px solid var(--line);
