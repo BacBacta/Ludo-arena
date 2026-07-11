@@ -7,7 +7,7 @@
   "rewrites": [{ "source": "/((?!assets/|.*\\.).*)", "destination": "/index.html" }],
   "build": {
     "env": {
-      "VITE_SERVER_URL": "wss://ludo-arena-server.onrender.com",
+      "VITE_SERVER_URL": "wss://ludo-arena.fly.dev",
       "VITE_CHAIN": "celo-sepolia"
     }
   }
