@@ -5,7 +5,7 @@ import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { t } from '../lib/i18n';
 
 export function TopBar() {
-  const { balanceCents, soundOn } = useAppState();
+  const { balanceCents, walletBacked, soundOn } = useAppState();
   const dispatch = useAppDispatch();
   return (
     <div className="topbar">
@@ -21,7 +21,9 @@ export function TopBar() {
           {soundOn ? '🔊' : '🔈'}
         </button>
         <div className="topbar__balance">
-          <span className="topbar__dot" />
+          {/* gray dot + Demo label until a real wallet backs the balance */}
+          <span className="topbar__dot" style={walletBacked ? undefined : { background: 'var(--muted)' }} />
+          {!walletBacked && <span className="muted">{t('demo')} ·&nbsp;</span>}
           {fmtCents(balanceCents)} cUSD
         </div>
       </div>

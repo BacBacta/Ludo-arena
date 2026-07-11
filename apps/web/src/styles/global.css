@@ -157,18 +157,21 @@ small.muted { font-size: 12px; }
 .streak b { font-size: 15px; }
 .streak small { color: var(--muted); display: block; font-size: 12px; margin-top: 2px; }
 
-.stakes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+/* flex + centered wrap: an odd tile centers instead of orphaning left */
+.stakes { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .stake {
+  flex: 1 1 0;
+  min-width: 62px;
   background: var(--card-2);
   border: 2px solid transparent;
   border-radius: var(--radius-s);
-  padding: 12px 4px;
+  padding: 11px 2px;
   text-align: center;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.stake b { display: block; font-size: 16px; }
-.stake small { color: var(--muted); font-size: 10px; }
+.stake b { display: block; font-size: 15px; }
+.stake small { color: var(--muted); font-size: 9.5px; white-space: nowrap; }
 .stake--sel { border-color: var(--accent); background: #2a3a2c; }
 .stake--free b { color: var(--me); }
 
@@ -203,7 +206,27 @@ small.muted { font-size: 12px; }
 .avatar--opp { background: #3d2a1d; border-color: var(--opp); }
 
 /* Game */
-.hud { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+/* vertical centering: board + controls sit in the middle, not glued to the top */
+.gamewrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+.hud { display: flex; justify-content: space-between; align-items: center; }
+
+/* turn-timer ring around the active player's chip */
+.ringwrap {
+  border-radius: 50%;
+  padding: 3px;
+  background: var(--line);
+  display: flex;
+}
+.ring--low { animation: ringpulse 0.55s ease infinite; }
+@keyframes ringpulse {
+  50% { transform: scale(1.12); }
+}
 .player {
   display: flex;
   align-items: center;
@@ -246,20 +269,41 @@ small.muted { font-size: 12px; }
 .token { cursor: pointer; }
 .token--movable { filter: drop-shadow(0 0 3px var(--accent)); }
 
-.controls { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.controls { display: flex; align-items: center; gap: 12px; }
 .dicebtn {
   flex: 0 0 78px;
   height: 78px;
   border-radius: var(--radius);
   border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  font-size: 34px;
-  font-weight: 900;
-  color: #08130d;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(245, 179, 1, 0.3);
+  transition: transform 0.1s ease;
 }
-.dicebtn:disabled { background: var(--card-2); color: var(--muted); box-shadow: none; }
+.dicebtn:active:not(:disabled) { transform: scale(0.94); }
+.dicebtn:disabled { background: var(--card-2); box-shadow: none; cursor: default; }
+.dicebtn:disabled .die { opacity: 0.55; }
+.die { width: 54px; height: 54px; display: block; }
+/* idle nudge invites the tap; the tumble plays while faces cycle */
+.dicebtn:not(:disabled):not(.dicebtn--rolling) .die { animation: nudge 1.8s ease infinite; }
+@keyframes nudge {
+  0%, 24%, 100% { transform: none; }
+  8% { transform: rotate(-9deg); }
+  16% { transform: rotate(7deg); }
+}
+.dicebtn--rolling .die { animation: tumble 0.45s ease; }
+@keyframes tumble {
+  0% { transform: rotate(0) scale(1); }
+  35% { transform: rotate(150deg) scale(0.82); }
+  70% { transform: rotate(290deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dicebtn .die, .dicebtn--rolling .die, .ring--low { animation: none !important; }
+}
 .gamemsg { flex: 1; font-size: 14px; line-height: 1.35; }
 .gamemsg small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
 .gamemsg small a { color: var(--me); cursor: pointer; text-decoration: underline; }
@@ -347,6 +391,31 @@ small.muted { font-size: 12px; }
 }
 .mini--action { cursor: pointer; }
 .mini--action:active { transform: scale(0.98); }
+/* not functional yet: visibly parked so it doesn't erode trust */
+.mini--soon { opacity: 0.55; position: relative; }
+.mini--soon::after {
+  content: 'SOON';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+/* daily-challenge progress segments */
+.progress { display: flex; gap: 5px; margin-top: 10px; }
+.progress span {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--card-2);
+  transition: background 0.3s ease;
+}
+.progress span.on { background: var(--accent); }
 .tablecard {
   display: flex;
   flex-direction: column;

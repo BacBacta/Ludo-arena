@@ -41,7 +41,7 @@ const en = {
   dailyChallenge: '🎯 Daily challenge',
   dailyStreak: 'Streak:',
   days: 'days',
-  streakHint: 'Come back tomorrow: free tournament ticket on day 4',
+  streakHint: 'Daily login — free ticket at day 3, +2 at day 7',
   freeroll: '🏆 Daily freeroll',
   freerollDesc: '$10 prize pool · free · 6pm',
   privateTable: '👥 Private table',
@@ -92,6 +92,9 @@ const en = {
   welcomeCta: 'Play a free game',
   soundOn: 'Sound on',
   soundOff: 'Sound off',
+  demo: 'Demo',
+  streakStart: 'Start your streak today',
+  leagueEmpty: 'Play a game to enter this week’s rankings',
 } as const;
 
 export type TKey = keyof typeof en;
@@ -139,7 +142,7 @@ const fr: Dict = {
   dailyChallenge: '🎯 Défi du jour',
   dailyStreak: 'Série de',
   days: 'jours',
-  streakHint: 'Reviens demain : ticket tournoi gratuit au jour 4',
+  streakHint: 'Connexion quotidienne — ticket offert au jour 3, +2 au jour 7',
   freeroll: '🏆 Freeroll du jour',
   freerollDesc: 'Dotation 10 $ · gratuit · 18h00',
   privateTable: '👥 Table privée',
@@ -190,6 +193,9 @@ const fr: Dict = {
   welcomeCta: 'Jouer gratuitement',
   soundOn: 'Son activé',
   soundOff: 'Son coupé',
+  demo: 'Démo',
+  streakStart: 'Commence ta série aujourd’hui',
+  leagueEmpty: 'Joue une partie pour entrer au classement de la semaine',
 };
 
 const pt: Dict = {
@@ -234,7 +240,7 @@ const pt: Dict = {
   dailyChallenge: '🎯 Desafio do dia',
   dailyStreak: 'Sequência:',
   days: 'dias',
-  streakHint: 'Volte amanhã: ticket de torneio grátis no dia 4',
+  streakHint: 'Login diário — ticket grátis no dia 3, +2 no dia 7',
   freeroll: '🏆 Freeroll do dia',
   freerollDesc: 'Prêmio de $10 · grátis · 18h',
   privateTable: '👥 Mesa privada',
@@ -285,6 +291,9 @@ const pt: Dict = {
   welcomeCta: 'Jogar de graça',
   soundOn: 'Som ligado',
   soundOff: 'Som desligado',
+  demo: 'Demo',
+  streakStart: 'Comece sua sequência hoje',
+  leagueEmpty: 'Jogue uma partida para entrar no ranking da semana',
 };
 
 const es: Dict = {
@@ -329,7 +338,7 @@ const es: Dict = {
   dailyChallenge: '🎯 Reto del día',
   dailyStreak: 'Racha:',
   days: 'días',
-  streakHint: 'Vuelve mañana: ticket de torneo gratis en el día 4',
+  streakHint: 'Conexión diaria — ticket gratis el día 3, +2 el día 7',
   freeroll: '🏆 Freeroll del día',
   freerollDesc: 'Bote de $10 · gratis · 18h',
   privateTable: '👥 Mesa privada',
@@ -380,6 +389,9 @@ const es: Dict = {
   welcomeCta: 'Jugar gratis',
   soundOn: 'Sonido activado',
   soundOff: 'Sonido apagado',
+  demo: 'Demo',
+  streakStart: 'Empieza tu racha hoy',
+  leagueEmpty: 'Juega una partida para entrar en la clasificación semanal',
 };
 
 const sw: Dict = {
@@ -424,7 +436,7 @@ const sw: Dict = {
   dailyChallenge: '🎯 Changamoto ya leo',
   dailyStreak: 'Mfululizo:',
   days: 'siku',
-  streakHint: 'Rudi kesho: tiketi ya mashindano bure siku ya 4',
+  streakHint: 'Ingia kila siku — tiketi ya bure siku ya 3, +2 siku ya 7',
   freeroll: '🏆 Freeroll ya leo',
   freerollDesc: 'Zawadi $10 · bure · saa 12 jioni',
   privateTable: '👥 Meza binafsi',
@@ -475,6 +487,9 @@ const sw: Dict = {
   welcomeCta: 'Cheza bure',
   soundOn: 'Sauti imewashwa',
   soundOff: 'Sauti imezimwa',
+  demo: 'Demo',
+  streakStart: 'Anza mfululizo wako leo',
+  leagueEmpty: 'Cheza mchezo mmoja kuingia kwenye orodha ya wiki hii',
 };
 
 const dict = { en, fr, pt, es, sw } as const;

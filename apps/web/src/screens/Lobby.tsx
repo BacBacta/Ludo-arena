@@ -43,27 +43,15 @@ export function Lobby({
     onCreateTable(stakeCents);
   }
 
+  const inLeague = league.rank > 0 || league.points > 0;
+
   return (
     <div className="screen">
       <TopBar />
 
-      <div className="streak">
-        <div className="streak__fire">🔥</div>
-        <div>
-          <b>
-            {t('dailyStreak')} {streak.days} {t('days')}
-          </b>
-          <small>{t('streakHint')}</small>
-        </div>
-        {tickets > 0 && (
-          <div style={{ marginLeft: 'auto', fontWeight: 700 }}>
-            🎟️ {tickets}
-          </div>
-        )}
-      </div>
-
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
+      {/* stake picker + CTA first: the primary action stays above the fold */}
       <div className="card">
         <h3>{t('chooseStake')}</h3>
         <div className="stakes">
@@ -92,8 +80,18 @@ export function Lobby({
 
       <div style={{ height: 14 }} />
 
+      {/* day-zero aware: at 0 days the card sells the action, not the zero */}
+      <div className="streak">
+        <div className="streak__fire">🔥</div>
+        <div>
+          <b>{streak.days > 0 ? `${t('dailyStreak')} ${streak.days} ${t('days')}` : t('streakStart')}</b>
+          <small>{t('streakHint')}</small>
+        </div>
+        {tickets > 0 && <div style={{ marginLeft: 'auto', fontWeight: 700 }}>🎟️ {tickets}</div>}
+      </div>
+
       <div className="minis">
-        <div className="mini">
+        <div className="mini mini--soon">
           <b>{t('freeroll')}</b>
           {t('freerollDesc')}
         </div>
@@ -106,9 +104,11 @@ export function Lobby({
       <div className="card">
         <h3>
           🏆 {DIVISIONS[league.division] ?? '—'} {t('league')}
-          <span style={{ float: 'right', color: 'var(--accent)' }}>
-            {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
-          </span>
+          {inLeague && (
+            <span style={{ float: 'right', color: 'var(--accent)' }}>
+              {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
+            </span>
+          )}
         </h3>
         {league.top.length > 0 && (
           <ol className="board">
@@ -122,13 +122,18 @@ export function Lobby({
             ))}
           </ol>
         )}
-        <small className="muted">{t('leagueHint')}</small>
+        <small className="muted">{inLeague ? t('leagueHint') : t('leagueEmpty')}</small>
       </div>
 
       <div style={{ height: 14 }} />
 
       <div className="card" style={{ marginBottom: 0 }}>
-        <h3>{t('dailyChallenge')}</h3>
+        <h3>
+          {t('dailyChallenge')}
+          <span style={{ float: 'right', color: 'var(--muted)', fontWeight: 600 }}>
+            {challenge.progress}/{challenge.target}
+          </span>
+        </h3>
         <div style={{ fontSize: 13 }} className="muted">
           {challenge.completed ? (
             <b style={{ color: 'var(--accent)' }}>{t('challengeDone')}</b>
@@ -137,9 +142,11 @@ export function Lobby({
               {t('challengeDesc')} <b style={{ color: 'var(--accent)' }}>{t('challengeReward')}</b>
             </>
           )}
-          <span style={{ float: 'right' }}>
-            {challenge.progress}/{challenge.target}
-          </span>
+        </div>
+        <div className="progress">
+          {Array.from({ length: challenge.target }, (_, i) => (
+            <span key={i} className={i < Math.min(challenge.progress, challenge.target) ? 'on' : ''} />
+          ))}
         </div>
       </div>
 
