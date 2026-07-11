@@ -154,10 +154,18 @@ export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | n
   const chain = CHAINS[chainName];
   if (!chain) throw new Error(`Unknown CHAIN '${chainName}' for settlement`);
 
-  const deploymentsPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'contracts', 'deployments.json');
-  const deployments = JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, Deployment>;
-  const escrow = (env.ESCROW_ADDRESS?.trim() as Address | undefined) ??
-    Object.values(deployments).find((d) => d.chainId === chain.id)?.escrow;
+  // ESCROW_ADDRESS wins; only fall back to deployments.json when it exists
+  // (it is not shipped in the server image — the web vendors its own copy).
+  let escrow = env.ESCROW_ADDRESS?.trim() as Address | undefined;
+  if (!escrow) {
+    const deploymentsPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'contracts', 'deployments.json');
+    try {
+      const deployments = JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, Deployment>;
+      escrow = Object.values(deployments).find((d) => d.chainId === chain.id)?.escrow;
+    } catch {
+      /* no deployments file bundled */
+    }
+  }
   if (!escrow) throw new Error(`No escrow address for chain ${chain.id}; set ESCROW_ADDRESS or deploy first`);
 
   const pk = (raw.startsWith('0x') ? raw : `0x${raw}`) as Hex;

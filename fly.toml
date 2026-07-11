@@ -2,8 +2,8 @@
 # Deploy: flyctl launch --no-deploy (first time) then flyctl deploy.
 # Secrets (flyctl secrets set ...): REDIS_URL, DATABASE_URL, ARBITER_PRIVATE_KEY,
 # CHAIN, ESCROW_ADDRESS, BLOCKED_COUNTRIES.
-app = "ludo-arena-server"
-primary_region = "cdg"
+app = "ludo-arena"
+primary_region = "ams"
 
 [build]
   dockerfile = "apps/server/Dockerfile"
@@ -11,6 +11,7 @@ primary_region = "cdg"
 [env]
   PORT = "8080"
   CHAIN = "celo-sepolia"
+  ESCROW_ADDRESS = "0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6"
 
 [http_service]
   internal_port = 8080
