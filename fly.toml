@@ -1,31 +1,32 @@
-# Fly.io config for the Ludo Arena game server (apps/server).
-# Deploy: flyctl launch --no-deploy (first time) then flyctl deploy.
-# Secrets (flyctl secrets set ...): REDIS_URL, DATABASE_URL, ARBITER_PRIVATE_KEY,
-# CHAIN, ESCROW_ADDRESS, BLOCKED_COUNTRIES.
-app = "ludo-arena-server"
-primary_region = "cdg"
+# fly.toml app configuration file generated for ludo-arena on 2026-07-11T21:25:18Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'ludo-arena'
+primary_region = 'ams'
 
 [build]
-  dockerfile = "apps/server/Dockerfile"
+  dockerfile = 'apps/server/Dockerfile'
 
 [env]
-  PORT = "8080"
-  CHAIN = "celo-sepolia"
+  CHAIN = 'celo-sepolia'
+  PORT = '8080'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 1
 
   [[http_service.checks]]
-    interval = "15s"
-    timeout = "3s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/health"
+    interval = '15s'
+    timeout = '3s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
