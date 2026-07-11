@@ -9,7 +9,7 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
-import { DAILY_CHALLENGE, type ChallengeState, type StakeCents } from '@ludo/shared';
+import { DAILY_CHALLENGE, STREAK_REWARDS, type ChallengeState, type StakeCents, type StreakState } from '@ludo/shared';
 
 const SESSION_TTL_S = 24 * 3600;
 
@@ -30,6 +30,10 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS challenge_date DATE;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS challenge_captures INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS challenge_done BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS freeroll_tickets INTEGER NOT NULL DEFAULT 0;
+
+-- Login streak (E4.2).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS last_login DATE;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS streak_days INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS games (
   id TEXT PRIMARY KEY,
@@ -256,5 +260,25 @@ export class PersistentStore implements Store {
     const row = res.rows[0];
     if (!row) return this.getChallenge(playerId, today); // no player row
     return { progress: row.challenge_captures, target: DAILY_CHALLENGE.captures, completed: row.challenge_done, tickets: row.freeroll_tickets };
+  }
+
+  async recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState> {
+    const cur = await this.pool.query<{ last_login: string | null; streak_days: number; freeroll_tickets: number }>(
+      `SELECT to_char(last_login, 'YYYY-MM-DD') AS last_login, streak_days, freeroll_tickets FROM players WHERE id = $1`,
+      [playerId],
+    );
+    const row = cur.rows[0];
+    if (!row) return { days: 1, tickets: 0, rewardGranted: 0 };
+    if (row.last_login === today) {
+      return { days: row.streak_days, tickets: row.freeroll_tickets, rewardGranted: 0 };
+    }
+    const days = row.last_login === yesterday ? row.streak_days + 1 : 1;
+    const rewardGranted = STREAK_REWARDS[days] ?? 0;
+    const res = await this.pool.query<{ freeroll_tickets: number }>(
+      `UPDATE players SET last_login = $2::date, streak_days = $3, freeroll_tickets = freeroll_tickets + $4, updated_at = now()
+       WHERE id = $1 RETURNING freeroll_tickets`,
+      [playerId, today, days, rewardGranted],
+    );
+    return { days, tickets: res.rows[0]?.freeroll_tickets ?? row.freeroll_tickets, rewardGranted };
   }
 }

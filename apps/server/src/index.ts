@@ -10,9 +10,12 @@ import { randomBytes } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { parseClientMsg, potCents, type ResumedGame, type ServerMsg, type StakeCents } from '@ludo/shared';
 
-/** Current UTC date (YYYY-MM-DD) for daily-challenge resets. */
+/** Current UTC date (YYYY-MM-DD) for daily-challenge / streak resets. */
 function utcToday(): string {
   return new Date().toISOString().slice(0, 10);
+}
+function utcYesterday(): string {
+  return new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 }
 import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
@@ -265,12 +268,14 @@ wss.on('connection', (ws, req) => {
       const resumedSession = msg.sessionToken ? await resumeSession(msg.sessionToken, ws) : null;
       if (resumedSession) {
         session = resumedSession;
+        const rpid = playerId(resumedSession.wallet, resumedSession.id);
         send(ws, {
           t: 'hello.ok',
           sessionToken: resumedSession.id,
           elo: resumedSession.elo,
           resumed: resumedGame(resumedSession),
-          challenge: await store.getChallenge(playerId(resumedSession.wallet, resumedSession.id), utcToday()),
+          challenge: await store.getChallenge(rpid, utcToday()),
+          streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
         });
         return;
       }
@@ -293,8 +298,11 @@ wss.on('connection', (ws, req) => {
       });
       sessions.set(id, session);
       persistSession(session);
-      const challenge = await store.getChallenge(playerId(msg.wallet, id), utcToday());
-      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge });
+      const pid = playerId(msg.wallet, id);
+      const challenge = await store.getChallenge(pid, utcToday());
+      // Streak is persisted only for wallet-linked players (anon rows are ephemeral).
+      const streak = msg.wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
+      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak });
       return;
     }
 

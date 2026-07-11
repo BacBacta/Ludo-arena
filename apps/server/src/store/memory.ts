@@ -4,7 +4,7 @@
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
-import { DAILY_CHALLENGE, type ChallengeState, type StakeCents } from '@ludo/shared';
+import { DAILY_CHALLENGE, STREAK_REWARDS, type ChallengeState, type StakeCents, type StreakState } from '@ludo/shared';
 
 interface PlayerRow {
   wallet?: string;
@@ -15,6 +15,8 @@ interface PlayerRow {
   captures: number;
   done: boolean;
   tickets: number;
+  lastLogin?: string;
+  streakDays: number;
 }
 
 export class MemoryStore implements Store {
@@ -72,7 +74,7 @@ export class MemoryStore implements Store {
   ): Promise<{ elo: number }> {
     const existing = this.players.get(id);
     if (existing) return { elo: existing.elo };
-    this.players.set(id, { ...defaults, elo: 1200, captures: 0, done: false, tickets: 0 });
+    this.players.set(id, { ...defaults, elo: 1200, captures: 0, done: false, tickets: 0, streakDays: 0 });
     return { elo: 1200 };
   }
   async updateElo(id: string, elo: number): Promise<void> {
@@ -123,5 +125,18 @@ export class MemoryStore implements Store {
       row.tickets += DAILY_CHALLENGE.rewardTickets;
     }
     return { progress: row.captures, target: DAILY_CHALLENGE.captures, completed: row.done, tickets: row.tickets };
+  }
+
+  async recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState> {
+    const row = this.players.get(playerId);
+    if (!row) return { days: 1, tickets: 0, rewardGranted: 0 };
+    if (row.lastLogin === today) {
+      return { days: row.streakDays, tickets: row.tickets, rewardGranted: 0 };
+    }
+    row.streakDays = row.lastLogin === yesterday ? row.streakDays + 1 : 1;
+    row.lastLogin = today;
+    const rewardGranted = STREAK_REWARDS[row.streakDays] ?? 0;
+    row.tickets += rewardGranted;
+    return { days: row.streakDays, tickets: row.tickets, rewardGranted };
   }
 }

@@ -1,7 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { StakeCents } from '@ludo/shared';
 import { LocalBotSession, RemoteSession, type GameSession, type SessionEvents } from './lib/session';
-import { saveChallenge, useAppDispatch, useAppState } from './state/store';
+import { saveRetention, useAppDispatch, useAppState } from './state/store';
 import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
@@ -17,6 +17,11 @@ export default function App() {
   const dispatch = useAppDispatch();
   const sessionRef = useRef<GameSession | null>(null);
   const walletRef = useRef<Wallet | null>(null);
+
+  // Persist the latest retention state so the lobby shows it before reconnecting.
+  useEffect(() => {
+    saveRetention({ challenge: state.challenge, streak: state.streak, tickets: state.tickets });
+  }, [state.challenge, state.streak, state.tickets]);
 
   const refreshBalance = useCallback(
     async (wallet: Wallet) => {
@@ -62,9 +67,15 @@ export default function App() {
         if (walletRef.current) void refreshBalance(walletRef.current);
       },
       onInfo: (message) => dispatch({ type: 'TOAST', message }),
-      onChallenge: (challenge) => {
-        dispatch({ type: 'CHALLENGE_UPDATE', challenge });
-        saveChallenge(challenge); // cache so the lobby shows it before the next connect
+      onChallenge: (challenge) => dispatch({ type: 'CHALLENGE_UPDATE', challenge }),
+      onStreak: (streak) => {
+        dispatch({ type: 'STREAK_UPDATE', streak });
+        if (streak.rewardGranted > 0) {
+          dispatch({
+            type: 'TOAST',
+            message: `🔥 ${streak.days} ${t('days')} — +${streak.rewardGranted} 🎟️`,
+          });
+        }
       },
       onSettled: (txHash) => dispatch({ type: 'SETTLED', txHash }),
       onRefunded: (txHash) => {

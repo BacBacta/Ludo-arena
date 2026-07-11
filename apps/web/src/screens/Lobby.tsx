@@ -4,7 +4,7 @@ import { TopBar } from '../components/ui';
 import { t } from '../lib/i18n';
 
 export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
-  const { stakeCents, streakDays, challenge, balanceCents } = useAppState();
+  const { stakeCents, streak, challenge, tickets, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
 
   const lobbyStakes = ALLOWED_STAKES_CENTS.filter((s) => s <= 100);
@@ -25,10 +25,15 @@ export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
         <div className="streak__fire">🔥</div>
         <div>
           <b>
-            {t('dailyStreak')} {streakDays} {t('days')}
+            {t('dailyStreak')} {streak.days} {t('days')}
           </b>
           <small>{t('streakHint')}</small>
         </div>
+        {tickets > 0 && (
+          <div style={{ marginLeft: 'auto', fontWeight: 700 }}>
+            🎟️ {tickets}
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -78,11 +83,6 @@ export function Lobby({ onPlay }: { onPlay(stake: StakeCents): void }) {
             {challenge.progress}/{challenge.target}
           </span>
         </div>
-        {challenge.tickets > 0 && (
-          <div style={{ fontSize: 13, marginTop: 6 }}>
-            🎟️ {challenge.tickets} {t('tickets')}
-          </div>
-        )}
       </div>
 
       <div className="fairnote">

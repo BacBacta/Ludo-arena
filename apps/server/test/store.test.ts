@@ -127,6 +127,44 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
 
       await store.close();
     });
+
+    it('tracks a login streak, rewards D3/D7, resets on a gap', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'S', flag: '🌍' });
+
+      // consecutive days 1..3 → ticket at D3
+      expect(await store.recordLogin(id, '2026-07-01', '2026-06-30')).toMatchObject({ days: 1, rewardGranted: 0, tickets: 0 });
+      // same day again: no change
+      expect(await store.recordLogin(id, '2026-07-01', '2026-06-30')).toMatchObject({ days: 1, rewardGranted: 0 });
+      expect(await store.recordLogin(id, '2026-07-02', '2026-07-01')).toMatchObject({ days: 2, rewardGranted: 0 });
+      const d3 = await store.recordLogin(id, '2026-07-03', '2026-07-02');
+      expect(d3).toMatchObject({ days: 3, rewardGranted: 1, tickets: 1 });
+
+      // a gap resets the streak to 1 (keeps tickets)
+      const gap = await store.recordLogin(id, '2026-07-10', '2026-07-09');
+      expect(gap).toMatchObject({ days: 1, rewardGranted: 0, tickets: 1 });
+
+      await store.close();
+    });
+
+    it('rewards a 7-day streak with +2 tickets', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'S', flag: '🌍' });
+      const days = ['08-01', '08-02', '08-03', '08-04', '08-05', '08-06', '08-07'].map((d) => `2026-${d}`);
+      let last: Awaited<ReturnType<typeof store.recordLogin>> | undefined;
+      for (let i = 0; i < days.length; i++) {
+        const prev = i === 0 ? '2026-07-31' : days[i - 1]!;
+        last = await store.recordLogin(id, days[i]!, prev);
+      }
+      // D3 gave +1, D7 gave +2 → 3 tickets total, streak 7
+      expect(last).toMatchObject({ days: 7, rewardGranted: 2, tickets: 3 });
+
+      await store.close();
+    });
   });
 }
 

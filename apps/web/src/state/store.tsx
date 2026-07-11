@@ -4,25 +4,36 @@
  */
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from 'react';
 import type { GameState, Seat } from '@ludo/game-engine';
-import { DAILY_CHALLENGE, type ChallengeState, type StakeCents } from '@ludo/shared';
+import { DAILY_CHALLENGE, type ChallengeState, type StakeCents, type StreakState } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
 
-const CHALLENGE_KEY = 'ludo.challenge';
+const CACHE_KEY = 'ludo.retention';
 
-/** Last-known challenge state, cached so the lobby shows it before connecting. */
-function loadChallenge(): ChallengeState {
-  const fallback: ChallengeState = { progress: 0, target: DAILY_CHALLENGE.captures, completed: false, tickets: 0 };
+/** Retention state cached client-side so the lobby shows it before connecting. */
+interface RetentionCache {
+  challenge: ChallengeState;
+  streak: StreakState;
+  tickets: number;
+}
+
+const DEFAULT_RETENTION: RetentionCache = {
+  challenge: { progress: 0, target: DAILY_CHALLENGE.captures, completed: false, tickets: 0 },
+  streak: { days: 0, tickets: 0, rewardGranted: 0 },
+  tickets: 0,
+};
+
+function loadRetention(): RetentionCache {
   try {
-    const raw = localStorage.getItem(CHALLENGE_KEY);
-    return raw ? (JSON.parse(raw) as ChallengeState) : fallback;
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? { ...DEFAULT_RETENTION, ...(JSON.parse(raw) as RetentionCache) } : DEFAULT_RETENTION;
   } catch {
-    return fallback;
+    return DEFAULT_RETENTION;
   }
 }
 
-export function saveChallenge(challenge: ChallengeState): void {
+export function saveRetention(cache: RetentionCache): void {
   try {
-    localStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenge));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
   } catch {
     /* storage unavailable */
   }
@@ -39,8 +50,10 @@ export interface AppState {
   /** True once the balance comes from a connected wallet (no simulated debits). */
   walletBacked: boolean;
   stakeCents: StakeCents;
-  streakDays: number;
   challenge: ChallengeState;
+  streak: StreakState;
+  /** Total freeroll tickets; fed by both challenge and streak updates. */
+  tickets: number;
   match: MatchInfo | null;
   game: GameState | null;
   lastDice: { value: number; index: number; seat: Seat } | null;
@@ -62,8 +75,9 @@ export const initialState: AppState = {
   balanceCents: 500,
   walletBacked: false,
   stakeCents: 25,
-  streakDays: 3,
-  challenge: loadChallenge(),
+  challenge: loadRetention().challenge,
+  streak: loadRetention().streak,
+  tickets: loadRetention().tickets,
   match: null,
   game: null,
   lastDice: null,
@@ -93,6 +107,7 @@ export type Action =
   | { type: 'SETTLED'; txHash: string }
   | { type: 'REFUNDED'; txHash: string }
   | { type: 'CHALLENGE_UPDATE'; challenge: ChallengeState }
+  | { type: 'STREAK_UPDATE'; streak: StreakState }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
@@ -146,7 +161,9 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'REFUNDED':
       return { ...s, settleTxHash: a.txHash, refunded: true };
     case 'CHALLENGE_UPDATE':
-      return { ...s, challenge: a.challenge };
+      return { ...s, challenge: a.challenge, tickets: a.challenge.tickets };
+    case 'STREAK_UPDATE':
+      return { ...s, streak: a.streak, tickets: a.streak.tickets };
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':

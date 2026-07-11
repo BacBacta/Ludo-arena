@@ -18,7 +18,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 
 | t | Payload | Description |
 |---|---|---|
-| `hello.ok` | `{ sessionToken, elo, resumed?, challenge? }` | Session established. If a game is in progress, `resumed` = `{ gameId, seat, state, stakeCents, potCents, opponent, fairnessCommit }` — everything needed to rebuild the game screen after a reconnection or a server restart. `challenge` = the player's daily-challenge state (E4.1). |
+| `hello.ok` | `{ sessionToken, elo, resumed?, challenge?, streak? }` | Session established. If a game is in progress, `resumed` = `{ gameId, seat, state, stakeCents, potCents, opponent, fairnessCommit }` — everything needed to rebuild the game screen after a reconnection or a server restart. `challenge` = daily-challenge state (E4.1); `streak` = login-streak state (E4.2, wallet-linked players). |
 | `queue.ok` | `{ position }` | Queued. |
 | `match.found` | `{ gameId, seat, opponent: { name, elo, flag }, stakeCents, potCents, fairnessCommit }` | Match found. `fairnessCommit` = hash of the server seed, to display. |
 | `game.state` | `{ state }` | Full state (resync, game start). `state` = engine `GameState`. |

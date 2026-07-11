@@ -28,7 +28,7 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 ## E4 — Retention
 
 - [x] **E4.1 Daily challenge** (server config `DAILY_CHALLENGE`, progress, ticket reward) + UI. Server-authoritative: captures tracked per player in Postgres (`challenge_*` + `freeroll_tickets`), UTC daily reset, `+1` freeroll ticket on completion; state pushed via `hello.ok.challenge` + `challenge.update`, cached client-side for the lobby. *AC: store logic (progress/completion/ticket/day-reset) unit-tested on memory + Postgres (`test/store.test.ts`).*
-- [ ] **E4.2 Login streak** persisted + D3/D7 rewards.
+- [x] **E4.2 Login streak** persisted + D3/D7 rewards. Server-authoritative: `recordLogin` at hello (+1 if yesterday, reset to 1 on a gap, no-op same day) persisted in Postgres (`last_login`/`streak_days`); `STREAK_REWARDS` grants freeroll tickets at D3 (+1) and D7 (+2); pushed via `hello.ok.streak`, cached client-side. Wallet-scoped (anon rows are ephemeral). *AC: streak progression + D3/D7 rewards + gap-reset unit-tested on memory + Postgres (`test/store.test.ts`).*
 - [ ] **E4.3 Weekly league**: divisions, leaderboard, promotion/relegation cron Monday 00:00 UTC.
 - [ ] **E4.4 Private table**: room creation via code/link (`/g/ABC123`), WhatsApp sharing.
 - [ ] **E4.5 Anti-tilt cashback**: detect 3 consecutive staked losses → credit 20 % of rake + toast.

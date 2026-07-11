@@ -21,6 +21,15 @@ export interface ChallengeState {
   tickets: number; // total freeroll tickets held
 }
 
+/** Login-streak milestones (E4.2): consecutive-day count → freeroll tickets. */
+export const STREAK_REWARDS: Record<number, number> = { 3: 1, 7: 2 };
+
+export interface StreakState {
+  days: number; // current consecutive-day streak
+  tickets: number; // total freeroll tickets held (shared with the challenge)
+  rewardGranted: number; // tickets granted by this login's milestone (0 if none)
+}
+
 /** Winner payout = pot − rake, matching the server/escrow rounding (rake is floored). */
 export function potCents(stake: StakeCents): number {
   const pot = stake * 2;
@@ -60,7 +69,7 @@ export interface ResumedGame {
 }
 
 export type ServerMsg =
-  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame; challenge?: ChallengeState }
+  | { t: 'hello.ok'; sessionToken: string; elo: number; resumed?: ResumedGame; challenge?: ChallengeState; streak?: StreakState }
   | { t: 'queue.ok'; position: number }
   | {
       t: 'match.found';

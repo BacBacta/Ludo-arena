@@ -5,7 +5,7 @@
  * in Postgres. MemoryStore keeps dev zero-config (no restart survival).
  */
 import type { GameState, Seat } from '@ludo/game-engine';
-import type { ChallengeState, GameOverReason, StakeCents } from '@ludo/shared';
+import type { ChallengeState, GameOverReason, StakeCents, StreakState } from '@ludo/shared';
 
 /** Serializable part of a Session (the ws handle and Room ref are rebuilt live). */
 export interface SessionRecord {
@@ -100,6 +100,11 @@ export interface Store {
   // resets when the stored day differs. Tickets persist across days.
   getChallenge(playerId: string, today: string): Promise<ChallengeState>;
   addCapture(playerId: string, today: string): Promise<ChallengeState>;
+
+  // Login streak (E4.2). Once per UTC day: +1 if last login was `yesterday`,
+  // reset to 1 otherwise; milestone rewards (STREAK_REWARDS) granted on the
+  // crossing login. No-op re-return if already logged in today.
+  recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState>;
 }
 
 /** Stable player id: wallet when known, otherwise anonymous per-session. */

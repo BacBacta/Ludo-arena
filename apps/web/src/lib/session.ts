@@ -16,6 +16,7 @@ import {
   type OpponentInfo,
   type ServerMsg,
   type StakeCents,
+  type StreakState,
 } from '@ludo/shared';
 
 export interface MatchInfo {
@@ -50,6 +51,8 @@ export interface SessionEvents {
   onRefunded(txHash: string): void;
   /** Daily challenge progress/tickets from the server (E4.1). */
   onChallenge(challenge: ChallengeState): void;
+  /** Login streak from the server on connect (E4.2). */
+  onStreak(streak: StreakState): void;
   /** The socket dropped mid-game; the session is retrying in the background. */
   onReconnecting(): void;
   /** Reconnected: full match context + state resync. */
@@ -267,6 +270,7 @@ export class RemoteSession implements GameSession {
         const wasReconnecting = this.attempts > 0;
         this.attempts = 0;
         if (msg.challenge) this.ev.onChallenge(msg.challenge);
+        if (msg.streak) this.ev.onStreak(msg.streak);
         if (msg.resumed) {
           this.inGame = true;
           this.ev.onResumed(msg.resumed, msg.resumed.state);
