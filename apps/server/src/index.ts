@@ -27,6 +27,9 @@ function utcToday(): string {
 function utcYesterday(): string {
   return new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 }
+function utcPlusDays(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
 import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
@@ -355,6 +358,7 @@ wss.on('connection', (ws, req) => {
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
           league: await store.getLeague(rpid),
           cashbackCents: await store.getCashback(rpid),
+          limits: await store.getLimits(rpid, utcToday()),
         });
         return;
       }
@@ -383,7 +387,8 @@ wss.on('connection', (ws, req) => {
       const streak = msg.wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
       const league = await store.getLeague(pid);
       const cashbackCents = await store.getCashback(pid);
-      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, cashbackCents });
+      const limits = await store.getLimits(pid, utcToday());
+      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, cashbackCents, limits });
       return;
     }
 
@@ -400,6 +405,11 @@ wss.on('connection', (ws, req) => {
       case 'queue.join': {
         if (session.room) {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
+          break;
+        }
+        const blocked = await stakeBlock(session, msg.stake);
+        if (blocked) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: blocked });
           break;
         }
         session.stake = msg.stake;
@@ -430,6 +440,11 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
           break;
         }
+        const blockedCreate = await stakeBlock(session, msg.stake);
+        if (blockedCreate) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedCreate });
+          break;
+        }
         session.stake = msg.stake;
         const code = generateTableCode();
         privateTables.set(code, { host: session, stake: msg.stake, createdAt: Date.now() });
@@ -447,6 +462,11 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'error', code: 'TABLE_NOT_FOUND', message: 'Table not found or no longer available.' });
           break;
         }
+        const blockedJoin = await stakeBlock(session, table.stake);
+        if (blockedJoin) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedJoin });
+          break;
+        }
         privateTables.delete(msg.code);
         session.stake = table.stake;
         await startGame(table.stake, table.host, session);
@@ -461,9 +481,22 @@ wss.on('connection', (ws, req) => {
         if (session.room && session.seat !== null) session.room.move(session.seat, msg.token);
         break;
 
-      case 'game.rematch':
+      case 'limits.set': {
+        const pid = playerId(session.wallet, session.id);
+        const selfExcludedUntil = msg.selfExcludeDays ? utcPlusDays(msg.selfExcludeDays) : undefined;
+        await store.setLimits(pid, { dailyLimitCents: msg.dailyLimitCents, selfExcludedUntil });
+        session.send({ t: 'limits.update', limits: await store.getLimits(pid, utcToday()) });
+        break;
+      }
+
+      case 'game.rematch': {
         // v1: re-queue at the same stake (instant rematch: BACKLOG E4)
         if (!session.room && session.stake !== null) {
+          const blockedRematch = await stakeBlock(session, session.stake);
+          if (blockedRematch) {
+            session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedRematch });
+            break;
+          }
           const pair = matchmaker.join(session.stake, {
             session,
             entropy: session.entropy,
@@ -479,6 +512,7 @@ wss.on('connection', (ws, req) => {
           }
         }
         break;
+      }
     }
   }
 
@@ -518,6 +552,17 @@ function resumedGame(s: Session): ResumedGame | undefined {
   };
 }
 
+/** Responsible-gaming gate (E5.2): message if this stake must be blocked, else null. */
+async function stakeBlock(session: Session, stake: StakeCents): Promise<string | null> {
+  if (stake <= 0) return null;
+  const limits = await store.getLimits(playerId(session.wallet, session.id), utcToday());
+  if (limits.selfExcludedUntil) return `Self-excluded until ${limits.selfExcludedUntil}.`;
+  if (limits.stakedTodayCents + stake > limits.dailyLimitCents) {
+    return `Daily stake limit reached (${limits.stakedTodayCents}/${limits.dailyLimitCents}¢).`;
+  }
+  return null;
+}
+
 /** Look up a session token in memory, then in the store (post-restart). */
 async function resumeSession(token: string, ws: WebSocket): Promise<Session | null> {
   const existing = sessions.get(token);
@@ -546,10 +591,19 @@ async function resumeSession(token: string, ws: WebSocket): Promise<Session | nu
 async function startGame(stake: StakeCents, a: Session, b: Session): Promise<void> {
   const gameId = randomBytes(16).toString('hex');
   // Durable participant rows must exist before the game record references them.
+  const idA = playerId(a.wallet, a.id);
+  const idB = playerId(b.wallet, b.id);
   await Promise.all([
-    store.getOrCreatePlayer(playerId(a.wallet, a.id), { wallet: a.wallet, name: a.name, flag: a.flag }),
-    store.getOrCreatePlayer(playerId(b.wallet, b.id), { wallet: b.wallet, name: b.name, flag: b.flag }),
+    store.getOrCreatePlayer(idA, { wallet: a.wallet, name: a.name, flag: a.flag }),
+    store.getOrCreatePlayer(idB, { wallet: b.wallet, name: b.name, flag: b.flag }),
   ]);
+  // Count the stake toward each player's daily total (E5.2).
+  if (stake > 0) {
+    await Promise.all([
+      store.addDailyStake(idA, utcToday(), stake),
+      store.addDailyStake(idB, utcToday(), stake),
+    ]);
+  }
   const room = new Room(gameId, stake, a, b, createFairness(a.entropy, b.entropy));
   a.room = room;
   a.seat = 0;

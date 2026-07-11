@@ -5,7 +5,7 @@
  * in Postgres. MemoryStore keeps dev zero-config (no restart survival).
  */
 import type { GameState, Seat } from '@ludo/game-engine';
-import type { ChallengeState, GameOverReason, LeagueState, StakeCents, StreakState } from '@ludo/shared';
+import type { ChallengeState, GameOverReason, LeagueState, LimitsState, StakeCents, StreakState } from '@ludo/shared';
 
 /** Serializable part of a Session (the ws handle and Room ref are rebuilt live). */
 export interface SessionRecord {
@@ -118,6 +118,13 @@ export interface Store {
   // ANTI_TILT.losses in a row, credits a share of it (returned as `cents`).
   applyAntiTilt(playerId: string, won: boolean, rakeCents: number): Promise<{ cents: number; totalCents: number }>;
   getCashback(playerId: string): Promise<number>;
+
+  // Responsible gaming (E5.2). `today` is a UTC date string; the daily staked
+  // total resets when the stored day differs. selfExcludedUntil is null when
+  // not excluded or the exclusion has expired.
+  getLimits(playerId: string, today: string): Promise<LimitsState>;
+  addDailyStake(playerId: string, today: string, cents: number): Promise<void>;
+  setLimits(playerId: string, patch: { dailyLimitCents?: number; selfExcludedUntil?: string | null }): Promise<void>;
 
   // Generic key/value meta (e.g. the last-processed league week).
   getMeta(key: string): Promise<string | null>;

@@ -12,6 +12,7 @@ import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } fr
 import {
   ANTI_TILT,
   DAILY_CHALLENGE,
+  DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   DIVISIONS,
   LEAGUE_PROMOTE,
@@ -20,6 +21,7 @@ import {
   type ChallengeState,
   type LeaderboardEntry,
   type LeagueState,
+  type LimitsState,
   type StakeCents,
   type StreakState,
 } from '@ludo/shared';
@@ -59,6 +61,12 @@ CREATE INDEX IF NOT EXISTS players_league_idx ON players(division, weekly_points
 ALTER TABLE players ADD COLUMN IF NOT EXISTS loss_streak INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS lost_rake_cents INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS cashback_cents INTEGER NOT NULL DEFAULT 0;
+
+-- Responsible gaming (E5.2).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS stake_date DATE;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS staked_today_cents INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_limit_cents INTEGER NOT NULL DEFAULT 200;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS self_excluded_until DATE;
 
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
@@ -425,6 +433,43 @@ export class PersistentStore implements Store {
   async getCashback(playerId: string): Promise<number> {
     const res = await this.pool.query<{ cashback_cents: number }>(`SELECT cashback_cents FROM players WHERE id = $1`, [playerId]);
     return res.rows[0]?.cashback_cents ?? 0;
+  }
+
+  async getLimits(playerId: string, today: string): Promise<LimitsState> {
+    const res = await this.pool.query<{ stake_date: string | null; staked_today_cents: number; daily_limit_cents: number; self_excluded_until: string | null }>(
+      `SELECT to_char(stake_date, 'YYYY-MM-DD') AS stake_date, staked_today_cents, daily_limit_cents,
+              to_char(self_excluded_until, 'YYYY-MM-DD') AS self_excluded_until
+       FROM players WHERE id = $1`,
+      [playerId],
+    );
+    const row = res.rows[0];
+    const excluded = row?.self_excluded_until && row.self_excluded_until >= today ? row.self_excluded_until : null;
+    return {
+      dailyLimitCents: row?.daily_limit_cents ?? DEFAULT_DAILY_STAKE_LIMIT_CENTS,
+      stakedTodayCents: row && row.stake_date === today ? row.staked_today_cents : 0,
+      selfExcludedUntil: excluded,
+    };
+  }
+
+  async addDailyStake(playerId: string, today: string, cents: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE players SET
+         staked_today_cents = CASE WHEN stake_date = $2::date THEN staked_today_cents + $3 ELSE $3 END,
+         stake_date = $2::date, updated_at = now()
+       WHERE id = $1`,
+      [playerId, today, cents],
+    );
+  }
+
+  async setLimits(playerId: string, patch: { dailyLimitCents?: number; selfExcludedUntil?: string | null }): Promise<void> {
+    await this.pool.query(
+      `UPDATE players SET
+         daily_limit_cents = COALESCE($2, daily_limit_cents),
+         self_excluded_until = CASE WHEN $3::boolean THEN $4::date ELSE self_excluded_until END,
+         updated_at = now()
+       WHERE id = $1`,
+      [playerId, patch.dailyLimitCents ?? null, patch.selfExcludedUntil !== undefined, patch.selfExcludedUntil ?? null],
+    );
   }
 
   async getMeta(key: string): Promise<string | null> {

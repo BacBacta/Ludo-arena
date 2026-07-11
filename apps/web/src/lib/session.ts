@@ -15,6 +15,7 @@ import {
   type GameOverReason,
   type OpponentInfo,
   type LeagueState,
+  type LimitsState,
   type ServerMsg,
   type StakeCents,
   type StreakState,
@@ -60,6 +61,8 @@ export interface SessionEvents {
   onTableCreated(code: string, stakeCents: StakeCents): void;
   /** Anti-tilt cashback total (E4.5); `cents` > 0 means a new grant just landed. */
   onCashback(cents: number, totalCents: number): void;
+  /** Responsible-gaming limits (E5.2). */
+  onLimits(limits: LimitsState): void;
   /** The socket dropped mid-game; the session is retrying in the background. */
   onReconnecting(): void;
   /** Reconnected: full match context + state resync. */
@@ -183,6 +186,66 @@ export type JoinIntent =
   | { kind: 'join'; code: string };
 
 const TOKEN_KEY = 'ludo.sessionToken';
+
+/**
+ * One-shot responsible-gaming update (E5.2): opens a short-lived socket, sends
+ * limits.set, resolves with the resulting limits (or null on timeout).
+ */
+export function sendLimits(
+  serverUrl: string,
+  payload: { dailyLimitCents?: number; selfExcludeDays?: number },
+  walletAddress?: string,
+): Promise<LimitsState | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(serverUrl);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: LimitsState | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 4000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = sessionStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress }));
+      ws.send(JSON.stringify({ t: 'limits.set', ...payload }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'limits.update') {
+        clearTimeout(timer);
+        done(msg.limits);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
 
@@ -292,6 +355,7 @@ export class RemoteSession implements GameSession {
         if (msg.streak) this.ev.onStreak(msg.streak);
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.cashbackCents !== undefined) this.ev.onCashback(0, msg.cashbackCents);
+        if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.resumed) {
           this.inGame = true;
           this.ev.onResumed(msg.resumed, msg.resumed.state);
@@ -339,6 +403,9 @@ export class RemoteSession implements GameSession {
         break;
       case 'cashback':
         this.ev.onCashback(msg.cents, msg.totalCents);
+        break;
+      case 'limits.update':
+        this.ev.onLimits(msg.limits);
         break;
       case 'error':
         this.ev.onInfo(msg.message);

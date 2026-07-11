@@ -6,9 +6,11 @@ import { createContext, useContext, useReducer, type Dispatch, type ReactNode } 
 import type { GameState, Seat } from '@ludo/game-engine';
 import {
   DAILY_CHALLENGE,
+  DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   type ChallengeState,
   type LeagueState,
+  type LimitsState,
   type StakeCents,
   type StreakState,
 } from '@ludo/shared';
@@ -23,6 +25,7 @@ interface RetentionCache {
   league: LeagueState;
   tickets: number;
   cashbackCents: number;
+  limits: LimitsState;
 }
 
 const DEFAULT_RETENTION: RetentionCache = {
@@ -31,6 +34,7 @@ const DEFAULT_RETENTION: RetentionCache = {
   league: { division: DEFAULT_DIVISION, points: 0, rank: 0, size: 0, top: [] },
   tickets: 0,
   cashbackCents: 0,
+  limits: { dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS, stakedTodayCents: 0, selfExcludedUntil: null },
 };
 
 function loadRetention(): RetentionCache {
@@ -68,6 +72,8 @@ export interface AppState {
   tickets: number;
   /** Accumulated anti-tilt cashback in cents (E4.5). */
   cashbackCents: number;
+  /** Responsible-gaming limits (E5.2). */
+  limits: LimitsState;
   match: MatchInfo | null;
   game: GameState | null;
   lastDice: { value: number; index: number; seat: Seat } | null;
@@ -86,6 +92,7 @@ export interface AppState {
   privateCode: string | null;
   toast: string | null;
   fairModalOpen: boolean;
+  settingsOpen: boolean;
 }
 
 export const initialState: AppState = {
@@ -98,6 +105,7 @@ export const initialState: AppState = {
   league: loadRetention().league,
   tickets: loadRetention().tickets,
   cashbackCents: loadRetention().cashbackCents,
+  limits: loadRetention().limits,
   match: null,
   game: null,
   lastDice: null,
@@ -112,6 +120,7 @@ export const initialState: AppState = {
   privateCode: null,
   toast: null,
   fairModalOpen: false,
+  settingsOpen: false,
 };
 
 export type Action =
@@ -133,11 +142,13 @@ export type Action =
   | { type: 'LEAGUE_UPDATE'; league: LeagueState }
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'CASHBACK'; totalCents: number }
+  | { type: 'LIMITS_UPDATE'; limits: LimitsState }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
   | { type: 'CLEAR_TOAST' }
-  | { type: 'FAIR_MODAL'; open: boolean };
+  | { type: 'FAIR_MODAL'; open: boolean }
+  | { type: 'SETTINGS'; open: boolean };
 
 export function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
@@ -202,6 +213,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, screen: 'matchmaking', privateCode: a.code };
     case 'CASHBACK':
       return { ...s, cashbackCents: a.totalCents };
+    case 'LIMITS_UPDATE':
+      return { ...s, limits: a.limits };
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':
@@ -219,6 +232,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, toast: null };
     case 'FAIR_MODAL':
       return { ...s, fairModalOpen: a.open };
+    case 'SETTINGS':
+      return { ...s, settingsOpen: a.open };
     default:
       return s;
   }

@@ -34,6 +34,16 @@ export interface StreakState {
  *  share of the rake those games paid. */
 export const ANTI_TILT = { losses: 3, rakeShareBps: 2000 } as const; // 20% of rake
 
+/** Responsible gaming (E5.2): default/max daily stake cap per player, in cents. */
+export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 200;
+export const MAX_DAILY_STAKE_LIMIT_CENTS = 200;
+
+export interface LimitsState {
+  dailyLimitCents: number;
+  stakedTodayCents: number;
+  selfExcludedUntil: string | null; // UTC date (YYYY-MM-DD) or null
+}
+
 /** Weekly league (E4.3): divisions bottom→top; new players start in Silver. */
 export const DIVISIONS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond'] as const;
 export const DEFAULT_DIVISION = 1; // Silver
@@ -84,6 +94,8 @@ export type ClientMsg =
   // Private tables (E4.4): create returns a code; a friend joins with it.
   | { t: 'table.create'; stake: StakeCents }
   | { t: 'table.join'; code: string }
+  // Responsible gaming (E5.2): lower the daily cap and/or self-exclude.
+  | { t: 'limits.set'; dailyLimitCents?: number; selfExcludeDays?: number }
   | { t: 'game.roll' }
   | { t: 'game.move'; token: number }
   | { t: 'game.rematch' }
@@ -127,6 +139,7 @@ export type ServerMsg =
       streak?: StreakState;
       league?: LeagueState;
       cashbackCents?: number; // accumulated anti-tilt cashback (E4.5)
+      limits?: LimitsState; // responsible-gaming state (E5.2)
     }
   | { t: 'queue.ok'; position: number }
   // Private table created (E4.4); share `code` with a friend to join.
@@ -174,6 +187,8 @@ export type ServerMsg =
   | { t: 'league.update'; league: LeagueState }
   // Anti-tilt cashback granted after a losing streak (E4.5).
   | { t: 'cashback'; cents: number; totalCents: number }
+  // Responsible-gaming state after hello or a limits.set (E5.2).
+  | { t: 'limits.update'; limits: LimitsState }
   | { t: 'error'; code: ErrorCode; message: string }
   | { t: 'pong' };
 
@@ -210,6 +225,11 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
     case 'table.join':
       return typeof m.code === 'string' && isTableCode(m.code) ? m : null;
+    case 'limits.set': {
+      const limitOk = m.dailyLimitCents === undefined || (Number.isInteger(m.dailyLimitCents) && m.dailyLimitCents >= 0 && m.dailyLimitCents <= MAX_DAILY_STAKE_LIMIT_CENTS);
+      const exclOk = m.selfExcludeDays === undefined || (Number.isInteger(m.selfExcludeDays) && m.selfExcludeDays >= 0 && m.selfExcludeDays <= 365);
+      return limitOk && exclOk ? m : null;
+    }
     case 'game.move':
       return Number.isInteger(m.token) && m.token >= 0 && m.token <= 3 ? m : null;
     case 'queue.leave':

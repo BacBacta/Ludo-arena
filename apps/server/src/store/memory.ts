@@ -7,6 +7,7 @@ import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } fr
 import {
   ANTI_TILT,
   DAILY_CHALLENGE,
+  DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   DIVISIONS,
   LEAGUE_PROMOTE,
@@ -15,6 +16,7 @@ import {
   type ChallengeState,
   type LeaderboardEntry,
   type LeagueState,
+  type LimitsState,
   type StakeCents,
   type StreakState,
 } from '@ludo/shared';
@@ -37,6 +39,10 @@ interface PlayerRow {
   lossStreak: number;
   lostRakeCents: number;
   cashbackCents: number;
+  stakeDate?: string;
+  stakedTodayCents: number;
+  dailyLimitCents: number;
+  selfExcludedUntil?: string | null;
 }
 
 export class MemoryStore implements Store {
@@ -107,6 +113,8 @@ export class MemoryStore implements Store {
       lossStreak: 0,
       lostRakeCents: 0,
       cashbackCents: 0,
+      stakedTodayCents: 0,
+      dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS,
     });
     return { elo: 1200 };
   }
@@ -248,6 +256,33 @@ export class MemoryStore implements Store {
 
   async getCashback(playerId: string): Promise<number> {
     return this.players.get(playerId)?.cashbackCents ?? 0;
+  }
+
+  async getLimits(playerId: string, today: string): Promise<LimitsState> {
+    const row = this.players.get(playerId);
+    const excluded = row?.selfExcludedUntil && row.selfExcludedUntil >= today ? row.selfExcludedUntil : null;
+    return {
+      dailyLimitCents: row?.dailyLimitCents ?? DEFAULT_DAILY_STAKE_LIMIT_CENTS,
+      stakedTodayCents: row && row.stakeDate === today ? row.stakedTodayCents : 0,
+      selfExcludedUntil: excluded,
+    };
+  }
+
+  async addDailyStake(playerId: string, today: string, cents: number): Promise<void> {
+    const row = this.players.get(playerId);
+    if (!row) return;
+    if (row.stakeDate !== today) {
+      row.stakeDate = today;
+      row.stakedTodayCents = 0;
+    }
+    row.stakedTodayCents += cents;
+  }
+
+  async setLimits(playerId: string, patch: { dailyLimitCents?: number; selfExcludedUntil?: string | null }): Promise<void> {
+    const row = this.players.get(playerId);
+    if (!row) return;
+    if (patch.dailyLimitCents !== undefined) row.dailyLimitCents = patch.dailyLimitCents;
+    if (patch.selfExcludedUntil !== undefined) row.selfExcludedUntil = patch.selfExcludedUntil;
   }
 
   async getMeta(key: string): Promise<string | null> {

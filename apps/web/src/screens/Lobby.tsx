@@ -10,25 +10,36 @@ export function Lobby({
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, cashbackCents, balanceCents } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, cashbackCents, limits, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
 
-  function createTable() {
-    if (stakeCents > 0 && balanceCents < stakeCents) {
-      dispatch({ type: 'TOAST', message: t('insufficient') });
-      return;
-    }
-    onCreateTable(stakeCents);
+  /** Responsible-gaming gate (E5.2), also enforced server-side. */
+  function stakeBlockedMsg(): string | null {
+    if (stakeCents === 0) return null;
+    if (limits.selfExcludedUntil) return `${t('rgExcludedUntil')} ${limits.selfExcludedUntil}`;
+    if (limits.stakedTodayCents + stakeCents > limits.dailyLimitCents) return t('rgLimitHit');
+    if (balanceCents < stakeCents) return t('insufficient');
+    return null;
   }
 
   const lobbyStakes = ALLOWED_STAKES_CENTS.filter((s) => s <= 100);
 
   function play() {
-    if (stakeCents > 0 && balanceCents < stakeCents) {
-      dispatch({ type: 'TOAST', message: t('insufficient') });
+    const blocked = stakeBlockedMsg();
+    if (blocked) {
+      dispatch({ type: 'TOAST', message: blocked });
       return;
     }
     onPlay(stakeCents);
+  }
+
+  function createTable() {
+    const blocked = stakeBlockedMsg();
+    if (blocked) {
+      dispatch({ type: 'TOAST', message: blocked });
+      return;
+    }
+    onCreateTable(stakeCents);
   }
 
   return (
@@ -132,6 +143,8 @@ export function Lobby({
       <div className="fairnote">
         {t('fairnote')}{' '}
         <a onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>{t('howItWorks')}</a>
+        {' · '}
+        <a onClick={() => dispatch({ type: 'SETTINGS', open: true })}>{t('rgLink')}</a>
       </div>
     </div>
   );

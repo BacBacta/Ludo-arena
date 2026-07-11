@@ -31,6 +31,61 @@ export function Toast() {
   return <div className="toast">{toast}</div>;
 }
 
+const LIMIT_OPTIONS = [25, 50, 100, 200];
+const EXCLUDE_OPTIONS = [1, 7, 30];
+
+export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?: number; selfExcludeDays?: number }): void }) {
+  const { settingsOpen, limits } = useAppState();
+  const dispatch = useAppDispatch();
+  if (!settingsOpen) return null;
+  const close = (): void => void dispatch({ type: 'SETTINGS', open: false });
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+        <h3>{t('rgTitle')}</h3>
+        <p className="muted" style={{ fontSize: 12 }}>
+          {t('rgIntro')}
+        </p>
+
+        <div style={{ margin: '10px 0 4px', fontWeight: 700 }}>{t('rgDailyLimit')}</div>
+        <div className="stakes">
+          {LIMIT_OPTIONS.map((c) => (
+            <div
+              key={c}
+              className={`stake${c === limits.dailyLimitCents ? ' stake--sel' : ''}`}
+              onClick={() => onApply({ dailyLimitCents: c })}
+            >
+              <b>{(c / 100).toFixed(2)}$</b>
+            </div>
+          ))}
+        </div>
+        <small className="muted">
+          {t('rgStakedToday')} {(limits.stakedTodayCents / 100).toFixed(2)}$ / {(limits.dailyLimitCents / 100).toFixed(2)}$
+        </small>
+
+        <div style={{ margin: '14px 0 4px', fontWeight: 700 }}>{t('rgSelfExclude')}</div>
+        {limits.selfExcludedUntil ? (
+          <div className="verify__bad">
+            {t('rgExcludedUntil')} {limits.selfExcludedUntil}
+          </div>
+        ) : (
+          <div className="row">
+            {EXCLUDE_OPTIONS.map((d) => (
+              <button key={d} className="btn btn--ghost" onClick={() => onApply({ selfExcludeDays: d })}>
+                {d}
+                {t('rgDays')}
+              </button>
+            ))}
+          </div>
+        )}
+        <div style={{ marginTop: 12, textAlign: 'center' }} className="muted">
+          {t('closeHint')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function StakingOverlay() {
   const { staking, match } = useAppState();
   if (staking !== 'approving' && staking !== 'joining') return null;

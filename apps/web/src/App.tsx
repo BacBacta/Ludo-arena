@@ -12,7 +12,8 @@ import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
 import { EndScreen } from './screens/EndScreen';
-import { FairnessModal, StakingOverlay, Toast } from './components/ui';
+import { FairnessModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
+import { sendLimits } from './lib/session';
 import { connectWallet, lockStake, walletBalanceCents, type Wallet } from './lib/minipay';
 import { t } from './lib/i18n';
 
@@ -32,8 +33,9 @@ export default function App() {
       league: state.league,
       tickets: state.tickets,
       cashbackCents: state.cashbackCents,
+      limits: state.limits,
     });
-  }, [state.challenge, state.streak, state.league, state.tickets, state.cashbackCents]);
+  }, [state.challenge, state.streak, state.league, state.tickets, state.cashbackCents, state.limits]);
 
   const refreshBalance = useCallback(
     async (wallet: Wallet) => {
@@ -96,6 +98,7 @@ export default function App() {
         dispatch({ type: 'CASHBACK', totalCents });
         if (cents > 0) dispatch({ type: 'TOAST', message: `💛 ${t('cashbackToast')} +${(cents / 100).toFixed(2)} $` });
       },
+      onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
       onRefunded: (txHash) => {
         dispatch({ type: 'REFUNDED', txHash });
         dispatch({ type: 'TOAST', message: t('refunded') });
@@ -195,6 +198,19 @@ export default function App() {
   const move = useCallback((token: number) => sessionRef.current?.move(token), []);
   const rematch = useCallback(() => startMatch(state.stakeCents), [startMatch, state.stakeCents]);
 
+  const applyLimits = useCallback(
+    async (payload: { dailyLimitCents?: number; selfExcludeDays?: number }) => {
+      const limits = await sendLimits(SERVER_URL, payload, walletRef.current?.address);
+      if (limits) {
+        dispatch({ type: 'LIMITS_UPDATE', limits });
+        dispatch({ type: 'TOAST', message: t('rgSaved') });
+      } else {
+        dispatch({ type: 'TOAST', message: t('offline') });
+      }
+    },
+    [dispatch],
+  );
+
   return (
     <>
       {state.screen === 'lobby' && <Lobby onPlay={startMatch} onCreateTable={createTable} />}
@@ -203,6 +219,7 @@ export default function App() {
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
       <StakingOverlay />
       <FairnessModal />
+      <SettingsModal onApply={applyLimits} />
       <Toast />
     </>
   );

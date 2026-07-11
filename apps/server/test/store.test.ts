@@ -229,6 +229,34 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
+    it('tracks daily stake, resets next day, and honours self-exclusion (E5.2)', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'L', flag: '🌍' });
+      const d1 = '2026-08-10';
+      const d2 = '2026-08-11';
+
+      expect(await store.getLimits(id, d1)).toMatchObject({ dailyLimitCents: 200, stakedTodayCents: 0, selfExcludedUntil: null });
+
+      await store.addDailyStake(id, d1, 100);
+      await store.addDailyStake(id, d1, 50);
+      expect(await store.getLimits(id, d1)).toMatchObject({ stakedTodayCents: 150 });
+      // next day resets the daily total
+      expect(await store.getLimits(id, d2)).toMatchObject({ stakedTodayCents: 0 });
+
+      // lower the daily limit
+      await store.setLimits(id, { dailyLimitCents: 50 });
+      expect((await store.getLimits(id, d2)).dailyLimitCents).toBe(50);
+
+      // self-exclude until d2; on d1 it's active, after d2 it has expired
+      await store.setLimits(id, { selfExcludedUntil: d2 });
+      expect((await store.getLimits(id, d1)).selfExcludedUntil).toBe(d2);
+      expect((await store.getLimits(id, '2026-08-12')).selfExcludedUntil).toBeNull();
+
+      await store.close();
+    });
+
     it('meta key/value round-trips', async () => {
       const store = make();
       await store.init();
