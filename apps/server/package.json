@@ -10,6 +10,7 @@
     "restart-test": "tsx scripts/restartTest.ts",
     "reconnect-test": "tsx scripts/reconnectTest.ts",
     "abuse-test": "tsx scripts/abuseTest.ts",
+    "settle-verify": "tsx scripts/settleVerify.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -18,6 +19,7 @@
     "@ludo/shared": "*",
     "ioredis": "^5.4.0",
     "pg": "^8.13.0",
+    "viem": "^2.21.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -8,7 +8,7 @@
  */
 import { Redis } from 'ioredis';
 import pg from 'pg';
-import type { GameRecord, RoomSnapshot, SessionRecord, Store } from './types.js';
+import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import type { StakeCents } from '@ludo/shared';
 
 const SESSION_TTL_S = 24 * 3600;
@@ -42,6 +42,19 @@ CREATE TABLE IF NOT EXISTS games (
 
 CREATE INDEX IF NOT EXISTS games_player_a_idx ON games(player_a);
 CREATE INDEX IF NOT EXISTS games_player_b_idx ON games(player_b);
+
+CREATE TABLE IF NOT EXISTS settlements (
+  game_id TEXT PRIMARY KEY,
+  winner_wallet TEXT NOT NULL,
+  chain_id INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  tx_hash TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS settlements_pending_idx ON settlements(status) WHERE status = 'pending';
 `;
 
 export class PersistentStore implements Store {
@@ -158,6 +171,41 @@ export class PersistentStore implements Store {
         rec.fairnessCommit,
         rec.serverSeed,
       ],
+    );
+  }
+
+  async enqueueSettlement(job: SettlementJob): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO settlements (game_id, winner_wallet, chain_id, status, attempts, tx_hash)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (game_id) DO NOTHING`,
+      [job.gameId, job.winnerWallet, job.chainId, job.status, job.attempts, job.txHash ?? null],
+    );
+  }
+
+  async listPendingSettlements(): Promise<SettlementJob[]> {
+    const res = await this.pool.query<{
+      game_id: string;
+      winner_wallet: string;
+      chain_id: number;
+      status: SettlementJob['status'];
+      attempts: number;
+      tx_hash: string | null;
+    }>(`SELECT game_id, winner_wallet, chain_id, status, attempts, tx_hash FROM settlements WHERE status = 'pending'`);
+    return res.rows.map((r) => ({
+      gameId: r.game_id,
+      winnerWallet: r.winner_wallet,
+      chainId: r.chain_id,
+      status: r.status,
+      attempts: r.attempts,
+      txHash: r.tx_hash ?? undefined,
+    }));
+  }
+
+  async markSettlement(gameId: string, status: SettlementJob['status'], attempts: number, txHash?: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE settlements SET status = $2, attempts = $3, tx_hash = COALESCE($4, tx_hash), updated_at = now() WHERE game_id = $1`,
+      [gameId, status, attempts, txHash ?? null],
     );
   }
 }

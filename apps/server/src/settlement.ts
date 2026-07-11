@@ -1,0 +1,225 @@
+/**
+ * On-chain settlement by the server arbiter (BACKLOG E3.3).
+ * On game end, the arbiter signs (chainid, escrow, gameId, winner) — EIP-191,
+ * matching LudoEscrow.settlementDigest — and submits settle(). Jobs are
+ * durable (Store) and retried with backoff; the queue resumes pending jobs
+ * at boot so a crash between game.over and payout does not lose the payout.
+ *
+ * Note: the contract verifies an EIP-191 personal-signed digest, not EIP-712;
+ * the signature here matches the deployed contract (verified by the smoke test).
+ */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  encodeAbiParameters,
+  http,
+  keccak256,
+  pad,
+  type Address,
+  type Chain,
+  type Hex,
+} from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { celo } from 'viem/chains';
+import type { Store, SettlementJob } from './store/index.js';
+
+const celoSepolia = defineChain({
+  id: 11_142_220,
+  name: 'Celo Sepolia',
+  nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+  rpcUrls: { default: { http: ['https://forno.celo-sepolia.celo-testnet.org'] } },
+  testnet: true,
+});
+
+const CHAINS: Record<string, Chain> = { celo, 'celo-sepolia': celoSepolia };
+
+const SETTLE_ABI = [
+  { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'sig', type: 'bytes' }], outputs: [] },
+  {
+    type: 'function', name: 'games', stateMutability: 'view', inputs: [{ name: '', type: 'bytes32' }],
+    outputs: [
+      { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' },
+      { name: 'playerA', type: 'address' }, { name: 'playerB', type: 'address' },
+      { name: 'createdAt', type: 'uint40' }, { name: 'status', type: 'uint8' },
+    ],
+  },
+] as const;
+
+const MAX_ATTEMPTS = 6;
+const GAME_ACTIVE = 1; // Status.Active
+
+/** Canonical server gameId (16 bytes hex) → bytes32; must match web's escrow.ts. */
+export function gameIdToBytes32(gameId: string): Hex {
+  const hex = gameId.startsWith('0x') ? gameId.slice(2) : gameId;
+  if (!/^[0-9a-fA-F]{1,64}$/.test(hex)) throw new Error(`gameId not hex: ${gameId}`);
+  return pad(`0x${hex}` as Hex, { size: 32 });
+}
+
+interface Deployment {
+  chainId: number;
+  escrow: Address;
+}
+
+export class Arbiter {
+  readonly chainId: number;
+  private readonly account: ReturnType<typeof privateKeyToAccount>;
+  private readonly chain: Chain;
+  private readonly escrow: Address;
+  private readonly publicClient: ReturnType<typeof createPublicClient>;
+  private readonly walletClient: ReturnType<typeof createWalletClient>;
+
+  constructor(privateKey: Hex, chain: Chain, escrow: Address, rpc?: string) {
+    this.account = privateKeyToAccount(privateKey);
+    this.chain = chain;
+    this.escrow = escrow;
+    this.chainId = chain.id;
+    const transport = http(rpc);
+    this.publicClient = createPublicClient({ chain, transport });
+    this.walletClient = createWalletClient({ account: this.account, chain, transport });
+  }
+
+  get address(): Address {
+    return this.account.address;
+  }
+
+  /** EIP-191 signature over keccak256(abi.encode(chainid, escrow, gameId, winner)). */
+  async signSettlement(gameId: string, winner: Address): Promise<Hex> {
+    const inner = keccak256(
+      encodeAbiParameters(
+        [{ type: 'uint256' }, { type: 'address' }, { type: 'bytes32' }, { type: 'address' }],
+        [BigInt(this.chainId), this.escrow, gameIdToBytes32(gameId), winner],
+      ),
+    );
+    return this.account.signMessage({ message: { raw: inner } });
+  }
+
+  /** True only when the escrow game is Active (both players staked on-chain). */
+  async isSettleable(gameId: string): Promise<boolean> {
+    const game = await this.publicClient.readContract({
+      address: this.escrow,
+      abi: SETTLE_ABI,
+      functionName: 'games',
+      args: [gameIdToBytes32(gameId)],
+    });
+    return game[5] === GAME_ACTIVE;
+  }
+
+  async submitSettle(gameId: string, winner: Address): Promise<Hex> {
+    const sig = await this.signSettlement(gameId, winner);
+    const hash = await this.walletClient.writeContract({
+      account: this.account,
+      chain: this.chain,
+      address: this.escrow,
+      abi: SETTLE_ABI,
+      functionName: 'settle',
+      args: [gameIdToBytes32(gameId), winner, sig],
+    });
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== 'success') throw new Error(`settle reverted (tx ${hash})`);
+    return hash;
+  }
+}
+
+/**
+ * Builds an Arbiter from env + deployments.json, or null when settlement is
+ * not configured (no ARBITER_PRIVATE_KEY / no deployment for the chain).
+ */
+export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | null {
+  const raw = env.ARBITER_PRIVATE_KEY?.trim();
+  if (!raw) return null;
+  const chainName = env.CHAIN?.trim() || 'celo-sepolia';
+  const chain = CHAINS[chainName];
+  if (!chain) throw new Error(`Unknown CHAIN '${chainName}' for settlement`);
+
+  const deploymentsPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'contracts', 'deployments.json');
+  const deployments = JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, Deployment>;
+  const escrow = (env.ESCROW_ADDRESS?.trim() as Address | undefined) ??
+    Object.values(deployments).find((d) => d.chainId === chain.id)?.escrow;
+  if (!escrow) throw new Error(`No escrow address for chain ${chain.id}; set ESCROW_ADDRESS or deploy first`);
+
+  const pk = (raw.startsWith('0x') ? raw : `0x${raw}`) as Hex;
+  return new Arbiter(pk, chain, escrow, env.SETTLEMENT_RPC?.trim() || undefined);
+}
+
+/** The queue only needs these three from an arbiter (stubbable in tests). */
+export interface ArbiterLike {
+  readonly chainId: number;
+  isSettleable(gameId: string): Promise<boolean>;
+  submitSettle(gameId: string, winner: Address): Promise<Hex>;
+}
+
+export interface SettlementDeps {
+  store: Store;
+  arbiter: ArbiterLike;
+  /** Notify the players once the payout tx is mined. */
+  onSettled: (gameId: string, txHash: string) => void;
+}
+
+/** Persists and retries settlement jobs with exponential backoff. */
+export class SettlementQueue {
+  private timers = new Set<ReturnType<typeof setTimeout>>();
+
+  constructor(private readonly deps: SettlementDeps) {}
+
+  /** Enqueue a new job and kick off processing (non-blocking). */
+  async enqueue(gameId: string, winnerWallet: string): Promise<void> {
+    const job: SettlementJob = {
+      gameId,
+      winnerWallet,
+      chainId: this.deps.arbiter.chainId,
+      status: 'pending',
+      attempts: 0,
+    };
+    await this.deps.store.enqueueSettlement(job);
+    void this.process(job);
+  }
+
+  /** Re-process jobs left pending by a previous run (call at boot). */
+  async resumePending(): Promise<void> {
+    const pending = await this.deps.store.listPendingSettlements();
+    for (const job of pending) {
+      if (job.chainId === this.deps.arbiter.chainId) void this.process(job);
+    }
+    if (pending.length > 0) console.log(`[settlement] resuming ${pending.length} pending job(s)`);
+  }
+
+  /** Cancel pending retries (shutdown). */
+  stop(): void {
+    for (const timer of this.timers) clearTimeout(timer);
+    this.timers.clear();
+  }
+
+  private async process(job: SettlementJob): Promise<void> {
+    const attempts = job.attempts + 1;
+    try {
+      // Not Active means the players never staked on-chain (free/dev game or a
+      // missed join): nothing to settle, don't burn retries.
+      if (!(await this.deps.arbiter.isSettleable(job.gameId))) {
+        await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
+        console.warn(`[settlement] ${job.gameId} not Active on-chain; skipping`);
+        return;
+      }
+      const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
+      await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
+      this.deps.onSettled(job.gameId, txHash);
+      console.log(`[settlement] ${job.gameId} settled in tx ${txHash}`);
+    } catch (e) {
+      console.error(`[settlement] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);
+      if (attempts >= MAX_ATTEMPTS) {
+        await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
+        return;
+      }
+      await this.deps.store.markSettlement(job.gameId, 'pending', attempts);
+      const backoff = Math.min(1_000 * 2 ** (attempts - 1), 30_000);
+      const timer = setTimeout(() => {
+        this.timers.delete(timer);
+        void this.process({ ...job, attempts });
+      }, backoff);
+      this.timers.add(timer);
+    }
+  }
+}

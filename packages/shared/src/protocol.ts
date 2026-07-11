@@ -83,6 +83,9 @@ export type ServerMsg =
       fairnessReveal: { serverSeed: string; entropies: [string, string] };
       txHash?: string;
     }
+  // On-chain settlement confirmation, sent after game.over once the arbiter's
+  // settle() tx is mined (E3.3). Decoupled so game.over is never blocked on chain latency.
+  | { t: 'game.settled'; gameId: string; txHash: string; winner: Seat }
   | { t: 'error'; code: ErrorCode; message: string }
   | { t: 'pong' };
 

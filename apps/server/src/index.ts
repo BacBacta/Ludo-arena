@@ -14,6 +14,7 @@ import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
 import { createFairness } from './fairness.js';
+import { createArbiter, SettlementQueue } from './settlement.js';
 import { createStore, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -40,6 +41,27 @@ const rooms = new Map<string, Room>();
 const matchmaker = new Matchmaker<Session>();
 // Per-room write chain: snapshots must reach the store in transition order.
 const roomWrites = new Map<string, Promise<void>>();
+
+// On-chain settlement (E3.3). null when no ARBITER_PRIVATE_KEY is configured.
+const arbiter = createArbiter();
+// gameId → who to notify with game.settled once the payout tx is mined.
+const settlementNotify = new Map<string, { sessionIds: [string, string]; winner: Seat }>();
+const settlementQueue = arbiter
+  ? new SettlementQueue({
+      store,
+      arbiter,
+      onSettled: (gameId, txHash) => {
+        const info = settlementNotify.get(gameId);
+        if (!info) return;
+        for (const id of info.sessionIds) {
+          sessions.get(id)?.send({ t: 'game.settled', gameId, txHash, winner: info.winner });
+        }
+        settlementNotify.delete(gameId);
+      },
+    })
+  : null;
+if (arbiter) console.log(`[ludo-server] settlement enabled — arbiter ${arbiter.address} on chain ${arbiter.chainId}`);
+else console.warn('[ludo-server] settlement disabled (no ARBITER_PRIVATE_KEY)');
 
 const NAMES = ['Kwame', 'Amara', 'Thabo', 'Zainab', 'Kofi', 'Nia', 'Sekou', 'Fatou'];
 const FLAGS = ['🇨🇲', '🇳🇬', '🇰🇪', '🇬🇭', '🇸🇳', '🇨🇮', '🇿🇦', '🇹🇿'];
@@ -129,6 +151,15 @@ function wireRoom(room: Room): void {
       .then(() => Promise.all([store.updateElo(idA, pa.elo), store.updateElo(idB, pb.elo)]))
       .then(() => store.deleteRoom(result.gameId))
       .catch((e) => console.error('[store] onResult', e));
+
+    // Staked game with both wallets known → settle the payout on-chain (E3.3).
+    const winnerWallet = result.players[result.winner].wallet;
+    if (settlementQueue && result.stakeCents > 0 && pa.wallet && pb.wallet && winnerWallet) {
+      settlementNotify.set(result.gameId, { sessionIds: [pa.id, pb.id], winner: result.winner });
+      settlementQueue
+        .enqueue(result.gameId, winnerWallet)
+        .catch((e) => console.error('[settlement] enqueue', e));
+    }
   };
 }
 
@@ -146,6 +177,8 @@ for (const snap of await store.loadRooms()) {
   room.resume();
   console.log(`[ludo-server] restored game ${snap.gameId} (stake ${snap.stakeCents}c)`);
 }
+// Finish any settlements interrupted by the previous run.
+await settlementQueue?.resumePending();
 
 // ---------- http + ws ----------
 
@@ -424,6 +457,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     // Snapshots are already in the store (write-through); just stop cleanly.
     for (const room of rooms.values()) room.suspend();
+    settlementQueue?.stop();
     void Promise.allSettled([...roomWrites.values()])
       .then(() => store.close())
       .finally(() => process.exit(0));

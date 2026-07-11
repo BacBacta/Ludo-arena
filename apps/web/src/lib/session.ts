@@ -43,6 +43,8 @@ export interface SessionEvents {
   onTurn(seat: Seat, deadlineTs: number): void;
   onOver(result: GameResult): void;
   onInfo(message: string): void;
+  /** On-chain settlement confirmed (E3.3): the payout tx is mined. */
+  onSettled(txHash: string): void;
   /** The socket dropped mid-game; the session is retrying in the background. */
   onReconnecting(): void;
   /** Reconnected: full match context + state resync. */
@@ -176,6 +178,8 @@ export class RemoteSession implements GameSession {
     private readonly stakeCents: StakeCents,
     private readonly serverUrl: string,
     private readonly onUnavailable: () => void,
+    /** Wallet address to settle to on-chain (E3.3); sent in hello. */
+    private readonly walletAddress?: string,
   ) {
     this.entropy = (() => {
       const b = new Uint8Array(32);
@@ -194,7 +198,12 @@ export class RemoteSession implements GameSession {
 
     ws.onopen = () => {
       clearTimeout(failTimer);
-      this.send({ t: 'hello', entropy: this.entropy, sessionToken: this.token() ?? undefined });
+      this.send({
+        t: 'hello',
+        entropy: this.entropy,
+        sessionToken: this.token() ?? undefined,
+        wallet: this.walletAddress,
+      });
       if (initial) this.send({ t: 'queue.join', stake: this.stakeCents });
     };
     ws.onclose = () => {
@@ -281,6 +290,9 @@ export class RemoteSession implements GameSession {
       case 'game.over':
         this.inGame = false;
         this.ev.onOver(msg);
+        break;
+      case 'game.settled':
+        this.ev.onSettled(msg.txHash);
         break;
       case 'error':
         this.ev.onInfo(msg.message);

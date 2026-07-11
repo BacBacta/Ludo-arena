@@ -60,6 +60,8 @@ const dict = {
     stakingHint: 'Confirme la transaction dans MiniPay',
     stakeFailed: 'Mise non verrouillée — partie annulée',
     noWallet: 'Aucun wallet détecté — mode démo (mises simulées)',
+    viewPayout: 'Voir le paiement on-chain',
+    settled: '✓ Réglé on-chain',
   },
   en: {
     play: 'PLAY ⚡',
@@ -121,6 +123,8 @@ const dict = {
     stakingHint: 'Confirm the transaction in MiniPay',
     stakeFailed: 'Stake not locked — match cancelled',
     noWallet: 'No wallet detected — demo mode (simulated stakes)',
+    viewPayout: 'View on-chain payout',
+    settled: '✓ Settled on-chain',
   },
 } as const;
 

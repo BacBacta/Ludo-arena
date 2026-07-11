@@ -3,7 +3,7 @@
  * Same semantics as PersistentStore within one process lifetime — by design
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
-import type { GameRecord, RoomSnapshot, SessionRecord, Store } from './types.js';
+import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import type { StakeCents } from '@ludo/shared';
 
 interface PlayerRow {
@@ -19,6 +19,7 @@ export class MemoryStore implements Store {
   private queues = new Map<StakeCents, string[]>();
   private players = new Map<string, PlayerRow>();
   private games = new Map<string, GameRecord>();
+  private settlements = new Map<string, SettlementJob>();
 
   async init(): Promise<void> {}
   async close(): Promise<void> {}
@@ -76,5 +77,20 @@ export class MemoryStore implements Store {
   }
   async recordGame(rec: GameRecord): Promise<void> {
     this.games.set(rec.gameId, structuredClone(rec));
+  }
+
+  async enqueueSettlement(job: SettlementJob): Promise<void> {
+    this.settlements.set(job.gameId, structuredClone(job));
+  }
+  async listPendingSettlements(): Promise<SettlementJob[]> {
+    return [...this.settlements.values()].filter((j) => j.status === 'pending').map((j) => structuredClone(j));
+  }
+  async markSettlement(gameId: string, status: SettlementJob['status'], attempts: number, txHash?: string): Promise<void> {
+    const job = this.settlements.get(gameId);
+    if (job) {
+      job.status = status;
+      job.attempts = attempts;
+      if (txHash) job.txHash = txHash;
+    }
   }
 }

@@ -62,6 +62,7 @@ export default function App() {
         if (walletRef.current) void refreshBalance(walletRef.current);
       },
       onInfo: (message) => dispatch({ type: 'TOAST', message }),
+      onSettled: (txHash) => dispatch({ type: 'SETTLED', txHash }),
       onReconnecting: () => dispatch({ type: 'RECONNECTING' }),
       onResumed: (match, game) => dispatch({ type: 'RESUME', match, game }),
       onGone: () => {
@@ -93,10 +94,16 @@ export default function App() {
         return;
       }
       // PvP: real-time server, falls back to the local bot if unreachable
-      sessionRef.current = new RemoteSession(ev, stake, SERVER_URL, () => {
-        dispatch({ type: 'TOAST', message: t('offline') });
-        sessionRef.current = new LocalBotSession(ev, stake);
-      });
+      sessionRef.current = new RemoteSession(
+        ev,
+        stake,
+        SERVER_URL,
+        () => {
+          dispatch({ type: 'TOAST', message: t('offline') });
+          sessionRef.current = new LocalBotSession(ev, stake);
+        },
+        walletRef.current?.address,
+      );
     },
     [dispatch, makeEvents, refreshBalance],
   );

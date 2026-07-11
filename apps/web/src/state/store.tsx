@@ -25,6 +25,8 @@ export interface AppState {
   lastDice: { value: number; index: number; seat: Seat } | null;
   turnDeadlineTs: number | null;
   result: GameResult | null;
+  /** On-chain payout tx hash once the arbiter settle() is mined (E3.3). */
+  settleTxHash: string | null;
   botMode: boolean;
   reconnecting: boolean;
   staking: StakingState;
@@ -44,6 +46,7 @@ export const initialState: AppState = {
   lastDice: null,
   turnDeadlineTs: null,
   result: null,
+  settleTxHash: null,
   botMode: false,
   reconnecting: false,
   staking: 'idle',
@@ -63,6 +66,7 @@ export type Action =
   | { type: 'RECONNECTING' }
   | { type: 'RESUME'; match: MatchInfo; game: GameState }
   | { type: 'STAKING'; status: StakingState }
+  | { type: 'SETTLED'; txHash: string }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
@@ -81,6 +85,7 @@ export function reducer(s: AppState, a: Action): AppState {
         match: null,
         game: null,
         result: null,
+        settleTxHash: null,
         lastDice: null,
         staking: 'idle',
       };
@@ -111,8 +116,10 @@ export function reducer(s: AppState, a: Action): AppState {
       // SET_BALANCE; only the simulated dev path credits the balance here.
       const balanceCents =
         !s.walletBacked && won ? s.balanceCents + a.result.payoutCents : s.balanceCents;
-      return { ...s, screen: 'end', result: a.result, reconnecting: false, staking: 'idle', balanceCents };
+      return { ...s, screen: 'end', result: a.result, settleTxHash: null, reconnecting: false, staking: 'idle', balanceCents };
     }
+    case 'SETTLED':
+      return { ...s, settleTxHash: a.txHash };
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':

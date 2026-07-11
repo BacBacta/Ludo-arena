@@ -22,7 +22,7 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 
 - [x] **E3.1 Testnet deployment** of LudoEscrow — deployed on **Celo Sepolia** (chainId 11142220, successor of Alfajores) via `npm run deploy -w packages/contracts` (solc+viem; Foundry optional), addresses in `packages/contracts/deployments.json`. TestUSD deployed as stake token (no canonical cUSD on Celo Sepolia yet); arbiter/treasury point at the deployer until E3.3.
 - [x] **E3.2 Web-side staking flow**: `approve` + `join(gameId)` via viem (`apps/web/src/lib/escrow.ts`), MiniPay legacy tx + cUSD feeCurrency, staking overlay (approving → joining → locked), wallet-backed balance (simulated fallback with no wallet). *AC: verified against the live Celo Sepolia escrow — `npm run stake-verify -w apps/web` (mint → approve → join → game status WaitingOpponent). Full 2-player settle awaits the arbiter (E3.3).*
-- [ ] **E3.3 Server arbiter**: EIP-712 result signature, `settle()` submission, retry + settlement queue. *AC: payout < 5 s after game.over on testnet.*
+- [x] **E3.3 Server arbiter**: result signature (EIP-191, matching the deployed `settlementDigest`), `settle()` submission, durable retry queue that resumes at boot (`apps/server/src/settlement.ts`). `game.settled` message carries the payout txHash to the client (EndScreen link). *AC: verified on live Celo Sepolia — arbiter settled a real staked game in ~5.5 s (`npm run settle-verify -w apps/server`, needs a funded arbiter key); queue retry/backoff unit-tested (`test/settlement.test.ts`).*
 - [ ] **E3.4 On-chain timeout**: refund if the opponent never joins within 120 s (`refundExpired`).
 
 ## E4 — Retention

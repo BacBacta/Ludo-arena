@@ -53,6 +53,16 @@ export interface GameRecord {
   serverSeed: string;
 }
 
+/** Durable on-chain settlement job (E3.3): survives restarts, retried until mined. */
+export interface SettlementJob {
+  gameId: string;
+  winnerWallet: string;
+  chainId: number;
+  status: 'pending' | 'settled' | 'failed';
+  attempts: number;
+  txHash?: string;
+}
+
 export interface Store {
   init(): Promise<void>;
   close(): Promise<void>;
@@ -80,6 +90,11 @@ export interface Store {
   ): Promise<{ elo: number }>;
   updateElo(id: string, elo: number): Promise<void>;
   recordGame(rec: GameRecord): Promise<void>;
+
+  // Settlements (durable, E3.3)
+  enqueueSettlement(job: SettlementJob): Promise<void>;
+  listPendingSettlements(): Promise<SettlementJob[]>;
+  markSettlement(gameId: string, status: SettlementJob['status'], attempts: number, txHash?: string): Promise<void>;
 }
 
 /** Stable player id: wallet when known, otherwise anonymous per-session. */
