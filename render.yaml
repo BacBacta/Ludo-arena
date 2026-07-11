@@ -1,0 +1,44 @@
+# Render Blueprint for the Ludo Arena game server (apps/server).
+# Deploy: render.com → New → Blueprint → connect BacBacta/Ludo-arena → Apply.
+# It provisions the Docker web service + managed Postgres + Key Value (Redis)
+# and wires DATABASE_URL / REDIS_URL automatically. Set ARBITER_PRIVATE_KEY in
+# the dashboard (sync:false) after the first deploy.
+services:
+  - type: web
+    name: ludo-arena-server
+    runtime: docker
+    dockerfilePath: ./apps/server/Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    envVars:
+      - key: CHAIN
+        value: celo-sepolia
+      - key: ESCROW_ADDRESS
+        value: "0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6"
+      - key: BLOCKED_COUNTRIES
+        value: ""
+      - key: ARBITER_PRIVATE_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ludo-arena-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: ludo-arena-redis
+          property: connectionString
+
+  - type: keyvalue
+    name: ludo-arena-redis
+    plan: free
+    region: frankfurt
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+databases:
+  - name: ludo-arena-db
+    plan: free
+    region: frankfurt
