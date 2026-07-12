@@ -91,6 +91,8 @@ export const DICE_SKINS: DiceSkin[] = [
     unlocked: (c) => c.division >= 2,
   },
   {
+    // Premium (PREMIUM_SKINS): unlocked by spending freeroll tickets, tracked
+    // server-side. unlocked() stays false — ownership drives the UI, not stats.
     id: 'obsidian',
     name: 'Obsidian',
     body1: '#2b2b33',
@@ -98,9 +100,17 @@ export const DICE_SKINS: DiceSkin[] = [
     pip: '#ff4d6d',
     stroke: '#000000',
     glow: 'rgba(255,77,109,.4)',
-    hintKey: 'skinSoon',
     unlocked: () => false,
-    soon: true,
+  },
+  {
+    id: 'aurora',
+    name: 'Aurora',
+    body1: '#7ef0ff',
+    body2: '#6a5be0',
+    pip: '#0b1030',
+    stroke: '#2a2170',
+    glow: 'rgba(126,240,255,.5)',
+    unlocked: () => false,
   },
 ];
 

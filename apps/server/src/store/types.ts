@@ -131,6 +131,11 @@ export interface Store {
   grantTickets(playerId: string, n: number): Promise<number>;
   spendTickets(playerId: string, n: number): Promise<number | null>;
 
+  /** Premium dice-skin ownership. getOwnedSkins lists unlocked ids; ownSkin
+   *  records one (idempotent) and returns the full list. */
+  getOwnedSkins(playerId: string): Promise<string[]>;
+  ownSkin(playerId: string, skinId: string): Promise<string[]>;
+
   // Responsible gaming (E5.2). `today` is a UTC date string; the daily staked
   // total resets when the stored day differs. selfExcludedUntil is null when
   // not excluded or the exclusion has expired.

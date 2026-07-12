@@ -39,6 +39,12 @@ export const ANTI_TILT = { losses: 3, rewardTickets: 1 } as const;
  *  winner takes both entries plus a house bonus. */
 export const FREEROLL = { entryTickets: 1, winnerTickets: 3 } as const;
 
+/** Premium dice skins unlockable by SPENDING freeroll tickets (a cosmetic sink
+ *  that gives tickets a second use; the cUSD purchase rail lands with mainnet).
+ *  Maps skin id → ticket price. Server-authoritative: the server spends the
+ *  tickets and records ownership so a re-buy can't double-charge. */
+export const PREMIUM_SKINS: Record<string, number> = { obsidian: 5, aurora: 10 };
+
 /** Responsible gaming (E5.2): default/max daily stake cap per player, in cents. */
 export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 200;
 export const MAX_DAILY_STAKE_LIMIT_CENTS = 200;
@@ -123,6 +129,8 @@ export type ClientMsg =
   // Forfeit the current match on purpose (the only deliberate exit from a game).
   | { t: 'game.resign' }
   | { t: 'game.rematch' }
+  // Unlock a premium dice skin by spending its ticket price (PREMIUM_SKINS).
+  | { t: 'skin.buy'; skinId: string }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -163,6 +171,7 @@ export type ServerMsg =
       streak?: StreakState;
       league?: LeagueState;
       limits?: LimitsState; // responsible-gaming state (E5.2)
+      ownedSkins?: string[]; // premium skins the player has unlocked (server-authoritative)
       stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
     }
   | { t: 'queue.ok'; position: number }
@@ -210,7 +219,10 @@ export type ServerMsg =
   // Weekly league standings after a game (E4.3).
   | { t: 'league.update'; league: LeagueState }
   // Freeroll tickets granted (anti-tilt bonus E4.5, or a freeroll win).
-  | { t: 'tickets.grant'; granted: number; total: number; reason: 'anti-tilt' | 'freeroll-win' }
+  | { t: 'tickets.grant'; granted: number; total: number; reason: 'anti-tilt' | 'freeroll-win' | 'sync' }
+  // Premium-skin ownership after a successful skin.buy (spend confirmed), with the
+  // player's full owned list and new ticket total.
+  | { t: 'skin.owned'; ownedIds: string[]; tickets: number }
   // Responsible-gaming state after hello or a limits.set (E5.2).
   | { t: 'limits.update'; limits: LimitsState }
   | { t: 'error'; code: ErrorCode; message: string }
@@ -249,6 +261,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     }
     case 'game.entropy':
       return typeof m.entropy === 'string' && m.entropy.length >= 16 && m.entropy.length <= 128 ? m : null;
+    case 'skin.buy':
+      return typeof m.skinId === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.skinId) ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

@@ -245,6 +245,23 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
+    it('records premium-skin ownership idempotently', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'K', flag: '🌍' });
+
+      expect(await store.getOwnedSkins(id)).toEqual([]);
+      expect(await store.ownSkin(id, 'obsidian')).toEqual(['obsidian']);
+      // idempotent: owning the same skin twice doesn't duplicate it
+      expect(await store.ownSkin(id, 'obsidian')).toEqual(['obsidian']);
+      const owned = await store.ownSkin(id, 'aurora');
+      expect(owned.sort()).toEqual(['aurora', 'obsidian']);
+      expect((await store.getOwnedSkins(id)).sort()).toEqual(['aurora', 'obsidian']);
+
+      await store.close();
+    });
+
     it('tracks daily stake, resets next day, and honours self-exclusion (E5.2)', async () => {
       const store = make();
       await store.init();

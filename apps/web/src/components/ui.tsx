@@ -5,6 +5,7 @@ import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
+import { PREMIUM_SKINS } from '@ludo/shared';
 import { t } from '../lib/i18n';
 
 export function TopBar() {
@@ -126,8 +127,8 @@ export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?
 }
 
 /** Dice-skin picker: progression rewards now, paid skins once payments land. */
-export function DiceModal() {
-  const { diceModalOpen, diceSkin, streak, tickets, league } = useAppState();
+export function DiceModal({ onBuy }: { onBuy(skinId: string): void }) {
+  const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins } = useAppState();
   const dispatch = useAppDispatch();
   if (!diceModalOpen) return null;
   const stats = loadStats();
@@ -142,20 +143,36 @@ export function DiceModal() {
         </p>
         <div className="skingrid">
           {DICE_SKINS.map((s) => {
-            const unlocked = s.unlocked(ctx);
+            const price = PREMIUM_SKINS[s.id]; // premium skins are unlocked by tickets
+            const owned = ownedSkins.includes(s.id);
+            const unlocked = owned || (price === undefined && s.unlocked(ctx));
             const equipped = s.id === diceSkin;
+            const canBuy = price !== undefined && !owned;
             return (
               <button
                 key={s.id}
                 className={`skin${equipped ? ' skin--on' : ''}${unlocked ? '' : ' skin--locked'}`}
-                onClick={unlocked ? () => dispatch({ type: 'SET_DICE_SKIN', id: s.id }) : undefined}
+                disabled={canBuy && tickets < price}
+                onClick={
+                  unlocked
+                    ? () => dispatch({ type: 'SET_DICE_SKIN', id: s.id })
+                    : canBuy && tickets >= price
+                      ? () => onBuy(s.id)
+                      : undefined
+                }
               >
                 <DieFace value={6} skin={s} />
                 <b>{s.name}</b>
                 <small>
-                  {equipped ? t('skinEquipped') : unlocked ? t('skinTap') : t(s.hintKey ?? 'skinSoon')}
+                  {equipped
+                    ? t('skinEquipped')
+                    : unlocked
+                      ? t('skinTap')
+                      : canBuy
+                        ? `${t('skinUnlock')} ${price} 🎟️`
+                        : t(s.hintKey ?? 'skinSoon')}
                 </small>
-                {!unlocked && <span className="skin__lock">🔒</span>}
+                {!unlocked && <span className="skin__lock">{canBuy ? '🎟️' : '🔒'}</span>}
               </button>
             );
           })}

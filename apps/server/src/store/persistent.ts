@@ -63,6 +63,8 @@ CREATE INDEX IF NOT EXISTS players_league_idx ON players(division, weekly_points
 ALTER TABLE players ADD COLUMN IF NOT EXISTS loss_streak INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS lost_rake_cents INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS cashback_cents INTEGER NOT NULL DEFAULT 0;
+-- Premium dice skins unlocked with tickets (cosmetic sink).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS owned_skins TEXT[] NOT NULL DEFAULT '{}';
 
 -- Responsible gaming (E5.2).
 ALTER TABLE players ADD COLUMN IF NOT EXISTS stake_date DATE;
@@ -490,6 +492,23 @@ export class PersistentStore implements Store {
       [playerId, n],
     );
     return res.rows[0]?.freeroll_tickets ?? null;
+  }
+
+  async getOwnedSkins(playerId: string): Promise<string[]> {
+    const res = await this.pool.query<{ owned_skins: string[] }>(`SELECT owned_skins FROM players WHERE id = $1`, [playerId]);
+    return res.rows[0]?.owned_skins ?? [];
+  }
+
+  async ownSkin(playerId: string, skinId: string): Promise<string[]> {
+    // array_append only if not already present (idempotent), returns the new list.
+    const res = await this.pool.query<{ owned_skins: string[] }>(
+      `UPDATE players SET
+         owned_skins = CASE WHEN $2 = ANY(owned_skins) THEN owned_skins ELSE array_append(owned_skins, $2) END,
+         updated_at = now()
+       WHERE id = $1 RETURNING owned_skins`,
+      [playerId, skinId],
+    );
+    return res.rows[0]?.owned_skins ?? [];
   }
 
   async getLimits(playerId: string, today: string): Promise<LimitsState> {

@@ -14,7 +14,7 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { EndScreen } from './screens/EndScreen';
 import { DiceModal, FairnessModal, LegalModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
-import { sendLimits } from './lib/session';
+import { sendLimits, buySkin } from './lib/session';
 import { connectWallet, lockStake, walletBalanceCents, type Wallet } from './lib/minipay';
 import { playCapture, playDice, playWin } from './lib/sound';
 import { recordGameResult } from './lib/diceSkins';
@@ -36,9 +36,10 @@ export default function App() {
       streak: state.streak,
       league: state.league,
       tickets: state.tickets,
+      ownedSkins: state.ownedSkins,
       limits: state.limits,
     });
-  }, [state.challenge, state.streak, state.league, state.tickets, state.limits]);
+  }, [state.challenge, state.streak, state.league, state.tickets, state.ownedSkins, state.limits]);
 
   const refreshBalance = useCallback(
     async (wallet: Wallet) => {
@@ -116,6 +117,7 @@ export default function App() {
         }
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
+      onSkins: (ownedIds) => dispatch({ type: 'OWNED_SKINS', ownedIds }),
       onGeo: (stakingBlocked) => dispatch({ type: 'GEO', stakingBlocked }),
       onRefunded: (txHash) => {
         dispatch({ type: 'REFUNDED', txHash });
@@ -259,6 +261,20 @@ export default function App() {
   const onPlay = useCallback((stake: StakeCents) => gateStaked(stake, () => void startMatch(stake)), [gateStaked, startMatch]);
   const onCreateTable = useCallback((stake: StakeCents) => gateStaked(stake, () => createTable(stake)), [gateStaked, createTable]);
 
+  const purchaseSkin = useCallback(
+    async (skinId: string) => {
+      const res = await buySkin(SERVER_URL, skinId, walletRef.current?.address);
+      if (res) {
+        dispatch({ type: 'OWNED_SKINS', ownedIds: res.ownedIds, tickets: res.tickets });
+        dispatch({ type: 'SET_DICE_SKIN', id: skinId }); // equip what you just unlocked
+        dispatch({ type: 'TOAST', message: t('skinUnlocked') });
+      } else {
+        dispatch({ type: 'TOAST', message: t('offline') });
+      }
+    },
+    [dispatch],
+  );
+
   const applyLimits = useCallback(
     async (payload: { dailyLimitCents?: number; selfExcludeDays?: number }) => {
       const limits = await sendLimits(SERVER_URL, payload, walletRef.current?.address);
@@ -310,7 +326,7 @@ export default function App() {
         }}
       />
       <FairnessModal />
-      <DiceModal />
+      <DiceModal onBuy={purchaseSkin} />
       <SettingsModal onApply={applyLimits} />
       <Toast />
     </>

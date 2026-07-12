@@ -11,6 +11,7 @@ import { getAddress, isAddress } from 'viem';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
   FREEROLL,
+  PREMIUM_SKINS,
   isoWeek,
   leaguePointsForWin,
   MAX_DAILY_GAMES_VS_SAME,
@@ -434,6 +435,7 @@ wss.on('connection', (ws, req) => {
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
           league: await store.getLeague(rpid),
           limits: await store.getLimits(rpid, utcToday()),
+          ownedSkins: await store.getOwnedSkins(rpid),
           stakingBlocked: isGeoBlocked(country),
         });
         return;
@@ -467,7 +469,8 @@ wss.on('connection', (ws, req) => {
       const streak = msg.wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
       const league = await store.getLeague(pid);
       const limits = await store.getLimits(pid, utcToday());
-      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, limits, stakingBlocked: isGeoBlocked(country) });
+      const ownedSkins = await store.getOwnedSkins(pid);
+      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, limits, ownedSkins, stakingBlocked: isGeoBlocked(country) });
       return;
     }
 
@@ -644,6 +647,31 @@ wss.on('connection', (ws, req) => {
         const selfExcludedUntil = msg.selfExcludeDays ? utcPlusDays(msg.selfExcludeDays) : undefined;
         await store.setLimits(pid, { dailyLimitCents: msg.dailyLimitCents, selfExcludedUntil });
         session.send({ t: 'limits.update', limits: await store.getLimits(pid, utcToday()) });
+        break;
+      }
+
+      case 'skin.buy': {
+        // Unlock a premium dice skin by spending its ticket price (server-authoritative).
+        const price = PREMIUM_SKINS[msg.skinId];
+        if (price === undefined) {
+          session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Unknown skin.' });
+          break;
+        }
+        const spid = playerId(session.wallet, session.id);
+        const alreadyOwned = await store.getOwnedSkins(spid);
+        if (alreadyOwned.includes(msg.skinId)) {
+          // idempotent: already unlocked, never charge twice
+          const held = (await store.getChallenge(spid, utcToday())).tickets;
+          session.send({ t: 'skin.owned', ownedIds: alreadyOwned, tickets: held });
+          break;
+        }
+        const spent = await store.spendTickets(spid, price);
+        if (spent === null) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Not enough freeroll tickets to unlock this skin.' });
+          break;
+        }
+        const ownedIds = await store.ownSkin(spid, msg.skinId);
+        session.send({ t: 'skin.owned', ownedIds, tickets: spent });
         break;
       }
 

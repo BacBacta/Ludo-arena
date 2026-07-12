@@ -26,6 +26,7 @@ interface RetentionCache {
   streak: StreakState;
   league: LeagueState;
   tickets: number;
+  ownedSkins: string[];
   limits: LimitsState;
 }
 
@@ -34,6 +35,7 @@ const DEFAULT_RETENTION: RetentionCache = {
   streak: { days: 0, tickets: 0, rewardGranted: 0 },
   league: { division: DEFAULT_DIVISION, points: 0, rank: 0, size: 0, top: [] },
   tickets: 0,
+  ownedSkins: [],
   limits: { dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS, stakedTodayCents: 0, selfExcludedUntil: null },
 };
 
@@ -72,6 +74,8 @@ export interface AppState {
   league: LeagueState;
   /** Total freeroll tickets; fed by both challenge and streak updates. */
   tickets: number;
+  /** Premium dice skins unlocked (server-authoritative; cached for the lobby). */
+  ownedSkins: string[];
   /** Responsible-gaming limits (E5.2). */
   limits: LimitsState;
   /** Geo-gating (E5.4): staked play disabled in this region. */
@@ -152,6 +156,7 @@ export const initialState: AppState = {
   streak: loadRetention().streak,
   league: loadRetention().league,
   tickets: loadRetention().tickets,
+  ownedSkins: loadRetention().ownedSkins,
   limits: loadRetention().limits,
   stakingBlocked: false,
   match: null,
@@ -198,6 +203,7 @@ export type Action =
   | { type: 'LEAGUE_UPDATE'; league: LeagueState }
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
+  | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
   | { type: 'LIMITS_UPDATE'; limits: LimitsState }
   | { type: 'GEO'; stakingBlocked: boolean }
   | { type: 'SET_BALANCE'; cents: number }
@@ -281,6 +287,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, screen: 'matchmaking', privateCode: a.code };
     case 'TICKETS':
       return { ...s, tickets: a.total };
+    case 'OWNED_SKINS':
+      return { ...s, ownedSkins: a.ownedIds, tickets: a.tickets ?? s.tickets };
     case 'LIMITS_UPDATE':
       return { ...s, limits: a.limits };
     case 'GEO':

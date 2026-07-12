@@ -70,7 +70,9 @@ export interface SessionEvents {
   /** Private table created (E4.4): share the code with a friend. */
   onTableCreated(code: string, stakeCents: StakeCents): void;
   /** Freeroll tickets granted (anti-tilt bonus, freeroll win) with the new total. */
-  onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win'): void;
+  onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win' | 'sync'): void;
+  /** Premium dice skins the player owns (from hello.ok). */
+  onSkins(ownedIds: string[]): void;
   /** Responsible-gaming limits (E5.2). */
   onLimits(limits: LimitsState): void;
   /** Geo-gating (E5.4): staked play disabled in this region. */
@@ -284,6 +286,70 @@ export function sendLimits(
     };
   });
 }
+
+/**
+ * One-shot: unlock a premium dice skin by spending tickets (server-authoritative).
+ * Resumes the player's session (sessionToken) so their earned tickets are spent,
+ * then resolves with the new owned list + ticket total (or null on failure).
+ */
+export function buySkin(
+  serverUrl: string,
+  skinId: string,
+  walletAddress?: string,
+): Promise<{ ownedIds: string[]; tickets: number } | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(serverUrl);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: { ownedIds: string[]; tickets: number } | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 5000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = sessionStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'skin.buy', skinId }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'skin.owned') {
+        clearTimeout(timer);
+        done({ ownedIds: msg.ownedIds, tickets: msg.tickets });
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
 
@@ -402,6 +468,7 @@ export class RemoteSession implements GameSession {
         if (msg.streak) this.ev.onStreak(msg.streak);
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.limits) this.ev.onLimits(msg.limits);
+        if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
         if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
         if (msg.resumed) {
           this.inGame = true;
