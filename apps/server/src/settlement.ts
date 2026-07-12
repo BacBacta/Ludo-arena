@@ -200,6 +200,8 @@ export interface SettlementDeps {
   onSettled: (gameId: string, txHash: string) => void;
   /** Notify once the lone staker has been refunded (opponent never joined). */
   onRefunded: (gameId: string, txHash: string) => void;
+  /** Money-critical alert (payout failed / stuck escrow) for an ops pager. */
+  onAlert?: (message: string) => void;
   /** Wall-clock seconds; injectable for tests. */
   now?: () => number;
 }
@@ -263,9 +265,9 @@ export class SettlementQueue {
         const winner = job.winnerWallet.toLowerCase();
         if (winner !== playerA.toLowerCase() && winner !== playerB.toLowerCase()) {
           await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
-          console.error(
-            `[settlement][ALERT] winner ${job.winnerWallet} is not an on-chain player (A=${playerA}, B=${playerB}) for game ${job.gameId}. NOT settling; manual review — funds are locked in Active escrow.`,
-          );
+          const msg = `[settlement][ALERT] winner ${job.winnerWallet} is not an on-chain player (A=${playerA}, B=${playerB}) for game ${job.gameId}. NOT settling; manual review — funds are locked in Active escrow.`;
+          console.error(msg);
+          this.deps.onAlert?.(msg);
           return;
         }
         const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
@@ -301,10 +303,10 @@ export class SettlementQueue {
       if (attempts >= MAX_ATTEMPTS) {
         await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
         // A winner was NOT paid after every retry — this needs a human. Emit a
-        // loud, greppable alert (an error tracker / pager hooks in here).
-        console.error(
-          `[settlement][ALERT] PAYOUT FAILED after ${attempts} attempts — game ${job.gameId}, winner ${job.winnerWallet}, chain ${job.chainId}. Funds may be locked in escrow; manual settle/refund required.`,
-        );
+        // loud, greppable alert (an error tracker / pager hooks in via onAlert).
+        const msg = `[settlement][ALERT] PAYOUT FAILED after ${attempts} attempts — game ${job.gameId}, winner ${job.winnerWallet}, chain ${job.chainId}. Funds may be locked in escrow; manual settle/refund required.`;
+        console.error(msg);
+        this.deps.onAlert?.(msg);
         return;
       }
       await this.deps.store.markSettlement(job.gameId, 'pending', attempts);

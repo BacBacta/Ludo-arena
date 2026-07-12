@@ -147,6 +147,22 @@ function generateTableCode(): string {
   throw new Error('could not allocate a table code');
 }
 
+/**
+ * Ops alerting for money-critical events (payout failed / stuck escrow). Opt-in:
+ * POSTs to OPS_WEBHOOK_URL (Slack/Discord/PagerDuty-compatible `{text}`) when set,
+ * so a stuck payout pages a human instead of dying in a log. Dep-free (uses the
+ * built-in fetch); always console.error too. No DSN → console-only (no-op).
+ */
+function postOpsAlert(message: string): void {
+  const url = process.env.OPS_WEBHOOK_URL?.trim();
+  if (!url) return;
+  void fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: message }),
+  }).catch((e) => console.error('[ops] alert webhook failed', e instanceof Error ? e.message : e));
+}
+
 // On-chain settlement (E3.3). null when no ARBITER_PRIVATE_KEY is configured.
 const arbiter = createArbiter();
 // gameId → who to notify with game.settled once the payout tx is mined.
@@ -155,6 +171,7 @@ const settlementQueue = arbiter
   ? new SettlementQueue({
       store,
       arbiter,
+      onAlert: postOpsAlert,
       onSettled: (gameId, txHash) => {
         const info = settlementNotify.get(gameId);
         if (!info) return;
