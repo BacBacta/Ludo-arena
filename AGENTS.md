@@ -48,7 +48,8 @@ npm run dev:server          # server ws://localhost:8787
 | `apps/server/src/store/` | Persistence: Redis (sessions, rooms, queues) + Postgres (players, games), in-memory fallback |
 | `apps/server/src/fairness.ts` | Commit-reveal dice (server seed + player entropies) |
 | `apps/web/src/state/store.tsx` | Frontend global state (single reducer) |
-| `apps/web/src/lib/session.ts` (`LocalBotSession`) + `apps/web/src/lib/ludo4.ts` (`pickAutoMove4`) | Local AI (offline 2P / 4P practice) |
+| `apps/web/src/lib/session.ts` (`LocalBotSession`) + `packages/game-engine/src/ludo4.ts` (`pickAutoMove4`) | Local AI (offline 2P / 4P practice) |
+| `apps/server/src/room4.ts` + `packages/game-engine/src/ludo4.ts` | 4-player online Sit&Go (ticket entry, bot-fill, server-authoritative) |
 | `apps/web/src/lib/minipay.ts` | MiniPay wallet integration via viem |
 | `packages/contracts/src/LudoEscrow.sol` | Stake escrow + signed settlement |
 

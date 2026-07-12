@@ -10,6 +10,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `game.entropy` | `{ entropy }` | Reveals this session's raw entropy after `match.found`; verified against the hello commit. The game's dice are finalized (and the Room created) only once both players revealed. |
 | `queue.join` | `{ stake, freeroll? }` | Joins the queue (stake in dollar cents: 0, 10, 25, 50, 100, 200). `freeroll: true` joins the ticket-gated freeroll queue instead (stake forced to 0; entry = 1 ticket, spent at match time; winner takes 3). |
 | `queue.leave` | `{}` | Leaves the queue. |
+| `queue.join4` | `{}` | Joins the 4-player online Sit&Go queue. Ticket-gated: entry = 1 freeroll ticket, spent at join (refunded on `queue.leave`/disconnect while still waiting); winner takes 3. Fills empty seats with bots after a short wait if fewer than 4 humans queue. In-game it shares `game.roll`/`game.move`/`game.resign`. |
 | `table.create` | `{ stake }` | Creates a private table (E4.4); server replies `table.created` with a shareable code. |
 | `table.join` | `{ code }` | Joins a private table by its 6-char code; pairs with the host or returns `error TABLE_NOT_FOUND`. |
 | `game.roll` | `{}` | Requests the roll (if it is their turn and phase is `awaiting-roll`). |
@@ -33,6 +34,12 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `game.over` | `{ winner, reason, payoutCents, rakeCents, eloDelta, fairnessReveal, txHash? }` | End. `fairnessReveal` = server seed + entropies (verification). `reason` ∈ `finish` \| `timeout-forfeit` \| `resign`. |
 | `game.settled` | `{ gameId, txHash, winner }` | On-chain payout confirmed (E3.3). Sent after `game.over` once the arbiter's `settle()` tx is mined; decoupled so `game.over` is never blocked on chain latency. |
 | `game.refunded` | `{ gameId, txHash }` | Stake refunded on-chain (E3.4): the opponent never joined within the 120 s escrow timeout, so the lone staker got their stake back via `refundExpired`. |
+| `match.found4` | `{ gameId, seat, players: [{ name, flag, bot }], entryTickets, prizeTickets, fairnessCommit }` | 4-player Sit&Go match found. `seat` = 0–3; `players` is indexed by seat (bot seats have `bot: true`). `fairnessCommit` = hash of the server seed, revealed at `game.over4`. |
+| `game.state4` | `{ state }` | Full 4-player state (game start). `state` = engine `Game4`. |
+| `game.dice4` | `{ value, index, seat }` | 4-player roll result (index = roll number, verifiable). |
+| `game.moved4` | `{ seat, token, capture, state }` | 4-player move applied (`state` = `Game4`). |
+| `game.turn4` | `{ seat, deadlineTs }` | 4-player turn + clock deadline (auto-move / bot-play afterwards). |
+| `game.over4` | `{ winner, prizeTickets, fairnessReveal: { serverSeed, seeds } }` | 4-player end. `winner` (0–3) is granted `prizeTickets` (via `tickets.grant` reason `freeroll-win`). `fairnessReveal` = server seed + per-seat seeds. NOTE: verifiable but, like the 2-player legacy path, not fully grinding-resistant — acceptable for ticket games (no on-chain money). |
 | `challenge.update` | `{ challenge: { progress, target, completed, tickets } }` | Daily-challenge progress after a capture (E4.1); on completion `completed` flips and `tickets` increments. |
 | `league.update` | `{ league: { division, points, rank, size, top[] } }` | Weekly-league standings after a win (E4.3), sent to the winner. |
 | `tickets.grant` | `{ granted, total, reason }` | Freeroll tickets granted. `reason` ∈ `anti-tilt` (3 consecutive staked losses, E4.5) \| `freeroll-win` (freeroll prize). Also sent with `granted: 0` to sync the total after a freeroll entry is spent. |
