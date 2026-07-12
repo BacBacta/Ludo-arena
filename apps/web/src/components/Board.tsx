@@ -301,14 +301,14 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         {TRACK.map(([x, y], i) => (
           <rect
             key={i}
-            x={x + 0.02}
-            y={y + 0.02}
-            width={0.96}
-            height={0.96}
-            rx={0.12}
+            x={x + 0.015}
+            y={y + 0.015}
+            width={0.97}
+            height={0.97}
+            rx={0.06}
             fill="#ffffff"
-            stroke="#c9d2e0"
-            strokeWidth={0.045}
+            stroke="#d4dbe8"
+            strokeWidth={0.03}
           />
         ))}
 

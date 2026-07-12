@@ -551,7 +551,7 @@ small.muted { font-size: 12px; }
 
 /* bottom action bar: sound · verify · balance · dice skins · menu */
 .gamebar {
-  margin-top: 12px;
+  margin-top: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;

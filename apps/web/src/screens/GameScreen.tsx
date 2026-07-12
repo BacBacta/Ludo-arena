@@ -192,11 +192,8 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
           </div>
         </div>
 
-      </div>
-
-      {/* bottom action bar (Ludo-Club structure, mapped to our real features):
-          sound · verify · balance · dice skins · menu — anchored to the bottom */}
-      <div className="gamebar">
+        {/* bottom action bar (Ludo-Club structure): sound · verify · balance · dice skins · menu */}
+        <div className="gamebar">
           <button className="gamebar__btn" aria-label="sound" onClick={() => dispatch({ type: 'TOGGLE_SOUND' })}>
             {soundOn ? <IconSoundOn /> : <IconSoundOff />}
           </button>
@@ -220,9 +217,10 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
               <DieFace value={5} skin={skin} />
             </span>
           </button>
-        <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
-          <IconMenu />
-        </button>
+          <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
+            <IconMenu />
+          </button>
+        </div>
       </div>
     </div>
   );
