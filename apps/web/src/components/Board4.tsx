@@ -13,8 +13,8 @@ import { playHop } from '../lib/sound';
    not washed. The base [1] is the real flat panel colour. */
 const RED = ['#FF7B6E', '#E62E2A', '#AC1C1A'] as const;
 const GREEN = ['#5FCE79', '#25A544', '#16792E'] as const;
-const YELLOW = ['#FFD955', '#F4B30D', '#BC8400'] as const;
-const BLUE = ['#79D2F1', '#22A2DE', '#1279AE'] as const;
+const YELLOW = ['#FFDD4A', '#F6C200', '#C08A00'] as const;
+const BLUE = ['#63C4EC', '#1F8FD4', '#105F97'] as const;
 
 /** seat → colour triple (matches ludo4 seat order). */
 const SEAT_COLORS = [BLUE, RED, GREEN, YELLOW] as const;
@@ -66,7 +66,7 @@ function starPoints(cx: number, cy: number, r: number): string {
 /** How far the peg's foot-bulb sits below its drawing origin (local units, post
  *  the 1.16 body scale + the -0.04 wrapper nudge). Lifting a base peg by this
  *  much lands its foot exactly on the grey resting circle. */
-const BASE_FOOT_LIFT = 0.17;
+const BASE_FOOT_LIFT = 0.15;
 
 /** Base resting position = the SAME grey circle the socket is drawn on, so the
  *  peg is perfectly centred on its slot (single source of truth: quadSlots). */
@@ -132,9 +132,9 @@ function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [st
       {/* white home square with a soft drop edge */}
       <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill="rgba(16,24,48,.16)" />
       <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill="#ffffff" />
-      {/* solid flat grey resting circles (Ludo Club) */}
+      {/* solid flat grey resting discs (Ludo Club) — sized to frame the peg foot */}
       {slots.map(([sx, sy], i) => (
-        <circle key={i} cx={sx} cy={sy} r={0.44} fill="#d4dae6" />
+        <circle key={i} cx={sx} cy={sy} r={0.56} fill="#d4dae6" />
       ))}
     </g>
   );
@@ -347,7 +347,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
                     <animate attributeName="r" values=".52;.64;.52" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
-                <g className={`token__body${walking ? ' token__body--hop' : ''}`}>
+                <g className={`token__body${walking ? ' token__body--hop' : ''}${pos === -1 ? ' token__body--base' : ''}`}>
                   <Pawn seat={seat} />
                 </g>
               </g>

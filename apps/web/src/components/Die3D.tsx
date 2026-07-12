@@ -81,12 +81,16 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
   return (
     <div className="die3d-stage">
       <div className={`die3d-lift${rolling ? ' die3d-lift--rolling' : ''}`}>
-        <div className="die3d" style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
-          {FACES.map((f) => (
-            <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
-              <DieFace value={f.v} skin={skin} />
-            </div>
-          ))}
+        {/* constant isometric tilt: keeps two side faces + the top edge visible
+            at rest and through the roll, so the cube never collapses to a flat card */}
+        <div className="die3d-tilt">
+          <div className="die3d" style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
+            {FACES.map((f) => (
+              <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
+                <DieFace value={f.v} skin={skin} />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
       <span className={`die3d__shadow${rolling ? ' die3d__shadow--rolling' : ''}`} aria-hidden="true" />
