@@ -647,12 +647,12 @@ small.muted { font-size: 12px; }
 }
 .boardwrap {
   position: relative;
-  width: calc(100% + 20px);
-  margin: 0 -10px;
+  width: calc(100% + 32px);
+  margin: 0 -16px;
   aspect-ratio: 1;
   background: transparent;
   padding: 0;
-  filter: drop-shadow(0 12px 26px rgba(15, 26, 68, 0.5));
+  filter: drop-shadow(0 10px 22px rgba(15, 26, 68, 0.42));
 }
 .boardwrap--shake { animation: boardshake 0.3s ease; }
 @keyframes boardshake {
@@ -1024,3 +1024,115 @@ small.muted { font-size: 12px; }
 /* 4-player message: don't grow (it's a direct child of the vertical stack) and
    clear the bottom-corner die overhang */
 .gm4 { flex: 0 0 auto; margin-top: 46px; }
+
+/* Ludo-Club white die (position identifies the player, not colour) */
+.ludodie {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border: none;
+  border-radius: 15px;
+  padding: 6px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 6px 12px rgba(15, 26, 68, 0.45));
+}
+.ludodie .die { width: 100%; height: 100%; display: block; }
+.ludodie--tap { cursor: pointer; }
+.ludodie--tap:not(:disabled) { animation: dietap 1.6s ease infinite; }
+@keyframes dietap {
+  0%, 22%, 100% { transform: none; }
+  8% { transform: translateY(-4px) rotate(-6deg); }
+  15% { transform: translateY(0) rotate(5deg); }
+}
+.ludodie--tap:active:not(:disabled) { transform: scale(0.94); }
+.ludodie--rolling .die { opacity: 0; }
+.inksplat {
+  position: absolute;
+  inset: 6%;
+  width: 88%;
+  height: 88%;
+  opacity: 0.9;
+  animation: inkpop 0.5s ease;
+  pointer-events: none;
+}
+@keyframes inkpop {
+  0% { transform: scale(0.2); opacity: 0; }
+  40% { transform: scale(1.1); opacity: 0.95; }
+  100% { transform: scale(1); opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ludodie--tap:not(:disabled), .ludodie--rolling .die, .inksplat { animation: none !important; }
+}
+
+
+/* ---- 4-player Ludo-Club chrome (flat, no heavy bar) ---- */
+.screen--game::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(rgba(255, 255, 255, 0.05) 2.4px, transparent 2.8px),
+    radial-gradient(125% 95% at 50% 40%, #35539f 0%, #223a80 46%, #12204a 100%);
+  background-size: 30px 30px, 100% 100%;
+}
+.gametop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.chromebtn {
+  width: 46px;
+  height: 46px;
+  border: none;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #5b8bff, #2f6bf0);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 4px 10px rgba(15, 26, 68, 0.4);
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.chromebtn .icon { width: 22px; height: 22px; }
+.coinchip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(12, 20, 46, 0.45);
+  border-radius: 20px;
+  padding: 7px 15px 7px 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  color: #ffffff;
+}
+.coinchip__c {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe27a, #f5b301 60%, #c98f00);
+  box-shadow: inset 0 -2px 3px rgba(140, 95, 0, 0.55);
+}
+
+/* plain white player labels painted on each quadrant */
+.plabel {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.4px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  z-index: 3;
+  pointer-events: none;
+}
+.plabel--active { text-shadow: 0 0 9px rgba(255, 255, 255, 0.7), 0 1px 3px rgba(0, 0, 0, 0.45); }
+.plabel--q0 { left: 25%; top: 91.5%; }
+.plabel--q1 { left: 25%; top: 8.5%; }
+.plabel--q2 { left: 75%; top: 8.5%; }
+.plabel--q3 { left: 75%; top: 91.5%; }

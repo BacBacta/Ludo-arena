@@ -36,7 +36,7 @@ await page.screenshot({ path: `${OUT}/game.png` });
 
 // roll once, then move a token if a choice is offered
 try {
-  await page.locator('.dicebtn:not([disabled])').click({ timeout: 4000 });
+  await page.locator('.ludodie--tap:not([disabled])').click({ timeout: 4000 });
   await page.waitForTimeout(1000);
   const movable = page.locator('.token--movable').first();
   if (await movable.count()) await movable.click({ timeout: 1500 }).catch(() => {});
@@ -48,12 +48,12 @@ try {
 
 // keep playing my turns (handles extra-turn 6s) until the opponent's die shows
 for (let i = 0; i < 12; i++) {
-  if (await page.locator('.huddie').count()) {
+  if (await page.locator('.ludodie:not(.ludodie--tap)').count()) {
     await page.waitForTimeout(200);
     await page.screenshot({ path: `${OUT}/game_opp.png` });
     break;
   }
-  const rollBtn = page.locator('.dicebtn:not([disabled])');
+  const rollBtn = page.locator('.ludodie--tap:not([disabled])');
   if (await rollBtn.count()) {
     await rollBtn.click({ timeout: 1500 }).catch(() => {});
     await page.waitForTimeout(900);

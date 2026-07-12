@@ -6,13 +6,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
 import { DieFace } from '../components/Die';
-import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
+import { IconMenu } from '../components/icons';
 import type { DiceSkin } from '../lib/diceSkins';
 import { applyMove4, applyRoll4, newGame4, pickAutoMove4, type Game4 } from '../lib/ludo4';
 import { BOT_MOVE_MS, BOT_ROLL_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playCapture, playDice } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
-import { t } from '../lib/i18n';
 
 const PLAYERS = [
   { name: 'YOU', flag: '🌍' },
@@ -21,23 +20,37 @@ const PLAYERS = [
   { name: 'Dragan', flag: '🇷🇸' },
 ];
 
-function seatSkin(seat: number): DiceSkin {
-  const S = [
-    { body1: '#8AAEFF', body2: '#3E63DD', pip: '#ffffff', stroke: '#2540A8' },
-    { body1: '#FF9A8F', body2: '#E5484D', pip: '#ffffff', stroke: '#B02E33' },
-    { body1: '#7BDD84', body2: '#46A758', pip: '#ffffff', stroke: '#2E7A3C' },
-    { body1: '#FFE07A', body2: '#F4B400', pip: '#7a5300', stroke: '#C08900' },
-  ][seat] ?? { body1: '#8AAEFF', body2: '#3E63DD', pip: '#ffffff', stroke: '#2540A8' };
-  return { id: `seat${seat}`, name: '', unlocked: () => true, ...S };
-}
+/** Ludo Club uses one WHITE die with black pips for everyone; the active player
+ *  is identified by the die's POSITION at their corner, not by colour. */
+const WHITE_DIE: DiceSkin = {
+  id: 'ludo-white',
+  name: '',
+  unlocked: () => true,
+  body1: '#ffffff',
+  body2: '#eef0f5',
+  pip: '#161b28',
+  stroke: '#c7cdd9',
+};
 
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
-/** Active-die halo colour per seat (blue/red/green/yellow), lightly translucent. */
-const seatHex = (seat: number): string =>
-  ['rgba(62,99,221,.7)', 'rgba(229,72,77,.7)', 'rgba(70,167,88,.7)', 'rgba(244,180,0,.75)'][seat] ?? 'rgba(62,99,221,.7)';
+
+/** Black ink-splat overlay shown while the die tumbles (Ludo Club roll cue). */
+function InkSplat() {
+  return (
+    <svg className="inksplat" viewBox="0 0 100 100" aria-hidden="true">
+      <path
+        fill="#12151d"
+        d="M50 12c7 0 9 8 15 9s11-4 15 1-2 12 1 18 9 8 6 15-11 3-14 9 1 13-5 16-11-5-18-4-10 8-16 5-3-11-8-15-13-1-15-8 7-9 7-16-6-11-2-16 12 1 17-3 4-13 14-13z"
+      />
+      <circle cx="30" cy="34" r="7" fill="#12151d" />
+      <circle cx="72" cy="66" r="8" fill="#12151d" />
+      <circle cx="66" cy="26" r="5" fill="#12151d" />
+    </svg>
+  );
+}
 
 export function Game4Screen({ onLeave }: { onLeave(): void }) {
-  const { soundOn, balanceCents } = useAppState();
+  const { balanceCents } = useAppState();
   const dispatch = useAppDispatch();
   const mySeat = 0;
 
@@ -106,31 +119,28 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
 
   const myTurn = game.turn === mySeat;
   const canRoll = myTurn && game.phase === 'awaiting-roll';
-  const needPick = myTurn && game.phase === 'awaiting-move' && game.legal.length > 1;
   const activeSeat = game.turn;
-  const rolling = tumble !== null;
 
   const dieValue = tumble ?? roll?.value ?? 6;
   const activeName = PLAYERS[activeSeat]?.name ?? '';
   // die sits at the active seat's board corner (blue bottom-left, red top-left,
   // green top-right, yellow bottom-right) — like Ludo Club's per-player die.
   const cornerCls = ['bl', 'tl', 'tr', 'br'][activeSeat] ?? 'bl';
-  const message =
-    game.phase === 'over'
-      ? game.winner === mySeat
-        ? '🏆 You win!'
-        : `${PLAYERS[game.winner ?? 0]?.name} wins`
-      : needPick
-        ? `🎲 ${roll?.value ?? ''} — ${t('pickToken')}`
-        : myTurn
-          ? t('yourTurn')
-          : `${activeName} ${rolling ? t('oppRolling') : t('oppTurn')}`;
 
   return (
     <div className="screen screen--game">
       <div className="gamewrap">
-        <div className="gamehead">
-          <div className="pot">{t('training')} · 4P</div>
+        <div className="gametop">
+          <button className="chromebtn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
+            <IconMenu />
+          </button>
+          <div className="coinchip">
+            <span className="coinchip__c" />
+            {fmtUsd(balanceCents)}
+          </div>
+          <button className="chromebtn" aria-label="leave" onClick={onLeave}>
+            ✕
+          </button>
         </div>
 
         <div className="gamestage">
@@ -143,53 +153,21 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           <div className={`dcorner dcorner--${cornerCls}`}>
             {myTurn ? (
               <button
-                className={`dicebtn${tumble !== null ? ' dicebtn--rolling' : ''}`}
+                className={`ludodie ludodie--tap${tumble !== null ? ' ludodie--rolling' : ''}`}
                 disabled={!canRoll}
                 onClick={() => canRoll && doRoll(gameRef.current, mySeat)}
                 aria-label="your die"
               >
-                <DieFace value={dieValue} skin={seatSkin(0)} />
+                <DieFace value={dieValue} skin={WHITE_DIE} />
+                {tumble !== null && <InkSplat />}
               </button>
             ) : (
-              <div
-                className={`huddie huddie--big${tumble !== null ? ' huddie--rolling' : ''}`}
-                aria-label={`${activeName} die`}
-                style={{
-                  boxShadow: `0 4px 10px rgba(15,26,68,.35), 0 0 0 3px ${seatHex(activeSeat)}, inset 0 1px 0 rgba(255,255,255,.5)`,
-                }}
-              >
-                <DieFace value={dieValue} skin={seatSkin(activeSeat)} />
+              <div className={`ludodie${tumble !== null ? ' ludodie--rolling' : ''}`} aria-label={`${activeName} die`}>
+                <DieFace value={dieValue} skin={WHITE_DIE} />
+                {tumble !== null && <InkSplat />}
               </div>
             )}
           </div>
-        </div>
-
-        <div className="gamemsg gamemsg--center gm4">
-          <span>{message}</span>
-        </div>
-
-        <div className="gamebar">
-          <button className="gamebar__btn" aria-label="leave" onClick={onLeave}>
-            ✕
-          </button>
-          <button className="gamebar__btn" aria-label="sound" onClick={() => dispatch({ type: 'TOGGLE_SOUND' })}>
-            {soundOn ? <IconSoundOn /> : <IconSoundOff />}
-          </button>
-          <button className="gamebar__btn" aria-label={t('verify')} onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>
-            <IconShield />
-          </button>
-          <div className="gamebar__coins">
-            <span className="gamebar__coin" />
-            {fmtUsd(balanceCents)}
-          </div>
-          <button className="gamebar__btn" aria-label={t('diceTitle')} onClick={() => dispatch({ type: 'DICE_MODAL', open: true })}>
-            <span className="gamebar__die">
-              <DieFace value={5} skin={seatSkin(0)} />
-            </span>
-          </button>
-          <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
-            <IconMenu />
-          </button>
         </div>
       </div>
     </div>
