@@ -842,3 +842,6 @@ small.muted { font-size: 12px; }
   white-space: nowrap;
   animation: fade 0.25s ease;
 }
+
+/* empty-league placeholder rows keep the card composed before first game */
+.board--ghost { opacity: 0.4; }

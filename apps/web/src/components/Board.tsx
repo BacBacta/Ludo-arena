@@ -81,6 +81,17 @@ function tokenXY(seat: Seat, token: number, rel: number): [number, number] {
   return [home[0] + 0.5, home[1] + 0.5];
 }
 
+/** Ten-point star polygon string — crisp vector stars (text glyphs render fuzzy). */
+function starPoints(cx: number, cy: number, r: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 === 0 ? r : r * 0.46;
+    pts.push(`${(cx + Math.cos(a) * rr).toFixed(3)},${(cy + Math.sin(a) * rr).toFixed(3)}`);
+  }
+  return pts.join(' ');
+}
+
 /** Glossy pin pawn (Ludo-Club-like): dome base, waist, shiny ball head. */
 function Pawn({ seat }: { seat: Seat }) {
   const grad = seat === 0 ? 'url(#pawnMe)' : 'url(#pawnOpp)';
@@ -190,8 +201,26 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
 
   return (
     <div className={`boardwrap${shake ? ' boardwrap--shake' : ''}`}>
-      <svg viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ludo board">
+      <svg
+        viewBox="0 0 15 15"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="Ludo board"
+        shapeRendering="geometricPrecision"
+      >
         <defs>
+          <linearGradient id="plateG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f0f3fa" />
+            <stop offset="100%" stopColor="#e2e8f3" />
+          </linearGradient>
+          <linearGradient id="cellG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="100%" stopColor="#f4f6fb" />
+          </linearGradient>
+          <linearGradient id="goldG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffe27a" />
+            <stop offset="100%" stopColor="#f0a800" />
+          </linearGradient>
           <radialGradient id="pawnMe" cx="32%" cy="25%" r="95%">
             <stop offset="0%" stopColor="#9db9ff" />
             <stop offset="55%" stopColor={BLUE[1]} />
@@ -204,8 +233,9 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
           </radialGradient>
         </defs>
 
-        {/* white board plate */}
-        <rect x={0} y={0} width={15} height={15} rx={0.7} fill="#e8ecf5" />
+        {/* board plate: soft gradient + crisp inner frame */}
+        <rect x={0} y={0} width={15} height={15} rx={0.7} fill="url(#plateG)" />
+        <rect x={0.07} y={0.07} width={14.86} height={14.86} rx={0.64} fill="none" stroke="#ffffff" strokeWidth={0.09} opacity={0.8} />
 
         {/* quadrants: red / green / blue / yellow (classic) */}
         <Quadrant x={0} y={0} colors={RED} active={false} />
@@ -223,34 +253,45 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
           )),
         )}
 
-        {/* track: white cells, light grid */}
+        {/* track: gradient tiles with a crisp rim and bottom bevel */}
         {TRACK.map(([x, y], i) => (
-          <rect
-            key={i}
-            x={x + 0.02}
-            y={y + 0.02}
-            width={0.96}
-            height={0.96}
-            rx={0.14}
-            fill="#ffffff"
-            stroke="#b9c3d6"
-            strokeWidth={0.06}
-          />
+          <g key={i}>
+            <rect
+              x={x + 0.02}
+              y={y + 0.02}
+              width={0.96}
+              height={0.96}
+              rx={0.16}
+              fill="url(#cellG)"
+              stroke="#9aa8c2"
+              strokeWidth={0.055}
+            />
+            <rect x={x + 0.1} y={y + 0.76} width={0.8} height={0.16} rx={0.08} fill="#dde3ee" opacity={0.7} />
+          </g>
         ))}
         {[...SAFE_CELLS].map((i) => {
           const cell = TRACK[i];
           if (!cell) return null;
           return (
-            <text
-              key={`s${i}`}
-              x={cell[0] + 0.5}
-              y={cell[1] + 0.78}
-              fontSize={0.72}
-              textAnchor="middle"
-              fill="#aeb9cf"
-            >
-              ★
-            </text>
+            <g key={`s${i}`}>
+              <rect
+                x={cell[0] + 0.02}
+                y={cell[1] + 0.02}
+                width={0.96}
+                height={0.96}
+                rx={0.16}
+                fill="#e7edf7"
+                stroke="#9aa8c2"
+                strokeWidth={0.055}
+              />
+              <polygon
+                points={starPoints(cell[0] + 0.5, cell[1] + 0.52, 0.34)}
+                fill="#b0bdd4"
+                stroke="#96a5c0"
+                strokeWidth={0.035}
+                strokeLinejoin="round"
+              />
+            </g>
           );
         })}
 
@@ -268,7 +309,8 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
                 stroke={SEAT_COLOR[seat]![2]}
                 strokeWidth={0.04}
               />
-              <rect x={x + 0.1} y={y + 0.08} width={0.8} height={0.34} rx={0.14} fill="#ffffff" opacity={0.18} />
+              <rect x={x + 0.1} y={y + 0.08} width={0.8} height={0.34} rx={0.14} fill="#ffffff" opacity={0.2} />
+              <rect x={x + 0.08} y={y + 0.74} width={0.84} height={0.18} rx={0.09} fill={SEAT_COLOR[seat]![2]} opacity={0.45} />
             </g>
           )),
         )}
@@ -278,28 +320,39 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
           const cell = TRACK[idx];
           if (!cell) return null;
           return (
-            <rect
-              key={`d${seat}`}
-              x={cell[0] + 0.02}
-              y={cell[1] + 0.02}
-              width={0.96}
-              height={0.96}
-              rx={0.14}
-              fill={SEAT_COLOR[seat as Seat]![1]}
-            />
+            <g key={`d${seat}`}>
+              <rect
+                x={cell[0] + 0.02}
+                y={cell[1] + 0.02}
+                width={0.96}
+                height={0.96}
+                rx={0.14}
+                fill={SEAT_COLOR[seat as Seat]![1]}
+                stroke={SEAT_COLOR[seat as Seat]![2]}
+                strokeWidth={0.04}
+              />
+              <rect x={cell[0] + 0.1} y={cell[1] + 0.08} width={0.8} height={0.3} rx={0.13} fill="#ffffff" opacity={0.22} />
+              <rect x={cell[0] + 0.08} y={cell[1] + 0.74} width={0.84} height={0.18} rx={0.09} fill={SEAT_COLOR[seat as Seat]![2]} opacity={0.45} />
+            </g>
           );
         })}
         {([0, 1] as const).map((seat) => startChevron(seat))}
 
-        {/* centre: four-colour pinwheel + gold finish medallion */}
-        <polygon points="6,6 9,6 7.5,7.5" fill={RED[1]} />
-        <polygon points="9,6 9,9 7.5,7.5" fill={GREEN[1]} />
-        <polygon points="6,9 9,9 7.5,7.5" fill={YELLOW[1]} />
-        <polygon points="6,6 6,9 7.5,7.5" fill={BLUE[1]} />
-        <circle cx={7.5} cy={7.5} r={0.62} fill="#ffffff" stroke="#f5b301" strokeWidth={0.09} />
-        <text x={7.5} y={7.76} fontSize={0.62} textAnchor="middle" fill="#f5b301">
-          ★
-        </text>
+        {/* centre: white-rimmed pinwheel + bevelled gold medallion */}
+        <polygon points="6,6 9,6 7.5,7.5" fill={RED[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
+        <polygon points="9,6 9,9 7.5,7.5" fill={GREEN[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
+        <polygon points="6,9 9,9 7.5,7.5" fill={YELLOW[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
+        <polygon points="6,6 6,9 7.5,7.5" fill={BLUE[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
+        <circle cx={7.5} cy={7.56} r={0.8} fill="#c98f00" opacity={0.55} />
+        <circle cx={7.5} cy={7.5} r={0.8} fill="url(#goldG)" stroke="#c98f00" strokeWidth={0.05} />
+        <circle cx={7.5} cy={7.5} r={0.58} fill="#ffffff" />
+        <polygon
+          points={starPoints(7.5, 7.52, 0.42)}
+          fill="#f5b301"
+          stroke="#c98f00"
+          strokeWidth={0.035}
+          strokeLinejoin="round"
+        />
 
         {/* pieces */}
         {positions.map((row, seat) =>

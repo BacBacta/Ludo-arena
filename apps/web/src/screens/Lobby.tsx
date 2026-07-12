@@ -130,7 +130,7 @@ export function Lobby({
             </span>
           )}
         </h3>
-        {league.top.length > 0 && (
+        {league.top.length > 0 ? (
           <ol className="board">
             {league.top.map((e, i) => (
               <li key={i}>
@@ -138,6 +138,15 @@ export function Lobby({
                   {i + 1}. {e.flag} {e.name}
                 </span>
                 <b>{e.points}</b>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ol className="board board--ghost">
+            {[1, 2, 3].map((n) => (
+              <li key={n}>
+                <span>{n}. ·····</span>
+                <b>—</b>
               </li>
             ))}
           </ol>
