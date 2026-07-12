@@ -78,31 +78,57 @@ function baseSlotXY(seat: number, token: number): [number, number] {
   return s ? [s[0], s[1]] : [7.5, 7.5];
 }
 
-/** Chunky glossy peg. */
+/** Chunky injection-moulded glossy peg with hot-spot, Fresnel rim + soft shadow. */
 function Pawn({ seat }: { seat: number }) {
   const c = SEAT_COLORS[seat] ?? BLUE;
   const dark = c[2];
+  const rim = c[0];
   const gid = `peg4-${seat}`;
+  const hid = `peghead4-${seat}`;
   return (
     <>
       <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+        {/* body: light → base → deep terminator */}
+        <linearGradient id={gid} x1="0" y1="0" x2="0.18" y2="1">
           <stop offset="0%" stopColor={c[0]} />
-          <stop offset="55%" stopColor={c[1]} />
+          <stop offset="46%" stopColor={c[1]} />
           <stop offset="100%" stopColor={c[2]} />
         </linearGradient>
+        {/* head: radial glossy sphere, hot-spot upper-left */}
+        <radialGradient id={hid} cx="35%" cy="28%" r="85%">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="22%" stopColor={c[0]} />
+          <stop offset="62%" stopColor={c[1]} />
+          <stop offset="100%" stopColor={c[2]} />
+        </radialGradient>
       </defs>
-      <ellipse cx={0.03} cy={0.4} rx={0.34} ry={0.1} fill="rgba(16,24,48,.34)" />
+      {/* soft contact shadow (gradient falloff = cheap blur) */}
+      <ellipse cx={0.04} cy={0.42} rx={0.37} ry={0.12} fill="url(#pawnCast4)" />
+      {/* flared skirt */}
       <path
         d="M -0.32 0.36 C -0.34 0.14 -0.14 0.1 -0.12 -0.04 L 0.12 -0.04 C 0.14 0.1 0.34 0.14 0.32 0.36 Q 0.32 0.44 0 0.44 Q -0.32 0.44 -0.32 0.36 Z"
         fill={`url(#${gid})`}
         stroke={dark}
         strokeWidth={0.03}
       />
-      <ellipse cx={0} cy={-0.02} rx={0.13} ry={0.05} fill={dark} opacity={0.35} />
-      <circle cx={0} cy={-0.24} r={0.26} fill={`url(#${gid})`} stroke={dark} strokeWidth={0.03} />
-      <ellipse cx={-0.09} cy={-0.33} rx={0.09} ry={0.065} fill="#ffffff" opacity={0.9} />
-      <ellipse cx={0.07} cy={-0.17} rx={0.05} ry={0.08} fill="#ffffff" opacity={0.22} />
+      {/* neck occlusion */}
+      <ellipse cx={0} cy={-0.02} rx={0.14} ry={0.055} fill={dark} opacity={0.45} />
+      {/* head */}
+      <circle cx={0} cy={-0.24} r={0.27} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.03} />
+      {/* Fresnel rim on the shadowed lower-right edge */}
+      <path
+        d="M 0.235 -0.32 A 0.27 0.27 0 0 1 0.06 0.0"
+        fill="none"
+        stroke={rim}
+        strokeWidth={0.035}
+        strokeLinecap="round"
+        opacity={0.85}
+      />
+      {/* crisp hot-spot core + soft sheen */}
+      <ellipse cx={-0.1} cy={-0.34} rx={0.085} ry={0.06} fill="#ffffff" opacity={0.95} />
+      <ellipse cx={0.02} cy={-0.16} rx={0.06} ry={0.09} fill="#ffffff" opacity={0.18} />
+      {/* base catch-light */}
+      <ellipse cx={-0.12} cy={0.22} rx={0.08} ry={0.035} fill="#ffffff" opacity={0.4} />
     </>
   );
 }
@@ -122,13 +148,15 @@ function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [st
       </defs>
       <rect x={x} y={y} width={6} height={6} rx={0.5} fill={`url(#${gid})`} />
       <rect x={x + 0.3} y={y + 0.3} width={5.4} height={1.4} rx={0.6} fill="#ffffff" opacity={0.12} />
-      <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.55} fill="rgba(16,24,48,.18)" />
+      <rect x={x + 0.82} y={hy + 0.11} width={4.4} height={4.4} rx={0.55} fill="rgba(16,24,48,.22)" />
       <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="#ffffff" />
-      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="none" stroke={colors[2]} strokeWidth={0.06} opacity={0.16} />
+      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="none" stroke={colors[2]} strokeWidth={0.06} opacity={0.18} />
+      {/* dished resting sockets (radial gradient + bottom rim highlight) */}
       {slots.map(([sx, sy], i) => (
         <g key={i}>
-          <circle cx={sx} cy={sy} r={0.5} fill="#e5e9f1" />
-          <circle cx={sx} cy={sy} r={0.5} fill="none" stroke="#cfd6e3" strokeWidth={0.055} />
+          <circle cx={sx} cy={sy} r={0.5} fill="url(#socket4)" />
+          <circle cx={sx} cy={sy} r={0.5} fill="none" stroke="#b9c2d3" strokeWidth={0.05} />
+          <path d={`M ${sx - 0.34} ${sy + 0.26} A 0.44 0.44 0 0 0 ${sx + 0.34} ${sy + 0.26}`} fill="none" stroke="#ffffff" strokeWidth={0.05} opacity={0.7} />
         </g>
       ))}
     </g>
@@ -224,6 +252,18 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
   return (
     <div className={`boardwrap${shake ? ' boardwrap--shake' : ''}`}>
       <svg viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ludo board" shapeRendering="geometricPrecision">
+        <defs>
+          <radialGradient id="pawnCast4" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#0f1f4d" stopOpacity="0.42" />
+            <stop offset="58%" stopColor="#0f1f4d" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#0f1f4d" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="socket4" cx="50%" cy="36%" r="66%">
+            <stop offset="0%" stopColor="#c4cddc" />
+            <stop offset="60%" stopColor="#d9dfea" />
+            <stop offset="100%" stopColor="#eef2f9" />
+          </radialGradient>
+        </defs>
         <rect x={0} y={0} width={15} height={15} rx={0.4} fill="#ffffff" />
 
         {QUADS.map((q) => (
@@ -255,20 +295,14 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
           );
         })}
 
-        {/* home-run columns for all four seats */}
+        {/* home-run columns for all four seats (candy gloss + bottom bevel) */}
         {HOME_COLUMNS4.map((col, seat) =>
           col.map(([x, y], i) => (
-            <rect
-              key={`h${seat}-${i}`}
-              x={x + 0.02}
-              y={y + 0.02}
-              width={0.96}
-              height={0.96}
-              rx={0.12}
-              fill={SEAT_COLORS[seat]![1]}
-              stroke={SEAT_COLORS[seat]![2]}
-              strokeWidth={0.04}
-            />
+            <g key={`h${seat}-${i}`}>
+              <rect x={x + 0.02} y={y + 0.02} width={0.96} height={0.96} rx={0.13} fill={SEAT_COLORS[seat]![1]} stroke={SEAT_COLORS[seat]![2]} strokeWidth={0.04} />
+              <rect x={x + 0.12} y={y + 0.08} width={0.76} height={0.3} rx={0.12} fill="#ffffff" opacity={0.24} />
+              <rect x={x + 0.1} y={y + 0.76} width={0.8} height={0.15} rx={0.07} fill={SEAT_COLORS[seat]![2]} opacity={0.4} />
+            </g>
           )),
         )}
 
@@ -277,17 +311,11 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
           const cell = TRACK[idx];
           if (!cell) return null;
           return (
-            <rect
-              key={`d${seat}`}
-              x={cell[0] + 0.02}
-              y={cell[1] + 0.02}
-              width={0.96}
-              height={0.96}
-              rx={0.12}
-              fill={SEAT_COLORS[seat]![1]}
-              stroke={SEAT_COLORS[seat]![2]}
-              strokeWidth={0.04}
-            />
+            <g key={`d${seat}`}>
+              <rect x={cell[0] + 0.02} y={cell[1] + 0.02} width={0.96} height={0.96} rx={0.13} fill={SEAT_COLORS[seat]![1]} stroke={SEAT_COLORS[seat]![2]} strokeWidth={0.04} />
+              <rect x={cell[0] + 0.12} y={cell[1] + 0.08} width={0.76} height={0.3} rx={0.12} fill="#ffffff" opacity={0.26} />
+              <rect x={cell[0] + 0.1} y={cell[1] + 0.76} width={0.8} height={0.15} rx={0.07} fill={SEAT_COLORS[seat]![2]} opacity={0.4} />
+            </g>
           );
         })}
 

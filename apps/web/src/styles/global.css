@@ -647,12 +647,12 @@ small.muted { font-size: 12px; }
 }
 .boardwrap {
   position: relative;
-  width: calc(100% + 32px);
-  margin: 0 -16px;
+  width: calc(100% + 20px);
+  margin: 0 -10px;
   aspect-ratio: 1;
   background: transparent;
   padding: 0;
-  filter: drop-shadow(0 10px 24px rgba(15, 26, 68, 0.45));
+  filter: drop-shadow(0 12px 26px rgba(15, 26, 68, 0.5));
 }
 .boardwrap--shake { animation: boardshake 0.3s ease; }
 @keyframes boardshake {
