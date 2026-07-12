@@ -481,6 +481,7 @@ wss.on('connection', (ws, req) => {
           entropy: session.entropy,
           elo: session.elo,
           enqueuedAt: Date.now(),
+          walletBacked: !!session.wallet,
         });
         if (!pair) {
           await store.queuePush(msg.stake, session.id);
@@ -527,6 +528,19 @@ wss.on('connection', (ws, req) => {
         const blockedJoin = await stakeBlock(session, table.stake);
         if (blockedJoin) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedJoin });
+          break;
+        }
+        // Money-mode parity (same rule as the public queue): a staked table
+        // created by a wallet player can't be joined by a demo player (the
+        // host's REAL stake would lock against a simulated one), and vice versa.
+        if (table.stake > 0 && !!table.host.wallet !== !!session.wallet) {
+          session.send({
+            t: 'error',
+            code: 'BAD_STATE',
+            message: session.wallet
+              ? 'This table is in demo mode — ask your friend to connect a wallet.'
+              : 'This is a real-stakes table — connect a wallet to join.',
+          });
           break;
         }
         // Anti multi-accounting (E5.3): block same-device self-play and too many
@@ -597,6 +611,7 @@ wss.on('connection', (ws, req) => {
             entropy: session.entropy,
             elo: session.elo,
             enqueuedAt: Date.now(),
+            walletBacked: !!session.wallet,
           });
           if (pair) {
             await store.queueRemove(pair[0].session.id);

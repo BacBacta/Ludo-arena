@@ -11,6 +11,10 @@ export interface QueueEntry<T> {
   entropy: string;
   elo: number;
   enqueuedAt: number;
+  /** True when the player has a connected wallet (locks REAL funds on-chain).
+   *  Staked games must be wallet-vs-wallet or demo-vs-demo — a mixed pairing
+   *  makes the real staker lock funds against a simulated opponent. */
+  walletBacked: boolean;
 }
 
 export const BASE_WINDOW = 100;
@@ -23,7 +27,10 @@ export function eloWindow(enqueuedAt: number, now: number): number {
   return BASE_WINDOW + WIDEN_STEP * Math.floor(waited / WIDEN_INTERVAL_MS);
 }
 
-export function compatible<T>(a: QueueEntry<T>, b: QueueEntry<T>, now: number): boolean {
+export function compatible<T>(a: QueueEntry<T>, b: QueueEntry<T>, now: number, stake: StakeCents = 0): boolean {
+  // Money-mode parity: staked games never mix a real-wallet player with a demo
+  // (simulated) player — the real stake would be locked against nothing.
+  if (stake > 0 && a.walletBacked !== b.walletBacked) return false;
   const gap = Math.abs(a.elo - b.elo);
   return gap <= eloWindow(a.enqueuedAt, now) && gap <= eloWindow(b.enqueuedAt, now);
 }
@@ -40,7 +47,7 @@ export class Matchmaker<T> {
     let best = -1;
     for (let i = 0; i < q.length; i++) {
       const candidate = q[i]!;
-      if (!compatible(candidate, entry, now)) continue;
+      if (!compatible(candidate, entry, now, stake)) continue;
       if (
         best === -1 ||
         Math.abs(candidate.elo - entry.elo) < Math.abs(q[best]!.elo - entry.elo)
@@ -72,7 +79,7 @@ export class Matchmaker<T> {
         let best = -1;
         for (let i = s + 1; i < remaining.length; i++) {
           const candidate = remaining[i]!;
-          if (!compatible(seeker, candidate, now)) continue;
+          if (!compatible(seeker, candidate, now, stake)) continue;
           if (
             best === -1 ||
             Math.abs(candidate.elo - seeker.elo) < Math.abs(remaining[best]!.elo - seeker.elo)

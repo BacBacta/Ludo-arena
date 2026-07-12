@@ -11,8 +11,8 @@ import {
 
 const T0 = 1_000_000;
 
-function entry(id: string, elo: number, enqueuedAt = T0): QueueEntry<string> {
-  return { session: id, entropy: 'e'.repeat(16), elo, enqueuedAt };
+function entry(id: string, elo: number, enqueuedAt = T0, walletBacked = false): QueueEntry<string> {
+  return { session: id, entropy: 'e'.repeat(16), elo, enqueuedAt, walletBacked };
 }
 
 describe('eloWindow (AC E2.3)', () => {
@@ -79,6 +79,25 @@ describe('Matchmaker.join', () => {
     const mm = new Matchmaker<string>();
     mm.join(25, entry('a', 1200), T0);
     expect(mm.join(50, entry('b', 1200), T0)).toBeNull();
+  });
+
+  it('never mixes wallet-backed and demo players in a STAKED queue', () => {
+    const mm = new Matchmaker<string>();
+    mm.join(25, entry('real', 1200, T0, true), T0);
+    // same ELO, but demo vs wallet → must NOT pair at a stake > 0
+    expect(mm.join(25, entry('demo', 1200, T0, false), T0)).toBeNull();
+    // a second wallet-backed player pairs with the first
+    const pair = mm.join(25, entry('real2', 1200, T0, true), T0);
+    expect(pair?.map((e) => e.session).sort()).toEqual(['real', 'real2']);
+    // sweep never crosses modes either, no matter how long they wait
+    expect(mm.sweep(T0 + 120_000)).toEqual([]);
+  });
+
+  it('mixes freely at stake 0 (free play has no escrow)', () => {
+    const mm = new Matchmaker<string>();
+    mm.join(0, entry('real', 1200, T0, true), T0);
+    const pair = mm.join(0, entry('demo', 1200, T0, false), T0);
+    expect(pair).not.toBeNull();
   });
 });
 

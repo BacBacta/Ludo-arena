@@ -175,7 +175,10 @@ export default function App() {
     async (stake: StakeCents, intent: JoinIntent) => {
       sessionRef.current?.dispose();
       dispatch({ type: 'START_MATCHMAKING', botMode: false });
-      if (stake > 0 && !walletRef.current) {
+      // Joining by code/link: the table's stake is unknown until the server
+      // replies, so connect the wallet up-front — a staked table refuses
+      // demo joiners (money-mode parity) and the stake must lock on match.
+      if ((stake > 0 || intent.kind === 'join') && !walletRef.current) {
         const wallet = await connectWallet().catch(() => null);
         if (wallet) {
           walletRef.current = wallet;
