@@ -1056,7 +1056,7 @@ small.muted { font-size: 12px; }
 .die3d-stage { position: relative; width: 52px; height: 52px; margin: 0 auto; }
 /* stronger perspective → the cube shows real depth & edges while it tumbles */
 .die3d-lift { position: absolute; inset: 0; perspective: 240px; perspective-origin: 50% 42%; }
-.die3d-lift--rolling { animation: die3dThrow 0.9s cubic-bezier(0.2, 0.7, 0.25, 1); }
+.die3d-lift--rolling { animation: die3dThrow 0.7s cubic-bezier(0.2, 0.7, 0.25, 1); }
 @keyframes die3dThrow {
   0% { transform: translateY(0) scale(1); }
   22% { transform: translateY(-13px) scale(1.1); }
@@ -1080,7 +1080,7 @@ small.muted { font-size: 12px; }
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
-  transition: transform 0.9s cubic-bezier(0.16, 0.72, 0.24, 1);
+  transition: transform 0.7s cubic-bezier(0.16, 0.72, 0.24, 1);
   will-change: transform;
 }
 /* each face: rounded plastic tile — top-lit edge (bright top / dark bottom) so
@@ -1114,7 +1114,7 @@ small.muted { font-size: 12px; }
   background: radial-gradient(50% 100% at 50% 50%, rgba(10, 18, 45, 0.45), rgba(10, 18, 45, 0));
   z-index: -1;
 }
-.die3d__shadow--rolling { animation: die3dShadow 0.9s cubic-bezier(0.2, 0.7, 0.25, 1); }
+.die3d__shadow--rolling { animation: die3dShadow 0.7s cubic-bezier(0.2, 0.7, 0.25, 1); }
 @keyframes die3dShadow {
   0% { opacity: 1; transform: translateX(-50%) scale(1); }
   30% { opacity: 0.5; transform: translateX(-50%) scale(0.62); }

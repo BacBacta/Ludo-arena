@@ -73,7 +73,7 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
     turns.current.y += 3;
     setRolling(true);
     setRot([base[0] + 360 * turns.current.x, base[1] + 360 * turns.current.y]);
-    const id = setTimeout(() => setRolling(false), 900);
+    const id = setTimeout(() => setRolling(false), 700);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rollKey]);

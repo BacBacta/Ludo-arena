@@ -10,9 +10,13 @@ export const WALK_STEP_MS = 300;
 export const WALK_TWEEN_MS = 250;
 /** Deliberate pause after a move finishes walking before the turn actually passes. */
 export const TURN_BEAT_MS = 480;
-/** Bot "thinking" before it rolls (after the turn reaches it). */
-export const BOT_ROLL_MS = 620;
+/** Bot "thinking" before it rolls (after the turn reaches it). Trimmed to offset
+ *  the longer post-roll DIE_SETTLE hold, so the game stays snappy overall. */
+export const BOT_ROLL_MS = 420;
+/** Time the rolled die stays visible before a move/turn passes. MUST exceed the
+ *  die's ~0.7s tumble so the RESULT is read as settled, not cut off mid-spin. */
+export const DIE_SETTLE_MS = 1000;
 /** Bot "thinking" before it commits its move (after its roll settles). */
-export const BOT_MOVE_MS = 540;
+export const BOT_MOVE_MS = DIE_SETTLE_MS;
 /** Pause before an only-legal move auto-plays, so the roll is read first. */
-export const FORCED_MOVE_MS = 500;
+export const FORCED_MOVE_MS = DIE_SETTLE_MS;

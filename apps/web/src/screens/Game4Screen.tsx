@@ -9,7 +9,7 @@ import { Die3D } from '../components/Die3D';
 import { IconMenu } from '../components/icons';
 import type { DiceSkin } from '../lib/diceSkins';
 import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '../lib/ludo4';
-import { BOT_MOVE_MS, BOT_ROLL_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
+import { BOT_MOVE_MS, BOT_ROLL_MS, DIE_SETTLE_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { t } from '../lib/i18n';
@@ -72,7 +72,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   // roll is visible (not an instant skip) and re-rolls are blocked during the beat.
   const [passing, setPassing] = useState(false);
   const passTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const NO_MOVE_MS = 750; // long enough to see the die land, then the turn passes
+  const NO_MOVE_MS = DIE_SETTLE_MS; // show the settled roll before the turn passes
 
   function doRoll(g: Game4, seat: number): void {
     if (g.phase !== 'awaiting-roll' || g.turn !== seat) return; // guard stale/dup calls
