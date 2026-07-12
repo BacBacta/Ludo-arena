@@ -1,5 +1,6 @@
 /** Small cross-cutting UI components: TopBar, Toast, FairnessModal. */
 import { useEffect, useState } from 'react';
+import { useFocusTrap } from './useFocusTrap';
 import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
@@ -77,11 +78,12 @@ const EXCLUDE_OPTIONS = [1, 7, 30];
 export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?: number; selfExcludeDays?: number }): void }) {
   const { settingsOpen, limits } = useAppState();
   const dispatch = useAppDispatch();
-  if (!settingsOpen) return null;
   const close = (): void => void dispatch({ type: 'SETTINGS', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(settingsOpen, close);
+  if (!settingsOpen) return null;
   return (
     <div className="modal" onClick={close}>
-      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h3>{t('rgTitle')}</h3>
         <p className="muted" style={{ fontSize: 12 }}>
           {t('rgIntro')}
@@ -134,11 +136,12 @@ export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?
 export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: number; onBreak(): void }) {
   const { realityOpen, limits } = useAppState();
   const dispatch = useAppDispatch();
-  if (!realityOpen) return null;
   const close = (): void => void dispatch({ type: 'REALITY_CHECK', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(realityOpen, close);
+  if (!realityOpen) return null;
   return (
     <div className="modal" onClick={close}>
-      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h3>{t('realityTitle')}</h3>
         <p className="muted" style={{ fontSize: 13 }}>
           {t('realityPlayed')} <b>{minutesPlayed} {t('realityMinutes')}</b>. {t('realityStaked')} <b>{fmtUsd(limits.stakedTodayCents)}</b>.
@@ -163,13 +166,14 @@ export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: n
 export function DiceModal({ onBuy }: { onBuy(skinId: string): void }) {
   const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins } = useAppState();
   const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(diceModalOpen, close);
   if (!diceModalOpen) return null;
   const stats = loadStats();
   const ctx = { ...stats, streakDays: streak.days, tickets, division: league.division };
-  const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
   return (
     <div className="modal" onClick={close}>
-      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h3>{t('diceTitle')}</h3>
         <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
           {t('diceIntro')}
@@ -247,6 +251,8 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
   const [age, setAge] = useState(false);
   const [agree, setAgree] = useState(false);
   const [view, setView] = useState<'gate' | 'tos' | 'privacy'>('gate');
+  const closeLegal = (): void => void dispatch({ type: 'LEGAL_MODAL', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(legalOpen && view === 'gate', closeLegal);
   if (!legalOpen) return null;
 
   if (view !== 'gate') {
@@ -266,7 +272,7 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('legalTitle')}>
-      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <h3>{t('legalTitle')}</h3>
         <div className="legal__draft">{t('legalDraft')}</div>
         <label className="legal__check">
@@ -294,10 +300,12 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
 export function WelcomeModal({ onStartFree }: { onStartFree(): void }) {
   const { onboardOpen } = useAppState();
   const dispatch = useAppDispatch();
+  const doneOnboard = (): void => void dispatch({ type: 'ONBOARD_DONE' });
+  const trapRef = useFocusTrap<HTMLDivElement>(onboardOpen, doneOnboard);
   if (!onboardOpen) return null;
   return (
     <div className="modal" onClick={() => dispatch({ type: 'ONBOARD_DONE' })}>
-      <div className="modal__card" style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
         <h3>{t('welcomeTitle')}</h3>
         <p style={{ fontSize: 14, margin: '8px 0 14px' }}>{t('welcomeBody')}</p>
         <button
@@ -369,10 +377,12 @@ export function FairnessModal() {
     };
   }, [fairModalOpen, reveal, commit, diceHistory]);
 
+  const closeFair = (): void => void dispatch({ type: 'FAIR_MODAL', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(fairModalOpen, closeFair);
   if (!fairModalOpen) return null;
   return (
-    <div className="modal" onClick={() => dispatch({ type: 'FAIR_MODAL', open: false })}>
-      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+    <div className="modal" onClick={closeFair}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h3>{t('fairTitle')}</h3>
         {t('fairBody1')}
         <div className="hash">

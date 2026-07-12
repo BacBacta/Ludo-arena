@@ -394,6 +394,19 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
                   transition: `transform ${WALK_TWEEN_MS}ms cubic-bezier(0.35, 0, 0.25, 1)`,
                 }}
                 onClick={isMovable ? () => onTokenTap(token) : undefined}
+                role={isMovable ? 'button' : undefined}
+                tabIndex={isMovable ? 0 : undefined}
+                aria-label={isMovable ? `Move token ${token + 1}` : undefined}
+                onKeyDown={
+                  isMovable
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onTokenTap(token);
+                        }
+                      }
+                    : undefined
+                }
               >
                 {isMovable && (
                   <circle cx={0} cy={0} r={0.58} fill="none" stroke="#F5B301" strokeWidth={0.09}>
