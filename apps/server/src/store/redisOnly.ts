@@ -8,7 +8,7 @@
 import { Redis } from 'ioredis';
 import { MemoryStore } from './memory.js';
 import type { RoomSnapshot, SessionRecord } from './types.js';
-import type { StakeCents } from '@ludo/shared';
+import { ALLOWED_STAKES_CENTS, type StakeCents } from '@ludo/shared';
 
 const SESSION_TTL_S = 24 * 3600;
 
@@ -18,6 +18,7 @@ export class RedisOnlyStore extends MemoryStore {
   constructor(redisUrl: string) {
     super();
     this.redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 3 });
+    this.redis.on('error', (err) => console.error('[redis] connection error', err.message));
   }
 
   override async init(): Promise<void> {
@@ -63,11 +64,12 @@ export class RedisOnlyStore extends MemoryStore {
     await this.redis.rpush(`queue:${stake}`, sessionId);
   }
   override async queueRemove(sessionId: string): Promise<void> {
-    const keys = await this.redis.keys('queue:*');
-    for (const key of keys) await this.redis.lrem(key, 0, sessionId);
+    // Fixed stake tiers instead of KEYS('queue:*') (KEYS blocks the Redis loop).
+    const pipe = this.redis.pipeline();
+    for (const stake of ALLOWED_STAKES_CENTS) pipe.lrem(`queue:${stake}`, 0, sessionId);
+    await pipe.exec();
   }
   override async queueClear(): Promise<void> {
-    const keys = await this.redis.keys('queue:*');
-    if (keys.length > 0) await this.redis.del(keys);
+    await this.redis.del(...ALLOWED_STAKES_CENTS.map((s) => `queue:${s}`));
   }
 }

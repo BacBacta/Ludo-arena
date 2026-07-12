@@ -7,6 +7,7 @@
  */
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { getAddress, isAddress } from 'viem';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
   isoWeek,
@@ -306,6 +307,11 @@ const http = createServer((req, res) => {
 
 const wss = new WebSocketServer({ server: http, maxPayload: 1024 });
 const limiter = new RateLimiter();
+
+/** Concurrent-socket cap per IP: one host can't exhaust FDs/memory by opening
+ *  many connections (each of which otherwise gets its own fresh token bucket). */
+const MAX_CONNS_PER_IP = 24;
+const connsByIp = new Map<string, number>();
 setInterval(() => limiter.prune(), 60_000);
 // Expire stale private tables (host gone or waited too long).
 setInterval(() => {
@@ -325,6 +331,13 @@ wss.on('connection', (ws, req) => {
     ws.close();
     return;
   }
+  const liveForIp = connsByIp.get(ip) ?? 0;
+  if (liveForIp >= MAX_CONNS_PER_IP) {
+    send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Too many connections.' });
+    ws.close();
+    return;
+  }
+  connsByIp.set(ip, liveForIp + 1);
   const connKey = `${ip}#${++connSeq}`;
 
   // Without a listener, a ws-level error (e.g. an oversized frame, code 1009)
@@ -385,13 +398,16 @@ wss.on('connection', (ws, req) => {
       const idx = Math.floor(Math.random() * NAMES.length);
       const name = NAMES[idx] ?? 'Player';
       const flag = FLAGS[idx] ?? '🌍';
+      // Only accept a well-formed checksummed address; garbage would otherwise
+      // flow to the arbiter as the settlement recipient and brick the escrow.
+      const wallet = normalizeWallet(msg.wallet);
       // Wallet-linked players keep their ELO across sessions (Postgres).
-      const elo = msg.wallet
-        ? (await store.getOrCreatePlayer(playerId(msg.wallet, id), { wallet: msg.wallet, name, flag })).elo
+      const elo = wallet
+        ? (await store.getOrCreatePlayer(playerId(wallet, id), { wallet, name, flag })).elo
         : 1200;
       session = makeSession(id, ws, {
         id,
-        wallet: msg.wallet,
+        wallet,
         entropy: msg.entropy,
         name,
         flag,
@@ -552,6 +568,9 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     limiter.release(connKey);
+    const n = (connsByIp.get(ip) ?? 1) - 1;
+    if (n <= 0) connsByIp.delete(ip);
+    else connsByIp.set(ip, n);
     if (!session) return;
     session.ws = null;
     session.alive = false;
@@ -599,8 +618,17 @@ async function collusionBlock(a: Session, b: Session, stake: StakeCents): Promis
 }
 
 /** Responsible-gaming gate (E5.2): message if this stake must be blocked, else null. */
+/** Return a checksummed address, or undefined if not a valid EVM address. */
+function normalizeWallet(w?: string): string | undefined {
+  if (!w || !isAddress(w)) return undefined;
+  return getAddress(w);
+}
+
 async function stakeBlock(session: Session, stake: StakeCents): Promise<string | null> {
   if (stake <= 0) return null;
+  // Never take real stakes when settlement can't survive a restart (in-memory /
+  // Redis-only): a crash would drop the settlement job and lock funds in escrow.
+  if (!store.settlementDurable()) return 'Staked games are temporarily unavailable — free practice only.';
   if (isGeoBlocked(session.country)) return 'Staked games are not available in your region.';
   const limits = await store.getLimits(playerId(session.wallet, session.id), utcToday());
   if (limits.selfExcludedUntil) return `Self-excluded until ${limits.selfExcludedUntil}.`;

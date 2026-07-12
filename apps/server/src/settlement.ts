@@ -276,6 +276,11 @@ export class SettlementQueue {
       console.error(`[settlement] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);
       if (attempts >= MAX_ATTEMPTS) {
         await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
+        // A winner was NOT paid after every retry — this needs a human. Emit a
+        // loud, greppable alert (an error tracker / pager hooks in here).
+        console.error(
+          `[settlement][ALERT] PAYOUT FAILED after ${attempts} attempts — game ${job.gameId}, winner ${job.winnerWallet}, chain ${job.chainId}. Funds may be locked in escrow; manual settle/refund required.`,
+        );
         return;
       }
       await this.deps.store.markSettlement(job.gameId, 'pending', attempts);

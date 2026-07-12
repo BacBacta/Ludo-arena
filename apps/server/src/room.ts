@@ -71,6 +71,7 @@ export class Room {
     room.state = snap.state;
     room.diceIndex = snap.diceIndex;
     room.autoMoveStreak = [...snap.autoMoveStreak];
+    room.over = snap.over ?? false; // never resurrect a finished game as live
     return room;
   }
 
@@ -83,6 +84,7 @@ export class Room {
       autoMoveStreak: [...this.autoMoveStreak],
       fairness: this.fairness,
       players: [this.playerMeta(0), this.playerMeta(1)],
+      over: this.over,
     };
   }
 
@@ -243,6 +245,10 @@ export class Room {
   private finish(winner: Seat, reason: GameOverReason): void {
     this.over = true;
     this.clearClock();
+    // Persist the TERMINAL snapshot (over=true) before anything can crash, so a
+    // restart in the game-over window can't restore this as a live game and let
+    // a clock re-award it to the loser (corrupting ELO/league/cashback).
+    this.onChange?.(this);
     const loser: Seat = winner === 0 ? 1 : 0;
     const pot = this.stakeCents * 2;
     const rakeCents = Math.floor((pot * RAKE_BPS) / 10_000);

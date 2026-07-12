@@ -10,6 +10,7 @@ import { Redis } from 'ioredis';
 import pg from 'pg';
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import {
+  ALLOWED_STAKES_CENTS,
   ANTI_TILT,
   DAILY_CHALLENGE,
   DEFAULT_DAILY_STAKE_LIMIT_CENTS,
@@ -121,11 +122,21 @@ export class PersistentStore implements Store {
   constructor(redisUrl: string, databaseUrl: string) {
     this.redis = new Redis(redisUrl, { lazyConnect: true });
     this.pool = new pg.Pool({ connectionString: databaseUrl });
+    // node-postgres emits 'error' on idle-client failures; unhandled, that is an
+    // uncaught exception → process exit mid-match. Log and let the pool recover.
+    this.pool.on('error', (err) => console.error('[pg] idle client error', err));
+    // ioredis won't crash on its own, but without a listener the errors are silent.
+    this.redis.on('error', (err) => console.error('[redis] connection error', err.message));
   }
 
   async init(): Promise<void> {
     await this.redis.connect();
     await this.pool.query(SCHEMA_SQL);
+  }
+
+  /** Postgres-backed settlements + game records survive a restart. */
+  settlementDurable(): boolean {
+    return true;
   }
 
   async close(): Promise<void> {
@@ -176,12 +187,14 @@ export class PersistentStore implements Store {
     await this.redis.rpush(`queue:${stake}`, sessionId);
   }
   async queueRemove(sessionId: string): Promise<void> {
-    const keys = await this.redis.keys('queue:*');
-    for (const key of keys) await this.redis.lrem(key, 0, sessionId);
+    // Iterate the fixed stake tiers instead of KEYS('queue:*') (KEYS is O(N) and
+    // blocks the Redis event loop; this ran on every disconnect/leave/pairing).
+    const pipe = this.redis.pipeline();
+    for (const stake of ALLOWED_STAKES_CENTS) pipe.lrem(`queue:${stake}`, 0, sessionId);
+    await pipe.exec();
   }
   async queueClear(): Promise<void> {
-    const keys = await this.redis.keys('queue:*');
-    if (keys.length > 0) await this.redis.del(keys);
+    await this.redis.del(...ALLOWED_STAKES_CENTS.map((s) => `queue:${s}`));
   }
 
   // ---------- players & games ----------

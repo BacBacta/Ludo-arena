@@ -37,6 +37,9 @@ export interface RoomSnapshot {
   autoMoveStreak: [number, number];
   fairness: { serverSeed: string; commit: string; entropies: [string, string] };
   players: [RoomPlayer, RoomPlayer];
+  /** Terminal flag: a snapshot taken after the winning move must NOT restore as
+   *  a live game (else a post-crash clock could re-award it to the loser). */
+  over?: boolean;
 }
 
 export interface GameRecord {
@@ -66,6 +69,11 @@ export interface SettlementJob {
 export interface Store {
   init(): Promise<void>;
   close(): Promise<void>;
+
+  /** True only when settlement jobs + game records survive a restart (full
+   *  Postgres). When false, staked play must be refused: a restart would drop
+   *  pending settlements and lock player funds in escrow with no recovery. */
+  settlementDurable(): boolean;
 
   // Sessions (hot)
   saveSession(rec: SessionRecord): Promise<void>;

@@ -58,6 +58,11 @@ export class MemoryStore implements Store {
   async init(): Promise<void> {}
   async close(): Promise<void> {}
 
+  /** In-memory settlement/records are lost on restart → not safe for real stakes. */
+  settlementDurable(): boolean {
+    return false;
+  }
+
   async saveSession(rec: SessionRecord): Promise<void> {
     this.sessions.set(rec.id, structuredClone(rec));
   }
