@@ -8,7 +8,7 @@ import { Board4 } from '../components/Board4';
 import { Die3D } from '../components/Die3D';
 import { IconMenu } from '../components/icons';
 import type { DiceSkin } from '../lib/diceSkins';
-import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '../lib/ludo4';
+import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
 import { BOT_MOVE_MS, BOT_ROLL_MS, DIE_SETTLE_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';

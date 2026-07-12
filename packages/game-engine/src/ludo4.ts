@@ -1,15 +1,15 @@
 /**
- * Self-contained 4-player Ludo rules — used ONLY by the local practice mode.
- * Deliberately isolated from the shared 2-player @ludo/game-engine (which drives
- * staked PvP + on-chain settlement) so a 4-player board never destabilises the
- * production 1v1 economy. Pure + deterministic: dice are injected by the caller.
+ * Self-contained 4-player Ludo rules (client practice + server 4-player games).
+ * Kept separate from the 2-player engine.ts (which drives staked 1v1 + on-chain
+ * settlement) so 4-player never destabilises the production economy.
+ * Pure + deterministic: dice are injected by the caller (server: commit-reveal).
  *
  * Geometry reuses the shared TRACK/constants; the four seats sit on the four
  * arms (starts 0/13/26/39) with their base quadrant, home column and colour:
  *   seat 0 blue  (bottom-left)   seat 1 red   (top-left)
  *   seat 2 green (top-right)     seat 3 yellow (bottom-right)
  */
-import { FINISHED, LAST_TRACK_REL, SAFE_CELLS, TRACK, TRACK_LEN } from '@ludo/game-engine';
+import { FINISHED, LAST_TRACK_REL, SAFE_CELLS, TRACK, TRACK_LEN } from './constants.js';
 
 export const SEATS4 = 4;
 export const TOKENS4 = 4;

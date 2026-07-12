@@ -8,7 +8,7 @@ import {
   pickAutoMove4,
   SEATS4,
   TOKENS4,
-} from '../src/lib/ludo4';
+} from '../src/ludo4.js';
 
 describe('4-player engine', () => {
   it('starts 4 seats × 4 tokens, all in base', () => {

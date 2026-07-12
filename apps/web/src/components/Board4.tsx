@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { SAFE_CELLS, TRACK } from '@ludo/game-engine';
-import { HOME_COLUMNS4, SEAT_START4, tokenXY4, type Game4 } from '../lib/ludo4';
+import { HOME_COLUMNS4, SEAT_START4, tokenXY4, type Game4 } from '@ludo/game-engine';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playHop } from '../lib/sound';
 
