@@ -377,11 +377,12 @@ small.muted { font-size: 12px; }
   border-radius: 20px;
   padding: 6px 12px;
   font-family: var(--font-display);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  white-space: nowrap;
   box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
 }
 .topbar__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--me); }
@@ -400,7 +401,7 @@ small.muted { font-size: 12px; }
 .streak__fire { color: var(--accent); display: flex; }
 .streak__fire .icon { width: 26px; height: 26px; }
 .ticketcount { margin-left: auto; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 4px; }
-.streak b { font-size: 15px; }
+.streak b { font-family: var(--font-display); font-size: 15.5px; font-weight: 600; }
 .streak small { color: var(--muted); display: block; font-size: 12px; margin-top: 2px; }
 
 /* flex + centered wrap: an odd tile centers instead of orphaning left */
@@ -511,7 +512,7 @@ small.muted { font-size: 12px; }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 12px;
+  gap: 20px;
 }
 .hud { display: flex; justify-content: space-between; align-items: center; }
 
@@ -586,9 +587,9 @@ small.muted { font-size: 12px; }
 
 .controls { display: flex; align-items: center; gap: 12px; }
 .dicebtn {
-  flex: 0 0 80px;
-  height: 80px;
-  border-radius: 20px;
+  flex: 0 0 92px;
+  height: 92px;
+  border-radius: 22px;
   border: none;
   border-bottom: 4px solid #c98f00;
   display: flex;
@@ -600,7 +601,7 @@ small.muted { font-size: 12px; }
   transition: transform 0.1s ease;
 }
 .dicebtn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; }
-.dicebtn:disabled { background: #ffffff; opacity: 0.85; border-bottom-color: #ccd6e8; box-shadow: 0 4px 12px rgba(23, 43, 99, 0.25); cursor: default; }
+.dicebtn:disabled { background: #dfe5f1; opacity: 1; border-bottom-color: #c2cde2; box-shadow: 0 4px 12px rgba(23, 43, 99, 0.25); cursor: default; }
 .dicebtn:disabled .die { opacity: 0.55; }
 .die { width: 54px; height: 54px; display: block; }
 /* idle nudge invites the tap; the tumble plays while faces cycle */
@@ -754,7 +755,9 @@ small.muted { font-size: 12px; }
 .mini--action { cursor: pointer; }
 .mini--action:active { transform: scale(0.98); }
 /* not functional yet: visibly parked so it doesn't erode trust */
-.mini--soon { opacity: 0.55; position: relative; }
+.mini--soon { position: relative; }
+.mini--soon > * { opacity: 0.5; }
+.mini--soon::after { opacity: 1; }
 .mini--soon::after {
   content: 'SOON';
   position: absolute;
@@ -772,9 +775,9 @@ small.muted { font-size: 12px; }
 .progress { display: flex; gap: 5px; margin-top: 10px; }
 .progress span {
   flex: 1;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--card-2);
+  height: 8px;
+  border-radius: 4px;
+  background: #dbe3f1;
   transition: background 0.3s ease;
 }
 .progress span.on { background: var(--accent); }

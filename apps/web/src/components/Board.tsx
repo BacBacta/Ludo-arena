@@ -87,17 +87,17 @@ function Pawn({ seat }: { seat: Seat }) {
   const rim = seat === 0 ? BLUE[2] : GREEN[2];
   return (
     <>
-      <ellipse cx={0} cy={0.36} rx={0.31} ry={0.1} fill="rgba(23,43,99,.28)" />
-      <ellipse cx={0} cy={0.25} rx={0.29} ry={0.14} fill={grad} stroke={rim} strokeWidth={0.045} />
+      <ellipse cx={0} cy={0.38} rx={0.36} ry={0.11} fill="rgba(23,43,99,.3)" />
+      <ellipse cx={0} cy={0.26} rx={0.34} ry={0.16} fill={grad} stroke={rim} strokeWidth={0.05} />
       <path
-        d="M -0.18 0.22 Q -0.08 0.03 -0.075 -0.07 L 0.075 -0.07 Q 0.08 0.03 0.18 0.22 Z"
+        d="M -0.24 0.24 Q -0.11 0.05 -0.1 -0.05 L 0.1 -0.05 Q 0.11 0.05 0.24 0.24 Z"
         fill={grad}
         stroke={rim}
-        strokeWidth={0.04}
+        strokeWidth={0.045}
       />
-      <circle cx={0} cy={-0.2} r={0.18} fill={grad} stroke={rim} strokeWidth={0.045} />
-      <ellipse cx={-0.06} cy={-0.27} rx={0.075} ry={0.05} fill="rgba(255,255,255,.9)" />
-      <ellipse cx={-0.09} cy={0.18} rx={0.05} ry={0.03} fill="rgba(255,255,255,.5)" />
+      <circle cx={0} cy={-0.21} r={0.23} fill={grad} stroke={rim} strokeWidth={0.05} />
+      <ellipse cx={-0.08} cy={-0.29} rx={0.095} ry={0.06} fill="rgba(255,255,255,.92)" />
+      <ellipse cx={-0.11} cy={0.2} rx={0.07} ry={0.035} fill="rgba(255,255,255,.5)" />
     </>
   );
 }
@@ -176,14 +176,13 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
     const ang = (Math.atan2(next[1] - cell[1], next[0] - cell[0]) * 180) / Math.PI;
     return (
       <g key={`ch${seat}`} transform={`rotate(${ang} ${cx} ${cy})`}>
-        <polygon
-          points={`${cx - 0.22},${cy - 0.26} ${cx + 0.1},${cy} ${cx - 0.22},${cy + 0.26}`}
-          fill="#ffffff"
-        />
-        <polygon
-          points={`${cx + 0.02},${cy - 0.26} ${cx + 0.34},${cy} ${cx + 0.02},${cy + 0.26}`}
-          fill="#ffffff"
-          opacity={0.6}
+        <path
+          d={`M ${cx - 0.16} ${cy - 0.28} L ${cx + 0.18} ${cy} L ${cx - 0.16} ${cy + 0.28}`}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth={0.17}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </g>
     );
@@ -206,7 +205,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
         </defs>
 
         {/* white board plate */}
-        <rect x={0} y={0} width={15} height={15} rx={0.7} fill="#ffffff" />
+        <rect x={0} y={0} width={15} height={15} rx={0.7} fill="#e8ecf5" />
 
         {/* quadrants: red / green / blue / yellow (classic) */}
         <Quadrant x={0} y={0} colors={RED} active={false} />
@@ -218,8 +217,8 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
         {BASE_SPOTS.map((spots, seat) =>
           spots.map(([sx, sy], i) => (
             <g key={`bs${seat}-${i}`}>
-              <circle cx={sx} cy={sy} r={0.5} fill="#eef1f8" />
-              <circle cx={sx} cy={sy} r={0.5} fill="none" stroke={SEAT_COLOR[seat]![1]} strokeWidth={0.06} opacity={0.6} />
+              <circle cx={sx} cy={sy} r={0.5} fill="#dfe6f2" />
+              <circle cx={sx} cy={sy} r={0.5} fill="none" stroke={SEAT_COLOR[seat]![1]} strokeWidth={0.08} opacity={0.85} />
             </g>
           )),
         )}
@@ -234,8 +233,8 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
             height={0.96}
             rx={0.14}
             fill="#ffffff"
-            stroke="#ccd4e3"
-            strokeWidth={0.05}
+            stroke="#b9c3d6"
+            strokeWidth={0.06}
           />
         ))}
         {[...SAFE_CELLS].map((i) => {
@@ -248,14 +247,14 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
               y={cell[1] + 0.78}
               fontSize={0.72}
               textAnchor="middle"
-              fill="#c7cfdf"
+              fill="#aeb9cf"
             >
               ★
             </text>
           );
         })}
 
-        {/* home columns: solid seat colour + white arrows toward the centre */}
+        {/* home columns: solid seat-colour lane with a soft top gloss (Ludo Club style) */}
         {HOME_COLUMNS.map((col, seat) =>
           col.map(([x, y], i) => (
             <g key={`h${seat}-${i}`}>
@@ -269,15 +268,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
                 stroke={SEAT_COLOR[seat]![2]}
                 strokeWidth={0.04}
               />
-              <polygon
-                points={
-                  seat === 0
-                    ? `${x + 0.34},${y + 0.3} ${x + 0.34},${y + 0.7} ${x + 0.68},${y + 0.5}`
-                    : `${x + 0.66},${y + 0.3} ${x + 0.66},${y + 0.7} ${x + 0.32},${y + 0.5}`
-                }
-                fill="#ffffff"
-                opacity={0.55}
-              />
+              <rect x={x + 0.1} y={y + 0.08} width={0.8} height={0.34} rx={0.14} fill="#ffffff" opacity={0.18} />
             </g>
           )),
         )}
@@ -333,7 +324,9 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
                     <animate attributeName="r" values=".5;.62;.5" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
-                <Pawn seat={seat as Seat} />
+                <g transform="scale(1.18)">
+                  <Pawn seat={seat as Seat} />
+                </g>
               </g>
             );
           }),
