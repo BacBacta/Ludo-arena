@@ -1076,9 +1076,9 @@ small.muted { font-size: 12px; }
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(rgba(255, 255, 255, 0.05) 2.4px, transparent 2.8px),
-    radial-gradient(125% 95% at 50% 40%, #35539f 0%, #223a80 46%, #12204a 100%);
-  background-size: 30px 30px, 100% 100%;
+    radial-gradient(rgba(8, 16, 44, 0.35) 2.2px, transparent 2.6px),
+    radial-gradient(120% 90% at 50% 40%, #2c4890 0%, #1c3170 48%, #0e1a3e 100%);
+  background-size: 22px 22px, 100% 100%;
 }
 .gametop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .chromebtn {

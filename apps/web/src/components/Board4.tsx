@@ -91,22 +91,23 @@ function Pawn({ seat }: { seat: number }) {
       </defs>
       {/* soft contact shadow */}
       <ellipse cx={0.03} cy={0.46} rx={0.36} ry={0.1} fill="url(#pawnCast4)" />
-      {/* tall skittle body: wide round foot → pinched waist → up to the neck */}
+      {/* tall glossy skittle body: wide round foot → pinched waist → neck */}
       <path
-        d="M -0.34 0.42 C -0.36 0.2 -0.13 0.14 -0.09 -0.1 C -0.08 -0.2 -0.075 -0.24 0 -0.24 C 0.075 -0.24 0.08 -0.2 0.09 -0.1 C 0.13 0.14 0.36 0.2 0.34 0.42 Q 0.34 0.5 0 0.5 Q -0.34 0.5 -0.34 0.42 Z"
+        d="M -0.36 0.42 C -0.38 0.18 -0.14 0.14 -0.1 -0.1 C -0.09 -0.2 -0.085 -0.24 0 -0.24 C 0.085 -0.24 0.09 -0.2 0.1 -0.1 C 0.14 0.14 0.38 0.18 0.36 0.42 Q 0.36 0.51 0 0.51 Q -0.36 0.51 -0.36 0.42 Z"
         fill={`url(#${gid})`}
         stroke={dark}
-        strokeWidth={0.028}
+        strokeWidth={0.026}
       />
-      {/* lengthwise gloss band down the flare */}
-      <path d="M -0.05 0.44 C -0.12 0.2 -0.06 0.02 -0.04 -0.12" fill="none" stroke="#ffffff" strokeWidth={0.05} strokeLinecap="round" opacity={0.35} />
-      {/* neck occlusion under the head */}
-      <ellipse cx={0} cy={-0.2} rx={0.1} ry={0.04} fill={dark} opacity={0.4} />
-      {/* small spherical head */}
-      <circle cx={0} cy={-0.37} r={0.18} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.028} />
-      {/* Fresnel rim + hot-spot on the head */}
-      <path d="M 0.155 -0.43 A 0.18 0.18 0 0 1 0.05 -0.21" fill="none" stroke={rim} strokeWidth={0.03} strokeLinecap="round" opacity={0.85} />
-      <ellipse cx={-0.07} cy={-0.44} rx={0.06} ry={0.045} fill="#ffffff" opacity={0.95} />
+      {/* broad lengthwise gloss down the flare + bright edge */}
+      <path d="M -0.11 0.44 C -0.2 0.18 -0.09 0.0 -0.06 -0.12" fill="none" stroke="#ffffff" strokeWidth={0.09} strokeLinecap="round" opacity={0.3} />
+      <path d="M 0.14 0.42 C 0.2 0.2 0.12 0.04 0.09 -0.1" fill="none" stroke={c[0]} strokeWidth={0.04} strokeLinecap="round" opacity={0.6} />
+      {/* neck occlusion */}
+      <ellipse cx={0} cy={-0.2} rx={0.11} ry={0.04} fill={dark} opacity={0.4} />
+      {/* glossy spherical head */}
+      <circle cx={0} cy={-0.37} r={0.2} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.026} />
+      <path d="M 0.17 -0.44 A 0.2 0.2 0 0 1 0.05 -0.19" fill="none" stroke={rim} strokeWidth={0.032} strokeLinecap="round" opacity={0.9} />
+      <ellipse cx={-0.075} cy={-0.45} rx={0.08} ry={0.06} fill="#ffffff" opacity={0.98} />
+      <ellipse cx={0.02} cy={-0.3} rx={0.05} ry={0.08} fill="#ffffff" opacity={0.2} />
     </>
   );
 }
@@ -119,7 +120,6 @@ function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [st
     <g>
       {/* flat solid quadrant (Ludo Club is matte, not glossy) + faint top sheen */}
       <rect x={x} y={y} width={6} height={6} rx={0.5} fill={colors[1]} />
-      <rect x={x + 0.3} y={y + 0.3} width={5.4} height={1} rx={0.5} fill="#ffffff" opacity={0.08} />
       <rect x={x + 0.82} y={hy + 0.08} width={4.4} height={4.4} rx={0.5} fill="rgba(16,24,48,.14)" />
       <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.5} fill="#ffffff" />
       <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.5} fill="none" stroke={colors[2]} strokeWidth={0.05} opacity={0.14} />
