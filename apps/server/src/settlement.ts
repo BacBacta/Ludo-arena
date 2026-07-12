@@ -107,15 +107,21 @@ export class Arbiter {
     return this.account.signMessage({ message: { raw: inner } });
   }
 
-  /** On-chain escrow status + creation time (for the refund timeout). */
-  async gameStatus(gameId: string): Promise<{ status: GameStatus; createdAt: number }> {
+  /** On-chain escrow status + creation time + the two depositor addresses
+   *  (so settlement can reconcile the winner against the actual players). */
+  async gameStatus(gameId: string): Promise<{ status: GameStatus; createdAt: number; playerA: Address; playerB: Address }> {
     const game = await this.publicClient.readContract({
       address: this.escrow,
       abi: SETTLE_ABI,
       functionName: 'games',
       args: [gameIdToBytes32(gameId)],
     });
-    return { status: Number(game[5]) as GameStatus, createdAt: Number(game[4]) };
+    return {
+      status: Number(game[5]) as GameStatus,
+      createdAt: Number(game[4]),
+      playerA: game[2] as Address,
+      playerB: game[3] as Address,
+    };
   }
 
   private async submit(functionName: 'settle' | 'refundExpired', args: readonly unknown[]): Promise<Hex> {
@@ -175,7 +181,7 @@ export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | n
 /** The queue only needs these from an arbiter (stubbable in tests). */
 export interface ArbiterLike {
   readonly chainId: number;
-  gameStatus(gameId: string): Promise<{ status: GameStatus; createdAt: number }>;
+  gameStatus(gameId: string): Promise<{ status: GameStatus; createdAt: number; playerA: Address; playerB: Address }>;
   submitSettle(gameId: string, winner: Address): Promise<Hex>;
   submitRefund(gameId: string): Promise<Hex>;
 }
@@ -241,9 +247,20 @@ export class SettlementQueue {
   private async process(job: SettlementJob): Promise<void> {
     const attempts = job.attempts + 1;
     try {
-      const { status, createdAt } = await this.deps.arbiter.gameStatus(job.gameId);
+      const { status, createdAt, playerA, playerB } = await this.deps.arbiter.gameStatus(job.gameId);
 
       if (status === GameStatus.Active) {
+        // Reconcile the reported winner against the actual on-chain depositors.
+        // settle() reverts NotAPlayer otherwise, wasting gas and burning retries
+        // until the pot is stuck in Active forever. Fail loudly instead.
+        const winner = job.winnerWallet.toLowerCase();
+        if (winner !== playerA.toLowerCase() && winner !== playerB.toLowerCase()) {
+          await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
+          console.error(
+            `[settlement][ALERT] winner ${job.winnerWallet} is not an on-chain player (A=${playerA}, B=${playerB}) for game ${job.gameId}. NOT settling; manual review — funds are locked in Active escrow.`,
+          );
+          return;
+        }
         const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
         await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
         this.deps.onSettled(job.gameId, txHash);

@@ -663,6 +663,13 @@ async function resumeSession(token: string, ws: WebSocket): Promise<Session | nu
   return session;
 }
 
+// KNOWN LIMITATION (audit C3 — gameplay is not gated on on-chain lock): the
+// blitz clock starts here, but the client only locks its stake AFTER match.found
+// (a 2-tx approve+join that must mine). A fast game can finish before both joins
+// confirm → the settle finds status None/WaitingOpponent and the winner is paid
+// nothing. Settlement already refuses to pay unlocked games (safe), but the UX
+// is broken. A real fix waits for both escrow `Joined` events before starting
+// the clock — a lifecycle change. Do NOT ship mainnet stakes until closed.
 async function startGame(stake: StakeCents, a: Session, b: Session): Promise<void> {
   const gameId = randomBytes(16).toString('hex');
   // Durable participant rows must exist before the game record references them.

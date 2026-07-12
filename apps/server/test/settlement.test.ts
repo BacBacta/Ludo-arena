@@ -4,13 +4,14 @@ import { GameStatus, JOIN_TIMEOUT_S, SettlementQueue, type ArbiterLike } from '.
 import { MemoryStore } from '../src/store/memory.js';
 
 const WINNER = '0x1111111111111111111111111111111111111111';
+const PLAYER_B = '0x2222222222222222222222222222222222222222';
 const TX = '0xset' as Hex;
 const REFUND_TX = '0xref' as Hex;
 
 function makeArbiter(over: Partial<ArbiterLike> = {}): ArbiterLike {
   return {
     chainId: 11_142_220,
-    gameStatus: async () => ({ status: GameStatus.Active, createdAt: 0 }),
+    gameStatus: async () => ({ status: GameStatus.Active, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }),
     submitSettle: async () => TX,
     submitRefund: async () => REFUND_TX,
     ...over,
@@ -42,7 +43,7 @@ describe('SettlementQueue', () => {
     const submit = vi.fn(async () => TX);
     const q = new SettlementQueue({
       store,
-      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.None, createdAt: 0 }), submitSettle: submit }),
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.None, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }), submitSettle: submit }),
       onSettled: () => {},
       onRefunded: () => {},
     });
@@ -53,12 +54,32 @@ describe('SettlementQueue', () => {
     expect(await store.listPendingSettlements()).toEqual([]);
   });
 
+  it('does NOT settle when the winner is not an on-chain depositor (mismatch → failed)', async () => {
+    const store = new MemoryStore();
+    const submit = vi.fn(async () => TX);
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({
+        // active game, but neither depositor is WINNER → settle() would revert NotAPlayer
+        gameStatus: async () => ({ status: GameStatus.Active, createdAt: 0, playerA: PLAYER_B, playerB: PLAYER_B }),
+        submitSettle: submit,
+      }),
+      onSettled: () => {},
+      onRefunded: () => {},
+    });
+    await q.enqueue('gm', WINNER);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(await store.listPendingSettlements()).toEqual([]); // marked failed, not retried forever
+  });
+
   it('refunds a lone staker once the join timeout has elapsed (E3.4)', async () => {
     const store = new MemoryStore();
     const refunded: Array<[string, string]> = [];
     const q = new SettlementQueue({
       store,
-      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.WaitingOpponent, createdAt: 500 }) }),
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.WaitingOpponent, createdAt: 500, playerA: WINNER, playerB: PLAYER_B }) }),
       onSettled: () => {},
       onRefunded: (gameId, tx) => refunded.push([gameId, tx]),
       now: () => 500 + JOIN_TIMEOUT_S + 1, // already past the timeout
@@ -76,7 +97,7 @@ describe('SettlementQueue', () => {
     let now = 1_000;
     const q = new SettlementQueue({
       store,
-      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.WaitingOpponent, createdAt: 1_000 }), submitRefund: refund }),
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.WaitingOpponent, createdAt: 1_000, playerA: WINNER, playerB: PLAYER_B }), submitRefund: refund }),
       onSettled: () => {},
       onRefunded: () => {},
       now: () => now,
@@ -96,7 +117,7 @@ describe('SettlementQueue', () => {
     const submit = vi.fn(async () => TX);
     const q = new SettlementQueue({
       store,
-      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.Settled, createdAt: 0 }), submitSettle: submit }),
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.Settled, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }), submitSettle: submit }),
       onSettled: () => {},
       onRefunded: () => {},
     });
