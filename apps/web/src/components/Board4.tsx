@@ -60,15 +60,15 @@ function starPoints(cx: number, cy: number, r: number): string {
   }
   return pts.join(' ');
 }
-/** Tint each safe star to the seat that owns its arm. */
+/** Tint each safe star to the seat that owns its arm (red left, green top, yellow right, blue bottom). */
 function starTint(cx: number, cy: number): readonly [string, string, string] | null {
   if (cy >= 6 && cy <= 8) {
-    if (cx <= 5) return BLUE; // left arm
-    if (cx >= 9) return GREEN; // right arm
+    if (cx <= 5) return RED; // left arm → red (top-left seat)
+    if (cx >= 9) return YELLOW; // right arm → yellow (bottom-right seat)
   }
   if (cx >= 6 && cx <= 8) {
-    if (cy <= 5) return RED; // top arm
-    if (cy >= 9) return YELLOW; // bottom arm
+    if (cy <= 5) return GREEN; // top arm → green (top-right seat)
+    if (cy >= 9) return BLUE; // bottom arm → blue (bottom-left seat / you)
   }
   return null;
 }
@@ -319,11 +319,11 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
           );
         })}
 
-        {/* home-run entry chevrons (four arms) */}
-        {edgeChevron(0.5, 7.5, 0, BLUE[1], 'eb')}
-        {edgeChevron(14.5, 7.5, 180, GREEN[1], 'eg')}
-        {edgeChevron(7.5, 0.5, 90, RED[1], 'er')}
-        {edgeChevron(7.5, 14.5, 270, YELLOW[1], 'ey')}
+        {/* home-run entry chevrons (each arm coloured for the seat that enters there) */}
+        {edgeChevron(0.5, 7.5, 0, RED[1], 'er')}
+        {edgeChevron(7.5, 0.5, 90, GREEN[1], 'eg')}
+        {edgeChevron(14.5, 7.5, 180, YELLOW[1], 'ey')}
+        {edgeChevron(7.5, 14.5, 270, BLUE[1], 'eb')}
 
         {/* centre pinwheel */}
         <polygon points="6,6 9,6 7.5,7.5" fill={RED[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
@@ -358,7 +358,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
                     <animate attributeName="r" values=".52;.64;.52" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
-                <g transform="scale(1.3)">
+                <g transform="scale(1.08)">
                   <Pawn seat={seat} />
                 </g>
               </g>

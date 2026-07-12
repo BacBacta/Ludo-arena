@@ -112,6 +112,9 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
 
   const dieValue = tumble ?? roll?.value ?? 6;
   const activeName = PLAYERS[activeSeat]?.name ?? '';
+  // die sits at the active seat's board corner (blue bottom-left, red top-left,
+  // green top-right, yellow bottom-right) — like Ludo Club's per-player die.
+  const cornerCls = ['bl', 'tl', 'tr', 'br'][activeSeat] ?? 'bl';
   const message =
     game.phase === 'over'
       ? game.winner === mySeat
@@ -126,22 +129,18 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   return (
     <div className="screen screen--game">
       <div className="gamewrap">
-        <div className="gamecorner gamecorner--top">
+        <div className="gamehead">
           <div className="pot">{t('training')} · 4P</div>
-          <button className="linkbtn" onClick={onLeave}>
-            ✕
-          </button>
         </div>
 
-        <Board4
-          game={game}
-          mySeat={mySeat}
-          onTokenTap={(token) => myTurn && game.phase === 'awaiting-move' && doMove(gameRef.current, mySeat, token)}
-          banners={PLAYERS.map((p, seat) => ({ seat, name: p.name, flag: p.flag, active: seat === activeSeat }))}
-        />
-
-        <div className="gamecorner gamecorner--bottom">
-          <div className="cornerstack">
+        <div className="gamestage">
+          <Board4
+            game={game}
+            mySeat={mySeat}
+            onTokenTap={(token) => myTurn && game.phase === 'awaiting-move' && doMove(gameRef.current, mySeat, token)}
+            banners={PLAYERS.map((p, seat) => ({ seat, name: p.name, flag: p.flag, active: seat === activeSeat }))}
+          />
+          <div className={`dcorner dcorner--${cornerCls}`}>
             {myTurn ? (
               <button
                 className={`dicebtn${tumble !== null ? ' dicebtn--rolling' : ''}`}
@@ -163,12 +162,16 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
               </div>
             )}
           </div>
-          <div className="gamemsg">
-            <span>{message}</span>
-          </div>
+        </div>
+
+        <div className="gamemsg gamemsg--center gm4">
+          <span>{message}</span>
         </div>
 
         <div className="gamebar">
+          <button className="gamebar__btn" aria-label="leave" onClick={onLeave}>
+            ✕
+          </button>
           <button className="gamebar__btn" aria-label="sound" onClick={() => dispatch({ type: 'TOGGLE_SOUND' })}>
             {soundOn ? <IconSoundOn /> : <IconSoundOff />}
           </button>

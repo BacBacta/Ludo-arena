@@ -1011,3 +1011,16 @@ small.muted { font-size: 12px; }
   font-size: 16px;
   cursor: pointer;
 }
+
+/* 4-player: header + per-seat die at the active player's board corner */
+.gamehead { display: flex; justify-content: center; align-items: center; min-height: 40px; margin-bottom: 6px; }
+.gamestage { position: relative; }
+.dcorner { position: absolute; z-index: 5; }
+.dcorner--bl { bottom: -50px; left: 2px; }
+.dcorner--tl { top: -50px; left: 2px; }
+.dcorner--tr { top: -50px; right: 2px; }
+.dcorner--br { bottom: -50px; right: 2px; }
+.gamebar__btn { font-size: 18px; font-weight: 700; }
+/* 4-player message: don't grow (it's a direct child of the vertical stack) and
+   clear the bottom-corner die overhang */
+.gm4 { flex: 0 0 auto; margin-top: 46px; }

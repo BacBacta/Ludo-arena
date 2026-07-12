@@ -14,15 +14,20 @@ import { FINISHED, LAST_TRACK_REL, SAFE_CELLS, TRACK, TRACK_LEN } from '@ludo/ga
 export const SEATS4 = 4;
 export const TOKENS4 = 4;
 
-/** Absolute start cell per seat (four arms, 13 apart). */
-export const SEAT_START4: readonly number[] = [0, 13, 26, 39];
+/**
+ * Absolute start cell per seat, chosen so each seat's coloured start cell is
+ * ADJACENT to its base quadrant (blue bottom-left exits at the bottom, etc.):
+ *   seat 0 blue → 39 (bottom)   seat 1 red → 0 (left/top-left)
+ *   seat 2 green → 13 (top)      seat 3 yellow → 26 (right)
+ */
+export const SEAT_START4: readonly number[] = [39, 0, 13, 26];
 
-/** Home columns per seat (grid coords, entrance → centre). */
+/** Home columns per seat (grid coords, entrance → centre) matching the starts. */
 export const HOME_COLUMNS4: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
-  [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]], // blue, left arm
-  [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]], // red, top arm
-  [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]], // green, right arm
-  [[7, 13], [7, 12], [7, 11], [7, 10], [7, 9]], // yellow, bottom arm
+  [[7, 13], [7, 12], [7, 11], [7, 10], [7, 9]], // blue, bottom arm
+  [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]], // red, left arm
+  [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]], // green, top arm
+  [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]], // yellow, right arm
 ];
 
 /** Four base slots per quadrant (grid centres), matching the board home squares. */
