@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SAFE_CELLS, TRACK } from '@ludo/game-engine';
 import { BASE_SPOTS4, HOME_COLUMNS4, SEAT_START4, tokenXY4, type Game4 } from '../lib/ludo4';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
+import { playHop } from '../lib/sound';
 
 const RED = ['#FF8A7E', '#E23B3B', '#AE2A2F'] as const;
 const GREEN = ['#66C972', '#2FA84F', '#1F7C38'] as const;
@@ -88,24 +89,22 @@ function Pawn({ seat }: { seat: number }) {
           <stop offset="100%" stopColor={c[2]} />
         </radialGradient>
       </defs>
-      {/* soft contact shadow */}
-      <ellipse cx={0.03} cy={0.46} rx={0.36} ry={0.1} fill="url(#pawnCast4)" />
-      {/* tall glossy skittle body: wide round foot → pinched waist → neck */}
+      {/* soft contact shadow, directly under the foot */}
+      <ellipse cx={0.02} cy={0.36} rx={0.3} ry={0.08} fill="url(#pawnCast4)" />
+      {/* Ludo-Club teardrop: ball top blending smoothly into a flared cone foot */}
       <path
-        d="M -0.36 0.42 C -0.38 0.18 -0.14 0.14 -0.1 -0.1 C -0.09 -0.2 -0.085 -0.24 0 -0.24 C 0.085 -0.24 0.09 -0.2 0.1 -0.1 C 0.14 0.14 0.38 0.18 0.36 0.42 Q 0.36 0.51 0 0.51 Q -0.36 0.51 -0.36 0.42 Z"
+        d="M -0.3 0.28 C -0.3 0.06 -0.17 -0.06 -0.13 -0.24 C -0.1 -0.4 0.1 -0.4 0.13 -0.24 C 0.17 -0.06 0.3 0.06 0.3 0.28 Q 0.3 0.36 0 0.36 Q -0.3 0.36 -0.3 0.28 Z"
         fill={`url(#${gid})`}
         stroke={dark}
         strokeWidth={0.026}
       />
-      {/* slim gloss streak down the flare */}
-      <path d="M -0.13 0.4 C -0.19 0.2 -0.1 0.02 -0.07 -0.1" fill="none" stroke="#ffffff" strokeWidth={0.05} strokeLinecap="round" opacity={0.5} />
-      {/* neck occlusion */}
-      <ellipse cx={0} cy={-0.2} rx={0.11} ry={0.04} fill={dark} opacity={0.4} />
-      {/* glossy spherical head */}
-      <circle cx={0} cy={-0.37} r={0.2} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.026} />
-      <path d="M 0.17 -0.44 A 0.2 0.2 0 0 1 0.05 -0.19" fill="none" stroke={rim} strokeWidth={0.032} strokeLinecap="round" opacity={0.9} />
-      <ellipse cx={-0.075} cy={-0.45} rx={0.08} ry={0.06} fill="#ffffff" opacity={0.98} />
-      <ellipse cx={0.02} cy={-0.3} rx={0.05} ry={0.08} fill="#ffffff" opacity={0.2} />
+      {/* ball top overlapping the cone (no pinched chess neck) */}
+      <circle cx={0} cy={-0.28} r={0.17} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.026} />
+      <path d="M -0.13 -0.24 Q 0 -0.14 0.13 -0.24" fill={`url(#${hid})`} stroke="none" />
+      {/* glossy highlights: hot-spot on the ball + streak down the cone */}
+      <ellipse cx={-0.065} cy={-0.34} rx={0.065} ry={0.05} fill="#ffffff" opacity={0.95} />
+      <path d="M -0.12 0.26 C -0.16 0.08 -0.09 -0.06 -0.06 -0.16" fill="none" stroke="#ffffff" strokeWidth={0.045} strokeLinecap="round" opacity={0.45} />
+      <path d="M 0.145 -0.33 A 0.17 0.17 0 0 1 0.06 -0.13" fill="none" stroke={rim} strokeWidth={0.03} strokeLinecap="round" opacity={0.85} />
     </>
   );
 }
@@ -160,6 +159,7 @@ function useAnimated4(positions: number[][]): number[][] {
         }),
       );
       if (changed) {
+        playHop(); // soft per-cell tap
         setDisplay(next);
         timer = setTimeout(tick, WALK_STEP_MS);
       }
@@ -321,6 +321,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
             }
             const isMine = seat === mySeat;
             const isMovable = isMine && movable.includes(token);
+            const walking = pos !== (game.positions[seat]?.[token] ?? pos);
             return (
               <g
                 key={`t${seat}-${token}`}
@@ -333,7 +334,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
                     <animate attributeName="r" values=".52;.64;.52" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
-                <g transform="scale(1.18)">
+                <g className={`token__body${walking ? ' token__body--hop' : ''}`}>
                   <Pawn seat={seat} />
                 </g>
               </g>

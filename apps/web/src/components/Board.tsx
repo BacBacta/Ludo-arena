@@ -19,6 +19,7 @@ import {
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
+import { playHop } from '../lib/sound';
 
 /** Classic palette: [light, base, dark] per colour. */
 const RED = ['#FF7A6E', '#E5484D', '#B02E33'] as const;
@@ -94,6 +95,7 @@ function useAnimatedPositions(positions: number[][]): number[][] {
         }),
       );
       if (changed) {
+        playHop(); // soft per-cell tap
         setDisplay(next);
         timer = setTimeout(tick, STEP_MS);
       }
@@ -146,21 +148,19 @@ function Pawn({ seat }: { seat: Seat }) {
   const dark = SEAT_COLOR[seat]![2];
   return (
     <>
-      <ellipse cx={0.03} cy={0.4} rx={0.34} ry={0.1} fill="rgba(16,24,48,.34)" />
-      {/* flared skirt */}
+      {/* soft contact shadow, directly under the foot */}
+      <ellipse cx={0.02} cy={0.36} rx={0.3} ry={0.08} fill="rgba(16,24,48,.3)" />
+      {/* teardrop: ball top blending smoothly into a flared cone foot */}
       <path
-        d="M -0.32 0.36 C -0.34 0.14 -0.14 0.1 -0.12 -0.04 L 0.12 -0.04 C 0.14 0.1 0.34 0.14 0.32 0.36 Q 0.32 0.44 0 0.44 Q -0.32 0.44 -0.32 0.36 Z"
+        d="M -0.3 0.28 C -0.3 0.06 -0.17 -0.06 -0.13 -0.24 C -0.1 -0.4 0.1 -0.4 0.13 -0.24 C 0.17 -0.06 0.3 0.06 0.3 0.28 Q 0.3 0.36 0 0.36 Q -0.3 0.36 -0.3 0.28 Z"
         fill={grad}
         stroke={dark}
-        strokeWidth={0.03}
+        strokeWidth={0.026}
       />
-      {/* neck ring shadow */}
-      <ellipse cx={0} cy={-0.02} rx={0.13} ry={0.05} fill={dark} opacity={0.35} />
-      {/* head */}
-      <circle cx={0} cy={-0.24} r={0.26} fill={grad} stroke={dark} strokeWidth={0.03} />
-      {/* hot specular + soft sheen */}
-      <ellipse cx={-0.09} cy={-0.33} rx={0.09} ry={0.065} fill="#ffffff" opacity={0.9} />
-      <ellipse cx={0.07} cy={-0.17} rx={0.05} ry={0.08} fill="#ffffff" opacity={0.22} />
+      <circle cx={0} cy={-0.28} r={0.17} fill={grad} stroke={dark} strokeWidth={0.026} />
+      <path d="M -0.13 -0.24 Q 0 -0.14 0.13 -0.24" fill={grad} stroke="none" />
+      <ellipse cx={-0.065} cy={-0.34} rx={0.065} ry={0.05} fill="#ffffff" opacity={0.95} />
+      <path d="M -0.12 0.26 C -0.16 0.08 -0.09 -0.06 -0.06 -0.16" fill="none" stroke="#ffffff" strokeWidth={0.045} strokeLinecap="round" opacity={0.45} />
     </>
   );
 }
@@ -409,7 +409,7 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
                     <animate attributeName="r" values=".52;.64;.52" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
-                <g transform="scale(1.4)">
+                <g className={`token__body${pos !== (game.positions[seat]?.[token] ?? pos) ? ' token__body--hop' : ''}`}>
                   <Pawn seat={seat as Seat} />
                 </g>
               </g>

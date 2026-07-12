@@ -186,13 +186,13 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
             <SeatAvatar name="YOU" active={myTurn} />
             {myTurn && (
               <button
-                className={`ludodie ludodie--tap${tumble !== null ? ' ludodie--rolling' : ''}${canRoll && tumble === null ? ' ludodie--armed' : ''}`}
+                className={`ludodie ludodie--tap${tumble !== null ? ' ludodie--rolling' : ''}`}
                 disabled={!canRoll}
                 onClick={() => canRoll && doRoll(gameRef.current, mySeat)}
                 aria-label="your die"
               >
                 <DieFace value={dieValue} skin={WHITE_DIE} />
-                {(tumble !== null || canRoll) && <InkSplat />}
+                {tumble !== null && <InkSplat />}
               </button>
             )}
           </div>

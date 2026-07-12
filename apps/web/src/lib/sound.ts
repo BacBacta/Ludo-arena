@@ -268,6 +268,19 @@ export function playDice(): void {
   });
 }
 
+/** Pawn hop: a soft wooden tap per cell — quiet, plays on every step. */
+let lastHop = 0;
+export function playHop(): void {
+  play((ac, now) => {
+    // throttle: never stack hops closer than 60ms (fast re-renders)
+    if (now - lastHop < 0.06) return;
+    lastHop = now;
+    const { out, send } = bus(ac);
+    tick(ac, out, send, now, { freq: 1750, q: 2.2, dur: 0.028, peak: 0.14, pan: 0, sendAmt: 0.3 });
+    mode(ac, out, send, now, 260, 0.06, 0.1, 'sine', 0.25);
+  });
+}
+
 /** Capture: a short descending two-tone. */
 export function playCapture(): void {
   play((ac, now) => {
