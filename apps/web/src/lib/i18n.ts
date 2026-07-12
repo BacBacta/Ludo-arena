@@ -96,6 +96,16 @@ const en = {
   demo: 'Demo',
   streakStart: 'Start your streak today',
   leagueEmpty: 'Play a game to enter this week’s rankings',
+  diceTitle: 'Dice styles',
+  diceIntro: 'Unlock new dice by playing — streaks, wins and league rank open new styles. Premium skins arrive soon.',
+  skinEquipped: '✓ Equipped',
+  skinTap: 'Tap to equip',
+  skinHintGames: 'Play 3 games',
+  skinHintWins: 'Win 3 games',
+  skinHintStreak: '3-day streak',
+  skinHintTicket: 'Complete a daily challenge',
+  skinHintLeague: 'Reach Gold League',
+  skinSoon: 'Coming soon',
 } as const;
 
 export type TKey = keyof typeof en;
@@ -198,6 +208,16 @@ const fr: Dict = {
   demo: 'Démo',
   streakStart: 'Commence ta série aujourd’hui',
   leagueEmpty: 'Joue une partie pour entrer au classement de la semaine',
+  diceTitle: 'Styles de dé',
+  diceIntro: 'Débloque de nouveaux dés en jouant — séries, victoires et rang de ligue ouvrent de nouveaux styles. Skins premium bientôt.',
+  skinEquipped: '✓ Équipé',
+  skinTap: 'Toucher pour équiper',
+  skinHintGames: 'Joue 3 parties',
+  skinHintWins: 'Gagne 3 parties',
+  skinHintStreak: 'Série de 3 jours',
+  skinHintTicket: 'Réussis un défi du jour',
+  skinHintLeague: 'Atteins la Ligue Gold',
+  skinSoon: 'Bientôt',
 };
 
 const pt: Dict = {
@@ -297,6 +317,16 @@ const pt: Dict = {
   demo: 'Demo',
   streakStart: 'Comece sua sequência hoje',
   leagueEmpty: 'Jogue uma partida para entrar no ranking da semana',
+  diceTitle: 'Estilos de dado',
+  diceIntro: 'Desbloqueie novos dados jogando — sequências, vitórias e liga abrem novos estilos. Skins premium em breve.',
+  skinEquipped: '✓ Equipado',
+  skinTap: 'Toque para equipar',
+  skinHintGames: 'Jogue 3 partidas',
+  skinHintWins: 'Vença 3 partidas',
+  skinHintStreak: 'Sequência de 3 dias',
+  skinHintTicket: 'Complete um desafio diário',
+  skinHintLeague: 'Alcance a Liga Gold',
+  skinSoon: 'Em breve',
 };
 
 const es: Dict = {
@@ -396,6 +426,16 @@ const es: Dict = {
   demo: 'Demo',
   streakStart: 'Empieza tu racha hoy',
   leagueEmpty: 'Juega una partida para entrar en la clasificación semanal',
+  diceTitle: 'Estilos de dado',
+  diceIntro: 'Desbloquea dados jugando — rachas, victorias y liga abren nuevos estilos. Skins premium pronto.',
+  skinEquipped: '✓ Equipado',
+  skinTap: 'Toca para equipar',
+  skinHintGames: 'Juega 3 partidas',
+  skinHintWins: 'Gana 3 partidas',
+  skinHintStreak: 'Racha de 3 días',
+  skinHintTicket: 'Completa un reto diario',
+  skinHintLeague: 'Alcanza la Liga Gold',
+  skinSoon: 'Muy pronto',
 };
 
 const sw: Dict = {
@@ -495,6 +535,16 @@ const sw: Dict = {
   demo: 'Demo',
   streakStart: 'Anza mfululizo wako leo',
   leagueEmpty: 'Cheza mchezo mmoja kuingia kwenye orodha ya wiki hii',
+  diceTitle: 'Mitindo ya dadu',
+  diceIntro: 'Fungua dadu mpya kwa kucheza — mfululizo, ushindi na ligi hufungua mitindo mipya. Skins za premium zinakuja.',
+  skinEquipped: '✓ Imevaliwa',
+  skinTap: 'Gusa kuvaa',
+  skinHintGames: 'Cheza michezo 3',
+  skinHintWins: 'Shinda michezo 3',
+  skinHintStreak: 'Mfululizo wa siku 3',
+  skinHintTicket: 'Kamilisha changamoto ya siku',
+  skinHintLeague: 'Fikia Ligi ya Gold',
+  skinSoon: 'Inakuja hivi karibuni',
 };
 
 const dict = { en, fr, pt, es, sw } as const;

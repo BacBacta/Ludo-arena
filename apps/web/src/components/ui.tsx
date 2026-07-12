@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
+import { DieFace } from './Die';
+import { DICE_SKINS, loadStats } from '../lib/diceSkins';
 import { t } from '../lib/i18n';
 
 export function TopBar() {
@@ -22,6 +24,18 @@ export function TopBar() {
         LUDO <span>ARENA</span>
       </div>
       <div className="topbar__right">
+        <button
+          className="soundtoggle"
+          title={t('diceTitle')}
+          onClick={() => dispatch({ type: 'DICE_MODAL', open: true })}
+        >
+          <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round">
+            <rect x={3} y={3} width={18} height={18} rx={5} />
+            <circle cx={8.5} cy={8.5} r={1.3} fill="currentColor" stroke="none" />
+            <circle cx={15.5} cy={15.5} r={1.3} fill="currentColor" stroke="none" />
+            <circle cx={12} cy={12} r={1.3} fill="currentColor" stroke="none" />
+          </svg>
+        </button>
         <button
           className="soundtoggle"
           title={soundOn ? t('soundOn') : t('soundOff')}
@@ -100,6 +114,49 @@ export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?
           </div>
         )}
         <div style={{ marginTop: 12, textAlign: 'center' }} className="muted">
+          {t('closeHint')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Dice-skin picker: progression rewards now, paid skins once payments land. */
+export function DiceModal() {
+  const { diceModalOpen, diceSkin, streak, tickets, league } = useAppState();
+  const dispatch = useAppDispatch();
+  if (!diceModalOpen) return null;
+  const stats = loadStats();
+  const ctx = { ...stats, streakDays: streak.days, tickets, division: league.division };
+  const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+        <h3>{t('diceTitle')}</h3>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          {t('diceIntro')}
+        </p>
+        <div className="skingrid">
+          {DICE_SKINS.map((s) => {
+            const unlocked = s.unlocked(ctx);
+            const equipped = s.id === diceSkin;
+            return (
+              <button
+                key={s.id}
+                className={`skin${equipped ? ' skin--on' : ''}${unlocked ? '' : ' skin--locked'}`}
+                onClick={unlocked ? () => dispatch({ type: 'SET_DICE_SKIN', id: s.id }) : undefined}
+              >
+                <DieFace value={6} skin={s} />
+                <b>{s.name}</b>
+                <small>
+                  {equipped ? t('skinEquipped') : unlocked ? t('skinTap') : t(s.hintKey ?? 'skinSoon')}
+                </small>
+                {!unlocked && <span className="skin__lock">🔒</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 10, textAlign: 'center' }} className="muted">
           {t('closeHint')}
         </div>
       </div>

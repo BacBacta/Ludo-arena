@@ -12,10 +12,11 @@ import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
 import { EndScreen } from './screens/EndScreen';
-import { FairnessModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { DiceModal, FairnessModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits } from './lib/session';
 import { connectWallet, lockStake, walletBalanceCents, type Wallet } from './lib/minipay';
 import { playCapture, playDice, playWin } from './lib/sound';
+import { recordGameResult } from './lib/diceSkins';
 import { t } from './lib/i18n';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
@@ -77,7 +78,8 @@ export default function App() {
       },
       onState: (game) => dispatch({ type: 'GAME_STATE', game }),
       onDice: (value, index, seat) => {
-        playDice();
+        // own rolls already played the rattle on button press (no RTT lag)
+        if (seat !== matchSeatRef.current) playDice();
         dispatch({ type: 'DICE', value, index, seat });
       },
       onMoved: (game, capture) => {
@@ -86,7 +88,9 @@ export default function App() {
       },
       onTurn: (seat, deadlineTs) => dispatch({ type: 'TURN', seat, deadlineTs }),
       onOver: (result) => {
-        if (result.winner === (matchSeatRef.current ?? 0)) playWin();
+        const won = result.winner === (matchSeatRef.current ?? 0);
+        if (won) playWin();
+        recordGameResult(won); // local stats feed the dice-skin unlocks
         dispatch({ type: 'GAME_OVER', result });
         if (walletRef.current) void refreshBalance(walletRef.current);
       },
@@ -234,6 +238,7 @@ export default function App() {
       <WelcomeModal onStartFree={() => startMatch(0)} />
       <StakingOverlay />
       <FairnessModal />
+      <DiceModal />
       <SettingsModal onApply={applyLimits} />
       <Toast />
     </>

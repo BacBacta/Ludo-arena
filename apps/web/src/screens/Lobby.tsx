@@ -4,45 +4,6 @@ import { TopBar } from '../components/ui';
 import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
 import { t } from '../lib/i18n';
 
-/** Casino-chip colourways per stake. */
-const CHIP_STYLE: Record<number, { c1: string; c2: string; text: string }> = {
-  0: { c1: '#3fc487', c2: '#1d7c50', text: '#ffffff' },
-  10: { c1: '#f2ead6', c2: '#c9bfa2', text: '#24312a' },
-  25: { c1: '#ffd94d', c2: '#dd9d00', text: '#24312a' },
-  50: { c1: '#f4a05c', c2: '#c96a22', text: '#ffffff' },
-  100: { c1: '#3a4a42', c2: '#20302a', text: '#ffd94d' },
-};
-
-function ChipSVG({ stake }: { stake: number }) {
-  const s = CHIP_STYLE[stake] ?? CHIP_STYLE[25]!;
-  const gid = `chip${stake}`;
-  return (
-    <svg viewBox="0 0 72 72" className="chip">
-      <defs>
-        <radialGradient id={gid} cx="35%" cy="30%" r="90%">
-          <stop offset="0%" stopColor={s.c1} />
-          <stop offset="100%" stopColor={s.c2} />
-        </radialGradient>
-      </defs>
-      <circle cx={36} cy={38.5} r={32} fill="rgba(0,0,0,.35)" />
-      <circle cx={36} cy={36} r={32} fill={`url(#${gid})`} />
-      <circle cx={36} cy={36} r={32} fill="none" stroke="rgba(255,255,255,.85)" strokeWidth={5} strokeDasharray="7.5 9.25" />
-      <circle cx={36} cy={36} r={23} fill="rgba(255,255,255,.13)" />
-      <circle cx={36} cy={36} r={23} fill="none" stroke="rgba(0,0,0,.2)" strokeWidth={1} />
-      <text
-        x={36}
-        y={stake === 0 ? 41 : 41.5}
-        textAnchor="middle"
-        fontSize={stake === 0 ? 15 : 17}
-        fontWeight={700}
-        fontFamily="'Space Grotesk', system-ui, sans-serif"
-        fill={s.text}
-      >
-        {stake === 0 ? t('free') : stake >= 100 ? `$${stake / 100}` : `${stake}¢`}
-      </text>
-    </svg>
-  );
-}
 
 export function Lobby({
   onPlay,
@@ -95,14 +56,14 @@ export function Lobby({
       {/* stake picker + CTA first: the primary action stays above the fold */}
       <div className="hero">
         <div className="hero__kicker">{t('chooseStake')}</div>
-        <div className="chips">
+        <div className="gstakes">
           {lobbyStakes.map((s) => (
             <button
               key={s}
-              className={`chipbtn${s === stakeCents ? ' chipbtn--sel' : ''}`}
+              className={`gstake${s === stakeCents ? ' gstake--sel' : ''}${s === 0 ? ' gstake--free' : ''}`}
               onClick={() => dispatch({ type: 'SELECT_STAKE', stake: s })}
             >
-              <ChipSVG stake={s} />
+              <b>{s === 0 ? t('free') : s >= 100 ? `$${s / 100}` : `${s}¢`}</b>
               <small>{s === 0 ? t('training') : `${t('win')} ${fmtUsd(potCents(s))}`}</small>
             </button>
           ))}

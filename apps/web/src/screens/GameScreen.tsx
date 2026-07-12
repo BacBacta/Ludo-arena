@@ -2,31 +2,11 @@ import { useEffect, useState } from 'react';
 import { BLITZ } from '@ludo/game-engine';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { Board } from '../components/Board';
+import { DieFace } from '../components/Die';
 import { IconShield } from '../components/icons';
+import { skinById } from '../lib/diceSkins';
+import { playDice } from '../lib/sound';
 import { t } from '../lib/i18n';
-
-/** Pip layouts for the SVG die faces (viewBox 0..100). */
-const PIPS: Record<number, Array<[number, number]>> = {
-  1: [[50, 50]],
-  2: [[31, 31], [69, 69]],
-  3: [[29, 29], [50, 50], [71, 71]],
-  4: [[31, 31], [69, 31], [31, 69], [69, 69]],
-  5: [[31, 31], [69, 31], [50, 50], [31, 69], [69, 69]],
-  6: [[31, 27], [69, 27], [31, 50], [69, 50], [31, 73], [69, 73]],
-};
-
-function DieFace({ value }: { value: number }) {
-  return (
-    <svg viewBox="0 0 100 100" className="die" aria-label={`die ${value}`}>
-      <rect x={5} y={7} width={90} height={90} rx={22} fill="rgba(0,0,0,.25)" />
-      <rect x={5} y={5} width={90} height={90} rx={22} fill="#fdfbf5" />
-      <rect x={5} y={5} width={90} height={44} rx={22} fill="#ffffff" opacity={0.7} />
-      {(PIPS[value] ?? []).map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={8.5} fill="#1b241f" />
-      ))}
-    </svg>
-  );
-}
 
 /** Remaining fraction of the move clock (1 → 0), ticking every 100 ms. */
 function useCountdown(deadlineTs: number | null): number {
@@ -60,8 +40,9 @@ function TurnChip({ color, active, deadlineTs }: { color: string; active: boolea
 }
 
 export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: number): void }) {
-  const { game, match, lastDice, turnDeadlineTs, reconnecting } = useAppState();
+  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin } = useAppState();
   const dispatch = useAppDispatch();
+  const skin = skinById(diceSkin);
 
   // Dice tumble: on each new roll, cycle random faces briefly before settling.
   const [tumbleFace, setTumbleFace] = useState<number | null>(null);
@@ -126,9 +107,12 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
           <button
             className={`dicebtn${tumbleFace !== null ? ' dicebtn--rolling' : ''}`}
             disabled={!canRoll}
-            onClick={onRoll}
+            onClick={() => {
+              playDice(); // immediate feedback; the server result lands ~RTT later
+              onRoll();
+            }}
           >
-            <DieFace value={face} />
+            <DieFace value={face} skin={skin} />
           </button>
           <div className="gamemsg">
             <span>{message}</span>

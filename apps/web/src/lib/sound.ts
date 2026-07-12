@@ -67,11 +67,15 @@ function play(build: (ac: AudioContext, now: number) => void): void {
   build(ac, ac.currentTime);
 }
 
-/** Dice roll: two quick noisy rattles. */
+/** Dice roll: a tumbling rattle (4 decaying clicks) + landing thud. */
 export function playDice(): void {
   play((ac, now) => {
-    noise(ac, now, 0.08, 0.12);
-    noise(ac, now + 0.09, 0.06, 0.09);
+    noise(ac, now, 0.05, 0.16);
+    noise(ac, now + 0.11, 0.05, 0.13);
+    noise(ac, now + 0.24, 0.045, 0.11);
+    noise(ac, now + 0.38, 0.04, 0.08);
+    tone(ac, 130, now + 0.5, 0.16, 'sine', 0.22); // landing thud
+    noise(ac, now + 0.5, 0.05, 0.1);
   });
 }
 

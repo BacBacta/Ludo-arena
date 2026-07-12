@@ -19,7 +19,7 @@ import type { GameState, Seat } from '@ludo/game-engine';
 const ME_FILL = '#2E9E6B';
 const OPP_FILL = '#E8833A';
 
-const STEP_MS = 200; // per-cell walk pace (slower, readable)
+const STEP_MS = 300; // per-cell walk pace (deliberate, readable)
 
 /** Display positions stepping one cell at a time toward the real ones. */
 function useAnimatedPositions(positions: number[][]): number[][] {
@@ -317,7 +317,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
                 className={`token${isMovable ? ' token--movable' : ''}`}
                 style={{
                   transform: `translate(${x}px, ${y}px)`,
-                  transition: 'transform 190ms cubic-bezier(0.35, 0, 0.25, 1)',
+                  transition: 'transform 280ms cubic-bezier(0.35, 0, 0.25, 1)',
                 }}
                 onClick={isMovable ? () => onTokenTap(token) : undefined}
               >

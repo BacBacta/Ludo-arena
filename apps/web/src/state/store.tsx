@@ -16,6 +16,7 @@ import {
 } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
+import { loadSkinId, saveSkinId } from '../lib/diceSkins';
 
 const CACHE_KEY = 'ludo.retention';
 
@@ -97,6 +98,9 @@ export interface AppState {
   fairModalOpen: boolean;
   settingsOpen: boolean;
   soundOn: boolean;
+  /** Equipped dice skin id + picker modal state. */
+  diceSkin: string;
+  diceModalOpen: boolean;
   /** First-session welcome (E6.4): open until the player has been onboarded. */
   onboardOpen: boolean;
 }
@@ -145,6 +149,8 @@ export const initialState: AppState = {
   fairModalOpen: false,
   settingsOpen: false,
   soundOn: soundEnabled(),
+  diceSkin: loadSkinId(),
+  diceModalOpen: false,
   onboardOpen: firstSession(),
 };
 
@@ -176,6 +182,8 @@ export type Action =
   | { type: 'FAIR_MODAL'; open: boolean }
   | { type: 'SETTINGS'; open: boolean }
   | { type: 'TOGGLE_SOUND' }
+  | { type: 'SET_DICE_SKIN'; id: string }
+  | { type: 'DICE_MODAL'; open: boolean }
   | { type: 'ONBOARD_DONE' };
 
 export function reducer(s: AppState, a: Action): AppState {
@@ -269,6 +277,11 @@ export function reducer(s: AppState, a: Action): AppState {
       setSoundEnabled(soundOn);
       return { ...s, soundOn };
     }
+    case 'SET_DICE_SKIN':
+      saveSkinId(a.id);
+      return { ...s, diceSkin: a.id };
+    case 'DICE_MODAL':
+      return { ...s, diceModalOpen: a.open };
     case 'ONBOARD_DONE':
       markOnboarded();
       return { ...s, onboardOpen: false };

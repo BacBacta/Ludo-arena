@@ -189,33 +189,62 @@ a.btn {
   text-align: center;
   margin: 4px 0 12px;
 }
-.chips { display: flex; gap: 6px; justify-content: center; }
-.chipbtn {
+/* gaming energy tiles: angular clip, inset ring, neon lift on select */
+.gstakes { display: flex; gap: 7px; justify-content: center; }
+.gstake {
   flex: 1 1 0;
-  max-width: 74px;
-  background: none;
+  min-width: 60px;
+  padding: 13px 2px 11px;
   border: none;
-  padding: 0;
   cursor: pointer;
   text-align: center;
-  transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1), filter 0.18s ease;
-  filter: saturate(0.72) brightness(0.82);
+  color: var(--txt);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  clip-path: polygon(18% 0, 82% 0, 100% 26%, 100% 74%, 82% 100%, 18% 100%, 0 74%, 0 26%);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.1);
+  transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.18s ease, background 0.18s ease;
 }
-.chipbtn .chip { width: 100%; height: auto; display: block; }
-.chipbtn small {
-  display: block;
-  margin-top: 5px;
-  font-size: 9.5px;
-  color: var(--muted);
-  white-space: nowrap;
+.gstake b { display: block; font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+.gstake small { display: block; margin-top: 2px; font-size: 9px; color: var(--muted); white-space: nowrap; }
+.gstake--free b { color: var(--me); }
+.gstake--sel {
+  transform: translateY(-4px);
+  background: linear-gradient(165deg, rgba(245, 179, 1, 0.22), rgba(245, 179, 1, 0.05));
+  box-shadow:
+    inset 0 0 0 1.5px var(--accent),
+    inset 0 0 18px rgba(245, 179, 1, 0.18),
+    0 10px 22px rgba(245, 179, 1, 0.22);
+  animation: selpulse 2.2s ease-in-out infinite;
 }
-.chipbtn--sel {
-  transform: translateY(-5px) scale(1.07);
-  filter: none;
+.gstake--sel b { color: var(--accent-2); }
+.gstake--sel small { color: var(--accent-2); }
+.gstake:active { transform: scale(0.95); }
+@keyframes selpulse {
+  50% { box-shadow: inset 0 0 0 1.5px var(--accent), inset 0 0 26px rgba(245, 179, 1, 0.3), 0 10px 26px rgba(245, 179, 1, 0.3); }
 }
-.chipbtn--sel .chip { filter: drop-shadow(0 9px 16px rgba(245, 179, 1, 0.35)); }
-.chipbtn--sel small { color: var(--accent-2); font-weight: 700; }
-.chipbtn:active { transform: scale(0.94); }
+
+/* dice-skin picker */
+.skingrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.skin {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 10px 6px 8px;
+  cursor: pointer;
+  text-align: center;
+  color: var(--txt);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.skin .die { width: 44px; height: 44px; margin: 0 auto; display: block; }
+.skin b { display: block; font-family: var(--font-display); font-size: 12px; margin-top: 6px; }
+.skin small { display: block; font-size: 9px; color: var(--muted); margin-top: 2px; min-height: 20px; }
+.skin--on { border-color: var(--accent); box-shadow: 0 0 14px rgba(245, 179, 1, 0.22); }
+.skin--on small { color: var(--accent-2); font-weight: 700; }
+.skin--locked { opacity: 0.55; cursor: default; }
+.skin--locked .die { filter: grayscale(0.5); }
+.skin__lock { position: absolute; top: 6px; right: 8px; font-size: 11px; }
+.skin:not(.skin--locked):active { transform: scale(0.95); }
 
 /* signature CTA: layered gold, top light, sheen sweep, stake summary line */
 .btn--hero {
