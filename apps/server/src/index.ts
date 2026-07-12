@@ -37,7 +37,7 @@ import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
 import { createFairness, createSeedCommit, finalizeFairness, sha256Hex, type Fairness } from './fairness.js';
-import { createArbiter, SettlementQueue } from './settlement.js';
+import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createStore, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -100,8 +100,16 @@ interface PendingReveal {
   serverSeed: string;
   commit: string;
   entropies: [string | null, string | null];
+  /** True once we're polling the escrow for both stakes to lock (staked games). */
+  lockPolling?: boolean;
 }
 const pendingReveals = new Map<string, PendingReveal>();
+
+// C3 — don't start a staked game until BOTH stakes are locked on-chain (status
+// Active), or a blitz game could finish before the joins mine and pay the winner
+// nothing. Poll the escrow between reveal and Room creation.
+const LOCK_POLL_MS = 3_000;
+const MAX_LOCK_POLLS = 40; // ~2 min: generous for two Celo approve+join txs to mine
 
 function generateTableCode(): string {
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -563,7 +571,8 @@ wss.on('connection', (ws, req) => {
         }
         session.entropy = msg.entropy;
         pending.entropies[seat] = msg.entropy;
-        if (pending.entropies[0] !== null && pending.entropies[1] !== null) finalizeGame(pending);
+        // Start once both revealed AND (for real-money games) both stakes are locked.
+        maybeStartPending(pending);
         break;
       }
 
@@ -713,13 +722,9 @@ async function resumeSession(token: string, ws: WebSocket): Promise<Session | nu
   return session;
 }
 
-// KNOWN LIMITATION (audit C3 — gameplay is not gated on on-chain lock): the
-// blitz clock starts here, but the client only locks its stake AFTER match.found
-// (a 2-tx approve+join that must mine). A fast game can finish before both joins
-// confirm → the settle finds status None/WaitingOpponent and the winner is paid
-// nothing. Settlement already refuses to pay unlocked games (safe), but the UX
-// is broken. A real fix waits for both escrow `Joined` events before starting
-// the clock — a lifecycle change. Do NOT ship mainnet stakes until closed.
+// Real-money games (both wallets) don't start until both stakes are locked
+// on-chain — see maybeStartPending()/pollStakeLock() (audit C3). This runs during
+// the pre-Room reveal phase, so a blitz game can't finish before the joins mine.
 async function startGame(stake: StakeCents, a: Session, b: Session): Promise<void> {
   const gameId = randomBytes(16).toString('hex');
   // Durable participant rows must exist before the game record references them.
@@ -793,6 +798,57 @@ function finalizeGame(p: PendingReveal): void {
   pendingReveals.delete(p.gameId);
   const fairness = finalizeFairness(p.serverSeed, p.commit, p.entropies[0] ?? '', p.entropies[1] ?? '');
   startRoom(p.gameId, p.stake, p.a, p.b, fairness);
+}
+
+/**
+ * Decide whether a pending game can start yet. Requires BOTH entropy reveals
+ * (fairness) and, for a real-money game (both wallets + arbiter), BOTH stakes
+ * locked on-chain (C3) — otherwise a fast game could finish before the joins
+ * mine and the winner would be paid nothing.
+ */
+function maybeStartPending(p: PendingReveal): void {
+  if (p.entropies[0] === null || p.entropies[1] === null) return; // await reveals
+  const needsLock = p.stake > 0 && !!p.a.wallet && !!p.b.wallet && !!arbiter;
+  if (!needsLock) {
+    finalizeGame(p);
+    return;
+  }
+  if (p.lockPolling) return;
+  p.lockPolling = true;
+  pollStakeLock(p, 0);
+}
+
+/** Poll the escrow until both stakes are Active, then start; abort on timeout. */
+function pollStakeLock(p: PendingReveal, attempt: number): void {
+  if (pendingReveals.get(p.gameId) !== p) return; // finalized or aborted
+  void arbiter!
+    .gameStatus(p.gameId)
+    .then(({ status }) => {
+      if (pendingReveals.get(p.gameId) !== p) return;
+      if (status === GameStatus.Active) {
+        finalizeGame(p);
+        return;
+      }
+      if (attempt >= MAX_LOCK_POLLS) {
+        // Stakes never both locked. Abort the match; whoever DID lock can reclaim
+        // via the escrow's refundExpired (WaitingOpponent) after JOIN_TIMEOUT.
+        pendingReveals.delete(p.gameId);
+        p.a.pendingGameId = undefined;
+        p.b.pendingGameId = undefined;
+        const err: ServerMsg = { t: 'error', code: 'INTERNAL', message: 'Stakes were not locked in time — match cancelled.' };
+        p.a.send(err);
+        p.b.send(err);
+        console.warn(`[stake-gate] ${p.gameId} aborted: stakes not Active after ${attempt} polls`);
+        return;
+      }
+      setTimeout(() => pollStakeLock(p, attempt + 1), LOCK_POLL_MS);
+    })
+    .catch((e) => {
+      console.error('[stake-gate] gameStatus poll failed', e instanceof Error ? e.message : e);
+      if (attempt < MAX_LOCK_POLLS && pendingReveals.get(p.gameId) === p) {
+        setTimeout(() => pollStakeLock(p, attempt + 1), LOCK_POLL_MS);
+      }
+    });
 }
 
 function send(ws: WebSocket, msg: ServerMsg): void {
