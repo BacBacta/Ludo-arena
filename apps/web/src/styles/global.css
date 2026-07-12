@@ -9,8 +9,8 @@
 /* Candy theme (Ludo-Club reference): blue dotted stage, white panels,
    glossy 3D buttons, the classic four board colours. */
 :root {
-  --bg: #3d5bc9;
-  --bg-2: #3452b8;
+  --bg: #4666cf;
+  --bg-2: #3a56be;
   --card: #ffffff;
   --card-2: #eef2f9;
   --line: #dbe2ef;
@@ -512,8 +512,11 @@ small.muted { font-size: 12px; }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 12px;
+  gap: 6px;
 }
+/* nest each seat's avatar cluster into its board corner (Ludo-Club) */
+.gamecorner--top { position: relative; z-index: 4; margin-bottom: -14px; }
+.gamecorner--bottom { position: relative; z-index: 4; margin-top: -14px; }
 /* corner rows above/below the board (Ludo-Club: players live at their corners) */
 .gamecorner { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 /* reserve the tallest state's height so the board never shifts between turns */

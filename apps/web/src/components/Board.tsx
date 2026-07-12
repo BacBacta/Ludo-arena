@@ -252,28 +252,6 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
     );
   }, [game.positions]);
 
-  /** White chevron on a start cell, pointing along the first track step. */
-  const startChevron = (seat: Seat) => {
-    const idx = SEAT_START[seat] ?? 0;
-    const cell = TRACK[idx];
-    const next = TRACK[(idx + 1) % TRACK_LEN];
-    if (!cell || !next) return null;
-    const [cx, cy] = [cell[0] + 0.5, cell[1] + 0.5];
-    const ang = (Math.atan2(next[1] - cell[1], next[0] - cell[0]) * 180) / Math.PI;
-    return (
-      <g key={`ch${seat}`} transform={`rotate(${ang} ${cx} ${cy})`}>
-        <path
-          d={`M ${cx - 0.16} ${cy - 0.28} L ${cx + 0.18} ${cy} L ${cx - 0.16} ${cy + 0.28}`}
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth={0.17}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </g>
-    );
-  };
-
   /** Big coloured chevron on an outer middle cell (home-run entry, Ludo-Club). */
   const edgeChevron = (cx: number, cy: number, deg: number, color: string, key: string) => (
     <g key={key} transform={`rotate(${deg} ${cx} ${cy})`}>
@@ -389,7 +367,6 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
             />
           );
         })}
-        {([0, 1] as const).map((seat) => startChevron(seat))}
 
         {/* big coloured chevrons at the four home-run entries (Ludo-Club) */}
         {edgeChevron(0.5, 7.5, 0, BLUE[1], 'eb')}
