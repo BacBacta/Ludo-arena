@@ -91,7 +91,13 @@ export function potCents(stake: StakeCents): number {
 // ---------- Client -> Server ----------
 
 export type ClientMsg =
-  | { t: 'hello'; wallet?: string; sessionToken?: string; entropy: string; fingerprint?: string }
+  // Anti-grinding: new clients send `entropyCommit` = sha256(entropy) and reveal
+  // the raw `entropy` via `game.entropy` after match.found. `entropy` is kept
+  // optional for backward compatibility with clients that still send it raw.
+  | { t: 'hello'; wallet?: string; sessionToken?: string; entropy?: string; entropyCommit?: string; fingerprint?: string }
+  // Reveal this session's raw entropy (verified against the hello commit) — sent
+  // once, right after match.found, before the game's dice are finalized.
+  | { t: 'game.entropy'; entropy: string }
   | { t: 'queue.join'; stake: StakeCents }
   | { t: 'queue.leave' }
   // Private tables (E4.4): create returns a code; a friend joins with it.
@@ -222,10 +228,15 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     return null;
   const m = obj as ClientMsg;
   switch (m.t) {
-    case 'hello':
-      if (typeof m.entropy !== 'string' || m.entropy.length < 16 || m.entropy.length > 128) return null;
+    case 'hello': {
+      const commitOk = typeof m.entropyCommit === 'string' && /^[0-9a-f]{64}$/.test(m.entropyCommit);
+      const rawOk = typeof m.entropy === 'string' && m.entropy.length >= 16 && m.entropy.length <= 128;
+      if (!commitOk && !rawOk) return null; // need a commit (new) or raw entropy (legacy)
       if (m.fingerprint !== undefined && (typeof m.fingerprint !== 'string' || m.fingerprint.length > 64)) return null;
       return m;
+    }
+    case 'game.entropy':
+      return typeof m.entropy === 'string' && m.entropy.length >= 16 && m.entropy.length <= 128 ? m : null;
     case 'queue.join':
     case 'table.create':
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

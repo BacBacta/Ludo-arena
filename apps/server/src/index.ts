@@ -36,7 +36,7 @@ import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
-import { createFairness } from './fairness.js';
+import { createFairness, createSeedCommit, finalizeFairness, sha256Hex, type Fairness } from './fairness.js';
 import { createArbiter, SettlementQueue } from './settlement.js';
 import { createStore, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
@@ -51,11 +51,14 @@ const PORT = Number(process.env.PORT ?? 8787);
 interface Session extends Client {
   id: string;
   ws: WebSocket | null;
-  entropy: string;
+  entropy: string; // raw entropy (legacy hello, or once revealed via game.entropy)
+  entropyCommit?: string; // sha256(entropy) from hello (anti-grinding commit-reveal)
   stake: StakeCents | null;
   room: Room | null;
   seat: Seat | null;
   alive: boolean;
+  /** Game awaiting this session's entropy reveal before it can be finalized. */
+  pendingGameId?: string;
   fingerprint?: string; // device fingerprint from hello (E5.3)
   country?: string; // ISO country from the CDN header (E5.4)
 }
@@ -86,6 +89,19 @@ interface PrivateTable {
 }
 const privateTables = new Map<string, PrivateTable>();
 const TABLE_TTL_MS = 15 * 60_000;
+
+/** Games matched but awaiting both players' entropy reveals (anti-grinding). The
+ *  server has committed its seed; the Room is created only once both reveal. */
+interface PendingReveal {
+  gameId: string;
+  stake: StakeCents;
+  a: Session;
+  b: Session;
+  serverSeed: string;
+  commit: string;
+  entropies: [string | null, string | null];
+}
+const pendingReveals = new Map<string, PendingReveal>();
 
 function generateTableCode(): string {
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -408,12 +424,13 @@ wss.on('connection', (ws, req) => {
       session = makeSession(id, ws, {
         id,
         wallet,
-        entropy: msg.entropy,
+        entropy: msg.entropy ?? '', // legacy raw entropy; new clients reveal later
         name,
         flag,
         elo,
         stake: null,
       });
+      session.entropyCommit = msg.entropyCommit; // anti-grinding commit (new clients)
       session.fingerprint = msg.fingerprint;
       session.country = country;
       sessions.set(id, session);
@@ -531,6 +548,25 @@ wss.on('connection', (ws, req) => {
         if (session.room && session.seat !== null) session.room.resign(session.seat);
         break;
 
+      case 'game.entropy': {
+        // Anti-grinding reveal: verify the raw entropy against the hello commit,
+        // store it, and finalize the game once both players have revealed.
+        const pending = session.pendingGameId ? pendingReveals.get(session.pendingGameId) : undefined;
+        if (!pending) break;
+        let seat: 0 | 1;
+        if (session === pending.a) seat = 0;
+        else if (session === pending.b) seat = 1;
+        else break;
+        if (!session.entropyCommit || sha256Hex(msg.entropy) !== session.entropyCommit) {
+          session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Entropy does not match commit.' });
+          break;
+        }
+        session.entropy = msg.entropy;
+        pending.entropies[seat] = msg.entropy;
+        if (pending.entropies[0] !== null && pending.entropies[1] !== null) finalizeGame(pending);
+        break;
+      }
+
       case 'limits.set': {
         const pid = playerId(session.wallet, session.id);
         const selfExcludedUntil = msg.selfExcludeDays ? utcPlusDays(msg.selfExcludeDays) : undefined;
@@ -579,6 +615,16 @@ wss.on('connection', (ws, req) => {
     // Drop private tables this session was hosting.
     for (const [code, table] of privateTables) {
       if (table.host === session) privateTables.delete(code);
+    }
+    // Abandon a game that was awaiting entropy reveals (Room not created yet).
+    if (session.pendingGameId) {
+      const p = pendingReveals.get(session.pendingGameId);
+      if (p) {
+        pendingReveals.delete(p.gameId);
+        const opp = p.a === session ? p.b : p.a;
+        opp.pendingGameId = undefined;
+        opp.send({ t: 'error', code: 'INTERNAL', message: 'Opponent left before the game started.' });
+      }
     }
     // The room keeps running: clock + auto-move handle absence (disconnection != forfeit).
     // The in-memory entry is dropped after 10 min; the store copy keeps its own TTL
@@ -691,34 +737,62 @@ async function startGame(stake: StakeCents, a: Session, b: Session): Promise<voi
     ]);
     if (a.wallet && b.wallet) await store.bumpPairGame(idA, idB, utcToday());
   }
-  const room = new Room(gameId, stake, a, b, createFairness(a.entropy, b.entropy));
+  // Anti-grinding: if both clients sent an entropy COMMIT, the server commits its
+  // seed now (knowing only the hashes), announces the match, and waits for both to
+  // reveal their raw entropy before finalizing the dice. Legacy clients that sent
+  // raw entropy fall back to the immediate (grindable) path for deploy compatibility.
+  const newFlow = !!a.entropyCommit && !!b.entropyCommit;
+  const pot = potCents(stake);
+  if (newFlow) {
+    const { serverSeed, commit } = createSeedCommit();
+    pendingReveals.set(gameId, { gameId, stake, a, b, serverSeed, commit, entropies: [null, null] });
+    a.pendingGameId = gameId;
+    b.pendingGameId = gameId;
+    // Announce the match + the seed commit now; the Room + play start only after
+    // both reveal their entropy (finalizeGame). Client auto-reveals on match.found.
+    a.send(matchFoundMsg(gameId, 0, b, stake, pot, commit));
+    b.send(matchFoundMsg(gameId, 1, a, stake, pot, commit));
+    return;
+  }
+  // legacy: raw entropy already known → announce + start immediately
+  const fairness = createFairness(a.entropy, b.entropy);
+  a.send(matchFoundMsg(gameId, 0, b, stake, pot, fairness.commit));
+  b.send(matchFoundMsg(gameId, 1, a, stake, pot, fairness.commit));
+  startRoom(gameId, stake, a, b, fairness);
+}
+
+function matchFoundMsg(gameId: string, seat: Seat, opp: Session, stake: StakeCents, pot: number, commit: string): ServerMsg {
+  return {
+    t: 'match.found',
+    gameId,
+    seat,
+    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag },
+    stakeCents: stake,
+    potCents: pot,
+    fairnessCommit: commit,
+  };
+}
+
+/** Create the Room from a finalized fairness and start it (match.found already sent). */
+function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fairness: Fairness): void {
+  const room = new Room(gameId, stake, a, b, fairness);
   a.room = room;
   a.seat = 0;
   b.room = room;
   b.seat = 1;
+  a.pendingGameId = undefined;
+  b.pendingGameId = undefined;
   wireRoom(room);
   persistSession(a);
   persistSession(b);
-  const pot = potCents(stake);
-  a.send({
-    t: 'match.found',
-    gameId,
-    seat: 0,
-    opponent: { name: b.name, elo: b.elo, flag: b.flag },
-    stakeCents: stake,
-    potCents: pot,
-    fairnessCommit: room.fairness.commit,
-  });
-  b.send({
-    t: 'match.found',
-    gameId,
-    seat: 1,
-    opponent: { name: a.name, elo: a.elo, flag: a.flag },
-    stakeCents: stake,
-    potCents: pot,
-    fairnessCommit: room.fairness.commit,
-  });
   room.start();
+}
+
+/** Both players revealed their entropy → bind the committed seed and start play. */
+function finalizeGame(p: PendingReveal): void {
+  pendingReveals.delete(p.gameId);
+  const fairness = finalizeFairness(p.serverSeed, p.commit, p.entropies[0] ?? '', p.entropies[1] ?? '');
+  startRoom(p.gameId, p.stake, p.a, p.b, fairness);
 }
 
 function send(ws: WebSocket, msg: ServerMsg): void {

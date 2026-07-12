@@ -24,9 +24,29 @@ export interface Fairness {
   entropies: [string, string];
 }
 
+/** Legacy path (a client that still sends raw entropy in hello): the server
+ *  already knows both entropies here, so this is the grindable flow — kept only
+ *  for backward compatibility during a deploy. */
 export function createFairness(entropyA: string, entropyB: string): Fairness {
   const serverSeed = randomBytes(32).toString('hex');
   const commit = sha256Hex(serverSeed);
+  return { serverSeed, commit, entropies: [entropyA, entropyB] };
+}
+
+/**
+ * Anti-grinding commit-reveal, step 1: the server generates its seed and its
+ * commit knowing ONLY the players' entropy COMMITS (hashes) — not the values —
+ * so it cannot brute-force serverSeed to bias the sequence. Published in
+ * match.found; the players then reveal their raw entropy (verified against their
+ * hello commit) before the game is finalized.
+ */
+export function createSeedCommit(): { serverSeed: string; commit: string } {
+  const serverSeed = randomBytes(32).toString('hex');
+  return { serverSeed, commit: sha256Hex(serverSeed) };
+}
+
+/** Step 2: bind the (already-committed) seed to the now-revealed entropies. */
+export function finalizeFairness(serverSeed: string, commit: string, entropyA: string, entropyB: string): Fairness {
   return { serverSeed, commit, entropies: [entropyA, entropyB] };
 }
 

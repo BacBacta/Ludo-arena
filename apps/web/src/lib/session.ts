@@ -10,6 +10,7 @@ import {
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
 import { deviceFingerprint } from './fingerprint';
+import { sha256Hex } from './fairnessVerify';
 import {
   WALK_STEP_MS,
   WALK_TWEEN_MS,
@@ -292,6 +293,8 @@ export class RemoteSession implements GameSession {
   private attempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly entropy: string;
+  private entropyCommit = ''; // sha256(entropy); sent in hello (anti-grinding)
+  private revealed = false; // have we revealed our entropy for this match yet?
 
   constructor(
     private readonly ev: SessionEvents,
@@ -308,7 +311,12 @@ export class RemoteSession implements GameSession {
       crypto.getRandomValues(b);
       return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
     })();
-    this.connect(true);
+    // Commit to our entropy (hash) BEFORE connecting, so hello can carry the commit
+    // and the server binds its seed without ever seeing our raw value first.
+    void sha256Hex(this.entropy).then((c) => {
+      this.entropyCommit = c;
+      this.connect(true);
+    });
   }
 
   private connect(initial: boolean): void {
@@ -322,7 +330,7 @@ export class RemoteSession implements GameSession {
       clearTimeout(failTimer);
       this.send({
         t: 'hello',
-        entropy: this.entropy,
+        entropyCommit: this.entropyCommit,
         sessionToken: this.token() ?? undefined,
         wallet: this.walletAddress,
         fingerprint: deviceFingerprint(),
@@ -406,6 +414,12 @@ export class RemoteSession implements GameSession {
       }
       case 'match.found':
         this.inGame = true;
+        // Anti-grinding reveal: the server has committed its seed (msg.fairnessCommit);
+        // now reveal our raw entropy so the dice can be finalized. Sent once.
+        if (!this.revealed) {
+          this.revealed = true;
+          this.send({ t: 'game.entropy', entropy: this.entropy });
+        }
         this.ev.onMatchFound(msg);
         break;
       case 'game.state':
