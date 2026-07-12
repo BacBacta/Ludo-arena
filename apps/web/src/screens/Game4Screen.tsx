@@ -8,7 +8,7 @@ import { Board4 } from '../components/Board4';
 import { Die3D } from '../components/Die3D';
 import { IconMenu } from '../components/icons';
 import type { DiceSkin } from '../lib/diceSkins';
-import { applyMove4, applyRoll4, newGame4, pickAutoMove4, type Game4 } from '../lib/ludo4';
+import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '../lib/ludo4';
 import { BOT_MOVE_MS, BOT_ROLL_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
@@ -68,15 +68,36 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const animRef = useRef(0); // ms the last move still needs to animate
 
   const [roll, setRoll] = useState<{ seat: number; value: number; key: number } | null>(null);
+  // True while a no-legal-move roll is being shown before the turn passes, so the
+  // roll is visible (not an instant skip) and re-rolls are blocked during the beat.
+  const [passing, setPassing] = useState(false);
+  const passTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const NO_MOVE_MS = 750; // long enough to see the die land, then the turn passes
 
   function doRoll(g: Game4, seat: number): void {
+    if (g.phase !== 'awaiting-roll' || g.turn !== seat) return; // guard stale/dup calls
     const value = die6();
     setRoll({ seat, value, key: Date.now() });
     if (seat === mySeat) playDice();
+    const legal = legalMoves4(g, seat, value);
+    if (legal.length === 0) {
+      // No move: SHOW the roll on this seat for a beat, THEN pass the turn — so it
+      // never looks like the player was skipped without rolling (common early game).
+      setPassing(true);
+      clearTimeout(passTimer.current);
+      passTimer.current = setTimeout(() => {
+        setPassing(false);
+        const cur = gameRef.current;
+        if (cur.phase === 'awaiting-roll' && cur.turn === seat) setGame(applyRoll4(cur, value));
+      }, NO_MOVE_MS);
+      return;
+    }
     setGame(applyRoll4(g, value));
   }
 
   function doMove(g: Game4, seat: number, token: number): void {
+    // guard against stale/duplicate calls (e.g. a human tap racing the forced-move timer)
+    if (g.phase !== 'awaiting-move' || g.turn !== seat || !g.legal.includes(token)) return;
     const oldRel = g.positions[seat]?.[token] ?? -1;
     const res = applyMove4(g, token);
     const newRel = res.state.positions[seat]?.[token] ?? oldRel;
@@ -107,11 +128,14 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   }, [game]);
 
   const myTurn = game.turn === mySeat;
-  const canRoll = myTurn && game.phase === 'awaiting-roll';
+  const canRoll = myTurn && game.phase === 'awaiting-roll' && !passing;
   const activeSeat = game.turn;
 
-  const dieValue = roll?.value ?? 6;
-  const rollKey = roll?.key ?? 0;
+  // Only show the die value/animation for the seat whose roll it actually is —
+  // otherwise a new player's die shows the PREVIOUS player's number until they roll.
+  const shown = roll && roll.seat === activeSeat ? roll : null;
+  const dieValue = shown?.value ?? 6;
+  const rollKey = shown?.key ?? 0;
 
   // Game over: show a win/lose card instead of a frozen board (was a dead end).
   const over = game.phase === 'over';
@@ -126,6 +150,8 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   }, [over, iWon]);
 
   function restart(): void {
+    clearTimeout(passTimer.current);
+    setPassing(false);
     setRoll(null);
     setGame(newGame4());
   }
