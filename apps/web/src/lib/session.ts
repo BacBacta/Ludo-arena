@@ -11,6 +11,14 @@ import {
 import type { GameState, Seat } from '@ludo/game-engine';
 import { deviceFingerprint } from './fingerprint';
 import {
+  WALK_STEP_MS,
+  WALK_TWEEN_MS,
+  TURN_BEAT_MS,
+  BOT_ROLL_MS,
+  BOT_MOVE_MS,
+  FORCED_MOVE_MS,
+} from './pacing';
+import {
   RAKE_BPS,
   type ChallengeState,
   type GameOverReason,
@@ -137,20 +145,26 @@ export class LocalBotSession implements GameSession {
     if (this.state.phase === 'awaiting-move') {
       if (this.state.legal.length === 1) {
         const only = this.state.legal[0];
-        if (only !== undefined) setTimeout(() => this.applyMove(seat, only), 420);
+        if (only !== undefined) setTimeout(() => this.applyMove(seat, only), FORCED_MOVE_MS);
       } else if (seat === 1) {
         const pick = pickAutoMove(this.state, 1, value) ?? this.state.legal[0];
-        if (pick !== undefined) setTimeout(() => this.applyMove(1, pick), 550);
+        if (pick !== undefined) setTimeout(() => this.applyMove(1, pick), BOT_MOVE_MS);
       }
       // seat 0 with multiple choices: wait for the player's tap
     } else {
-      this.afterTurnChange();
+      // rolled with no legal move — no walk, just pass the turn after a beat
+      this.afterTurnChange(0);
     }
   }
 
   private applyMove(seat: Seat, token: number): void {
     if (this.disposed) return;
+    // walk length of the moved pawn drives how long we hold the turn indicator
+    const oldRel = this.state.positions[seat]?.[token] ?? -1;
     const { state, events } = applyMove(this.state, token);
+    const newRel = state.positions[seat]?.[token] ?? oldRel;
+    const steps = oldRel >= 0 ? Math.max(1, newRel - oldRel) : 1; // entering from base = 1 hop
+    const animMs = steps * WALK_STEP_MS + WALK_TWEEN_MS;
     this.state = state;
     this.ev.onMoved(state, events.capture, events.extraTurn);
     if (events.won) {
@@ -165,18 +179,26 @@ export class LocalBotSession implements GameSession {
       });
       return;
     }
-    this.afterTurnChange();
+    this.afterTurnChange(animMs);
   }
 
-  private afterTurnChange(): void {
-    this.ev.onTurn(this.state.turn, Date.now() + 15_000);
-    if (this.state.turn === 1 && this.state.phase === 'awaiting-roll') {
-      setTimeout(() => {
-        if (!this.disposed && this.state.turn === 1 && this.state.phase === 'awaiting-roll') {
-          this.doRoll(1);
-        }
-      }, 800);
-    }
+  /**
+   * Pass the turn only after the pawn has finished walking (animMs) plus a
+   * deliberate beat, so the turn indicator and the next roll don't fire while
+   * the piece is still mid-animation.
+   */
+  private afterTurnChange(animMs: number): void {
+    setTimeout(() => {
+      if (this.disposed) return;
+      this.ev.onTurn(this.state.turn, Date.now() + 15_000);
+      if (this.state.turn === 1 && this.state.phase === 'awaiting-roll') {
+        setTimeout(() => {
+          if (!this.disposed && this.state.turn === 1 && this.state.phase === 'awaiting-roll') {
+            this.doRoll(1);
+          }
+        }, BOT_ROLL_MS);
+      }
+    }, animMs + TURN_BEAT_MS);
   }
 }
 

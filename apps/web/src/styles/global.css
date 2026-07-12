@@ -602,6 +602,12 @@ small.muted { font-size: 12px; }
 .dicebtn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; }
 .dicebtn:disabled { background: #dfe5f1; opacity: 1; border-bottom-color: #c2cde2; box-shadow: 0 4px 12px rgba(23, 43, 99, 0.25); cursor: default; }
 .dicebtn:disabled .die { opacity: 0.55; }
+/* opponent die: muted tray (not a gold button) so whose roll it is stays clear */
+.dicebtn--opp {
+  background: linear-gradient(180deg, #eef3ec, #d8e6d9);
+  border-bottom-color: #b6ccb8;
+  cursor: default;
+}
 .die { width: 54px; height: 54px; display: block; }
 /* idle nudge invites the tap; the tumble plays while faces cycle */
 .dicebtn:not(:disabled):not(.dicebtn--rolling) .die { animation: nudge 1.8s ease infinite; }

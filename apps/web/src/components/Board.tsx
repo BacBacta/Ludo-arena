@@ -20,6 +20,7 @@ import {
   TRACK_LEN,
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
+import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 
 /** Classic palette: [light, base, dark] per colour. Bases match app-wide CSS;
  *  lights brightened and darks deepened so the candy gradients read glossy. */
@@ -36,7 +37,7 @@ const PAWN_MAT: Record<number, { grad: string; rim: string; dark: string; occl: 
   1: { grad: 'url(#pawnOppBody)', rim: '#b3efb0', dark: '#17512a', occl: '#0d3d1f' },
 };
 
-const STEP_MS = 300; // per-cell walk pace (deliberate, readable)
+const STEP_MS = WALK_STEP_MS; // per-cell walk pace (deliberate, readable)
 
 /** Display positions stepping one cell at a time toward the real ones. */
 function useAnimatedPositions(positions: number[][]): number[][] {
@@ -578,7 +579,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
                 className={`token${isMovable ? ' token--movable' : ''}`}
                 style={{
                   transform: `translate(${x}px, ${y}px)`,
-                  transition: 'transform 280ms cubic-bezier(0.35, 0, 0.25, 1)',
+                  transition: `transform ${WALK_TWEEN_MS}ms cubic-bezier(0.35, 0, 0.25, 1)`,
                 }}
                 onClick={isMovable ? () => onTokenTap(token) : undefined}
               >

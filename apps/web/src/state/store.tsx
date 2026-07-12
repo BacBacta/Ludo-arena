@@ -84,6 +84,9 @@ export interface AppState {
   /** All rolls this game, for client-side fairness verification (E5.1). */
   diceHistory: Array<{ index: number; value: number; seat: Seat }>;
   turnDeadlineTs: number | null;
+  /** Whose turn the HUD shows — updated by the turn event (deferred until a
+   *  move finishes animating), so the indicator lags game.turn during a walk. */
+  activeTurn: Seat;
   result: GameResult | null;
   /** On-chain payout tx hash once the arbiter settle() is mined (E3.3). */
   settleTxHash: string | null;
@@ -138,6 +141,7 @@ export const initialState: AppState = {
   lastDice: null,
   diceHistory: [],
   turnDeadlineTs: null,
+  activeTurn: 0,
   result: null,
   settleTxHash: null,
   refunded: false,
@@ -202,6 +206,8 @@ export function reducer(s: AppState, a: Action): AppState {
         refunded: false,
         lastDice: null,
         diceHistory: [],
+        activeTurn: 0,
+        turnDeadlineTs: null,
         staking: 'idle',
         privateCode: null,
       };
@@ -226,7 +232,7 @@ export function reducer(s: AppState, a: Action): AppState {
       // Challenge progress is server-authoritative (CHALLENGE_UPDATE), not derived here.
       return { ...s, game: a.game };
     case 'TURN':
-      return { ...s, turnDeadlineTs: a.deadlineTs };
+      return { ...s, turnDeadlineTs: a.deadlineTs, activeTurn: a.seat };
     case 'GAME_OVER': {
       const won = a.result.winner === (s.match?.seat ?? 0);
       // On-chain payout is settled by the arbiter (E3.3) and reflected via
