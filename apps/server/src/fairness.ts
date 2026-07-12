@@ -59,3 +59,33 @@ export function rollDie(f: Fairness, index: number): number {
 export function sha256Hex(input: string): string {
   return createHash('sha256').update(input, 'utf8').digest('hex');
 }
+
+// ---- 4-player fairness (ticket games) ------------------------------------
+// v1: dice = H(serverSeed | seat0seed | … | seatNseed | index). serverSeed is
+// committed at match and revealed at game over so anyone can recompute. Each
+// seat contributes its hello entropyCommit (humans) or a server-random value
+// (bots). NOTE: like the 2-player legacy path this is verifiable but not fully
+// grinding-resistant (the server sees the seat seeds before committing). That's
+// acceptable for TICKET games (no real money); the full commit-reveal lands if
+// 4-player ever takes real cUSD.
+
+export interface Fairness4 {
+  serverSeed: string;
+  commit: string;
+  seeds: string[]; // per-seat contribution
+}
+
+export function createFairness4(seatSeeds: string[]): Fairness4 {
+  const serverSeed = randomBytes(32).toString('hex');
+  return { serverSeed, commit: sha256Hex(serverSeed), seeds: [...seatSeeds] };
+}
+
+export function rollDie4(f: Fairness4, index: number): number {
+  const h = sha256Hex(`${f.serverSeed}|${f.seeds.join('|')}|${index}`);
+  return 1 + (parseInt(h.slice(0, 12), 16) % 6);
+}
+
+/** A random per-seat seed for a bot (or a human with no entropy). */
+export function randomSeatSeed(): string {
+  return randomBytes(16).toString('hex');
+}

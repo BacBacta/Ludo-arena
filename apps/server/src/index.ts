@@ -11,6 +11,7 @@ import { getAddress, isAddress } from 'viem';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
   FREEROLL,
+  FREEROLL4,
   PREMIUM_SKINS,
   isoWeek,
   leaguePointsForWin,
@@ -38,7 +39,8 @@ import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
-import { createFairness, createSeedCommit, finalizeFairness, sha256Hex, type Fairness } from './fairness.js';
+import { createFairness, createFairness4, createSeedCommit, finalizeFairness, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
+import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createStore, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
@@ -58,6 +60,9 @@ interface Session extends Client {
   stake: StakeCents | null;
   room: Room | null;
   seat: Seat | null;
+  /** 4-player online game membership (separate from the 2p `room`). */
+  room4: Room4 | null;
+  seat4: number | null;
   alive: boolean;
   /** Game awaiting this session's entropy reveal before it can be finalized. */
   pendingGameId?: string;
@@ -84,6 +89,10 @@ const matchmaker = new Matchmaker<Session>();
 // Freeroll (ticket-gated free 1v1) waits in its own queue so it never pairs
 // with regular free/staked players; entry tickets are spent at match time.
 const freerollMatchmaker = new Matchmaker<Session>();
+// 4-player online Sit&Go: a simple gather queue with bot-fill after a short wait.
+const rooms4 = new Map<string, Room4>();
+const freeroll4Waiting: Session[] = [];
+let freeroll4Timer: ReturnType<typeof setTimeout> | null = null;
 // Per-room write chain: snapshots must reach the store in transition order.
 const roomWrites = new Map<string, Promise<void>>();
 // Private tables (E4.4): share code → host waiting for a friend to join.
@@ -201,6 +210,8 @@ function makeSession(id: string, ws: WebSocket | null, rec: Omit<SessionRecord, 
     stake: rec.stake,
     room: null,
     seat: null,
+    room4: null,
+    seat4: null,
     alive: ws !== null,
     send(m: ServerMsg) {
       if (this.ws && this.ws.readyState === this.ws.OPEN) {
@@ -544,9 +555,41 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'queue.join4': {
+        if (session.room || session.room4 || session.pendingGameId) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
+          break;
+        }
+        if (freeroll4Waiting.includes(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in the queue.' });
+          break;
+        }
+        const p4id = playerId(session.wallet, session.id);
+        const held4 = (await store.getChallenge(p4id, utcToday())).tickets;
+        if (held4 < FREEROLL4.entryTickets) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'No freeroll ticket — earn one to enter the 4-player table.' });
+          break;
+        }
+        const spent4 = await store.spendTickets(p4id, FREEROLL4.entryTickets);
+        if (spent4 === null) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'No freeroll ticket.' });
+          break;
+        }
+        session.send({ t: 'tickets.grant', granted: 0, total: spent4, reason: 'sync' });
+        freeroll4Waiting.push(session);
+        session.send({ t: 'queue.ok', position: freeroll4Waiting.length });
+        if (freeroll4Waiting.length >= FREEROLL4.seats) {
+          tryStartFreeroll4(false);
+        } else if (!freeroll4Timer) {
+          freeroll4Timer = setTimeout(() => tryStartFreeroll4(true), FREEROLL4.botFillMs);
+        }
+        break;
+      }
+
       case 'queue.leave':
         matchmaker.leaveAll(session);
         freerollMatchmaker.leaveAll(session);
+        leave4(session);
         await store.queueRemove(session.id);
         break;
 
@@ -609,17 +652,20 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'game.roll':
-        if (session.room && session.seat !== null) session.room.roll(session.seat);
+        if (session.room4 && session.seat4 !== null) session.room4.roll(session.seat4);
+        else if (session.room && session.seat !== null) session.room.roll(session.seat);
         break;
 
       case 'game.move':
-        if (session.room && session.seat !== null) session.room.move(session.seat, msg.token);
+        if (session.room4 && session.seat4 !== null) session.room4.move(session.seat4, msg.token);
+        else if (session.room && session.seat !== null) session.room.move(session.seat, msg.token);
         break;
 
       case 'game.resign':
         // deliberate forfeit → the room finishes with the other seat as winner,
         // driving the normal game.over + settlement path for the opponent.
-        if (session.room && session.seat !== null) session.room.resign(session.seat);
+        if (session.room4 && session.seat4 !== null) session.room4.resign(session.seat4);
+        else if (session.room && session.seat !== null) session.room.resign(session.seat);
         break;
 
       case 'game.entropy': {
@@ -713,6 +759,8 @@ wss.on('connection', (ws, req) => {
     session.alive = false;
     matchmaker.leaveAll(session);
     freerollMatchmaker.leaveAll(session);
+    leave4(session);
+    session.room4?.drop(session.id);
     store.queueRemove(session.id).catch((e) => console.error('[store] queueRemove', e));
     // Drop private tables this session was hosting.
     for (const [code, table] of privateTables) {
@@ -1005,6 +1053,91 @@ function pollStakeLock(p: PendingReveal, attempt: number): void {
 
 function send(ws: WebSocket, msg: ServerMsg): void {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+}
+
+// ---- 4-player online Sit&Go (ticket entry, bot-filled) --------------------
+
+/** Refund one 4-player entry ticket to a waiting player who left before start. */
+function refund4(sessionParam: Session): void {
+  store
+    .grantTickets(playerId(sessionParam.wallet, sessionParam.id), FREEROLL4.entryTickets)
+    .then((total) => sessionParam.send({ t: 'tickets.grant', granted: 0, total, reason: 'sync' }))
+    .catch((e) => console.error('[4p] refund', e));
+}
+
+/** Remove a session from the 4-player wait queue (with an entry refund). */
+function leave4(sessionParam: Session): void {
+  const i = freeroll4Waiting.indexOf(sessionParam);
+  if (i >= 0) {
+    freeroll4Waiting.splice(i, 1);
+    refund4(sessionParam);
+  }
+  if (freeroll4Waiting.length === 0 && freeroll4Timer) {
+    clearTimeout(freeroll4Timer);
+    freeroll4Timer = null;
+  }
+}
+
+function startRoom4(humans: Session[]): void {
+  const gameId = randomBytes(16).toString('hex');
+  const seats: Seat4[] = [];
+  const seatSeeds: string[] = [];
+  for (let i = 0; i < FREEROLL4.seats; i++) {
+    const h = humans[i];
+    if (h) {
+      seats.push({ client: h, bot: false, name: h.name, flag: h.flag });
+      seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
+    } else {
+      const bot = BOT4_NAMES[i % BOT4_NAMES.length]!;
+      seats.push({ client: null, bot: true, name: bot.name, flag: bot.flag });
+      seatSeeds.push(randomSeatSeed());
+    }
+  }
+  const fairness = createFairness4(seatSeeds);
+  const room = new Room4(gameId, seats, fairness, FREEROLL4.entryTickets, FREEROLL4.winnerTickets);
+  room.onResult = (r) => {
+    const winner = r.seats[r.winnerSeat];
+    if (winner?.client) {
+      store
+        .grantTickets(playerId(sessionById(winner.client.id)?.wallet, winner.client.id), FREEROLL4.winnerTickets)
+        .then((total) => winner.client?.send({ t: 'tickets.grant', granted: FREEROLL4.winnerTickets, total, reason: 'freeroll-win' }))
+        .catch((e) => console.error('[4p] prize', e));
+    }
+  };
+  room.onEnd = () => rooms4.delete(gameId);
+  rooms4.set(gameId, room);
+  const players = room.players();
+  humans.forEach((h, seat) => {
+    h.room4 = room;
+    h.seat4 = seat;
+    h.send({
+      t: 'match.found4',
+      gameId,
+      seat,
+      players,
+      entryTickets: FREEROLL4.entryTickets,
+      prizeTickets: FREEROLL4.winnerTickets,
+      fairnessCommit: fairness.commit,
+    });
+  });
+  room.start();
+}
+
+/** Start a 4-player game when the queue is full, or (force) after the bot-fill wait. */
+function tryStartFreeroll4(force: boolean): void {
+  if (freeroll4Waiting.length >= FREEROLL4.seats || (force && freeroll4Waiting.length >= 1)) {
+    if (freeroll4Timer) {
+      clearTimeout(freeroll4Timer);
+      freeroll4Timer = null;
+    }
+    const humans = freeroll4Waiting.splice(0, FREEROLL4.seats);
+    startRoom4(humans);
+    if (freeroll4Waiting.length > 0) freeroll4Timer = setTimeout(() => tryStartFreeroll4(true), FREEROLL4.botFillMs);
+  }
+}
+
+function sessionById(id: string): Session | undefined {
+  return sessions.get(id);
 }
 
 // ELO windows widen while players wait: re-check the queues every second.

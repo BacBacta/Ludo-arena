@@ -2,7 +2,7 @@
  * Client <-> server WebSocket protocol. Source of truth: this file.
  * Any evolution: change here FIRST, then server, then client (see AGENTS.md).
  */
-import type { GameState, Seat } from '@ludo/game-engine';
+import type { Game4, GameState, Seat } from '@ludo/game-engine';
 
 /** Allowed stakes, in dollar cents (0 = practice). */
 export const ALLOWED_STAKES_CENTS = [0, 10, 25, 50, 100, 200] as const;
@@ -38,6 +38,11 @@ export const ANTI_TILT = { losses: 3, rewardTickets: 1 } as const;
 /** Daily freeroll (v1): a ticket-gated free 1v1 — entry costs a ticket, the
  *  winner takes both entries plus a house bonus. */
 export const FREEROLL = { entryTickets: 1, winnerTickets: 3 } as const;
+
+/** 4-player online Sit&Go paid in freeroll TICKETS (no cUSD escrow yet): seats
+ *  fill with real players + bots; entry costs a ticket, winner takes the prize
+ *  (1 ticket sinks per game — the ticket-economy equivalent of the rake). */
+export const FREEROLL4 = { seats: 4, entryTickets: 1, winnerTickets: 3, botFillMs: 12_000 } as const;
 
 /** Premium dice skins unlockable by SPENDING freeroll tickets (a cosmetic sink
  *  that gives tickets a second use; the cUSD purchase rail lands with mainnet).
@@ -118,6 +123,8 @@ export type ClientMsg =
   // once, right after match.found, before the game's dice are finalized.
   | { t: 'game.entropy'; entropy: string }
   | { t: 'queue.join'; stake: StakeCents; freeroll?: boolean }
+  // 4-player online Sit&Go queue (ticket entry). roll/move/resign are reused.
+  | { t: 'queue.join4' }
   | { t: 'queue.leave' }
   // Private tables (E4.4): create returns a code; a friend joins with it.
   | { t: 'table.create'; stake: StakeCents }
@@ -225,8 +232,35 @@ export type ServerMsg =
   | { t: 'skin.owned'; ownedIds: string[]; tickets: number }
   // Responsible-gaming state after hello or a limits.set (E5.2).
   | { t: 'limits.update'; limits: LimitsState }
+  // ---- 4-player online (Game4 state; seats 0-3; ticket pot) ----
+  | {
+      t: 'match.found4';
+      gameId: string;
+      seat: number; // 0-3
+      players: Player4Info[]; // index = seat
+      entryTickets: number;
+      prizeTickets: number;
+      fairnessCommit: string;
+    }
+  | { t: 'game.state4'; state: Game4 }
+  | { t: 'game.dice4'; value: number; index: number; seat: number }
+  | { t: 'game.moved4'; seat: number; token: number; capture: boolean; state: Game4 }
+  | { t: 'game.turn4'; seat: number; deadlineTs: number }
+  | {
+      t: 'game.over4';
+      winner: number; // 0-3
+      prizeTickets: number; // granted to the winner (0 for non-winners' view)
+      fairnessReveal: { serverSeed: string; seeds: string[] };
+    }
   | { t: 'error'; code: ErrorCode; message: string }
   | { t: 'pong' };
+
+/** A seat in a 4-player game (real player or bot). */
+export interface Player4Info {
+  name: string;
+  flag: string;
+  bot: boolean;
+}
 
 export type ErrorCode =
   | 'BAD_STATE'
@@ -277,6 +311,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     }
     case 'game.move':
       return Number.isInteger(m.token) && m.token >= 0 && m.token <= 3 ? m : null;
+    case 'queue.join4':
     case 'queue.leave':
     case 'game.roll':
     case 'game.resign':
