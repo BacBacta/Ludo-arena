@@ -1,7 +1,8 @@
 /**
  * SVG board generated from the engine constants (single source of truth).
- * Game-art pass: pawn-shaped pieces, gradient quadrant panels, vignette,
- * directional home-column arrows, gold safe stars, smooth tweened movement.
+ * Candy pass (Ludo-Club reference): white board, the four classic quadrant
+ * colours (red/green/blue/yellow), glossy pin-shaped pawns, start chevrons,
+ * home-column arrows. You = blue (bottom-left), opponent = green (top-right).
  */
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -16,8 +17,13 @@ import {
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
 
-const ME_FILL = '#2E9E6B';
-const OPP_FILL = '#E8833A';
+/** Classic palette: [light, base, dark] per colour. */
+const RED = ['#F1655A', '#E5484D', '#B02E33'] as const;
+const GREEN = ['#5FCB68', '#46A758', '#2E7A3C'] as const;
+const YELLOW = ['#FFD54F', '#F4B400', '#C08900'] as const;
+const BLUE = ['#5B8DEF', '#3E63DD', '#2947A8'] as const;
+
+const SEAT_COLOR: ReadonlyArray<readonly [string, string, string]> = [BLUE, GREEN];
 
 const STEP_MS = 300; // per-cell walk pace (deliberate, readable)
 
@@ -75,37 +81,49 @@ function tokenXY(seat: Seat, token: number, rel: number): [number, number] {
   return [home[0] + 0.5, home[1] + 0.5];
 }
 
-/** Pawn-shaped piece: ground shadow, base, waist, glossy head. Drawn at 0,0. */
+/** Glossy pin pawn (Ludo-Club-like): dome base, waist, shiny ball head. */
 function Pawn({ seat }: { seat: Seat }) {
-  const grad = seat === 0 ? 'url(#tokMe)' : 'url(#tokOpp)';
-  const rim = seat === 0 ? '#0f3d28' : '#7a3d12';
+  const grad = seat === 0 ? 'url(#pawnMe)' : 'url(#pawnOpp)';
+  const rim = seat === 0 ? BLUE[2] : GREEN[2];
   return (
     <>
-      <ellipse cx={0} cy={0.34} rx={0.3} ry={0.11} fill="rgba(0,0,0,.38)" />
-      <ellipse cx={0} cy={0.24} rx={0.28} ry={0.13} fill={grad} stroke={rim} strokeWidth={0.05} />
+      <ellipse cx={0} cy={0.36} rx={0.31} ry={0.1} fill="rgba(23,43,99,.28)" />
+      <ellipse cx={0} cy={0.25} rx={0.29} ry={0.14} fill={grad} stroke={rim} strokeWidth={0.045} />
       <path
-        d="M -0.17 0.22 Q -0.08 0.02 -0.075 -0.08 L 0.075 -0.08 Q 0.08 0.02 0.17 0.22 Z"
+        d="M -0.18 0.22 Q -0.08 0.03 -0.075 -0.07 L 0.075 -0.07 Q 0.08 0.03 0.18 0.22 Z"
         fill={grad}
         stroke={rim}
-        strokeWidth={0.045}
+        strokeWidth={0.04}
       />
-      <circle cx={0} cy={-0.2} r={0.17} fill={grad} stroke={rim} strokeWidth={0.05} />
-      <ellipse cx={-0.055} cy={-0.26} rx={0.06} ry={0.04} fill="rgba(255,255,255,.8)" />
+      <circle cx={0} cy={-0.2} r={0.18} fill={grad} stroke={rim} strokeWidth={0.045} />
+      <ellipse cx={-0.06} cy={-0.27} rx={0.075} ry={0.05} fill="rgba(255,255,255,.9)" />
+      <ellipse cx={-0.09} cy={0.18} rx={0.05} ry={0.03} fill="rgba(255,255,255,.5)" />
     </>
   );
 }
 
-/** Inactive seat quadrant with a faint die watermark. */
-function DeadQuadrant({ x, y }: { x: number; y: number }) {
+/** Quadrant panel: bright colour, white base, resting slots (grey when unused). */
+function Quadrant({ x, y, colors, active }: { x: number; y: number; colors: readonly [string, string, string]; active: boolean }) {
+  const gid = `q${x}-${y}`;
   return (
     <g>
-      <rect x={x} y={y} width={6} height={6} rx={0.5} fill="url(#deadG)" />
-      <g opacity={0.13} stroke="#8fa89d" fill="#8fa89d">
-        <rect x={x + 1.6} y={y + 1.6} width={2.8} height={2.8} rx={0.55} fill="none" strokeWidth={0.14} />
-        <circle cx={x + 2.35} cy={y + 2.35} r={0.22} stroke="none" />
-        <circle cx={x + 3} cy={y + 3} r={0.22} stroke="none" />
-        <circle cx={x + 3.65} cy={y + 3.65} r={0.22} stroke="none" />
-      </g>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={colors[0]} />
+          <stop offset="100%" stopColor={colors[1]} />
+        </linearGradient>
+      </defs>
+      <rect x={x} y={y} width={6} height={6} rx={0.55} fill={`url(#${gid})`} />
+      <rect x={x + 0.12} y={y + 0.12} width={5.76} height={2.6} rx={0.45} fill="#ffffff" opacity={0.14} />
+      <rect x={x + 1} y={y + 1} width={4} height={4} rx={0.5} fill="#ffffff" />
+      <rect x={x + 1} y={y + 1} width={4} height={4} rx={0.5} fill="none" stroke={colors[2]} strokeWidth={0.05} opacity={0.25} />
+      {!active &&
+        [
+          [x + 2.3, y + 2.3],
+          [x + 3.7, y + 2.3],
+          [x + 2.3, y + 3.7],
+          [x + 3.7, y + 3.7],
+        ].map(([cx, cy], i) => <circle key={i} cx={cx} cy={cy} r={0.5} fill="#d4dae6" />)}
     </g>
   );
 }
@@ -148,162 +166,151 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
     );
   }, [game.positions]);
 
+  /** Chevron on a start cell, pointing along the first track step. */
+  const startChevron = (seat: Seat) => {
+    const idx = SEAT_START[seat] ?? 0;
+    const cell = TRACK[idx];
+    const next = TRACK[(idx + 1) % TRACK_LEN];
+    if (!cell || !next) return null;
+    const [cx, cy] = [cell[0] + 0.5, cell[1] + 0.5];
+    const ang = (Math.atan2(next[1] - cell[1], next[0] - cell[0]) * 180) / Math.PI;
+    return (
+      <g key={`ch${seat}`} transform={`rotate(${ang} ${cx} ${cy})`}>
+        <polygon
+          points={`${cx - 0.22},${cy - 0.26} ${cx + 0.1},${cy} ${cx - 0.22},${cy + 0.26}`}
+          fill="#ffffff"
+        />
+        <polygon
+          points={`${cx + 0.02},${cy - 0.26} ${cx + 0.34},${cy} ${cx + 0.02},${cy + 0.26}`}
+          fill="#ffffff"
+          opacity={0.6}
+        />
+      </g>
+    );
+  };
+
   return (
     <div className={`boardwrap${shake ? ' boardwrap--shake' : ''}`}>
       <svg viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ludo board">
         <defs>
-          <radialGradient id="tokMe" cx="35%" cy="28%" r="90%">
-            <stop offset="0%" stopColor="#6fe0a8" />
-            <stop offset="55%" stopColor={ME_FILL} />
-            <stop offset="100%" stopColor="#14603e" />
+          <radialGradient id="pawnMe" cx="32%" cy="25%" r="95%">
+            <stop offset="0%" stopColor="#9db9ff" />
+            <stop offset="55%" stopColor={BLUE[1]} />
+            <stop offset="100%" stopColor={BLUE[2]} />
           </radialGradient>
-          <radialGradient id="tokOpp" cx="35%" cy="28%" r="90%">
-            <stop offset="0%" stopColor="#ffbd7d" />
-            <stop offset="55%" stopColor={OPP_FILL} />
-            <stop offset="100%" stopColor="#984a15" />
-          </radialGradient>
-          <linearGradient id="meQ" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#3cbd83" />
-            <stop offset="100%" stopColor="#1d7c50" />
-          </linearGradient>
-          <linearGradient id="oppQ" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#f4a05c" />
-            <stop offset="100%" stopColor="#c96a22" />
-          </linearGradient>
-          <linearGradient id="deadG" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#1c2721" />
-            <stop offset="100%" stopColor="#141d18" />
-          </linearGradient>
-          <linearGradient id="boardBg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#203026" />
-            <stop offset="100%" stopColor="#131c17" />
-          </linearGradient>
-          <radialGradient id="vign" cx="50%" cy="45%" r="75%">
-            <stop offset="60%" stopColor="rgba(0,0,0,0)" />
-            <stop offset="100%" stopColor="rgba(0,0,0,0.30)" />
-          </radialGradient>
-          <radialGradient id="potG" cx="40%" cy="35%" r="80%">
-            <stop offset="0%" stopColor="#33463b" />
-            <stop offset="100%" stopColor="#101711" />
+          <radialGradient id="pawnOpp" cx="32%" cy="25%" r="95%">
+            <stop offset="0%" stopColor="#a8e9a4" />
+            <stop offset="55%" stopColor={GREEN[1]} />
+            <stop offset="100%" stopColor={GREEN[2]} />
           </radialGradient>
         </defs>
 
-        <rect x={0} y={0} width={15} height={15} rx={0.55} fill="url(#boardBg)" />
+        {/* white board plate */}
+        <rect x={0} y={0} width={15} height={15} rx={0.7} fill="#ffffff" />
 
-        {/* quadrant panels */}
-        <rect x={0.25} y={9.25} width={5.5} height={5.5} rx={0.5} fill="url(#meQ)" />
-        <rect x={9.25} y={0.25} width={5.5} height={5.5} rx={0.5} fill="url(#oppQ)" />
-        <DeadQuadrant x={0.25} y={0.25} />
-        <DeadQuadrant x={9.25} y={9.25} />
-        <rect x={1} y={10} width={4} height={4} rx={0.35} fill="#f7f2e7" />
-        <rect x={1} y={10} width={4} height={0.5} rx={0.25} fill="#ffffff" opacity={0.55} />
-        <rect x={10} y={1} width={4} height={4} rx={0.35} fill="#f7f2e7" />
-        <rect x={10} y={1} width={4} height={0.5} rx={0.25} fill="#ffffff" opacity={0.55} />
+        {/* quadrants: red / green / blue / yellow (classic) */}
+        <Quadrant x={0} y={0} colors={RED} active={false} />
+        <Quadrant x={9} y={0} colors={GREEN} active={true} />
+        <Quadrant x={0} y={9} colors={BLUE} active={true} />
+        <Quadrant x={9} y={9} colors={YELLOW} active={false} />
+
+        {/* resting slots for the two live seats */}
         {BASE_SPOTS.map((spots, seat) =>
           spots.map(([sx, sy], i) => (
-            <circle
-              key={`bs${seat}-${i}`}
-              cx={sx}
-              cy={sy}
-              r={0.44}
-              fill={seat === 0 ? 'rgba(46,158,107,.10)' : 'rgba(232,131,58,.12)'}
-              stroke={seat === 0 ? ME_FILL : OPP_FILL}
-              strokeWidth={0.06}
-              strokeDasharray="0.12 0.09"
-              opacity={0.7}
-            />
+            <g key={`bs${seat}-${i}`}>
+              <circle cx={sx} cy={sy} r={0.5} fill="#eef1f8" />
+              <circle cx={sx} cy={sy} r={0.5} fill="none" stroke={SEAT_COLOR[seat]![1]} strokeWidth={0.06} opacity={0.6} />
+            </g>
           )),
         )}
 
-        {/* track: alternating cream tones, inset stroke */}
+        {/* track: white cells, light grid */}
         {TRACK.map(([x, y], i) => (
           <rect
             key={i}
-            x={x + 0.04}
-            y={y + 0.04}
-            width={0.92}
-            height={0.92}
-            rx={0.18}
-            fill={SAFE_CELLS.has(i) ? '#f0e3bd' : i % 2 ? '#f6f1e6' : '#efe9da'}
-            stroke="rgba(0,0,0,.10)"
-            strokeWidth={0.035}
+            x={x + 0.02}
+            y={y + 0.02}
+            width={0.96}
+            height={0.96}
+            rx={0.14}
+            fill="#ffffff"
+            stroke="#ccd4e3"
+            strokeWidth={0.05}
           />
         ))}
         {[...SAFE_CELLS].map((i) => {
           const cell = TRACK[i];
           if (!cell) return null;
           return (
-            <g key={`s${i}`}>
-              <circle cx={cell[0] + 0.5} cy={cell[1] + 0.5} r={0.3} fill="#e4c96a" opacity={0.55} />
-              <text
-                x={cell[0] + 0.5}
-                y={cell[1] + 0.73}
-                fontSize={0.55}
-                textAnchor="middle"
-                fill="#9c7c17"
-              >
-                ★
-              </text>
-            </g>
+            <text
+              key={`s${i}`}
+              x={cell[0] + 0.5}
+              y={cell[1] + 0.78}
+              fontSize={0.72}
+              textAnchor="middle"
+              fill="#c7cfdf"
+            >
+              ★
+            </text>
           );
         })}
 
-        {/* home columns with direction arrows */}
+        {/* home columns: solid seat colour + white arrows toward the centre */}
         {HOME_COLUMNS.map((col, seat) =>
           col.map(([x, y], i) => (
             <g key={`h${seat}-${i}`}>
               <rect
-                x={x + 0.04}
-                y={y + 0.04}
-                width={0.92}
-                height={0.92}
-                rx={0.18}
-                fill={seat === 0 ? '#8fd4ae' : '#f3bd90'}
-                stroke="rgba(0,0,0,.10)"
-                strokeWidth={0.035}
+                x={x + 0.02}
+                y={y + 0.02}
+                width={0.96}
+                height={0.96}
+                rx={0.14}
+                fill={SEAT_COLOR[seat]![1]}
+                stroke={SEAT_COLOR[seat]![2]}
+                strokeWidth={0.04}
               />
               <polygon
                 points={
                   seat === 0
-                    ? `${x + 0.35},${y + 0.3} ${x + 0.35},${y + 0.7} ${x + 0.7},${y + 0.5}`
-                    : `${x + 0.65},${y + 0.3} ${x + 0.65},${y + 0.7} ${x + 0.3},${y + 0.5}`
+                    ? `${x + 0.34},${y + 0.3} ${x + 0.34},${y + 0.7} ${x + 0.68},${y + 0.5}`
+                    : `${x + 0.66},${y + 0.3} ${x + 0.66},${y + 0.7} ${x + 0.32},${y + 0.5}`
                 }
-                fill={seat === 0 ? '#1d7c50' : '#c96a22'}
-                opacity={0.5}
+                fill="#ffffff"
+                opacity={0.55}
               />
             </g>
           )),
         )}
+
+        {/* start cells: seat colour + double chevron */}
         {SEAT_START.map((idx, seat) => {
           const cell = TRACK[idx];
           if (!cell) return null;
           return (
             <rect
               key={`d${seat}`}
-              x={cell[0] + 0.04}
-              y={cell[1] + 0.04}
-              width={0.92}
-              height={0.92}
-              rx={0.18}
-              fill={seat === 0 ? '#8fd4ae' : '#f3bd90'}
-              stroke={seat === 0 ? ME_FILL : OPP_FILL}
-              strokeWidth={0.06}
+              x={cell[0] + 0.02}
+              y={cell[1] + 0.02}
+              width={0.96}
+              height={0.96}
+              rx={0.14}
+              fill={SEAT_COLOR[seat as Seat]![1]}
             />
           );
         })}
+        {([0, 1] as const).map((seat) => startChevron(seat))}
 
-        {/* center: goal mouths + gold finish medallion */}
-        <rect x={6} y={6} width={3} height={3} fill="#111813" />
-        <polygon points="6,6 6,9 7.5,7.5" fill="url(#meQ)" />
-        <polygon points="9,6 9,9 7.5,7.5" fill="url(#oppQ)" />
-        <polygon points="6,6 9,6 7.5,7.5" fill="#18211b" />
-        <polygon points="6,9 9,9 7.5,7.5" fill="#18211b" />
-        <circle cx={7.5} cy={7.5} r={0.62} fill="url(#potG)" stroke="#f5b301" strokeWidth={0.07} />
-        <text x={7.5} y={7.74} fontSize={0.58} textAnchor="middle" fill="#f5b301">
+        {/* centre: four-colour pinwheel + gold finish medallion */}
+        <polygon points="6,6 9,6 7.5,7.5" fill={RED[1]} />
+        <polygon points="9,6 9,9 7.5,7.5" fill={GREEN[1]} />
+        <polygon points="6,9 9,9 7.5,7.5" fill={YELLOW[1]} />
+        <polygon points="6,6 6,9 7.5,7.5" fill={BLUE[1]} />
+        <circle cx={7.5} cy={7.5} r={0.62} fill="#ffffff" stroke="#f5b301" strokeWidth={0.09} />
+        <text x={7.5} y={7.76} fontSize={0.62} textAnchor="middle" fill="#f5b301">
           ★
         </text>
 
-        {/* pieces: tweened translate for smooth cell-to-cell glide */}
+        {/* pieces */}
         {positions.map((row, seat) =>
           row.map((pos, token) => {
             let [x, y] = tokenXY(seat as Seat, token, pos);
@@ -322,7 +329,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
                 onClick={isMovable ? () => onTokenTap(token) : undefined}
               >
                 {isMovable && (
-                  <circle cx={0} cy={0} r={0.56} fill="none" stroke="#F5B301" strokeWidth={0.08}>
+                  <circle cx={0} cy={0} r={0.56} fill="none" stroke="#F5B301" strokeWidth={0.09}>
                     <animate attributeName="r" values=".5;.62;.5" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
@@ -342,7 +349,7 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
                   key={i}
                   r={0.1}
                   className="burst__p"
-                  fill={b.seat === 0 ? ME_FILL : OPP_FILL}
+                  fill={SEAT_COLOR[b.seat]![1]}
                   style={{
                     ['--dx' as string]: `${(Math.cos(a) * 0.95).toFixed(2)}px`,
                     ['--dy' as string]: `${(Math.sin(a) * 0.95).toFixed(2)}px`,
@@ -352,8 +359,6 @@ export function Board({ game, mySeat, onTokenTap }: BoardProps) {
             })}
           </g>
         ))}
-
-        <rect x={0} y={0} width={15} height={15} rx={0.55} fill="url(#vign)" pointerEvents="none" />
       </svg>
     </div>
   );

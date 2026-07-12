@@ -86,14 +86,14 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
       <div className="gamewrap">
         <div className="hud">
           <div className={`player${myTurn ? ' player--turn' : ''}`}>
-            <TurnChip color="var(--me)" active={myTurn} deadlineTs={turnDeadlineTs} />
+            <TurnChip color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {t('you')}
           </div>
           <div className="pot">
             {match.stakeCents > 0 ? `${t('pot')} ${fmtUsd(match.potCents)}` : t('training')}
           </div>
           <div className={`player${!myTurn ? ' player--turn' : ''}`}>
-            <TurnChip color="var(--opp)" active={!myTurn} deadlineTs={turnDeadlineTs} />
+            <TurnChip color="var(--p2)" active={!myTurn} deadlineTs={turnDeadlineTs} />
             <span>
               {match.opponent.flag} {match.opponent.name}
               <span className="player__elo">{match.opponent.elo}</span>
