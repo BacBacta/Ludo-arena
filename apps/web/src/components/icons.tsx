@@ -205,6 +205,16 @@ export function IconShield({ className }: { className?: string }) {
   );
 }
 
+export function IconMenu({ className }: { className?: string }) {
+  return (
+    <I className={className}>
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+    </I>
+  );
+}
+
 export function IconSoundOn({ className }: { className?: string }) {
   return (
     <I className={className}>

@@ -514,9 +514,87 @@ small.muted { font-size: 12px; }
   justify-content: center;
   gap: 20px;
 }
-.hud { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.hud__opp { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.hud__opp .player { min-width: 0; }
+/* corner rows above/below the board (Ludo-Club: players live at their corners) */
+.gamecorner { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+/* reserve the tallest state's height so the board never shifts between turns */
+.gamecorner--top { min-height: 66px; }
+.gamecorner--bottom { min-height: 96px; }
+.cornerstack { display: flex; align-items: center; gap: 10px; }
+
+/* framed avatar with conic countdown ring while active */
+.avcard {
+  border-radius: 18px;
+  padding: 3px;
+  transition: transform 0.2s ease;
+}
+.avcard--turn { transform: scale(1.06); }
+.avcard__face {
+  width: 56px;
+  height: 56px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  color: #ffffff;
+  text-shadow: 0 2px 0 rgba(16, 24, 48, 0.3);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 6px 14px rgba(15, 26, 68, 0.35);
+}
+
+/* bottom action bar: sound · verify · balance · dice skins · menu */
+.gamebar {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(23, 37, 84, 0.55);
+  border-radius: 16px;
+  padding: 8px 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 14px rgba(15, 26, 68, 0.3);
+}
+.gamebar__btn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  cursor: pointer;
+}
+.gamebar__btn .icon { width: 22px; height: 22px; }
+.gamebar__btn:active { transform: scale(0.94); }
+.gamebar__die { width: 30px; height: 30px; display: block; }
+.gamebar__die .die { width: 100%; height: 100%; }
+.gamebar__coins {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  color: #ffffff;
+  background: rgba(16, 24, 48, 0.4);
+  border-radius: 12px;
+  height: 44px;
+  white-space: nowrap;
+}
+.gamebar__coin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe27a, #f5b301 60%, #c98f00);
+  box-shadow: inset 0 -2px 3px rgba(140, 95, 0, 0.55);
+}
 
 /* turn-timer ring around the active player's chip */
 .ringwrap {
@@ -564,11 +642,12 @@ small.muted { font-size: 12px; }
 }
 .boardwrap {
   position: relative;
-  width: 100%;
+  width: calc(100% + 32px);
+  margin: 0 -16px;
   aspect-ratio: 1;
   background: transparent;
   padding: 0;
-  filter: drop-shadow(0 18px 34px rgba(15, 26, 68, 0.5));
+  filter: drop-shadow(0 10px 24px rgba(15, 26, 68, 0.45));
 }
 .boardwrap--shake { animation: boardshake 0.3s ease; }
 @keyframes boardshake {
@@ -607,8 +686,8 @@ small.muted { font-size: 12px; }
   transition: transform 0.1s ease;
 }
 .dicebtn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; }
-.dicebtn:disabled { background: #dfe5f1; border-bottom-color: #c2cde2; box-shadow: 0 4px 12px rgba(23, 43, 99, 0.25); cursor: default; }
-.dicebtn:disabled .die { opacity: 0.55; }
+/* disabled only occurs mid-turn (picking a token): stay gold, just inert */
+.dicebtn:disabled { cursor: default; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 6px 14px rgba(23, 43, 99, 0.3); }
 
 /* compact opponent die tucked beside their name chip in the HUD */
 .huddie {
