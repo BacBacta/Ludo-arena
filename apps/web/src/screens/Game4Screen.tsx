@@ -46,28 +46,14 @@ function SeatAvatar({ name, active }: { name: string; active: boolean }) {
   );
 }
 
-/** Non-interactive white die shown beside a bot's avatar while it plays. */
+/** Non-interactive white die shown beside a bot's avatar while it plays. The
+ *  face cycles (tumble) and the tile spins while `--rolling`, so you watch it
+ *  land on the final number. */
 function Die({ value, tumble }: { value: number; tumble: number | null }) {
   return (
     <div className={`ludodie${tumble !== null ? ' ludodie--rolling' : ''}`}>
       <DieFace value={value} skin={WHITE_DIE} />
-      {tumble !== null && <InkSplat />}
     </div>
-  );
-}
-
-/** Black ink-splat overlay shown while the die tumbles (Ludo Club roll cue). */
-function InkSplat() {
-  return (
-    <svg className="inksplat" viewBox="0 0 100 100" aria-hidden="true">
-      <path
-        fill="#12151d"
-        d="M50 12c7 0 9 8 15 9s11-4 15 1-2 12 1 18 9 8 6 15-11 3-14 9 1 13-5 16-11-5-18-4-10 8-16 5-3-11-8-15-13-1-15-8 7-9 7-16-6-11-2-16 12 1 17-3 4-13 14-13z"
-      />
-      <circle cx="30" cy="34" r="7" fill="#12151d" />
-      <circle cx="72" cy="66" r="8" fill="#12151d" />
-      <circle cx="66" cy="26" r="5" fill="#12151d" />
-    </svg>
   );
 }
 
@@ -192,7 +178,6 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
                 aria-label="your die"
               >
                 <DieFace value={dieValue} skin={WHITE_DIE} />
-                {tumble !== null && <InkSplat />}
               </button>
             )}
           </div>

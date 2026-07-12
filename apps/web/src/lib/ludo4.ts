@@ -56,10 +56,10 @@ export interface Move4Events {
   won: boolean;
 }
 
-/** One token per seat starts on the board (speeds up the practice game). */
+/** Every seat starts with all four tokens in its base (like real Ludo Club). */
 export function newGame4(): Game4 {
   return {
-    positions: Array.from({ length: SEATS4 }, () => [0, -1, -1, -1]),
+    positions: Array.from({ length: SEATS4 }, () => [-1, -1, -1, -1]),
     turn: 0,
     dice: null,
     legal: [],

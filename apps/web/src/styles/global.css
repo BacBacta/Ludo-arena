@@ -1048,23 +1048,18 @@ small.muted { font-size: 12px; }
   15% { transform: translateY(0) rotate(5deg); }
 }
 .ludodie--tap:active:not(:disabled) { transform: scale(0.94); }
-.ludodie--rolling .die { opacity: 0; }
-.inksplat {
-  position: absolute;
-  inset: 6%;
-  width: 88%;
-  height: 88%;
-  opacity: 0.9;
-  animation: inkpop 0.5s ease;
-  pointer-events: none;
-}
-@keyframes inkpop {
-  0% { transform: scale(0.2); opacity: 0; }
-  40% { transform: scale(1.1); opacity: 0.95; }
-  100% { transform: scale(1); opacity: 0.9; }
+/* rolling: the tile spins through a couple of turns and settles — the face
+   value cycles underneath so you watch the die tumble onto its number. */
+.ludodie--rolling .die { animation: ludotumble 0.72s cubic-bezier(0.3, 0, 0.3, 1); }
+@keyframes ludotumble {
+  0%   { transform: rotate(0) scale(1); }
+  25%  { transform: rotate(180deg) scale(0.82); }
+  50%  { transform: rotate(370deg) scale(1.12); }
+  75%  { transform: rotate(560deg) scale(0.92); }
+  100% { transform: rotate(720deg) scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ludodie--tap:not(:disabled), .ludodie--rolling .die, .inksplat { animation: none !important; }
+  .ludodie--tap:not(:disabled), .ludodie--rolling .die { animation: none !important; }
 }
 
 
@@ -1156,19 +1151,18 @@ small.muted { font-size: 12px; }
 }
 .seatav svg { width: 78%; height: 78%; }
 .seatav--active { transform: scale(1.1); box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.9), 0 5px 12px rgba(8, 16, 44, 0.45); }
-/* your die always sits in a dark navy slot; the face stays crisp at all times.
-   While tumbling the face swaps cleanly for the ink splat (no ghosting). */
+/* your die always sits in a dark navy slot; the face stays crisp at all times,
+   and visibly spins onto its number while rolling (see .ludodie--rolling above). */
 .ludodie--tap, .ludodie--rolling {
   background: #ffffff;
   box-shadow: 0 0 0 4px rgba(13, 22, 52, 0.85), 0 5px 12px rgba(8, 16, 44, 0.45), inset 0 -3px 0 rgba(15, 26, 68, 0.08);
 }
-.ludodie--rolling .die { opacity: 0; }
 
 
 /* pawn wrapper: centred in its cell (foot above the border line) */
 .token__body { transform: translate(0px, -0.04px) scale(1.16); }
-/* per-cell hop while walking — no more sliding */
-.token__body--hop { animation: pawnhop 0.43s ease-in-out infinite; }
+/* per-cell hop while walking — no more sliding (synced to WALK_STEP_MS) */
+.token__body--hop { animation: pawnhop 0.36s ease-in-out infinite; }
 @keyframes pawnhop {
   0%, 100% { transform: translate(0px, -0.04px) scale(1.16); }
   45% { transform: translate(0px, -0.3px) scale(1.16); }

@@ -5,14 +5,14 @@
  */
 
 /** Per-cell pawn walk (setTimeout between hops in the board animation). */
-export const WALK_STEP_MS = 430;
+export const WALK_STEP_MS = 360;
 /** CSS transform tween for a single hop — a touch under WALK_STEP_MS so each hop lands before the next starts. */
-export const WALK_TWEEN_MS = 380;
+export const WALK_TWEEN_MS = 300;
 /** Deliberate pause after a move finishes walking before the turn actually passes. */
-export const TURN_BEAT_MS = 750;
+export const TURN_BEAT_MS = 600;
 /** Bot "thinking" before it rolls (after the turn reaches it). */
-export const BOT_ROLL_MS = 1000;
+export const BOT_ROLL_MS = 780;
 /** Bot "thinking" before it commits its move (after its roll settles). */
-export const BOT_MOVE_MS = 850;
+export const BOT_MOVE_MS = 680;
 /** Pause before an only-legal move auto-plays, so the roll is read first. */
-export const FORCED_MOVE_MS = 780;
+export const FORCED_MOVE_MS = 620;

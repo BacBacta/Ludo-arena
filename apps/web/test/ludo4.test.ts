@@ -11,20 +11,20 @@ import {
 } from '../src/lib/ludo4';
 
 describe('4-player engine', () => {
-  it('starts 4 seats × 4 tokens with one token on board each', () => {
+  it('starts 4 seats × 4 tokens, all in base', () => {
     const g = newGame4();
     expect(g.positions).toHaveLength(SEATS4);
     for (const row of g.positions) {
       expect(row).toHaveLength(TOKENS4);
-      expect(row).toEqual([0, -1, -1, -1]);
+      expect(row).toEqual([-1, -1, -1, -1]);
     }
     expect(g.turn).toBe(0);
   });
 
-  it('a 6 makes every token legal; a low roll only the on-board one', () => {
+  it('a 6 exits every token from base; a low roll has no legal move', () => {
     const g = newGame4();
     expect(legalMoves4(g, 0, 6).sort()).toEqual([0, 1, 2, 3]);
-    expect(legalMoves4(g, 0, 3)).toEqual([0]);
+    expect(legalMoves4(g, 0, 3)).toEqual([]);
   });
 
   it('rotates the turn 0→1→2→3→0 on a no-move roll (all base, roll ≠ 6)', () => {
