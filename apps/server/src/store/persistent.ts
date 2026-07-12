@@ -18,6 +18,7 @@ import {
   DIVISIONS,
   LEAGUE_PROMOTE,
   LEAGUE_RELEGATE,
+  LEAGUE_REWARD_TOP,
   STREAK_REWARDS,
   type ChallengeState,
   type LeaderboardEntry,
@@ -383,8 +384,24 @@ export class PersistentStore implements Store {
     return this.leagueState(row?.division ?? DEFAULT_DIVISION, row?.weekly_points ?? 0);
   }
 
-  async rolloverLeagues(): Promise<{ promoted: number; relegated: number }> {
+  async rolloverLeagues(): Promise<{ promoted: number; relegated: number; ticketsAwarded: number }> {
     const maxDiv = DIVISIONS.length - 1;
+    // Reward the week's top finishers FIRST (on their played division, before any
+    // promotion changes it and before points reset): top-N get division+1 tickets.
+    const reward = await this.pool.query<{ awarded: string }>(
+      `WITH ranked AS (
+         SELECT id, division,
+           row_number() OVER (PARTITION BY division ORDER BY weekly_points DESC) AS rn
+         FROM players WHERE weekly_points > 0
+       ),
+       granted AS (
+         UPDATE players p SET freeroll_tickets = freeroll_tickets + (r.division + 1), updated_at = now()
+         FROM ranked r WHERE p.id = r.id AND r.rn <= $1
+         RETURNING (r.division + 1) AS t
+       )
+       SELECT COALESCE(sum(t), 0) AS awarded FROM granted`,
+      [LEAGUE_REWARD_TOP],
+    );
     // Rank within each division by points; promote top N (below top division),
     // relegate bottom N (above bottom division), excluding just-promoted rows.
     const res = await this.pool.query<{ promoted: string; relegated: string }>(
@@ -416,7 +433,11 @@ export class PersistentStore implements Store {
       [maxDiv, LEAGUE_PROMOTE, LEAGUE_RELEGATE],
     );
     await this.pool.query(`UPDATE players SET weekly_points = 0 WHERE weekly_points <> 0`);
-    return { promoted: Number(res.rows[0]?.promoted ?? 0), relegated: Number(res.rows[0]?.relegated ?? 0) };
+    return {
+      promoted: Number(res.rows[0]?.promoted ?? 0),
+      relegated: Number(res.rows[0]?.relegated ?? 0),
+      ticketsAwarded: Number(reward.rows[0]?.awarded ?? 0),
+    };
   }
 
   async applyAntiTilt(playerId: string, won: boolean): Promise<{ grantedTickets: number; totalTickets: number }> {

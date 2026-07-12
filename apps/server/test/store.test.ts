@@ -187,7 +187,7 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       const mid = await store.getLeague(ids[2]!); // 30 pts → 2 players ahead
       expect(mid).toMatchObject({ points: 30, rank: 3 });
 
-      const { promoted, relegated } = await store.rolloverLeagues();
+      const { promoted, relegated, ticketsAwarded } = await store.rolloverLeagues();
       // top 3 promote to Gold(2); bottom 3 relegate but the middle (p3) is
       // already promoted → only p4,p5 relegate to Bronze(0)
       expect(promoted).toBe(3);
@@ -197,6 +197,10 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       expect((await store.getLeague(ids[4]!)).division).toBe(0);
       // points reset after rollover
       expect((await store.getLeague(ids[0]!)).points).toBe(0);
+      // reward: top-3 of Silver (div 1) each got division+1 = 2 tickets = 6 total
+      expect(ticketsAwarded).toBe(6);
+      expect((await store.getChallenge(ids[0]!, '2026-08-10')).tickets).toBe(2); // a top-3 finisher
+      expect((await store.getChallenge(ids[4]!, '2026-08-10')).tickets).toBe(0); // bottom finisher: none
 
       await store.close();
     });

@@ -12,6 +12,8 @@ import {
   DIVISIONS,
   LEAGUE_PROMOTE,
   LEAGUE_RELEGATE,
+  LEAGUE_REWARD_TOP,
+  leagueRewardTickets,
   STREAK_REWARDS,
   type ChallengeState,
   type LeaderboardEntry,
@@ -212,15 +214,22 @@ export class MemoryStore implements Store {
     return this.leagueState(row?.division ?? DEFAULT_DIVISION, row?.weeklyPoints ?? 0);
   }
 
-  async rolloverLeagues(): Promise<{ promoted: number; relegated: number }> {
+  async rolloverLeagues(): Promise<{ promoted: number; relegated: number; ticketsAwarded: number }> {
     const maxDiv = DIVISIONS.length - 1;
     // Snapshot standings first, then apply — so a promoted player is not
     // re-processed by the next division's pass.
     const moves = new Map<PlayerRow, number>();
+    let ticketsAwarded = 0;
     for (let d = 0; d <= maxDiv; d++) {
       const ranked = [...this.players.values()]
         .filter((p) => p.division === d && p.weeklyPoints > 0)
         .sort((a, b) => b.weeklyPoints - a.weeklyPoints);
+      // reward the week's top finishers of this division (before points reset)
+      for (const p of ranked.slice(0, LEAGUE_REWARD_TOP)) {
+        const t = leagueRewardTickets(d);
+        p.tickets += t;
+        ticketsAwarded += t;
+      }
       const promote = d < maxDiv ? new Set(ranked.slice(0, LEAGUE_PROMOTE)) : new Set<PlayerRow>();
       for (const p of promote) moves.set(p, d + 1);
       if (d > 0) {
@@ -237,7 +246,7 @@ export class MemoryStore implements Store {
       p.division = newDiv;
     }
     for (const p of this.players.values()) p.weeklyPoints = 0;
-    return { promoted, relegated };
+    return { promoted, relegated, ticketsAwarded };
   }
 
   async applyAntiTilt(playerId: string, won: boolean): Promise<{ grantedTickets: number; totalTickets: number }> {

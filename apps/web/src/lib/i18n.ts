@@ -78,7 +78,7 @@ const en = {
   rollNo: 'Roll',
   league: 'League',
   lp: 'pts',
-  leagueHint: 'Top 3 promoted · bottom 3 relegated · resets Mon 00:00 UTC',
+  leagueHint: 'Top 3 win 🎟️ + promote · resets Mon 00:00 UTC',
   fairBody1: 'Before the game, the server publishes the hash of its secret seed:',
   fairBody2:
     'Each die = f(server seed, both players’ entropy, roll number). At game end the seed is revealed: you can recompute every roll.',
@@ -208,7 +208,7 @@ const fr: Dict = {
   rollNo: 'Lancer',
   league: 'Ligue',
   lp: 'pts',
-  leagueHint: 'Top 3 promus · bas 3 relégués · reset lundi 00:00 UTC',
+  leagueHint: 'Top 3 gagnent des 🎟️ + montent · reset lundi 00:00 UTC',
   fairBody1: 'Avant la partie, le serveur publie l’empreinte de sa graine secrète :',
   fairBody2:
     'Chaque dé = f(graine serveur, entropie des 2 joueurs, n° du lancer). En fin de partie la graine est révélée : tu peux recalculer chaque lancer.',
@@ -335,7 +335,7 @@ const pt: Dict = {
   rollNo: 'Rolagem',
   league: 'Liga',
   lp: 'pts',
-  leagueHint: 'Top 3 sobem · 3 últimos descem · reinicia seg 00:00 UTC',
+  leagueHint: 'Top 3 ganham 🎟️ + sobem · reinicia seg 00:00 UTC',
   fairBody1: 'Antes do jogo, o servidor publica o hash da sua semente secreta:',
   fairBody2:
     'Cada dado = f(semente do servidor, entropia dos 2 jogadores, nº da rolagem). No fim do jogo a semente é revelada: você pode recalcular cada rolagem.',
@@ -462,7 +462,7 @@ const es: Dict = {
   rollNo: 'Tirada',
   league: 'Liga',
   lp: 'pts',
-  leagueHint: 'Top 3 suben · 3 últimos bajan · reinicia lun 00:00 UTC',
+  leagueHint: 'Top 3 ganan 🎟️ + suben · reinicia lun 00:00 UTC',
   fairBody1: 'Antes de la partida, el servidor publica el hash de su semilla secreta:',
   fairBody2:
     'Cada dado = f(semilla del servidor, entropía de los 2 jugadores, nº de tirada). Al final se revela la semilla: puedes recalcular cada tirada.',
@@ -589,7 +589,7 @@ const sw: Dict = {
   rollNo: 'Rusha',
   league: 'Ligi',
   lp: 'pts',
-  leagueHint: 'Bora 3 wanapanda · 3 wa mwisho wanashuka · huanza upya Jumatatu 00:00 UTC',
+  leagueHint: 'Bora 3 wanapata 🎟️ + wanapanda · huanza upya Jumatatu 00:00 UTC',
   fairBody1: 'Kabla ya mchezo, seva huchapisha hashi ya mbegu yake ya siri:',
   fairBody2:
     'Kila dadu = f(mbegu ya seva, entropi ya wachezaji 2, namba ya rusha). Mwisho wa mchezo mbegu hufunuliwa: unaweza kuhesabu upya kila rusha.',

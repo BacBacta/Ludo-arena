@@ -121,7 +121,7 @@ export interface Store {
   // division leaderboard.
   addLeaguePoints(playerId: string, points: number): Promise<LeagueState>;
   getLeague(playerId: string): Promise<LeagueState>;
-  rolloverLeagues(): Promise<{ promoted: number; relegated: number }>;
+  rolloverLeagues(): Promise<{ promoted: number; relegated: number; ticketsAwarded: number }>;
 
   /** Anti-tilt (E4.5): winner resets the loss streak; the loser's 3rd straight
    *  staked loss grants ANTI_TILT.rewardTickets freeroll tickets. */

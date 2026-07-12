@@ -63,6 +63,14 @@ export function leaguePointsForWin(stakeCents: number): number {
   return 10 + Math.floor(stakeCents / 25) * 2;
 }
 
+/** Weekly league reward (E4.3): the top N of each division get freeroll tickets
+ *  on rollover, scaled by division (Bronze top-3 → 1 … Diamond top-3 → 5). A
+ *  bounded weekly faucet that finally makes climbing the league worth something. */
+export const LEAGUE_REWARD_TOP = 3;
+export function leagueRewardTickets(division: number): number {
+  return division + 1;
+}
+
 export interface LeaderboardEntry {
   name: string;
   flag: string;

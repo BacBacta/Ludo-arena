@@ -327,9 +327,9 @@ async function maybeRolloverLeague(): Promise<void> {
     return;
   }
   if (last !== week) {
-    const { promoted, relegated } = await store.rolloverLeagues();
+    const { promoted, relegated, ticketsAwarded } = await store.rolloverLeagues();
     await store.setMeta('leagueWeek', week);
-    console.log(`[league] rollover ${last} → ${week}: ${promoted} promoted, ${relegated} relegated`);
+    console.log(`[league] rollover ${last} → ${week}: ${promoted} promoted, ${relegated} relegated, ${ticketsAwarded} tickets awarded`);
   }
 }
 await maybeRolloverLeague().catch((e) => console.error('[league] rollover', e));
