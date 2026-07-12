@@ -32,7 +32,7 @@ await page.screenshot({ path: `${OUT}/start.png` }); // all pawns in base
 try {
   const die = page.locator('.ludodie--tap:not([disabled])');
   await die.click({ timeout: 4000 });
-  for (const [ms, name] of [[140, 'roll_a'], [140, 'roll_b'], [160, 'roll_c']]) {
+  for (const [ms, name] of [[220, 'roll_a'], [110, 'roll_b'], [110, 'roll_c']]) {
     await page.waitForTimeout(ms);
     await page.screenshot({ path: `${OUT}/${name}.png` });
   }
