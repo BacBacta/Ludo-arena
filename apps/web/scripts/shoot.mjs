@@ -46,14 +46,14 @@ try {
   /* not our turn fast enough; game.png is enough */
 }
 
-// keep playing my turns (handles extra-turn 6s) until the opponent is active
+// keep playing my turns (handles extra-turn 6s) until the opponent's die shows
 for (let i = 0; i < 12; i++) {
-  if (await page.locator('.pdie--opp.pdie--active').count()) {
+  if (await page.locator('.huddie').count()) {
     await page.waitForTimeout(200);
     await page.screenshot({ path: `${OUT}/game_opp.png` });
     break;
   }
-  const rollBtn = page.locator('.pdie--roll');
+  const rollBtn = page.locator('.dicebtn:not([disabled])');
   if (await rollBtn.count()) {
     await rollBtn.click({ timeout: 1500 }).catch(() => {});
     await page.waitForTimeout(900);

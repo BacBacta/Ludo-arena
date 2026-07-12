@@ -119,40 +119,47 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
           <div className="pot">
             {match.stakeCents > 0 ? `${t('pot')} ${fmtUsd(match.potCents)}` : t('training')}
           </div>
-          <div className={`player${!myTurn ? ' player--turn' : ''}`}>
-            <TurnChip color="var(--p2)" active={!myTurn} deadlineTs={turnDeadlineTs} />
-            <span>
-              {match.opponent.flag} {match.opponent.name}
-              <span className="player__elo">{match.opponent.elo}</span>
-            </span>
+          {/* opponent's die sits by their chip on their turn (Ludo-Club: the die
+              appears at the active player's avatar, never over the home base) */}
+          <div className="hud__opp">
+            {!myTurn && (
+              <div
+                className={`huddie${oppTumble !== null ? ' huddie--rolling' : ''}`}
+                aria-label={`${match.opponent.name} die`}
+              >
+                <DieFace value={oppFace} skin={OPP_SKIN} />
+              </div>
+            )}
+            <div className={`player${!myTurn ? ' player--turn' : ''}`}>
+              <TurnChip color="var(--p2)" active={!myTurn} deadlineTs={turnDeadlineTs} />
+              <span>
+                {match.opponent.flag} {match.opponent.name}
+                {/* elo hidden while their die is shown so the HUD stays on one row */}
+                {myTurn && <span className="player__elo">{match.opponent.elo}</span>}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Each player's die sits over their own home base (Ludo-Club style):
-            mine at the blue bottom-left, the opponent's at the green top-right. */}
-        <div className="boardstage">
-          <Board game={game} mySeat={mySeat} onTokenTap={onMove} />
-          <div
-            className={`pdie pdie--opp ${!myTurn ? 'pdie--active' : 'pdie--idle'}${oppTumble !== null ? ' pdie--rolling' : ''}`}
-            aria-label={`${match.opponent.name} die`}
-          >
-            <DieFace value={oppFace} skin={OPP_SKIN} />
-          </div>
-          <button
-            className={`pdie pdie--me ${myTurn ? 'pdie--active' : 'pdie--idle'}${myTumble !== null ? ' pdie--rolling' : ''}${canRoll ? ' pdie--roll' : ''}`}
-            disabled={!canRoll}
-            onClick={() => {
-              playDice(); // immediate feedback; the server result lands ~RTT later
-              onRoll();
-            }}
-            aria-label={`${t('you')} die`}
-          >
-            <DieFace value={myFace} skin={skin} />
-          </button>
-        </div>
+        <Board game={game} mySeat={mySeat} onTokenTap={onMove} />
 
+        {/* my die is the big roll control at the bottom (Ludo-Club: your die is at
+            your side), shown only on my turn */}
         <div className="controls">
-          <div className="gamemsg gamemsg--center">
+          {myTurn && (
+            <button
+              className={`dicebtn${myTumble !== null ? ' dicebtn--rolling' : ''}`}
+              disabled={!canRoll}
+              onClick={() => {
+                playDice(); // immediate feedback; the server result lands ~RTT later
+                onRoll();
+              }}
+              aria-label={`${t('you')} die`}
+            >
+              <DieFace value={myFace} skin={skin} />
+            </button>
+          )}
+          <div className={`gamemsg${myTurn ? '' : ' gamemsg--center'}`}>
             <span>{message}</span>
             <small>
               {t('rollNo')} #{lastDice?.index ?? 0} ·{' '}
