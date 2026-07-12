@@ -14,3 +14,8 @@ broadcast/
 .vercel
 .env*
 .flytoken
+
+# Foundry (contract tests)
+packages/contracts/lib/
+packages/contracts/out/
+packages/contracts/cache/

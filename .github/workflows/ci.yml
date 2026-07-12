@@ -19,3 +19,17 @@ jobs:
       - run: npm test
       - run: npm run simulate
       - run: npm run build
+
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      # forge-std is not vendored in the repo; fetch it for the test run.
+      - name: Vendor forge-std
+        run: git clone --depth 1 https://github.com/foundry-rs/forge-std lib/forge-std
+      - name: Run escrow contract tests
+        run: forge test -vvv

@@ -102,4 +102,48 @@ contract LudoEscrowTest is Test {
         vm.expectRevert(LudoEscrow.BadStake.selector);
         esc.join(gameId, address(cusd), 2e18);
     }
+
+    // ---- rescue paths (stuck Active games) ----
+
+    function testVoidGameRefundsBothPlayers() public {
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(arbiter); esc.voidGame(gameId);
+        assertEq(cusd.balanceOf(alice), 10e18);
+        assertEq(cusd.balanceOf(bob), 10e18);
+        // cannot settle a voided game
+        vm.expectRevert(LudoEscrow.BadStatus.selector);
+        esc.settle(gameId, alice, _sign(gameId, alice));
+    }
+
+    function testVoidGameOnlyArbiter() public {
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice);
+        vm.expectRevert(LudoEscrow.NotArbiter.selector);
+        esc.voidGame(gameId);
+    }
+
+    function testRefundActiveAfterTimeout() public {
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.expectRevert(LudoEscrow.NotExpired.selector);
+        esc.refundActive(gameId);
+        vm.warp(block.timestamp + 24 hours + 1);
+        esc.refundActive(gameId); // permissionless
+        assertEq(cusd.balanceOf(alice), 10e18);
+        assertEq(cusd.balanceOf(bob), 10e18);
+    }
+
+    function testMalleableSignatureRejected() public {
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(arbiterPk, esc.settlementDigest(gameId, alice));
+        // flip the canonical low-s sig into its high-s malleable twin; must reject
+        uint256 n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
+        bytes32 highS = bytes32(n - uint256(s));
+        uint8 flippedV = v == 27 ? 28 : 27;
+        vm.expectRevert(LudoEscrow.BadSignature.selector);
+        esc.settle(gameId, alice, abi.encodePacked(r, highS, flippedV));
+    }
 }

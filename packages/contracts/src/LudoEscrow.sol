@@ -16,6 +16,9 @@ contract LudoEscrow {
     // ---------- Config ----------
     uint256 public constant MAX_RAKE_BPS = 1_000; // 10% max, immutable
     uint256 public constant JOIN_TIMEOUT = 120;   // seconds before refundExpired
+    uint256 public constant ACTIVE_TIMEOUT = 24 hours; // safety valve: reclaim an
+    // Active game that the arbiter never settled (e.g. lost key). Normal games
+    // settle in seconds, so this can only trigger on a genuinely stuck escrow.
 
     address public immutable arbiter;   // server key that signs results
     address public immutable treasury;  // receives the rake
@@ -47,6 +50,7 @@ contract LudoEscrow {
     error BadSignature();
     error NotAPlayer();
     error TransferFailed();
+    error NotArbiter();
 
     constructor(address _arbiter, address _treasury, uint256 _rakeBps) {
         require(_rakeBps <= MAX_RAKE_BPS, "rake > max");
@@ -111,6 +115,34 @@ contract LudoEscrow {
         emit Refunded(gameId);
     }
 
+    /// @notice Arbiter-driven void of an Active game: returns each stake to its
+    ///         depositor (e.g. the reported winner isn't a player, or a dispute).
+    ///         Like settle(), the arbiter can only return funds to the two
+    ///         players — never divert them.
+    function voidGame(bytes32 gameId) external {
+        if (msg.sender != arbiter) revert NotArbiter();
+        _refundBoth(gameId);
+    }
+
+    /// @notice Permissionless safety valve: if an Active game was never settled
+    ///         within ACTIVE_TIMEOUT, either player (or anyone) can return both
+    ///         stakes to their depositors. Guards against a lost arbiter key
+    ///         locking funds forever — the #1 fund-lock risk.
+    function refundActive(bytes32 gameId) external {
+        Game storage g = games[gameId];
+        if (block.timestamp < g.createdAt + ACTIVE_TIMEOUT) revert NotExpired();
+        _refundBoth(gameId);
+    }
+
+    function _refundBoth(bytes32 gameId) internal {
+        Game storage g = games[gameId];
+        if (g.status != Status.Active) revert BadStatus();
+        g.status = Status.Refunded;
+        if (!IERC20(g.token).transfer(g.playerA, g.stake)) revert TransferFailed();
+        if (!IERC20(g.token).transfer(g.playerB, g.stake)) revert TransferFailed();
+        emit Refunded(gameId);
+    }
+
     // ---------- Signatures ----------
 
     function settlementDigest(bytes32 gameId, address winner) public view returns (bytes32) {
@@ -127,6 +159,11 @@ contract LudoEscrow {
         bytes32 r = bytes32(sig[0:32]);
         bytes32 s = bytes32(sig[32:64]);
         uint8 v = uint8(sig[64]);
+        // Reject non-canonical (malleable) signatures: high-s half and non-{27,28} v.
+        // viem/@noble produce canonical low-s, v∈{27,28} sigs, so this is transparent
+        // to the real arbiter and only blocks malformed input (OZ ECDSA hygiene).
+        if (uint256(s) > 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0) return address(0);
+        if (v != 27 && v != 28) return address(0);
         return ecrecover(digest, v, r, s);
     }
 }
