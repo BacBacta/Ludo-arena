@@ -416,7 +416,10 @@ wss.on('connection', (ws, req) => {
     }
 
     if (msg.t === 'hello') {
-      const resumedSession = msg.sessionToken ? await resumeSession(msg.sessionToken, ws) : null;
+      // Normalize the wallet once so both the resume-reconcile and the fresh path
+      // see the same checksummed address (garbage → undefined).
+      const wallet = normalizeWallet(msg.wallet);
+      const resumedSession = msg.sessionToken ? await resumeSession(msg.sessionToken, ws, wallet) : null;
       if (resumedSession) {
         session = resumedSession;
         if (msg.fingerprint) resumedSession.fingerprint = msg.fingerprint;
@@ -439,9 +442,7 @@ wss.on('connection', (ws, req) => {
       const idx = Math.floor(Math.random() * NAMES.length);
       const name = NAMES[idx] ?? 'Player';
       const flag = FLAGS[idx] ?? '🌍';
-      // Only accept a well-formed checksummed address; garbage would otherwise
-      // flow to the arbiter as the settlement recipient and brick the escrow.
-      const wallet = normalizeWallet(msg.wallet);
+      // `wallet` was normalized at the top of the hello handler.
       // Wallet-linked players keep their ELO across sessions (Postgres).
       const elo = wallet
         ? (await store.getOrCreatePlayer(playerId(wallet, id), { wallet, name, flag })).elo
@@ -481,12 +482,18 @@ wss.on('connection', (ws, req) => {
         break;
 
       case 'queue.join': {
-        if (session.room) {
+        if (session.room || session.pendingGameId) {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
           break;
         }
+        // Reject a duplicate join from a session that's already queued (a double
+        // queue.join must not create two entries / self-pair).
+        if (matchmaker.position(msg.stake, session) > 0 || freerollMatchmaker.position(0, session) > 0) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in the queue.' });
+          break;
+        }
         // Freeroll (ticket-gated free 1v1): its own queue; entry checked here and
-        // SPENT at match time (no refund path needed for queue leavers).
+        // SPENT at match time (refunded on abandon before the game starts).
         if (msg.freeroll) {
           const fpid = playerId(session.wallet, session.id);
           const held = (await store.getChallenge(fpid, utcToday())).tickets;
@@ -690,6 +697,12 @@ wss.on('connection', (ws, req) => {
         pendingReveals.delete(p.gameId);
         const opp = p.a === session ? p.b : p.a;
         opp.pendingGameId = undefined;
+        // Freeroll entries were spent at match time: refund BOTH players so a
+        // pre-game disconnect can't burn the honest opponent's earned ticket.
+        if (p.freeroll) {
+          refundFreerollEntry(p.a);
+          refundFreerollEntry(p.b);
+        }
         opp.send({ t: 'error', code: 'INTERNAL', message: 'Opponent left before the game started.' });
       }
     }
@@ -756,9 +769,21 @@ async function stakeBlock(session: Session, stake: StakeCents): Promise<string |
 }
 
 /** Look up a session token in memory, then in the store (post-restart). */
-async function resumeSession(token: string, ws: WebSocket): Promise<Session | null> {
+/** Two wallets are "the same identity" iff both absent or equal (checksummed). */
+function walletsMatch(a: string | undefined, b: string | undefined): boolean {
+  return (a ?? '') === (b ?? '');
+}
+
+async function resumeSession(token: string, ws: WebSocket, wallet: string | undefined): Promise<Session | null> {
   const existing = sessions.get(token);
   if (existing) {
+    // A stale token from a wallet-less (or different-wallet) session must NOT be
+    // reused for a now-wallet-backed client, or it would keep walletBacked=false
+    // and let a real-money client be paired against a demo opponent (and lock
+    // real funds with no settlement path). Only reuse mid-game (wallet can't
+    // change then); otherwise fall through to a fresh, correctly-tagged session.
+    const inGame = !!existing.room && !existing.room.isOver();
+    if (!inGame && !walletsMatch(existing.wallet, wallet)) return null;
     existing.ws = ws;
     existing.alive = true;
     return existing;
@@ -766,17 +791,18 @@ async function resumeSession(token: string, ws: WebSocket): Promise<Session | nu
   const rec = await store.loadSession(token);
   if (!rec) return null;
   const session = makeSession(rec.id, ws, rec);
-  sessions.set(rec.id, session);
   if (rec.gameId && rec.seat !== null) {
     const room = rooms.get(rec.gameId);
     if (room && !room.isOver()) {
       session.room = room;
       session.seat = rec.seat;
       room.attach(rec.seat, session);
-    } else {
-      persistSession(session); // the game ended while we were away
     }
   }
+  const inGame = !!session.room && !session.room.isOver();
+  if (!inGame && !walletsMatch(session.wallet, wallet)) return null; // wallet changed → fresh session
+  sessions.set(rec.id, session);
+  if (rec.gameId && (!session.room || session.room.isOver())) persistSession(session); // game ended while away
   return session;
 }
 
@@ -785,22 +811,36 @@ async function resumeSession(token: string, ws: WebSocket): Promise<Session | nu
 // the pre-Room reveal phase, so a blitz game can't finish before the joins mine.
 /** Spend both entries atomically-enough (single-threaded message loop), refund
  *  on partial failure, then start the ticket-gated free game. */
+/** Refund one player's freeroll entry ticket and resync their client total. */
+function refundFreerollEntry(s: Session): void {
+  store
+    .grantTickets(playerId(s.wallet, s.id), FREEROLL.entryTickets)
+    .then((total) => s.send({ t: 'tickets.grant', granted: 0, total, reason: 'freeroll-win' }))
+    .catch((e) => console.error('[freeroll] refund', e));
+}
+
+/** Re-queue one player into the freeroll queue; if that instantly pairs them
+ *  with a waiting opponent, start that game (don't drop the returned pair). */
+function requeueFreeroll(s: Session): void {
+  const pair = freerollMatchmaker.join(0, { session: s, entropy: s.entropy, elo: s.elo, enqueuedAt: Date.now(), walletBacked: !!s.wallet });
+  if (pair) void startFreeroll(pair[0].session, pair[1].session);
+  else s.send({ t: 'queue.ok', position: freerollMatchmaker.position(0, s) });
+}
+
 async function startFreeroll(a: Session, b: Session): Promise<void> {
   const pidA = playerId(a.wallet, a.id);
   const pidB = playerId(b.wallet, b.id);
   const spentA = await store.spendTickets(pidA, FREEROLL.entryTickets);
   if (spentA === null) {
     a.send({ t: 'error', code: 'LIMIT_REACHED', message: 'No freeroll ticket.' });
-    b.send({ t: 'queue.ok', position: 1 }); // opponent keeps waiting
-    freerollMatchmaker.join(0, { session: b, entropy: b.entropy, elo: b.elo, enqueuedAt: Date.now(), walletBacked: !!b.wallet });
+    requeueFreeroll(b); // opponent still has their ticket — keep them queued
     return;
   }
   const spentB = await store.spendTickets(pidB, FREEROLL.entryTickets);
   if (spentB === null) {
-    await store.grantTickets(pidA, FREEROLL.entryTickets); // refund A
+    refundFreerollEntry(a); // only A's ticket was spent
     b.send({ t: 'error', code: 'LIMIT_REACHED', message: 'No freeroll ticket.' });
-    a.send({ t: 'queue.ok', position: 1 });
-    freerollMatchmaker.join(0, { session: a, entropy: a.entropy, elo: a.elo, enqueuedAt: Date.now(), walletBacked: !!a.wallet });
+    requeueFreeroll(a);
     return;
   }
   a.send({ t: 'tickets.grant', granted: 0, total: spentA, reason: 'freeroll-win' }); // sync new totals

@@ -99,6 +99,18 @@ describe('Matchmaker.join', () => {
     const pair = mm.join(0, entry('demo', 1200, T0, false), T0);
     expect(pair).not.toBeNull();
   });
+
+  it('never pairs a session with itself (double join / freeroll self-farm)', () => {
+    const mm = new Matchmaker<string>();
+    // same session id joins twice: the second must NOT pair with the first
+    mm.join(0, entry('me', 1200, T0), T0);
+    expect(mm.join(0, entry('me', 1200, T0), T0)).toBeNull();
+    expect(compatible(entry('me', 1200), entry('me', 1300), T0)).toBe(false);
+    // and a real opponent still pairs (self-skip doesn't over-block)
+    const pair = mm.join(0, entry('other', 1200, T0), T0);
+    expect(pair).not.toBeNull();
+    expect(pair!.map((e) => e.session)).toContain('other');
+  });
 });
 
 describe('Matchmaker.sweep', () => {

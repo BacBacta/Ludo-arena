@@ -28,6 +28,9 @@ export function eloWindow(enqueuedAt: number, now: number): number {
 }
 
 export function compatible<T>(a: QueueEntry<T>, b: QueueEntry<T>, now: number, stake: StakeCents = 0): boolean {
+  // A session can never be paired with itself (a double queue.join must not
+  // self-match — that would run a one-player game / farm freeroll tickets).
+  if (a.session === b.session) return false;
   // Money-mode parity: staked games never mix a real-wallet player with a demo
   // (simulated) player — the real stake would be locked against nothing.
   if (stake > 0 && a.walletBacked !== b.walletBacked) return false;
