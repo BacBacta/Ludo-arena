@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
-import { DieFace } from '../components/Die';
+import { Die3D } from '../components/Die3D';
 import { IconMenu } from '../components/icons';
 import type { DiceSkin } from '../lib/diceSkins';
 import { applyMove4, applyRoll4, newGame4, pickAutoMove4, type Game4 } from '../lib/ludo4';
@@ -46,13 +46,12 @@ function SeatAvatar({ name, active }: { name: string; active: boolean }) {
   );
 }
 
-/** Non-interactive white die shown beside a bot's avatar while it plays. The
- *  face cycles (tumble) and the tile spins while `--rolling`, so you watch it
- *  land on the final number. */
-function Die({ value, tumble }: { value: number; tumble: number | null }) {
+/** White 3D cube die shown beside a player's avatar; it somersaults on each new
+ *  roll (rollKey) and lands on the value. */
+function Die({ value, rollKey }: { value: number; rollKey: number }) {
   return (
-    <div className={`ludodie${tumble !== null ? ' ludodie--rolling' : ''}`}>
-      <DieFace value={value} skin={WHITE_DIE} />
+    <div className="ludodie">
+      <Die3D value={value} rollKey={rollKey} skin={WHITE_DIE} />
     </div>
   );
 }
@@ -68,25 +67,6 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const animRef = useRef(0); // ms the last move still needs to animate
 
   const [roll, setRoll] = useState<{ seat: number; value: number; key: number } | null>(null);
-  const [tumble, setTumble] = useState<number | null>(null);
-
-  // tumble the active die briefly on each new roll
-  useEffect(() => {
-    if (!roll) return;
-    let n = 0;
-    const id = setInterval(() => {
-      n += 1;
-      setTumble(die6());
-      if (n >= 8) {
-        clearInterval(id);
-        setTumble(null);
-      }
-    }, 90);
-    return () => {
-      clearInterval(id);
-      setTumble(null);
-    };
-  }, [roll]);
 
   function doRoll(g: Game4, seat: number): void {
     const value = die6();
@@ -129,7 +109,8 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const canRoll = myTurn && game.phase === 'awaiting-roll';
   const activeSeat = game.turn;
 
-  const dieValue = tumble ?? roll?.value ?? 6;
+  const dieValue = roll?.value ?? 6;
+  const rollKey = roll?.key ?? 0;
 
   return (
     <div className="screen screen--game">
@@ -151,10 +132,10 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         <div className="avrow">
           <div className="avrow__side">
             <SeatAvatar name="Ana" active={activeSeat === 1} />
-            {activeSeat === 1 && <Die value={dieValue} tumble={tumble} />}
+            {activeSeat === 1 && <Die value={dieValue} rollKey={rollKey} />}
           </div>
           <div className="avrow__side">
-            {activeSeat === 2 && <Die value={dieValue} tumble={tumble} />}
+            {activeSeat === 2 && <Die value={dieValue} rollKey={rollKey} />}
             <SeatAvatar name="Young" active={activeSeat === 2} />
           </div>
         </div>
@@ -172,17 +153,17 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
             <SeatAvatar name="YOU" active={myTurn} />
             {myTurn && (
               <button
-                className={`ludodie ludodie--tap${tumble !== null ? ' ludodie--rolling' : ''}`}
+                className="ludodie ludodie--tap"
                 disabled={!canRoll}
                 onClick={() => canRoll && doRoll(gameRef.current, mySeat)}
                 aria-label="your die"
               >
-                <DieFace value={dieValue} skin={WHITE_DIE} />
+                <Die3D value={dieValue} rollKey={rollKey} skin={WHITE_DIE} />
               </button>
             )}
           </div>
           <div className="avrow__side">
-            {activeSeat === 3 && <Die value={dieValue} tumble={tumble} />}
+            {activeSeat === 3 && <Die value={dieValue} rollKey={rollKey} />}
             <SeatAvatar name="Dragan" active={activeSeat === 3} />
           </div>
         </div>

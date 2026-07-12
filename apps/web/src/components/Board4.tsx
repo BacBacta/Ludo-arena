@@ -5,14 +5,16 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { SAFE_CELLS, TRACK } from '@ludo/game-engine';
-import { BASE_SPOTS4, HOME_COLUMNS4, SEAT_START4, tokenXY4, type Game4 } from '../lib/ludo4';
+import { HOME_COLUMNS4, SEAT_START4, tokenXY4, type Game4 } from '../lib/ludo4';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playHop } from '../lib/sound';
 
-const RED = ['#FF8A7E', '#E23B3B', '#AE2A2F'] as const;
-const GREEN = ['#66C972', '#2FA84F', '#1F7C38'] as const;
-const YELLOW = ['#FFDD66', '#F5C21B', '#C08F00'] as const;
-const BLUE = ['#7DD6F7', '#1CA0E6', '#1478B0'] as const;
+/* True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — saturated,
+   not washed. The base [1] is the real flat panel colour. */
+const RED = ['#FF7B6E', '#E62E2A', '#AC1C1A'] as const;
+const GREEN = ['#5FCE79', '#25A544', '#16792E'] as const;
+const YELLOW = ['#FFD955', '#F4B30D', '#BC8400'] as const;
+const BLUE = ['#79D2F1', '#22A2DE', '#1279AE'] as const;
 
 /** seat → colour triple (matches ludo4 seat order). */
 const SEAT_COLORS = [BLUE, RED, GREEN, YELLOW] as const;
@@ -61,9 +63,18 @@ function starPoints(cx: number, cy: number, r: number): string {
   }
   return pts.join(' ');
 }
+/** How far the peg's foot-bulb sits below its drawing origin (local units, post
+ *  the 1.16 body scale + the -0.04 wrapper nudge). Lifting a base peg by this
+ *  much lands its foot exactly on the grey resting circle. */
+const BASE_FOOT_LIFT = 0.17;
+
+/** Base resting position = the SAME grey circle the socket is drawn on, so the
+ *  peg is perfectly centred on its slot (single source of truth: quadSlots). */
 function baseSlotXY(seat: number, token: number): [number, number] {
-  const s = BASE_SPOTS4[seat]?.[token];
-  return s ? [s[0], s[1]] : [7.5, 7.5];
+  const q = SEAT_QUAD[seat] ?? [0, 9];
+  const slots = quadSlots(q[0], q[1]);
+  const s = slots[token] ?? [7.5, 7.5];
+  return [s[0], s[1]];
 }
 
 /** Chunky injection-moulded glossy peg with hot-spot, Fresnel rim + soft shadow. */
@@ -76,16 +87,17 @@ function Pawn({ seat }: { seat: number }) {
   return (
     <>
       <defs>
-        {/* body: light → base → deep terminator */}
-        <linearGradient id={gid} x1="0" y1="0" x2="0.18" y2="1">
+        {/* body: thin light rim at the very top, then the TRUE colour dominates
+            (compressed highlight so the peg reads saturated, not washed) */}
+        <linearGradient id={gid} x1="0" y1="0" x2="0.12" y2="1">
           <stop offset="0%" stopColor={c[0]} />
-          <stop offset="46%" stopColor={c[1]} />
+          <stop offset="20%" stopColor={c[1]} />
           <stop offset="100%" stopColor={c[2]} />
         </linearGradient>
-        {/* head: radial glossy sphere, hot-spot upper-left */}
-        <radialGradient id={hid} cx="35%" cy="28%" r="85%">
+        {/* head: radial glossy sphere, hot-spot upper-left, true colour body */}
+        <radialGradient id={hid} cx="34%" cy="27%" r="82%">
           <stop offset="0%" stopColor={c[0]} />
-          <stop offset="45%" stopColor={c[1]} />
+          <stop offset="34%" stopColor={c[1]} />
           <stop offset="100%" stopColor={c[2]} />
         </radialGradient>
       </defs>
@@ -313,6 +325,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
             let y: number;
             if (pos === -1) {
               [x, y] = baseSlotXY(seat, token);
+              y -= BASE_FOOT_LIFT; // seat the foot-bulb centred on the grey circle
             } else {
               [x, y] = tokenXY4(seat, token, pos);
               // fan out co-located tokens of the same seat a touch
