@@ -158,10 +158,10 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
           game={game}
           mySeat={mySeat}
           onTokenTap={onMove}
-          labels={{
-            0: t('you').toUpperCase(),
-            1: `${match.opponent.flag} ${match.opponent.name}`,
-          }}
+          banners={[
+            { seat: 0, name: t('you').toUpperCase(), flag: '🌍', active: myTurn },
+            { seat: 1, name: match.opponent.name, flag: match.opponent.flag, active: !myTurn },
+          ]}
         />
 
         {/* my corner: avatar bottom-left (my quadrant side), my gold die beside it */}

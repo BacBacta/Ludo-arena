@@ -1,11 +1,10 @@
 /**
  * SVG board generated from the engine constants (single source of truth).
- * Ludo-Club fidelity pass (user-provided reference screenshots): flat white
- * plate that bleeds edge-to-edge, thin grey cell grid, solid candy quadrants
- * with the player's name banner ON the quadrant, grey slot circles, classic
- * peg pawns, per-colour tinted safe stars, big coloured chevrons at the four
- * home-run entries, and a plain four-triangle centre (no medallion).
- * You = blue (bottom-left), opponent = green (top-right).
+ * Ludo-Club fidelity pass: large white home squares, chunky glossy pegs, thin
+ * grey cell grid, per-colour tinted safe stars, coloured home-run chevrons, a
+ * plain four-triangle centre, and HTML name banners (flag + name) sitting on
+ * each seat's quadrant like the reference. You = blue (bottom-left),
+ * opponent = green (top-right).
  */
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -31,6 +30,27 @@ const SEAT_COLOR: ReadonlyArray<readonly [string, string, string]> = [BLUE, GREE
 
 const STEP_MS = WALK_STEP_MS; // per-cell walk pace (deliberate, readable)
 
+/** Quadrant origin per seat: you (blue) bottom-left, opponent (green) top-right. */
+const SEAT_QUAD: Record<number, readonly [number, number]> = { 0: [0, 9], 1: [9, 0] };
+
+/** Centre of a quadrant's white home square (nudged toward the board centre). */
+function homeCenter(qx: number, qy: number): [number, number] {
+  const isTop = qy === 0;
+  const hy = isTop ? qy + 1.35 : qy + 0.25;
+  return [qx + 3, hy + 2.2];
+}
+
+/** The four resting-slot centres inside a quadrant's home square. */
+function quadSlots(qx: number, qy: number): Array<[number, number]> {
+  const [cx, cy] = homeCenter(qx, qy);
+  return [
+    [cx - 0.8, cy - 0.8],
+    [cx + 0.8, cy - 0.8],
+    [cx - 0.8, cy + 0.8],
+    [cx + 0.8, cy + 0.8],
+  ];
+}
+
 /** Ludo-Club tints the classic safe star nearest each corner with that colour. */
 const STAR_TINT: Record<number, readonly [string, string, string]> = {
   8: BLUE,
@@ -38,6 +58,13 @@ const STAR_TINT: Record<number, readonly [string, string, string]> = {
   34: GREEN,
   47: YELLOW,
 };
+
+export interface PlayerBanner {
+  seat: Seat;
+  name: string;
+  flag: string;
+  active: boolean;
+}
 
 /** Display positions stepping one cell at a time toward the real ones. */
 function useAnimatedPositions(positions: number[][]): number[][] {
@@ -93,6 +120,14 @@ function tokenXY(seat: Seat, token: number, rel: number): [number, number] {
   return [home[0] + 0.5, home[1] + 0.5];
 }
 
+/** Base-slot centre for a seat's token (aligned to the home-square slots). */
+function baseSlotXY(seat: Seat, token: number): [number, number] {
+  const quad = SEAT_QUAD[seat] ?? [0, 9];
+  const slots = quadSlots(quad[0], quad[1]);
+  // two tokens rest on the two lower slots so the banner edge stays clear
+  return slots[token + 2] ?? slots[token] ?? [7.5, 7.5];
+}
+
 /** Ten-point star polygon string — crisp vector stars (text glyphs render fuzzy). */
 function starPoints(cx: number, cy: number, r: number): string {
   const pts: string[] = [];
@@ -104,44 +139,49 @@ function starPoints(cx: number, cy: number, r: number): string {
   return pts.join(' ');
 }
 
-/** Classic Ludo-Club peg: round head on a flared skirt, soft shadow, small specular. */
+/** Chunky glossy Ludo-Club peg: bulb head, flared skirt, cast shadow, hot specular. */
 function Pawn({ seat }: { seat: Seat }) {
   const grad = seat === 0 ? 'url(#pegBlue)' : 'url(#pegGreen)';
   const dark = SEAT_COLOR[seat]![2];
   return (
     <>
-      <ellipse cx={0.02} cy={0.34} rx={0.28} ry={0.09} fill="rgba(16,24,48,.32)" />
+      <ellipse cx={0.03} cy={0.4} rx={0.34} ry={0.1} fill="rgba(16,24,48,.34)" />
+      {/* flared skirt */}
       <path
-        d="M -0.27 0.28 C -0.27 0.08 -0.11 0.04 -0.1 -0.08 L 0.1 -0.08 C 0.11 0.04 0.27 0.08 0.27 0.28 Q 0.27 0.36 0 0.36 Q -0.27 0.36 -0.27 0.28 Z"
+        d="M -0.32 0.36 C -0.34 0.14 -0.14 0.1 -0.12 -0.04 L 0.12 -0.04 C 0.14 0.1 0.34 0.14 0.32 0.36 Q 0.32 0.44 0 0.44 Q -0.32 0.44 -0.32 0.36 Z"
         fill={grad}
         stroke={dark}
-        strokeWidth={0.028}
+        strokeWidth={0.03}
       />
-      <circle cx={0} cy={-0.2} r={0.235} fill={grad} stroke={dark} strokeWidth={0.028} />
-      <ellipse cx={-0.08} cy={-0.28} rx={0.08} ry={0.055} fill="#ffffff" opacity={0.85} />
+      {/* neck ring shadow */}
+      <ellipse cx={0} cy={-0.02} rx={0.13} ry={0.05} fill={dark} opacity={0.35} />
+      {/* head */}
+      <circle cx={0} cy={-0.24} r={0.26} fill={grad} stroke={dark} strokeWidth={0.03} />
+      {/* hot specular + soft sheen */}
+      <ellipse cx={-0.09} cy={-0.33} rx={0.09} ry={0.065} fill="#ffffff" opacity={0.9} />
+      <ellipse cx={0.07} cy={-0.17} rx={0.05} ry={0.08} fill="#ffffff" opacity={0.22} />
     </>
   );
 }
 
 /**
- * Quadrant panel, Ludo-Club style: solid candy colour, white rounded tray with
- * grey resting slots, and the player's name banner on the outer edge band.
+ * Quadrant panel, Ludo-Club style: solid candy colour, a big white rounded home
+ * square with grey resting slots. The tray is nudged toward the board centre so
+ * the outer band holds the name banner (rendered as HTML over the board).
  */
 function Quadrant({
   x,
   y,
   colors,
-  active,
-  label,
 }: {
   x: number;
   y: number;
   colors: readonly [string, string, string];
-  active: boolean;
-  label?: string;
 }) {
   const gid = `qq${x}-${y}`;
   const isTop = y === 0;
+  const hy = isTop ? y + 1.35 : y + 0.25; // home-square top
+  const slots = quadSlots(x, y);
   return (
     <g>
       <defs>
@@ -150,32 +190,20 @@ function Quadrant({
           <stop offset="100%" stopColor={colors[1]} />
         </linearGradient>
       </defs>
-      <rect x={x} y={y} width={6} height={6} rx={0.45} fill={`url(#${gid})`} />
-      {/* white tray, nudged toward the centre so the outer band holds the banner */}
-      <rect x={x + 1} y={isTop ? y + 1.25 : y + 0.75} width={4} height={4} rx={0.5} fill="#ffffff" />
-      {!active &&
-        [
-          [x + 2.3, y + (isTop ? 2.55 : 2.05)],
-          [x + 3.7, y + (isTop ? 2.55 : 2.05)],
-          [x + 2.3, y + (isTop ? 3.95 : 3.45)],
-          [x + 3.7, y + (isTop ? 3.95 : 3.45)],
-        ].map(([cx, cy], i) => <circle key={i} cx={cx} cy={cy} r={0.48} fill="#dce1ea" />)}
-      {label && (
-        <text
-          x={x + 3}
-          y={isTop ? y + 0.82 : y + 5.62}
-          textAnchor="middle"
-          fontFamily="Fredoka, system-ui, sans-serif"
-          fontWeight={600}
-          fontSize={0.62}
-          fill="#ffffff"
-          style={{ paintOrder: 'stroke' }}
-          stroke="rgba(16,24,48,.25)"
-          strokeWidth={0.05}
-        >
-          {label}
-        </text>
-      )}
+      <rect x={x} y={y} width={6} height={6} rx={0.5} fill={`url(#${gid})`} />
+      {/* soft top gloss on the colour band */}
+      <rect x={x + 0.3} y={y + 0.3} width={5.4} height={1.4} rx={0.6} fill="#ffffff" opacity={0.12} />
+      {/* big white home square, lifted with a soft cast shadow */}
+      <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.55} fill="rgba(16,24,48,.18)" />
+      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="#ffffff" />
+      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="none" stroke={colors[2]} strokeWidth={0.06} opacity={0.16} />
+      {/* four resting slots (grey rings) — pawns sit on top of these */}
+      {slots.map(([sx, sy], i) => (
+        <g key={i}>
+          <circle cx={sx} cy={sy} r={0.5} fill="#e5e9f1" />
+          <circle cx={sx} cy={sy} r={0.5} fill="none" stroke="#cfd6e3" strokeWidth={0.055} />
+        </g>
+      ))}
     </g>
   );
 }
@@ -192,10 +220,10 @@ export interface BoardProps {
   mySeat: Seat;
   onTokenTap(token: number): void;
   /** Name banners drawn on each seat's quadrant (Ludo-Club style). */
-  labels?: Partial<Record<Seat, string>>;
+  banners?: PlayerBanner[];
 }
 
-export function Board({ game, mySeat, onTokenTap, labels }: BoardProps) {
+export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
   const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
   const positions = useAnimatedPositions(game.positions);
 
@@ -266,35 +294,26 @@ export function Board({ game, mySeat, onTokenTap, labels }: BoardProps) {
         shapeRendering="geometricPrecision"
       >
         <defs>
-          {/* flat candy peg bodies (Ludo-Club look: bright, barely gradient) */}
           <linearGradient id="pegBlue" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6B93F0" />
-            <stop offset="55%" stopColor="#3E63DD" />
-            <stop offset="100%" stopColor="#2C4BB8" />
+            <stop offset="0%" stopColor="#8AAEFF" />
+            <stop offset="50%" stopColor="#3E63DD" />
+            <stop offset="100%" stopColor="#2540A8" />
           </linearGradient>
           <linearGradient id="pegGreen" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#5FCB68" />
-            <stop offset="55%" stopColor="#46A758" />
-            <stop offset="100%" stopColor="#357F44" />
+            <stop offset="0%" stopColor="#7BDD84" />
+            <stop offset="50%" stopColor="#46A758" />
+            <stop offset="100%" stopColor="#2E7A3C" />
           </linearGradient>
         </defs>
 
         {/* flat white plate (edge-to-edge; the wrapper gives the soft shadow) */}
         <rect x={0} y={0} width={15} height={15} rx={0.4} fill="#ffffff" />
 
-        {/* quadrants with name banners: red / green / blue / yellow (classic) */}
-        <Quadrant x={0} y={0} colors={RED} active={false} />
-        <Quadrant x={9} y={0} colors={GREEN} active={true} label={labels?.[1]} />
-        <Quadrant x={0} y={9} colors={BLUE} active={true} label={labels?.[0]} />
-        <Quadrant x={9} y={9} colors={YELLOW} active={false} />
-
-        {/* resting slots for the two live seats (trays are nudged per quadrant) */}
-        {BASE_SPOTS.map((spots, seat) =>
-          spots.map(([sx, sy], i) => {
-            const dy = seat === 1 ? 0.25 : -0.25; // green tray sits lower, blue higher
-            return <circle key={`bs${seat}-${i}`} cx={sx} cy={sy + dy} r={0.48} fill="#dce1ea" />;
-          }),
-        )}
+        {/* quadrants: red / green / blue / yellow (classic) */}
+        <Quadrant x={0} y={0} colors={RED} />
+        <Quadrant x={9} y={0} colors={GREEN} />
+        <Quadrant x={0} y={9} colors={BLUE} />
+        <Quadrant x={9} y={9} colors={YELLOW} />
 
         {/* track: flat white cells with a thin grey grid (Ludo-Club) */}
         {TRACK.map(([x, y], i) => (
@@ -383,10 +402,15 @@ export function Board({ game, mySeat, onTokenTap, labels }: BoardProps) {
         {/* pieces */}
         {positions.map((row, seat) =>
           row.map((pos, token) => {
-            let [x, y] = tokenXY(seat as Seat, token, pos);
-            const other = row[1 - token];
-            if (pos !== -1 && pos === other && token === 1) x += 0.3;
-            if (pos === -1) y += seat === 1 ? 0.25 : -0.25; // match the nudged tray slots
+            let x: number;
+            let y: number;
+            if (pos === -1) {
+              [x, y] = baseSlotXY(seat as Seat, token);
+            } else {
+              [x, y] = tokenXY(seat as Seat, token, pos);
+              const other = row[1 - token];
+              if (pos === other && token === 1) x += 0.3;
+            }
             const isMine = (seat as Seat) === mySeat;
             const isMovable = isMine && movable.includes(token);
             return (
@@ -400,11 +424,11 @@ export function Board({ game, mySeat, onTokenTap, labels }: BoardProps) {
                 onClick={isMovable ? () => onTokenTap(token) : undefined}
               >
                 {isMovable && (
-                  <circle cx={0} cy={0} r={0.56} fill="none" stroke="#F5B301" strokeWidth={0.09}>
-                    <animate attributeName="r" values=".5;.62;.5" dur="1s" repeatCount="indefinite" />
+                  <circle cx={0} cy={0} r={0.58} fill="none" stroke="#F5B301" strokeWidth={0.09}>
+                    <animate attributeName="r" values=".52;.64;.52" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
-                <g transform="scale(1.3)">
+                <g transform="scale(1.4)">
                   <Pawn seat={seat as Seat} />
                 </g>
               </g>
@@ -433,6 +457,18 @@ export function Board({ game, mySeat, onTokenTap, labels }: BoardProps) {
           </g>
         ))}
       </svg>
+
+      {/* name banners over each seat's quadrant (crisp HTML text + flag) */}
+      {banners?.map((b) => (
+        <div
+          key={b.seat}
+          className={`pbanner pbanner--s${b.seat}${b.active ? ' pbanner--active' : ''}`}
+          style={{ borderColor: SEAT_COLOR[b.seat]![1] }}
+        >
+          <span className="pbanner__flag">{b.flag}</span>
+          <span className="pbanner__name">{b.name}</span>
+        </div>
+      ))}
     </div>
   );
 }
