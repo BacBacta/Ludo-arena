@@ -1066,13 +1066,16 @@ small.muted { font-size: 12px; }
   95% { transform: translateY(0) scale(0.98, 1.02); }
   100% { transform: translateY(0) scale(1); }
 }
-/* constant isometric tilt — the die always reads as a 3D solid, never a flat card */
+/* isometric tilt applied ONLY while rolling — the cube shows real depth as it
+   tumbles, then eases back to flat so the RESULT is displayed face-on (2D). */
 .die3d-tilt {
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
-  transform: rotateX(-17deg) rotateY(23deg);
+  transform: none;
+  transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.25, 1);
 }
+.die3d-tilt--rolling { transform: rotateX(-17deg) rotateY(23deg); }
 .die3d {
   position: absolute;
   inset: 0;
@@ -1121,7 +1124,7 @@ small.muted { font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ludodie--tap:not(:disabled) { animation: none !important; }
-  .die3d { transition: none !important; }
+  .die3d, .die3d-tilt { transition: none !important; }
   .die3d-lift--rolling, .die3d__shadow--rolling { animation: none !important; }
 }
 

@@ -81,9 +81,10 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
   return (
     <div className="die3d-stage">
       <div className={`die3d-lift${rolling ? ' die3d-lift--rolling' : ''}`}>
-        {/* constant isometric tilt: keeps two side faces + the top edge visible
-            at rest and through the roll, so the cube never collapses to a flat card */}
-        <div className="die3d-tilt">
+        {/* isometric tilt ONLY while rolling (shows the cube's depth as it
+            tumbles); it eases back to flat on landing so the RESULT is presented
+            face-on / 2D, like Ludo Club. */}
+        <div className={`die3d-tilt${rolling ? ' die3d-tilt--rolling' : ''}`}>
           <div className="die3d" style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
             {FACES.map((f) => (
               <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
