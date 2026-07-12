@@ -1295,3 +1295,7 @@ small.muted { font-size: 12px; }
    nudge/tumble on the 6 cube faces (they target descendant .die elements) */
 .dicebtn .die3d__face .die, .huddie .die3d__face .die { animation: none !important; }
 .dicebtn .die3d-stage, .huddie .die3d-stage { margin: 0 auto; }
+
+/* live freeroll card: ticket balance badge; dimmed when no ticket yet */
+.mini__badge { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--accent); }
+.mini--dim { opacity: 0.72; }

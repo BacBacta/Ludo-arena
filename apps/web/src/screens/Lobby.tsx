@@ -8,9 +8,11 @@ import { t } from '../lib/i18n';
 export function Lobby({
   onPlay,
   onCreateTable,
+  onFreeroll,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
+  onFreeroll(): void;
 }) {
   const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
@@ -98,9 +100,16 @@ export function Lobby({
       </div>
 
       <div className="minis">
-        <div className="mini mini--soon">
+        <div
+          className={`mini mini--action${tickets < 1 ? ' mini--dim' : ''}`}
+          onClick={() => {
+            if (tickets < 1) dispatch({ type: 'TOAST', message: t('freerollNeedTicket') });
+            else onFreeroll();
+          }}
+        >
           <b>
             <IconTrophy className="icon--gold" /> {t('freeroll')}
+            <span className="mini__badge">🎟️ {tickets}</span>
           </b>
           {t('freerollDesc')}
         </div>

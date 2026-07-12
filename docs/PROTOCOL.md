@@ -6,8 +6,9 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 
 | t | Payload | Description |
 |---|---|---|
-| `hello` | `{ wallet?, sessionToken?, entropy }` | First frame. `entropy` = 32 random hex bytes (client share of commit-reveal). `sessionToken` to resume an in-progress game. |
-| `queue.join` | `{ stake }` | Joins the queue (stake in dollar cents: 0, 10, 25, 50, 100, 200). |
+| `hello` | `{ wallet?, sessionToken?, entropyCommit?, entropy? }` | First frame. New clients send `entropyCommit` = sha256 of their 32-hex-byte entropy and reveal the raw value later via `game.entropy` (anti-grinding: the server commits its seed knowing only the hashes). `entropy` (raw) is legacy-only. `sessionToken` to resume an in-progress game. |
+| `game.entropy` | `{ entropy }` | Reveals this session's raw entropy after `match.found`; verified against the hello commit. The game's dice are finalized (and the Room created) only once both players revealed. |
+| `queue.join` | `{ stake, freeroll? }` | Joins the queue (stake in dollar cents: 0, 10, 25, 50, 100, 200). `freeroll: true` joins the ticket-gated freeroll queue instead (stake forced to 0; entry = 1 ticket, spent at match time; winner takes 3). |
 | `queue.leave` | `{}` | Leaves the queue. |
 | `table.create` | `{ stake }` | Creates a private table (E4.4); server replies `table.created` with a shareable code. |
 | `table.join` | `{ code }` | Joins a private table by its 6-char code; pairs with the host or returns `error TABLE_NOT_FOUND`. |
@@ -34,7 +35,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `game.refunded` | `{ gameId, txHash }` | Stake refunded on-chain (E3.4): the opponent never joined within the 120 s escrow timeout, so the lone staker got their stake back via `refundExpired`. |
 | `challenge.update` | `{ challenge: { progress, target, completed, tickets } }` | Daily-challenge progress after a capture (E4.1); on completion `completed` flips and `tickets` increments. |
 | `league.update` | `{ league: { division, points, rank, size, top[] } }` | Weekly-league standings after a win (E4.3), sent to the winner. |
-| `cashback` | `{ cents, totalCents }` | Anti-tilt cashback granted after 3 consecutive staked losses (E4.5): 20 % of the accumulated rake. |
+| `tickets.grant` | `{ granted, total, reason }` | Freeroll tickets granted. `reason` ∈ `anti-tilt` (3 consecutive staked losses, E4.5) \| `freeroll-win` (freeroll prize). Also sent with `granted: 0` to sync the total after a freeroll entry is spent. |
 | `error` | `{ code, message }` | Codes: `BAD_STATE`, `NOT_YOUR_TURN`, `ILLEGAL_MOVE`, `LIMIT_REACHED`, `INSUFFICIENT_ESCROW`… |
 | `pong` | `{}` | Keepalive reply. |
 

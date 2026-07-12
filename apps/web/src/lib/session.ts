@@ -219,6 +219,7 @@ export class LocalBotSession implements GameSession {
 /** What the session does after hello (E4.4 adds private tables). */
 export type JoinIntent =
   | { kind: 'queue' }
+  | { kind: 'freeroll' } // ticket-gated free 1v1 (entry spent server-side at match)
   | { kind: 'create' }
   | { kind: 'join'; code: string };
 
@@ -338,6 +339,7 @@ export class RemoteSession implements GameSession {
       if (initial) {
         if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });
         else if (this.intent.kind === 'join') this.send({ t: 'table.join', code: this.intent.code });
+        else if (this.intent.kind === 'freeroll') this.send({ t: 'queue.join', stake: 0, freeroll: true });
         else this.send({ t: 'queue.join', stake: this.stakeCents });
       }
     };

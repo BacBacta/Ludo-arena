@@ -40,6 +40,8 @@ export interface RoomSnapshot {
   /** Terminal flag: a snapshot taken after the winning move must NOT restore as
    *  a live game (else a post-crash clock could re-award it to the loser). */
   over?: boolean;
+  /** Ticket-gated freeroll game (winner gets the ticket prize on finish). */
+  freeroll?: boolean;
 }
 
 export interface GameRecord {

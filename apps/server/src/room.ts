@@ -36,6 +36,8 @@ export interface RoomResult {
   eloDelta: number;
   fairness: Fairness;
   players: [Client, Client];
+  /** Ticket-gated free game: the winner is granted FREEROLL.winnerTickets. */
+  freeroll: boolean;
 }
 
 export class Room {
@@ -49,6 +51,8 @@ export class Room {
   private autoMoveStreak: [number, number] = [0, 0];
   private deadlineTs = 0;
   private over = false;
+  /** Ticket-gated freeroll game (entry already paid; winner gets the ticket prize). */
+  freeroll = false;
   onEnd?: (room: Room) => void;
   /** Fired after every state transition; wire to the store for snapshots. */
   onChange?: (room: Room) => void;
@@ -72,6 +76,7 @@ export class Room {
     room.diceIndex = snap.diceIndex;
     room.autoMoveStreak = [...snap.autoMoveStreak];
     room.over = snap.over ?? false; // never resurrect a finished game as live
+    room.freeroll = snap.freeroll ?? false;
     return room;
   }
 
@@ -85,6 +90,7 @@ export class Room {
       fairness: this.fairness,
       players: [this.playerMeta(0), this.playerMeta(1)],
       over: this.over,
+      freeroll: this.freeroll,
     };
   }
 
@@ -282,6 +288,7 @@ export class Room {
       eloDelta: delta,
       fairness: this.fairness,
       players: [this.clients[0], this.clients[1]],
+      freeroll: this.freeroll,
     });
     this.onEnd?.(this);
   }

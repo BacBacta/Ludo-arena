@@ -210,6 +210,25 @@ export default function App() {
     [openPrivate],
   );
 
+  // Freeroll: ticket-gated free 1v1 on the server (no bot fallback — the entry
+  // ticket only makes sense against a real opponent).
+  const startFreeroll = useCallback(() => {
+    sessionRef.current?.dispose();
+    dispatch({ type: 'START_MATCHMAKING', botMode: false });
+    const ev = makeEvents();
+    sessionRef.current = new RemoteSession(
+      ev,
+      0,
+      SERVER_URL,
+      () => {
+        dispatch({ type: 'TOAST', message: t('offline') });
+        dispatch({ type: 'GO_LOBBY' });
+      },
+      walletRef.current?.address,
+      { kind: 'freeroll' },
+    );
+  }, [dispatch, makeEvents]);
+
   // Join a table from a #/g/CODE link on first load.
   useEffect(() => {
     const m = /[#/]g\/([A-Z2-9]{6})/i.exec(window.location.hash || window.location.pathname);
@@ -255,7 +274,7 @@ export default function App() {
 
   return (
     <>
-      {state.screen === 'lobby' && <Lobby onPlay={onPlay} onCreateTable={onCreateTable} />}
+      {state.screen === 'lobby' && <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} />}
       {state.screen === 'matchmaking' && (
         <Matchmaking
           onCancel={() => {

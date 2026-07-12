@@ -10,6 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { getAddress, isAddress } from 'viem';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
+  FREEROLL,
   isoWeek,
   leaguePointsForWin,
   MAX_DAILY_GAMES_VS_SAME,
@@ -79,6 +80,9 @@ const store = await createStore();
 const sessions = new Map<string, Session>();
 const rooms = new Map<string, Room>();
 const matchmaker = new Matchmaker<Session>();
+// Freeroll (ticket-gated free 1v1) waits in its own queue so it never pairs
+// with regular free/staked players; entry tickets are spent at match time.
+const freerollMatchmaker = new Matchmaker<Session>();
 // Per-room write chain: snapshots must reach the store in transition order.
 const roomWrites = new Map<string, Promise<void>>();
 // Private tables (E4.4): share code → host waiting for a friend to join.
@@ -100,6 +104,8 @@ interface PendingReveal {
   serverSeed: string;
   commit: string;
   entropies: [string | null, string | null];
+  /** Ticket-gated freeroll (entries already spent; winner gets the ticket prize). */
+  freeroll?: boolean;
   /** True once we're polling the escrow for both stakes to lock (staked games). */
   lockPolling?: boolean;
 }
@@ -258,6 +264,16 @@ function wireRoom(room: Room): void {
       .addLeaguePoints(winnerId, leaguePointsForWin(result.stakeCents))
       .then((league) => winnerSession?.send({ t: 'league.update', league }))
       .catch((e) => console.error('[league] addLeaguePoints', e));
+
+    // Freeroll prize: winner takes both entries plus the house bonus, in tickets.
+    if (result.freeroll) {
+      store
+        .grantTickets(winnerId, FREEROLL.winnerTickets)
+        .then((total) => {
+          winnerSession?.send({ t: 'tickets.grant', granted: FREEROLL.winnerTickets, total, reason: 'freeroll-win' });
+        })
+        .catch((e) => console.error('[freeroll] prize', e));
+    }
 
     // Anti-tilt bonus (E4.5): only for staked games — a win resets the streak,
     // the 3rd straight loss grants freeroll ticket(s) (spendable, no cash liability).
@@ -469,6 +485,31 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
           break;
         }
+        // Freeroll (ticket-gated free 1v1): its own queue; entry checked here and
+        // SPENT at match time (no refund path needed for queue leavers).
+        if (msg.freeroll) {
+          const fpid = playerId(session.wallet, session.id);
+          const held = (await store.getChallenge(fpid, utcToday())).tickets;
+          if (held < FREEROLL.entryTickets) {
+            session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'No freeroll ticket — complete the daily challenge to earn one.' });
+            break;
+          }
+          session.stake = 0;
+          persistSession(session);
+          const fpair = freerollMatchmaker.join(0, {
+            session,
+            entropy: session.entropy,
+            elo: session.elo,
+            enqueuedAt: Date.now(),
+            walletBacked: !!session.wallet,
+          });
+          if (!fpair) {
+            session.send({ t: 'queue.ok', position: freerollMatchmaker.position(0, session) });
+            break;
+          }
+          await startFreeroll(fpair[0].session, fpair[1].session);
+          break;
+        }
         const blocked = await stakeBlock(session, msg.stake);
         if (blocked) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: blocked });
@@ -495,6 +536,7 @@ wss.on('connection', (ws, req) => {
 
       case 'queue.leave':
         matchmaker.leaveAll(session);
+        freerollMatchmaker.leaveAll(session);
         await store.queueRemove(session.id);
         break;
 
@@ -635,6 +677,7 @@ wss.on('connection', (ws, req) => {
     session.ws = null;
     session.alive = false;
     matchmaker.leaveAll(session);
+    freerollMatchmaker.leaveAll(session);
     store.queueRemove(session.id).catch((e) => console.error('[store] queueRemove', e));
     // Drop private tables this session was hosting.
     for (const [code, table] of privateTables) {
@@ -740,7 +783,32 @@ async function resumeSession(token: string, ws: WebSocket): Promise<Session | nu
 // Real-money games (both wallets) don't start until both stakes are locked
 // on-chain — see maybeStartPending()/pollStakeLock() (audit C3). This runs during
 // the pre-Room reveal phase, so a blitz game can't finish before the joins mine.
-async function startGame(stake: StakeCents, a: Session, b: Session): Promise<void> {
+/** Spend both entries atomically-enough (single-threaded message loop), refund
+ *  on partial failure, then start the ticket-gated free game. */
+async function startFreeroll(a: Session, b: Session): Promise<void> {
+  const pidA = playerId(a.wallet, a.id);
+  const pidB = playerId(b.wallet, b.id);
+  const spentA = await store.spendTickets(pidA, FREEROLL.entryTickets);
+  if (spentA === null) {
+    a.send({ t: 'error', code: 'LIMIT_REACHED', message: 'No freeroll ticket.' });
+    b.send({ t: 'queue.ok', position: 1 }); // opponent keeps waiting
+    freerollMatchmaker.join(0, { session: b, entropy: b.entropy, elo: b.elo, enqueuedAt: Date.now(), walletBacked: !!b.wallet });
+    return;
+  }
+  const spentB = await store.spendTickets(pidB, FREEROLL.entryTickets);
+  if (spentB === null) {
+    await store.grantTickets(pidA, FREEROLL.entryTickets); // refund A
+    b.send({ t: 'error', code: 'LIMIT_REACHED', message: 'No freeroll ticket.' });
+    a.send({ t: 'queue.ok', position: 1 });
+    freerollMatchmaker.join(0, { session: a, entropy: a.entropy, elo: a.elo, enqueuedAt: Date.now(), walletBacked: !!a.wallet });
+    return;
+  }
+  a.send({ t: 'tickets.grant', granted: 0, total: spentA, reason: 'freeroll-win' }); // sync new totals
+  b.send({ t: 'tickets.grant', granted: 0, total: spentB, reason: 'freeroll-win' });
+  await startGame(0, a, b, true);
+}
+
+async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = false): Promise<void> {
   const gameId = randomBytes(16).toString('hex');
   // Durable participant rows must exist before the game record references them.
   const idA = playerId(a.wallet, a.id);
@@ -765,7 +833,7 @@ async function startGame(stake: StakeCents, a: Session, b: Session): Promise<voi
   const pot = potCents(stake);
   if (newFlow) {
     const { serverSeed, commit } = createSeedCommit();
-    pendingReveals.set(gameId, { gameId, stake, a, b, serverSeed, commit, entropies: [null, null] });
+    pendingReveals.set(gameId, { gameId, stake, a, b, serverSeed, commit, entropies: [null, null], freeroll });
     a.pendingGameId = gameId;
     b.pendingGameId = gameId;
     // Announce the match + the seed commit now; the Room + play start only after
@@ -778,7 +846,7 @@ async function startGame(stake: StakeCents, a: Session, b: Session): Promise<voi
   const fairness = createFairness(a.entropy, b.entropy);
   a.send(matchFoundMsg(gameId, 0, b, stake, pot, fairness.commit));
   b.send(matchFoundMsg(gameId, 1, a, stake, pot, fairness.commit));
-  startRoom(gameId, stake, a, b, fairness);
+  startRoom(gameId, stake, a, b, fairness, freeroll);
 }
 
 function matchFoundMsg(gameId: string, seat: Seat, opp: Session, stake: StakeCents, pot: number, commit: string): ServerMsg {
@@ -794,8 +862,9 @@ function matchFoundMsg(gameId: string, seat: Seat, opp: Session, stake: StakeCen
 }
 
 /** Create the Room from a finalized fairness and start it (match.found already sent). */
-function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fairness: Fairness): void {
+function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fairness: Fairness, freeroll = false): void {
   const room = new Room(gameId, stake, a, b, fairness);
+  room.freeroll = freeroll;
   a.room = room;
   a.seat = 0;
   b.room = room;
@@ -812,7 +881,7 @@ function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fa
 function finalizeGame(p: PendingReveal): void {
   pendingReveals.delete(p.gameId);
   const fairness = finalizeFairness(p.serverSeed, p.commit, p.entropies[0] ?? '', p.entropies[1] ?? '');
-  startRoom(p.gameId, p.stake, p.a, p.b, fairness);
+  startRoom(p.gameId, p.stake, p.a, p.b, fairness, p.freeroll);
 }
 
 /**
@@ -876,6 +945,9 @@ setInterval(() => {
     Promise.all([store.queueRemove(pair[0].session.id), store.queueRemove(pair[1].session.id)])
       .then(() => startGame(stake, pair[0].session, pair[1].session))
       .catch((e) => console.error('[ludo-server] sweep startGame', e));
+  }
+  for (const { pair } of freerollMatchmaker.sweep()) {
+    startFreeroll(pair[0].session, pair[1].session).catch((e) => console.error('[ludo-server] sweep freeroll', e));
   }
 }, 1_000);
 
