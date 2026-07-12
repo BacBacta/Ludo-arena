@@ -512,7 +512,7 @@ small.muted { font-size: 12px; }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 20px;
+  gap: 12px;
 }
 /* corner rows above/below the board (Ludo-Club: players live at their corners) */
 .gamecorner { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
@@ -523,15 +523,17 @@ small.muted { font-size: 12px; }
 
 /* framed avatar with conic countdown ring while active */
 .avcard {
-  border-radius: 18px;
+  border-radius: 50%;
   padding: 3px;
-  transition: transform 0.2s ease;
+  opacity: 0.7;
+  transform: scale(0.9);
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
-.avcard--turn { transform: scale(1.06); }
+.avcard--turn { transform: scale(1.06); opacity: 1; }
 .avcard__face {
   width: 56px;
   height: 56px;
-  border-radius: 15px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -676,13 +678,13 @@ small.muted { font-size: 12px; }
   height: 90px;
   border-radius: 22px;
   border: none;
-  border-bottom: 4px solid #c98f00;
+  border-bottom: 4px solid #24408f;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #ffe27a, #f5b301 60%, #e8a400);
+  background: linear-gradient(180deg, #7CA0F4, #3E63DD 60%, #2C4BB8);
   cursor: pointer;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 0 0 3px rgba(245, 179, 1, 0.55), 0 8px 18px rgba(23, 43, 99, 0.35);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45), 0 0 0 3px rgba(62, 99, 221, 0.5), 0 8px 18px rgba(23, 43, 99, 0.35);
   transition: transform 0.1s ease;
 }
 .dicebtn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; }

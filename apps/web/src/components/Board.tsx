@@ -51,13 +51,14 @@ function quadSlots(qx: number, qy: number): Array<[number, number]> {
   ];
 }
 
-/** Ludo-Club tints the classic safe star nearest each corner with that colour. */
-const STAR_TINT: Record<number, readonly [string, string, string]> = {
-  8: BLUE,
-  21: RED,
-  34: GREEN,
-  47: YELLOW,
-};
+/** Tint a safe star to the seat that owns its arm: left arm = blue, right = green. */
+function starTint(cx: number, cy: number): readonly [string, string, string] | null {
+  if (cy >= 6 && cy <= 8) {
+    if (cx <= 5) return BLUE; // left horizontal arm (blue home-run)
+    if (cx >= 9) return GREEN; // right horizontal arm (green home-run)
+  }
+  return null;
+}
 
 export interface PlayerBanner {
   seat: Seat;
@@ -173,17 +174,19 @@ function Quadrant({
   x,
   y,
   colors,
+  inactive,
 }: {
   x: number;
   y: number;
   colors: readonly [string, string, string];
+  inactive?: boolean;
 }) {
   const gid = `qq${x}-${y}`;
   const isTop = y === 0;
   const hy = isTop ? y + 1.35 : y + 0.25; // home-square top
   const slots = quadSlots(x, y);
   return (
-    <g>
+    <g opacity={inactive ? 0.42 : 1}>
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={colors[0]} />
@@ -194,16 +197,17 @@ function Quadrant({
       {/* soft top gloss on the colour band */}
       <rect x={x + 0.3} y={y + 0.3} width={5.4} height={1.4} rx={0.6} fill="#ffffff" opacity={0.12} />
       {/* big white home square, lifted with a soft cast shadow */}
-      <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.55} fill="rgba(16,24,48,.18)" />
-      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="#ffffff" />
+      {!inactive && <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.55} fill="rgba(16,24,48,.18)" />}
+      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="#ffffff" opacity={inactive ? 0.85 : 1} />
       <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="none" stroke={colors[2]} strokeWidth={0.06} opacity={0.16} />
       {/* four resting slots (grey rings) — pawns sit on top of these */}
-      {slots.map(([sx, sy], i) => (
-        <g key={i}>
-          <circle cx={sx} cy={sy} r={0.5} fill="#e5e9f1" />
-          <circle cx={sx} cy={sy} r={0.5} fill="none" stroke="#cfd6e3" strokeWidth={0.055} />
-        </g>
-      ))}
+      {!inactive &&
+        slots.map(([sx, sy], i) => (
+          <g key={i}>
+            <circle cx={sx} cy={sy} r={0.5} fill="#e5e9f1" />
+            <circle cx={sx} cy={sy} r={0.5} fill="none" stroke="#cfd6e3" strokeWidth={0.055} />
+          </g>
+        ))}
     </g>
   );
 }
@@ -310,10 +314,10 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         <rect x={0} y={0} width={15} height={15} rx={0.4} fill="#ffffff" />
 
         {/* quadrants: red / green / blue / yellow (classic) */}
-        <Quadrant x={0} y={0} colors={RED} />
+        <Quadrant x={0} y={0} colors={RED} inactive />
         <Quadrant x={9} y={0} colors={GREEN} />
         <Quadrant x={0} y={9} colors={BLUE} />
-        <Quadrant x={9} y={9} colors={YELLOW} />
+        <Quadrant x={9} y={9} colors={YELLOW} inactive />
 
         {/* track: flat white cells with a thin grey grid (Ludo-Club) */}
         {TRACK.map(([x, y], i) => (
@@ -334,9 +338,9 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         {[...SAFE_CELLS].map((i) => {
           const cell = TRACK[i];
           if (!cell) return null;
-          const tint = STAR_TINT[i];
           const cx = cell[0] + 0.5;
           const cy = cell[1] + 0.5;
+          const tint = starTint(cell[0], cell[1]);
           return (
             <polygon
               key={`s${i}`}
