@@ -1158,9 +1158,10 @@ small.muted { font-size: 12px; }
 .seatav--active { transform: scale(1.1); box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.9), 0 5px 12px rgba(8, 16, 44, 0.45); }
 /* awaiting your roll: the tile shows the ink splat, pips appear after the roll */
 .ludodie--armed .die { opacity: 0.12; }
-/* keep the white tile visible while the face is hidden (armed/rolling) */
+/* keep the white tile visible while the face is hidden (armed/rolling),
+   docked in a dark navy slot like the reference */
 .ludodie--armed, .ludodie--rolling {
   background: #ffffff;
-  box-shadow: 0 5px 12px rgba(8, 16, 44, 0.45), inset 0 -3px 0 rgba(15, 26, 68, 0.08);
+  box-shadow: 0 0 0 4px rgba(13, 22, 52, 0.85), 0 5px 12px rgba(8, 16, 44, 0.45), inset 0 -3px 0 rgba(15, 26, 68, 0.08);
 }
 .ludodie--rolling .die { opacity: 0; }

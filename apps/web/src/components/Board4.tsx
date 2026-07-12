@@ -121,9 +121,9 @@ function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [st
       {/* white home square with a soft drop edge */}
       <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill="rgba(16,24,48,.16)" />
       <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill="#ffffff" />
-      {/* flat grey shadow coasters (pawns rest on these) */}
+      {/* solid flat grey resting circles (Ludo Club) */}
       {slots.map(([sx, sy], i) => (
-        <ellipse key={i} cx={sx} cy={sy + 0.08} rx={0.48} ry={0.3} fill="#dfe4ee" />
+        <circle key={i} cx={sx} cy={sy} r={0.44} fill="#d4dae6" />
       ))}
     </g>
   );
@@ -242,24 +242,20 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
 
         {/* track cells: continuous grid, shared hairline borders (no gaps) */}
         {TRACK.map(([x, y], i) => (
-          <rect key={i} x={x} y={y} width={1} height={1} fill="#ffffff" stroke="#cdd5e1" strokeWidth={0.045} />
+          <rect key={i} x={x} y={y} width={1} height={1} fill="#ffffff" stroke="#a6b0c0" strokeWidth={0.05} />
         ))}
 
-        {/* safe stars — neutral grey (Ludo Club) */}
+        {/* safe cells: grey-filled cell carrying a white star (Ludo Club) */}
         {[...SAFE_CELLS].map((i) => {
           const cell = TRACK[i];
           if (!cell) return null;
           const cx = cell[0] + 0.5;
           const cy = cell[1] + 0.5;
           return (
-            <polygon
-              key={`s${i}`}
-              points={starPoints(cx, cy, 0.36)}
-              fill="#eef1f7"
-              stroke="#b7c1d2"
-              strokeWidth={0.05}
-              strokeLinejoin="round"
-            />
+            <g key={`s${i}`}>
+              <rect x={cell[0]} y={cell[1]} width={1} height={1} fill="#c9d1de" stroke="#a6b0c0" strokeWidth={0.05} />
+              <polygon points={starPoints(cx, cy, 0.36)} fill="#ffffff" strokeLinejoin="round" />
+            </g>
           );
         })}
 
