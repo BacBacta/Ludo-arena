@@ -21,7 +21,15 @@ export function Matchmaking() {
       <div className="center">
         {privateCode && !match ? (
           <div className="tablecard">
-            <div>{t('tableWaiting')}</div>
+            <div className="radar radar--sm" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <div className="radar__core">
+                <IconUsers />
+              </div>
+            </div>
+            <div className="muted">{t('tableWaiting')}</div>
             <div className="tablecode">{privateCode}</div>
             <a className="btn" href={shareUrl} target="_blank" rel="noreferrer">
               {t('shareWhatsapp')}

@@ -73,11 +73,11 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
     const id = setInterval(() => {
       n += 1;
       setTumbleFace(1 + Math.floor(Math.random() * 6));
-      if (n >= 5) {
+      if (n >= 8) {
         clearInterval(id);
         setTumbleFace(null);
       }
-    }, 85);
+    }, 90);
     return () => {
       clearInterval(id);
       setTumbleFace(null);
