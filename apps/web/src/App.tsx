@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { StakeCents } from '@ludo/shared';
+import { TOS_VERSION, type StakeCents } from '@ludo/shared';
 import {
   LocalBotSession,
   RemoteSession,
   type GameSession,
   type JoinIntent,
   type SessionEvents,
+  type WalletAuth,
 } from './lib/session';
 import { fmtUsd, saveRetention, useAppDispatch, useAppState } from './state/store';
 import { Lobby } from './screens/Lobby';
@@ -137,6 +138,23 @@ export default function App() {
     };
   }, [dispatch, stakeForMatch, refreshBalance]);
 
+  // Consent (18+/ToS) + wallet signer for staked play: consent goes in hello and
+  // the signer answers the server's wallet-ownership nonce (SIWE). Both are read
+  // through refs at call time — the pending staked action runs synchronously right
+  // after the legal modal is accepted (before React re-renders), so makeAuth must
+  // see the fresh acceptance from a ref, not from a render-captured state value.
+  const consentRef = useRef(state.legalAccepted);
+  if (state.legalAccepted) consentRef.current = true;
+  const makeAuth = useCallback((): WalletAuth => {
+    const wallet = walletRef.current;
+    return {
+      consent: consentRef.current ? { tosVersion: TOS_VERSION, age18: true } : undefined,
+      signMessage: wallet
+        ? (message: string) => wallet.walletClient.signMessage({ account: wallet.address, message })
+        : undefined,
+    };
+  }, []);
+
   const startMatch = useCallback(
     async (stake: StakeCents) => {
       sessionRef.current?.dispose();
@@ -170,9 +188,11 @@ export default function App() {
           sessionRef.current = new LocalBotSession(ev, stake);
         },
         walletRef.current?.address,
+        { kind: 'queue' },
+        makeAuth(),
       );
     },
-    [dispatch, makeEvents, refreshBalance],
+    [dispatch, makeEvents, refreshBalance, makeAuth],
   );
 
   // Private tables (E4.4): open a remote session with a create/join intent.
@@ -203,9 +223,10 @@ export default function App() {
         },
         walletRef.current?.address,
         intent,
+        makeAuth(),
       );
     },
-    [dispatch, makeEvents, refreshBalance],
+    [dispatch, makeEvents, refreshBalance, makeAuth],
   );
 
   const createTable = useCallback(
@@ -238,8 +259,9 @@ export default function App() {
       },
       walletRef.current?.address,
       { kind: 'freeroll' },
+      makeAuth(),
     );
-  }, [dispatch, makeEvents]);
+  }, [dispatch, makeEvents, makeAuth]);
 
   // Join a table from a #/g/CODE link on first load.
   useEffect(() => {
@@ -331,6 +353,7 @@ export default function App() {
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
       <LegalModal
         onAccept={() => {
+          consentRef.current = true; // synchronous, so the pending staked action's hello carries consent
           dispatch({ type: 'ACCEPT_LEGAL' });
           const run = pendingStakeAction.current;
           pendingStakeAction.current = null;

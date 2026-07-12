@@ -21,6 +21,7 @@ import {
 } from './pacing';
 import {
   RAKE_BPS,
+  walletProofMessage,
   type ChallengeState,
   type GameOverReason,
   type OpponentInfo,
@@ -30,6 +31,13 @@ import {
   type StakeCents,
   type StreakState,
 } from '@ludo/shared';
+
+/** Auth material the client attaches to a staked session: 18+/ToS consent to send
+ *  in hello, and a wallet signer to answer the server's ownership-proof nonce. */
+export interface WalletAuth {
+  consent?: { tosVersion: string; age18: boolean };
+  signMessage?: (message: string) => Promise<string>;
+}
 
 export interface MatchInfo {
   gameId: string;
@@ -372,6 +380,8 @@ export class RemoteSession implements GameSession {
     private readonly walletAddress?: string,
     /** What to do after hello: join the queue (default) or a private table. */
     private readonly intent: JoinIntent = { kind: 'queue' },
+    /** Consent + wallet signer for staked play (18+/ToS + SIWE ownership proof). */
+    private readonly auth?: WalletAuth,
   ) {
     this.entropy = (() => {
       const b = new Uint8Array(32);
@@ -401,6 +411,7 @@ export class RemoteSession implements GameSession {
         sessionToken: this.token() ?? undefined,
         wallet: this.walletAddress,
         fingerprint: deviceFingerprint(),
+        consent: this.auth?.consent,
       });
       if (initial) {
         if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });
@@ -461,6 +472,20 @@ export class RemoteSession implements GameSession {
           sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
         } catch {
           /* storage unavailable: reconnection within this session still works */
+        }
+        // Wallet ownership proof (SIWE): the server issued a nonce — sign it so
+        // staked play is unlocked. Only prompt when this session is actually for
+        // money (staked queue/create, or a private-table join that may be staked)
+        // so free/freeroll play never triggers a wallet signature. A rejected
+        // signature just leaves staking gated server-side.
+        const stakedIntent = this.stakeCents > 0 || this.intent.kind === 'join';
+        if (msg.walletNonce && stakedIntent && this.auth?.signMessage) {
+          void this.auth
+            .signMessage(walletProofMessage(msg.walletNonce))
+            .then((signature) => this.send({ t: 'wallet.prove', signature }))
+            .catch(() => {
+              /* user declined the signature; server keeps staking gated */
+            });
         }
         const wasReconnecting = this.attempts > 0;
         this.attempts = 0;

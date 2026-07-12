@@ -6,7 +6,8 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 
 | t | Payload | Description |
 |---|---|---|
-| `hello` | `{ wallet?, sessionToken?, entropyCommit?, entropy? }` | First frame. New clients send `entropyCommit` = sha256 of their 32-hex-byte entropy and reveal the raw value later via `game.entropy` (anti-grinding: the server commits its seed knowing only the hashes). `entropy` (raw) is legacy-only. `sessionToken` to resume an in-progress game. |
+| `hello` | `{ wallet?, sessionToken?, entropyCommit?, entropy?, fingerprint?, consent? }` | First frame. New clients send `entropyCommit` = sha256 of their 32-hex-byte entropy and reveal the raw value later via `game.entropy` (anti-grinding: the server commits its seed knowing only the hashes). `entropy` (raw) is legacy-only. `sessionToken` to resume an in-progress game. `consent` = `{ tosVersion, age18 }` — the 18+/ToS acceptance recorded client-side; the server persists it (per player) and requires `tosVersion === TOS_VERSION` for staked play. |
+| `wallet.prove` | `{ signature }` | Wallet ownership proof (SIWE): signs the `walletNonce` from `hello.ok` (message = `walletProofMessage(nonce)`). The server recovers the address and, on a match, marks the session's wallet proven — required for wallet-backed staked play so RG limits / self-exclusion can't be dodged with a different address. |
 | `game.entropy` | `{ entropy }` | Reveals this session's raw entropy after `match.found`; verified against the hello commit. The game's dice are finalized (and the Room created) only once both players revealed. |
 | `queue.join` | `{ stake, freeroll? }` | Joins the queue (stake in dollar cents: 0, 10, 25, 50, 100, 200). `freeroll: true` joins the ticket-gated freeroll queue instead (stake forced to 0; entry = 1 ticket, spent at match time; winner takes 3). |
 | `queue.leave` | `{}` | Leaves the queue. |
@@ -23,7 +24,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 
 | t | Payload | Description |
 |---|---|---|
-| `hello.ok` | `{ sessionToken, elo, resumed?, challenge?, streak?, league? }` | Session established. If a game is in progress, `resumed` = `{ gameId, seat, state, stakeCents, potCents, opponent, fairnessCommit }` — everything needed to rebuild the game screen after a reconnection or a server restart. `challenge` = daily-challenge state (E4.1); `streak` = login-streak state (E4.2); `league` = weekly-league standings + top-5 board (E4.3). |
+| `hello.ok` | `{ sessionToken, elo, resumed?, challenge?, streak?, league?, limits?, ownedSkins?, stakingBlocked?, walletNonce?, walletProven?, consentTosVersion? }` | Session established. If a game is in progress, `resumed` = `{ gameId, seat, state, stakeCents, potCents, opponent, fairnessCommit }` — everything needed to rebuild the game screen after a reconnection or a server restart. `challenge` = daily-challenge state (E4.1); `streak` = login-streak state (E4.2); `league` = weekly-league standings + top-5 board (E4.3). `walletNonce` = string to sign via `wallet.prove` when a wallet is unproven; `walletProven` reflects proof state; `consentTosVersion` = the accepted ToS version on record. |
 | `queue.ok` | `{ position }` | Queued. |
 | `table.created` | `{ code, stakeCents }` | Private table created (E4.4); share `code` with a friend. |
 | `match.found` | `{ gameId, seat, opponent: { name, elo, flag }, stakeCents, potCents, fairnessCommit }` | Match found. `fairnessCommit` = hash of the server seed, to display. |

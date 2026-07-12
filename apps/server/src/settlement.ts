@@ -96,6 +96,13 @@ export class Arbiter {
     return this.account.address;
   }
 
+  /** Liveness ping for the readiness probe: a lightweight RPC round-trip that
+   *  proves the chain endpoint is reachable. Returns the latest block number
+   *  (throws if the RPC is down). */
+  async healthcheck(): Promise<bigint> {
+    return this.publicClient.getBlockNumber();
+  }
+
   /** EIP-191 signature over keccak256(abi.encode(chainid, escrow, gameId, winner)). */
   async signSettlement(gameId: string, winner: Address): Promise<Hex> {
     const inner = keccak256(

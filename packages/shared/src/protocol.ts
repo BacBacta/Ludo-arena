@@ -54,6 +54,18 @@ export const PREMIUM_SKINS: Record<string, number> = { obsidian: 5, aurora: 10 }
 export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 200;
 export const MAX_DAILY_STAKE_LIMIT_CENTS = 200;
 
+/** Current Terms-of-Service / consent version. Bumped whenever the legal terms
+ *  change so a stale acceptance no longer satisfies the staked-play gate; the
+ *  server records which version each player accepted (18+/ToS, audit-compliance).
+ *  Keep in lockstep with the in-app legal copy. */
+export const TOS_VERSION = '2026-07-01';
+
+/** The exact message a client signs to prove wallet ownership (SIWE-style). Both
+ *  sides MUST build it identically or verification fails. */
+export function walletProofMessage(nonce: string): string {
+  return `Ludo Arena — verify wallet ownership.\nNonce: ${nonce}`;
+}
+
 /** Anti multi-accounting (E5.3): max staked games per day against the same wallet. */
 export const MAX_DAILY_GAMES_VS_SAME = 3;
 
@@ -118,7 +130,20 @@ export type ClientMsg =
   // Anti-grinding: new clients send `entropyCommit` = sha256(entropy) and reveal
   // the raw `entropy` via `game.entropy` after match.found. `entropy` is kept
   // optional for backward compatibility with clients that still send it raw.
-  | { t: 'hello'; wallet?: string; sessionToken?: string; entropy?: string; entropyCommit?: string; fingerprint?: string }
+  | {
+      t: 'hello';
+      wallet?: string;
+      sessionToken?: string;
+      entropy?: string;
+      entropyCommit?: string;
+      fingerprint?: string;
+      // 18+/ToS consent the client has recorded locally; the server persists it
+      // (per wallet) and requires a match to the current TOS_VERSION for staked play.
+      consent?: { tosVersion: string; age18: boolean };
+    }
+  // Wallet ownership proof (SIWE-style): sign the `walletNonce` from hello.ok so
+  // the server can bind RG limits / self-exclusion to a *verified* address.
+  | { t: 'wallet.prove'; signature: string }
   // Reveal this session's raw entropy (verified against the hello commit) — sent
   // once, right after match.found, before the game's dice are finalized.
   | { t: 'game.entropy'; entropy: string }
@@ -180,6 +205,13 @@ export type ServerMsg =
       limits?: LimitsState; // responsible-gaming state (E5.2)
       ownedSkins?: string[]; // premium skins the player has unlocked (server-authoritative)
       stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
+      // Wallet ownership proof (SIWE): if a wallet was supplied but isn't proven
+      // yet, `walletNonce` is the string to sign; `walletProven` reflects state.
+      walletNonce?: string;
+      walletProven?: boolean;
+      // The ToS version the server has on record as accepted for this player (so
+      // the client knows whether it must re-prompt before staked play).
+      consentTosVersion?: string;
     }
   | { t: 'queue.ok'; position: number }
   // Private table created (E4.4); share `code` with a friend to join.
@@ -291,8 +323,14 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       const rawOk = typeof m.entropy === 'string' && m.entropy.length >= 16 && m.entropy.length <= 128;
       if (!commitOk && !rawOk) return null; // need a commit (new) or raw entropy (legacy)
       if (m.fingerprint !== undefined && (typeof m.fingerprint !== 'string' || m.fingerprint.length > 64)) return null;
+      if (m.consent !== undefined) {
+        const c = m.consent as { tosVersion?: unknown; age18?: unknown };
+        if (typeof c !== 'object' || c === null || typeof c.tosVersion !== 'string' || c.tosVersion.length > 32 || typeof c.age18 !== 'boolean') return null;
+      }
       return m;
     }
+    case 'wallet.prove':
+      return typeof m.signature === 'string' && /^0x[0-9a-fA-F]{130,3000}$/.test(m.signature) ? m : null;
     case 'game.entropy':
       return typeof m.entropy === 'string' && m.entropy.length >= 16 && m.entropy.length <= 128 ? m : null;
     case 'skin.buy':

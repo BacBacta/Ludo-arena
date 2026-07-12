@@ -7,7 +7,7 @@
  */
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { getAddress, isAddress } from 'viem';
+import { getAddress, isAddress, recoverMessageAddress } from 'viem';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
   FREEROLL,
@@ -20,6 +20,8 @@ import {
   potCents,
   TABLE_CODE_CHARS,
   TABLE_CODE_LEN,
+  TOS_VERSION,
+  walletProofMessage,
   type ResumedGame,
   type ServerMsg,
   type StakeCents,
@@ -68,6 +70,12 @@ interface Session extends Client {
   pendingGameId?: string;
   fingerprint?: string; // device fingerprint from hello (E5.3)
   country?: string; // ISO country from the CDN header (E5.4)
+  ip?: string; // socket IP (server-derived anti-collusion signal, E5.3)
+  /** ToS version this session accepted (18+/consent gate for staked play). */
+  consentTos?: string;
+  /** Wallet ownership proof (SIWE): the nonce we issued + whether it's proven. */
+  walletNonce?: string;
+  walletProven?: boolean;
 }
 
 // Geo-gating (E5.4): ISO country codes where staked play is disabled.
@@ -166,6 +174,11 @@ const settlementQueue = arbiter
     })
   : null;
 if (arbiter) console.log(`[ludo-server] settlement enabled — arbiter ${arbiter.address} on chain ${arbiter.chainId}`);
+// Compliance nudge: real settlement is on but no jurisdictions are geo-blocked and
+// the country header is only trustworthy behind a trusted edge (Cloudflare/Vercel).
+if (arbiter && BLOCKED_COUNTRIES.size === 0) {
+  console.warn('[compliance] settlement is ENABLED but BLOCKED_COUNTRIES is empty — staked play is allowed in every region. Set a legal-reviewed deny list and enforce the country header behind a trusted edge before real-money launch.');
+}
 else console.warn('[ludo-server] settlement disabled (no ARBITER_PRIVATE_KEY)');
 
 const NAMES = ['Kwame', 'Amara', 'Thabo', 'Zainab', 'Kofi', 'Nia', 'Sekou', 'Fatou'];
@@ -350,14 +363,62 @@ setInterval(() => void maybeRolloverLeague().catch((e) => console.error('[league
 // ---------- http + ws ----------
 
 const http = createServer((req, res) => {
+  // Liveness: the process is up. Kept unconditional so the orchestrator never
+  // kills a running server just because a dependency blipped.
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, sessions: sessions.size, rooms: rooms.size }));
     return;
   }
+  // Readiness: only "ready" if we can actually persist and (when settlement is
+  // enabled) reach the chain RPC — otherwise a load balancer should stop routing
+  // staked traffic to an instance that can't durably record or settle. Returns
+  // 503 (not 200) on failure so the probe is actionable.
+  if (req.url === '/ready') {
+    void (async () => {
+      const checks: Record<string, boolean> = { store: false };
+      try {
+        await withTimeout(store.getMeta('__ready__'), 2000);
+        checks.store = true;
+      } catch {
+        /* store unreachable */
+      }
+      if (arbiter) {
+        checks.rpc = false;
+        try {
+          await withTimeout(arbiter.healthcheck(), 2500);
+          checks.rpc = true;
+        } catch {
+          /* RPC unreachable */
+        }
+      }
+      const ok = Object.values(checks).every(Boolean);
+      res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok, durable: store.settlementDurable(), checks }));
+    })();
+    return;
+  }
   res.writeHead(404);
   res.end();
 });
+
+/** Reject a promise that takes longer than `ms` (keeps the readiness probe from
+ *  hanging on a wedged store/RPC connection). */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
 
 const wss = new WebSocketServer({ server: http, maxPayload: 1024 });
 const limiter = new RateLimiter();
@@ -436,6 +497,9 @@ wss.on('connection', (ws, req) => {
         session = resumedSession;
         if (msg.fingerprint) resumedSession.fingerprint = msg.fingerprint;
         resumedSession.country = country;
+        resumedSession.ip = ip;
+        await recordConsent(resumedSession, msg.consent);
+        const rProof = issueWalletNonce(resumedSession);
         const rpid = playerId(resumedSession.wallet, resumedSession.id);
         send(ws, {
           t: 'hello.ok',
@@ -448,6 +512,9 @@ wss.on('connection', (ws, req) => {
           limits: await store.getLimits(rpid, utcToday()),
           ownedSkins: await store.getOwnedSkins(rpid),
           stakingBlocked: isGeoBlocked(country),
+          walletNonce: rProof.walletNonce,
+          walletProven: rProof.walletProven,
+          consentTosVersion: resumedSession.consentTos,
         });
         return;
       }
@@ -472,6 +539,7 @@ wss.on('connection', (ws, req) => {
       session.entropyCommit = msg.entropyCommit; // anti-grinding commit (new clients)
       session.fingerprint = msg.fingerprint;
       session.country = country;
+      session.ip = ip;
       sessions.set(id, session);
       persistSession(session);
       const pid = playerId(msg.wallet, id);
@@ -481,7 +549,22 @@ wss.on('connection', (ws, req) => {
       const league = await store.getLeague(pid);
       const limits = await store.getLimits(pid, utcToday());
       const ownedSkins = await store.getOwnedSkins(pid);
-      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, limits, ownedSkins, stakingBlocked: isGeoBlocked(country) });
+      await recordConsent(session, msg.consent);
+      const proof = issueWalletNonce(session);
+      send(ws, {
+        t: 'hello.ok',
+        sessionToken: id,
+        elo,
+        challenge,
+        streak,
+        league,
+        limits,
+        ownedSkins,
+        stakingBlocked: isGeoBlocked(country),
+        walletNonce: proof.walletNonce,
+        walletProven: proof.walletProven,
+        consentTosVersion: session.consentTos,
+      });
       return;
     }
 
@@ -494,6 +577,27 @@ wss.on('connection', (ws, req) => {
       case 'ping':
         session.send({ t: 'pong' });
         break;
+
+      case 'wallet.prove': {
+        // Verify the signature over the nonce we issued recovers to the claimed
+        // wallet → the client controls that address (SIWE ownership proof).
+        if (!session.wallet || !session.walletNonce) break;
+        try {
+          const recovered = await recoverMessageAddress({
+            message: walletProofMessage(session.walletNonce),
+            signature: msg.signature as `0x${string}`,
+          });
+          if (getAddress(recovered) === getAddress(session.wallet)) {
+            session.walletProven = true;
+            session.walletNonce = undefined;
+          } else {
+            session.send({ t: 'error', code: 'BAD_STATE', message: 'Wallet verification failed.' });
+          }
+        } catch {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Wallet verification failed.' });
+        }
+        break;
+      }
 
       case 'queue.join': {
         if (session.room || session.pendingGameId) {
@@ -811,6 +915,11 @@ function resumedGame(s: Session): ResumedGame | undefined {
 async function collusionBlock(a: Session, b: Session, stake: StakeCents): Promise<string | null> {
   if (stake <= 0) return null;
   if (a.fingerprint && a.fingerprint === b.fingerprint) return 'Same-device play is not allowed for staked games.';
+  // Server-derived signal (not client-controlled like the fingerprint): refuse a
+  // staked pairing between two sockets on the same IP. This only blocks pairing
+  // the two of them together — each still matches other opponents — so shared-NAT
+  // false positives cost nothing, while same-network chip-dumping is stopped.
+  if (a.ip && a.ip !== 'unknown' && a.ip === b.ip) return 'Same-network play is not allowed for staked games.';
   // Repeated-opponent cap is wallet-scoped (anon rows are ephemeral).
   if (a.wallet && b.wallet) {
     const played = await store.pairGamesToday(playerId(a.wallet, a.id), playerId(b.wallet, b.id), utcToday());
@@ -826,8 +935,50 @@ function normalizeWallet(w?: string): string | undefined {
   return getAddress(w);
 }
 
+/** Record + apply the 18+/ToS consent a client sent in hello. Persisted per
+ *  player (audit: which version, when) and mirrored on the session for the gate.
+ *  Falls back to any durable record when this hello carries no fresh consent. */
+async function recordConsent(session: Session, consent?: { tosVersion: string; age18: boolean }): Promise<void> {
+  const pid = playerId(session.wallet, session.id);
+  if (consent && consent.age18 && consent.tosVersion === TOS_VERSION) {
+    session.consentTos = consent.tosVersion;
+    await store.setMeta(`consent:${pid}`, JSON.stringify({ v: consent.tosVersion, at: new Date().toISOString() }));
+    return;
+  }
+  if (!session.consentTos) {
+    const stored = await store.getMeta(`consent:${pid}`);
+    if (stored) {
+      try {
+        session.consentTos = (JSON.parse(stored) as { v?: string }).v;
+      } catch {
+        /* legacy/plain record */
+      }
+    }
+  }
+}
+
+/** Wallet ownership proof state for hello.ok. Proof is PER-SESSION (never durable
+ *  by wallet — that would let anyone claim a proven address), so a fresh session
+ *  with an unproven wallet gets a nonce to sign. */
+function issueWalletNonce(session: Session): { walletNonce?: string; walletProven?: boolean } {
+  if (!session.wallet) return {};
+  if (session.walletProven) return { walletProven: true };
+  session.walletNonce = randomBytes(16).toString('hex');
+  return { walletNonce: session.walletNonce, walletProven: false };
+}
+
 async function stakeBlock(session: Session, stake: StakeCents): Promise<string | null> {
   if (stake <= 0) return null;
+  // Staked play requires accepting the CURRENT terms (18+/ToS), enforced
+  // server-side (the client gate is bypassable). Recorded in recordConsent.
+  if (session.consentTos !== TOS_VERSION) {
+    return 'Please accept the current Terms (18+) to play staked games.';
+  }
+  // Wallet-backed staked play requires a proven wallet (SIWE) so RG limits and
+  // self-exclusion can't be dodged by claiming a different/blank address.
+  if (session.wallet && !session.walletProven) {
+    return 'Verify your wallet ownership to play staked games.';
+  }
   // Never take REAL stakes when settlement can't survive a restart (in-memory /
   // Redis-only): a crash would drop the settlement job and lock funds in escrow.
   // Only wallet-backed players lock real funds on-chain; wallet-less demo players
@@ -925,6 +1076,20 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
 }
 
 async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = false): Promise<void> {
+  // Anti-grinding (audit HIGH-1): STAKED games REQUIRE the commit-reveal flow —
+  // both clients must have sent an entropy COMMIT in hello so the server binds its
+  // seed without ever seeing raw entropy first. A client that omits it (stale
+  // cache, or a crafted client trying to force the grindable legacy path) cannot
+  // play for money. Refuse before any state mutates. Free/practice (stake 0) may
+  // still use the legacy path for backward compatibility.
+  const newFlow = !!a.entropyCommit && !!b.entropyCommit;
+  if (stake > 0 && !newFlow) {
+    const err: ServerMsg = { t: 'error', code: 'BAD_STATE', message: 'Please update the app to play staked games (fair-dice handshake required).' };
+    a.send(err);
+    b.send(err);
+    console.warn(`[fairness] refused staked game: missing entropyCommit (a=${!!a.entropyCommit} b=${!!b.entropyCommit})`);
+    return;
+  }
   const gameId = randomBytes(16).toString('hex');
   // Durable participant rows must exist before the game record references them.
   const idA = playerId(a.wallet, a.id);
@@ -943,9 +1108,8 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
   }
   // Anti-grinding: if both clients sent an entropy COMMIT, the server commits its
   // seed now (knowing only the hashes), announces the match, and waits for both to
-  // reveal their raw entropy before finalizing the dice. Legacy clients that sent
-  // raw entropy fall back to the immediate (grindable) path for deploy compatibility.
-  const newFlow = !!a.entropyCommit && !!b.entropyCommit;
+  // reveal their raw entropy before finalizing the dice. Only free/practice games
+  // (stake 0) may reach the legacy immediate path — staked games were refused above.
   const pot = potCents(stake);
   if (newFlow) {
     const { serverSeed, commit } = createSeedCommit();
