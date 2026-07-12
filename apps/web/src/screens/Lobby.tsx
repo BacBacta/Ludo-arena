@@ -9,10 +9,12 @@ export function Lobby({
   onPlay,
   onCreateTable,
   onFreeroll,
+  onPlay4,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
   onFreeroll(): void;
+  onPlay4(): void;
 }) {
   const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
@@ -112,6 +114,19 @@ export function Lobby({
             <span className="mini__badge">🎟️ {tickets}</span>
           </b>
           {t('freerollDesc')}
+        </div>
+        <div
+          className={`mini mini--action${tickets < 1 ? ' mini--dim' : ''}`}
+          onClick={() => {
+            if (tickets < 1) dispatch({ type: 'TOAST', message: t('freerollNeedTicket') });
+            else onPlay4();
+          }}
+        >
+          <b>
+            <IconUsers className="icon--gold" /> {t('fourPlayer')}
+            <span className="mini__badge">🎟️ {tickets}</span>
+          </b>
+          {t('fourPlayerDesc')}
         </div>
         <div className="mini mini--action" onClick={createTable}>
           <b>

@@ -12,6 +12,7 @@ import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
+import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { DiceModal, FairnessModal, LegalModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits, buySkin } from './lib/session';
@@ -212,6 +213,15 @@ export default function App() {
     [openPrivate],
   );
 
+  // 4-player online Sit&Go: ticket-gated table for up to 4 humans + bot-fill.
+  // Self-contained screen (owns its own Remote4 socket); just tear down any
+  // 2-player session and switch screens.
+  const startOnline4 = useCallback(() => {
+    sessionRef.current?.dispose();
+    sessionRef.current = null;
+    dispatch({ type: 'START_ONLINE4' });
+  }, [dispatch]);
+
   // Freeroll: ticket-gated free 1v1 on the server (no bot fallback — the entry
   // ticket only makes sense against a real opponent).
   const startFreeroll = useCallback(() => {
@@ -290,7 +300,9 @@ export default function App() {
 
   return (
     <>
-      {state.screen === 'lobby' && <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} />}
+      {state.screen === 'lobby' && (
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={startOnline4} />
+      )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
           onCancel={() => {
@@ -303,7 +315,17 @@ export default function App() {
       {state.screen === 'game' && state.practice4 && (
         <Game4Screen onLeave={() => dispatch({ type: 'GO_LOBBY' })} />
       )}
-      {state.screen === 'game' && !state.practice4 && (
+      {state.screen === 'game' && state.online4 && (
+        <Game4OnlineScreen
+          onLeave={() => dispatch({ type: 'GO_LOBBY' })}
+          serverUrl={SERVER_URL}
+          walletAddress={walletRef.current?.address}
+          tickets={state.tickets}
+          onSyncTickets={(total) => dispatch({ type: 'TICKETS', total })}
+          onToast={(message) => dispatch({ type: 'TOAST', message })}
+        />
+      )}
+      {state.screen === 'game' && !state.practice4 && !state.online4 && (
         <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} />
       )}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}

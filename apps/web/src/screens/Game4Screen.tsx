@@ -6,8 +6,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
 import { Die3D } from '../components/Die3D';
+import { SeatAvatar, SeatDie, WHITE_DIE } from '../components/Seat4';
 import { IconMenu } from '../components/icons';
-import type { DiceSkin } from '../lib/diceSkins';
 import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
 import { BOT_MOVE_MS, BOT_ROLL_MS, DIE_SETTLE_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playCapture, playDice, playWin } from '../lib/sound';
@@ -21,41 +21,7 @@ const PLAYERS = [
   { name: 'Dragan', flag: '🇷🇸' },
 ];
 
-/** Ludo Club uses one WHITE die with black pips for everyone; the active player
- *  is identified by the die's POSITION at their corner, not by colour. */
-const WHITE_DIE: DiceSkin = {
-  id: 'ludo-white',
-  name: '',
-  unlocked: () => true,
-  body1: '#ffffff',
-  body2: '#eef0f5',
-  pip: '#161b28',
-  stroke: '#c7cdd9',
-};
-
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
-
-/** Grey placeholder avatar tile at a board corner; the active seat lifts slightly. */
-function SeatAvatar({ name, active }: { name: string; active: boolean }) {
-  return (
-    <div className={`seatav${active ? ' seatav--active' : ''}`} aria-label={name}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx={12} cy={9} r={4.4} fill="#aab6c9" />
-        <path d="M3.5 21c1.4-4 5-6 8.5-6s7.1 2 8.5 6z" fill="#aab6c9" />
-      </svg>
-    </div>
-  );
-}
-
-/** White 3D cube die shown beside a player's avatar; it somersaults on each new
- *  roll (rollKey) and lands on the value. */
-function Die({ value, rollKey }: { value: number; rollKey: number }) {
-  return (
-    <div className="ludodie">
-      <Die3D value={value} rollKey={rollKey} skin={WHITE_DIE} />
-    </div>
-  );
-}
 
 export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const { balanceCents } = useAppState();
@@ -176,10 +142,10 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         <div className="avrow">
           <div className="avrow__side">
             <SeatAvatar name="Ana" active={activeSeat === 1} />
-            {activeSeat === 1 && <Die value={dieValue} rollKey={rollKey} />}
+            {activeSeat === 1 && <SeatDie value={dieValue} rollKey={rollKey} />}
           </div>
           <div className="avrow__side">
-            {activeSeat === 2 && <Die value={dieValue} rollKey={rollKey} />}
+            {activeSeat === 2 && <SeatDie value={dieValue} rollKey={rollKey} />}
             <SeatAvatar name="Young" active={activeSeat === 2} />
           </div>
         </div>
@@ -207,7 +173,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
             )}
           </div>
           <div className="avrow__side">
-            {activeSeat === 3 && <Die value={dieValue} rollKey={rollKey} />}
+            {activeSeat === 3 && <SeatDie value={dieValue} rollKey={rollKey} />}
             <SeatAvatar name="Dragan" active={activeSeat === 3} />
           </div>
         </div>
