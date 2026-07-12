@@ -63,6 +63,8 @@ export type StakingState = 'idle' | 'approving' | 'joining' | 'locked' | 'failed
 
 export interface AppState {
   screen: Screen;
+  /** Local 4-player practice game (you + 3 bots), separate from staked PvP. */
+  practice4: boolean;
   balanceCents: number;
   /** True once the balance comes from a connected wallet (no simulated debits). */
   walletBacked: boolean;
@@ -126,6 +128,7 @@ function markOnboarded(): void {
 
 export const initialState: AppState = {
   screen: 'lobby',
+  practice4: false,
   balanceCents: 500,
   walletBacked: false,
   stakeCents: 25,
@@ -161,6 +164,7 @@ export const initialState: AppState = {
 export type Action =
   | { type: 'SELECT_STAKE'; stake: StakeCents }
   | { type: 'START_MATCHMAKING'; botMode: boolean }
+  | { type: 'START_PRACTICE4' }
   | { type: 'MATCH_FOUND'; match: MatchInfo }
   | { type: 'GAME_STATE'; game: GameState }
   | { type: 'DICE'; value: number; index: number; seat: Seat }
@@ -194,10 +198,13 @@ export function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
     case 'SELECT_STAKE':
       return { ...s, stakeCents: a.stake };
+    case 'START_PRACTICE4':
+      return { ...s, screen: 'game', practice4: true, match: null, game: null, result: null, lastDice: null };
     case 'START_MATCHMAKING':
       return {
         ...s,
         screen: 'matchmaking',
+        practice4: false,
         botMode: a.botMode,
         match: null,
         game: null,
@@ -269,7 +276,7 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_BALANCE':
       return { ...s, balanceCents: a.cents, walletBacked: true };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
+      return { ...s, screen: 'lobby', practice4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
     case 'TOAST':
       return { ...s, toast: a.message };
     case 'CLEAR_TOAST':

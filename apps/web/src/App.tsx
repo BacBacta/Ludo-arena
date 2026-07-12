@@ -11,6 +11,7 @@ import { fmtUsd, saveRetention, useAppDispatch, useAppState } from './state/stor
 import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
+import { Game4Screen } from './screens/Game4Screen';
 import { EndScreen } from './screens/EndScreen';
 import { DiceModal, FairnessModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits } from './lib/session';
@@ -134,10 +135,16 @@ export default function App() {
   const startMatch = useCallback(
     async (stake: StakeCents) => {
       sessionRef.current?.dispose();
-      dispatch({ type: 'START_MATCHMAKING', botMode: stake === 0 });
+      sessionRef.current = null;
+      // Free/practice → local 4-player game (you + 3 bots); staked → 2-player PvP.
+      if (stake === 0) {
+        dispatch({ type: 'START_PRACTICE4' });
+        return;
+      }
+      dispatch({ type: 'START_MATCHMAKING', botMode: false });
 
       // Staked game: connect the wallet up front so funds can be locked on match.
-      if (stake > 0 && !walletRef.current) {
+      if (!walletRef.current) {
         const wallet = await connectWallet().catch(() => null);
         if (wallet) {
           walletRef.current = wallet;
@@ -148,10 +155,6 @@ export default function App() {
       }
 
       const ev = makeEvents();
-      if (stake === 0) {
-        sessionRef.current = new LocalBotSession(ev, stake);
-        return;
-      }
       // PvP: real-time server, falls back to the local bot if unreachable
       sessionRef.current = new RemoteSession(
         ev,
@@ -233,7 +236,10 @@ export default function App() {
     <>
       {state.screen === 'lobby' && <Lobby onPlay={startMatch} onCreateTable={createTable} />}
       {state.screen === 'matchmaking' && <Matchmaking />}
-      {state.screen === 'game' && <GameScreen onRoll={roll} onMove={move} />}
+      {state.screen === 'game' && state.practice4 && (
+        <Game4Screen onLeave={() => dispatch({ type: 'GO_LOBBY' })} />
+      )}
+      {state.screen === 'game' && !state.practice4 && <GameScreen onRoll={roll} onMove={move} />}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
       <WelcomeModal onStartFree={() => startMatch(0)} />
       <StakingOverlay />
