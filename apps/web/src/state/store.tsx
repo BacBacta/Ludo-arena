@@ -113,6 +113,8 @@ export interface AppState {
   /** Age (18+) + Terms/Privacy consent, required once before staked play. */
   legalAccepted: boolean;
   legalOpen: boolean;
+  /** Responsible-gaming reality check: periodic "you've been playing…" reminder. */
+  realityOpen: boolean;
 }
 
 const ONBOARD_KEY = 'ludo.onboarded';
@@ -184,6 +186,7 @@ export const initialState: AppState = {
   onboardOpen: firstSession(),
   legalAccepted: legalAcceptedInit(),
   legalOpen: false,
+  realityOpen: false,
 };
 
 export type Action =
@@ -221,7 +224,8 @@ export type Action =
   | { type: 'DICE_MODAL'; open: boolean }
   | { type: 'ONBOARD_DONE' }
   | { type: 'LEGAL_MODAL'; open: boolean }
-  | { type: 'ACCEPT_LEGAL' };
+  | { type: 'ACCEPT_LEGAL' }
+  | { type: 'REALITY_CHECK'; open: boolean };
 
 export function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
@@ -337,6 +341,8 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'ACCEPT_LEGAL':
       markLegalAccepted();
       return { ...s, legalAccepted: true, legalOpen: false };
+    case 'REALITY_CHECK':
+      return { ...s, realityOpen: a.open };
     default:
       return s;
   }

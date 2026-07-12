@@ -15,7 +15,7 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { DiceModal, FairnessModal, LegalModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { DiceModal, FairnessModal, LegalModal, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits, buySkin } from './lib/session';
 import { connectWallet, lockStake, walletBalanceCents, type Wallet } from './lib/minipay';
 import { playCapture, playDice, playWin } from './lib/sound';
@@ -23,6 +23,8 @@ import { recordGameResult } from './lib/diceSkins';
 import { t } from './lib/i18n';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
+/** Responsible-gaming reality check cadence — remind an actively-staking player. */
+const REALITY_CHECK_MS = 20 * 60_000;
 
 export default function App() {
   const state = useAppState();
@@ -263,6 +265,20 @@ export default function App() {
     );
   }, [dispatch, makeEvents, makeAuth]);
 
+  // Responsible-gaming reality check: while a player who has staked today keeps
+  // playing, periodically remind them of time played + amount staked (read via a
+  // ref so the interval isn't reset on every limits update).
+  const sessionStart = useRef(Date.now());
+  const limitsRef = useRef(state.limits);
+  limitsRef.current = state.limits;
+  useEffect(() => {
+    const id = setInterval(() => {
+      const l = limitsRef.current;
+      if (l.stakedTodayCents > 0 && !l.selfExcludedUntil) dispatch({ type: 'REALITY_CHECK', open: true });
+    }, REALITY_CHECK_MS);
+    return () => clearInterval(id);
+  }, [dispatch]);
+
   // Join a table from a #/g/CODE link on first load.
   useEffect(() => {
     const m = /[#/]g\/([A-Z2-9]{6})/i.exec(window.location.hash || window.location.pathname);
@@ -373,6 +389,10 @@ export default function App() {
       <FairnessModal />
       <DiceModal onBuy={purchaseSkin} />
       <SettingsModal onApply={applyLimits} />
+      <RealityCheckModal
+        minutesPlayed={Math.max(1, Math.round((Date.now() - sessionStart.current) / 60_000))}
+        onBreak={() => void applyLimits({ selfExcludeDays: 1 })}
+      />
       <Toast />
     </>
   );

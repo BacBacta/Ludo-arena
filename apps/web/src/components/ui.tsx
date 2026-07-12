@@ -126,6 +126,39 @@ export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?
   );
 }
 
+/**
+ * Responsible-gaming reality check: a periodic reminder of time played + amount
+ * staked today, with a one-tap cooling-off (self-exclude 1 day). Shown while a
+ * session that has staked is active — a recognised RG safeguard.
+ */
+export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: number; onBreak(): void }) {
+  const { realityOpen, limits } = useAppState();
+  const dispatch = useAppDispatch();
+  if (!realityOpen) return null;
+  const close = (): void => void dispatch({ type: 'REALITY_CHECK', open: false });
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+        <h3>{t('realityTitle')}</h3>
+        <p className="muted" style={{ fontSize: 13 }}>
+          {t('realityPlayed')} <b>{minutesPlayed} {t('realityMinutes')}</b>. {t('realityStaked')} <b>{fmtUsd(limits.stakedTodayCents)}</b>.
+        </p>
+        <p className="muted" style={{ fontSize: 12 }}>{t('realityPrompt')}</p>
+        <button className="btn" onClick={close}>{t('realityKeep')}</button>
+        <button
+          className="btn btn--ghost"
+          onClick={() => {
+            onBreak();
+            close();
+          }}
+        >
+          {t('realityBreak')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Dice-skin picker: progression rewards now, paid skins once payments land. */
 export function DiceModal({ onBuy }: { onBuy(skinId: string): void }) {
   const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins } = useAppState();
