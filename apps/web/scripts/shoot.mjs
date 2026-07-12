@@ -34,13 +34,33 @@ await page.getByText('PLAY').first().click();
 await page.waitForTimeout(2600); // bot match intro
 await page.screenshot({ path: `${OUT}/game.png` });
 
-// roll once to see dice/tokens mid-game
+// roll once, then move a token if a choice is offered
 try {
   await page.locator('.dicebtn:not([disabled])').click({ timeout: 4000 });
-  await page.waitForTimeout(1600);
+  await page.waitForTimeout(1000);
+  const movable = page.locator('.token--movable').first();
+  if (await movable.count()) await movable.click({ timeout: 1500 }).catch(() => {});
+  await page.waitForTimeout(1400);
   await page.screenshot({ path: `${OUT}/game2.png` });
 } catch {
   /* not our turn fast enough; game.png is enough */
+}
+
+// keep playing my turns (handles extra-turn 6s) until the opponent is active
+for (let i = 0; i < 12; i++) {
+  if (await page.locator('.pdie--opp.pdie--active').count()) {
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: `${OUT}/game_opp.png` });
+    break;
+  }
+  const rollBtn = page.locator('.pdie--roll');
+  if (await rollBtn.count()) {
+    await rollBtn.click({ timeout: 1500 }).catch(() => {});
+    await page.waitForTimeout(900);
+    const mv = page.locator('.token--movable').first();
+    if (await mv.count()) await mv.click({ timeout: 1500 }).catch(() => {});
+  }
+  await page.waitForTimeout(1300);
 }
 
 await browser.close();

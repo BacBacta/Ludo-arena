@@ -584,39 +584,46 @@ small.muted { font-size: 12px; }
 .token { cursor: pointer; }
 .token--movable { filter: drop-shadow(0 0 3px var(--accent)); }
 
-.controls { display: flex; align-items: center; gap: 12px; }
-.dicebtn {
-  flex: 0 0 92px;
-  height: 92px;
-  border-radius: 22px;
+.controls { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.gamemsg--center { flex: 0 1 auto; text-align: center; }
+
+/* Board stage: the board plus each player's die floating over their home base. */
+.boardstage { position: relative; }
+.pdie {
+  position: absolute;
+  width: 20%;
+  aspect-ratio: 1;
+  padding: 6%;
   border: none;
-  border-bottom: 4px solid #c98f00;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, #ffe27a, #f5b301 60%, #e8a400);
-  cursor: pointer;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 8px 18px rgba(23, 43, 99, 0.35);
-  transition: transform 0.1s ease;
+  border-radius: 22%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 6px 16px rgba(15, 26, 68, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.6);
+  transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+  z-index: 2;
 }
-.dicebtn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; }
-.dicebtn:disabled { background: #dfe5f1; opacity: 1; border-bottom-color: #c2cde2; box-shadow: 0 4px 12px rgba(23, 43, 99, 0.25); cursor: default; }
-.dicebtn:disabled .die { opacity: 0.55; }
-/* opponent die: muted tray (not a gold button) so whose roll it is stays clear */
-.dicebtn--opp {
-  background: linear-gradient(180deg, #eef3ec, #d8e6d9);
-  border-bottom-color: #b6ccb8;
-  cursor: default;
+.pdie .die { width: 100%; height: 100%; display: block; filter: drop-shadow(0 2px 3px rgba(15, 26, 68, 0.35)); }
+/* mine sits over the blue home (bottom-left); opponent's over the green (top-right) */
+.pdie--me { left: 23%; top: 77%; }
+.pdie--opp { left: 77%; top: 23%; cursor: default; }
+/* active player's die is bright and lifted; the idle one recedes */
+.pdie--active { opacity: 1; }
+.pdie--idle { opacity: 0.5; transform: translate(-50%, -50%) scale(0.82); box-shadow: 0 3px 8px rgba(15, 26, 68, 0.3); }
+/* my die invites the tap when I can roll */
+.pdie--roll {
+  cursor: pointer;
+  background: linear-gradient(180deg, #fff2c0, #ffe081);
+  box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.9), 0 8px 20px rgba(245, 179, 1, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.7);
+  animation: pdiepulse 1.4s ease infinite;
+}
+.pdie--roll:active { transform: translate(-50%, -50%) scale(0.94); }
+@keyframes pdiepulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.9), 0 8px 20px rgba(245, 179, 1, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.7); }
+  50% { box-shadow: 0 0 0 5px rgba(245, 179, 1, 1), 0 10px 26px rgba(245, 179, 1, 0.6), inset 0 2px 0 rgba(255, 255, 255, 0.7); }
 }
 .die { width: 54px; height: 54px; display: block; }
-/* idle nudge invites the tap; the tumble plays while faces cycle */
-.dicebtn:not(:disabled):not(.dicebtn--rolling) .die { animation: nudge 1.8s ease infinite; }
-@keyframes nudge {
-  0%, 24%, 100% { transform: none; }
-  8% { transform: rotate(-9deg); }
-  16% { transform: rotate(7deg); }
-}
-.dicebtn--rolling .die { animation: tumble 0.75s cubic-bezier(0.3, 0, 0.3, 1); }
+/* the tumble plays while faces cycle */
+.pdie--rolling .die { animation: tumble 0.6s cubic-bezier(0.3, 0, 0.3, 1); }
 @keyframes tumble {
   0% { transform: rotate(0) scale(1); }
   30% { transform: rotate(200deg) scale(0.78); }
@@ -625,7 +632,7 @@ small.muted { font-size: 12px; }
   100% { transform: rotate(720deg) scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .dicebtn .die, .dicebtn--rolling .die, .ring--low { animation: none !important; }
+  .pdie .die, .pdie--rolling .die, .pdie--roll, .ring--low { animation: none !important; }
 }
 .gamemsg { flex: 1; font-size: 15px; line-height: 1.35; color: #ffffff; text-shadow: 0 1px 0 rgba(23, 43, 99, 0.3); }
 .gamemsg small { display: block; color: rgba(255, 255, 255, 0.75); font-size: 11px; margin-top: 3px; }

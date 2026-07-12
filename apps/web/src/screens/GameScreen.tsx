@@ -128,29 +128,31 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
           </div>
         </div>
 
-        <Board game={game} mySeat={mySeat} onTokenTap={onMove} />
+        {/* Each player's die sits over their own home base (Ludo-Club style):
+            mine at the blue bottom-left, the opponent's at the green top-right. */}
+        <div className="boardstage">
+          <Board game={game} mySeat={mySeat} onTokenTap={onMove} />
+          <div
+            className={`pdie pdie--opp ${!myTurn ? 'pdie--active' : 'pdie--idle'}${oppTumble !== null ? ' pdie--rolling' : ''}`}
+            aria-label={`${match.opponent.name} die`}
+          >
+            <DieFace value={oppFace} skin={OPP_SKIN} />
+          </div>
+          <button
+            className={`pdie pdie--me ${myTurn ? 'pdie--active' : 'pdie--idle'}${myTumble !== null ? ' pdie--rolling' : ''}${canRoll ? ' pdie--roll' : ''}`}
+            disabled={!canRoll}
+            onClick={() => {
+              playDice(); // immediate feedback; the server result lands ~RTT later
+              onRoll();
+            }}
+            aria-label={`${t('you')} die`}
+          >
+            <DieFace value={myFace} skin={skin} />
+          </button>
+        </div>
 
         <div className="controls">
-          {myTurn ? (
-            <button
-              className={`dicebtn${myTumble !== null ? ' dicebtn--rolling' : ''}`}
-              disabled={!canRoll}
-              onClick={() => {
-                playDice(); // immediate feedback; the server result lands ~RTT later
-                onRoll();
-              }}
-            >
-              <DieFace value={myFace} skin={skin} />
-            </button>
-          ) : (
-            <div
-              className={`dicebtn dicebtn--opp${oppTumble !== null ? ' dicebtn--rolling' : ''}`}
-              aria-label={`${match.opponent.name} die`}
-            >
-              <DieFace value={oppFace} skin={OPP_SKIN} />
-            </div>
-          )}
-          <div className="gamemsg">
+          <div className="gamemsg gamemsg--center">
             <span>{message}</span>
             <small>
               {t('rollNo')} #{lastDice?.index ?? 0} ·{' '}
