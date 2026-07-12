@@ -13,6 +13,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `table.join` | `{ code }` | Joins a private table by its 6-char code; pairs with the host or returns `error TABLE_NOT_FOUND`. |
 | `game.roll` | `{}` | Requests the roll (if it is their turn and phase is `awaiting-roll`). |
 | `game.move` | `{ token }` | Plays token `token` (0 or 1). |
+| `game.resign` | `{}` | Deliberately forfeits the current match — the opponent wins and the normal `game.over`/settlement path runs. |
 | `game.rematch` | `{}` | Offers a same-stake rematch. |
 | `ping` | `{}` | Keepalive (every 20 s). |
 

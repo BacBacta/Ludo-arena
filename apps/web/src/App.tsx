@@ -235,14 +235,32 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && <Lobby onPlay={startMatch} onCreateTable={createTable} />}
-      {state.screen === 'matchmaking' && <Matchmaking />}
+      {state.screen === 'matchmaking' && (
+        <Matchmaking
+          onCancel={() => {
+            sessionRef.current?.dispose();
+            sessionRef.current = null;
+            dispatch({ type: 'GO_LOBBY' });
+          }}
+        />
+      )}
       {state.screen === 'game' && state.practice4 && (
         <Game4Screen onLeave={() => dispatch({ type: 'GO_LOBBY' })} />
       )}
-      {state.screen === 'game' && !state.practice4 && <GameScreen onRoll={roll} onMove={move} />}
+      {state.screen === 'game' && !state.practice4 && (
+        <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} />
+      )}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
       <WelcomeModal onStartFree={() => startMatch(0)} />
-      <StakingOverlay />
+      <StakingOverlay
+        onCancel={() => {
+          dispatch({ type: 'STAKING', status: 'failed' });
+          dispatch({ type: 'TOAST', message: t('stakeFailed') });
+          sessionRef.current?.dispose();
+          sessionRef.current = null;
+          dispatch({ type: 'GO_LOBBY' });
+        }}
+      />
       <FairnessModal />
       <DiceModal />
       <SettingsModal onApply={applyLimits} />

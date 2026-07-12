@@ -190,9 +190,19 @@ export function WelcomeModal({ onStartFree }: { onStartFree(): void }) {
   );
 }
 
-export function StakingOverlay() {
+export function StakingOverlay({ onCancel }: { onCancel?: () => void }) {
   const { staking, match } = useAppState();
-  if (staking !== 'approving' && staking !== 'joining') return null;
+  const active = staking === 'approving' || staking === 'joining';
+  // Reveal a cancel after a normal confirmation window so a wallet that never
+  // resolves can't strand the user behind a spinner while their clock runs.
+  const [showCancel, setShowCancel] = useState(false);
+  useEffect(() => {
+    setShowCancel(false);
+    if (!active) return;
+    const id = setTimeout(() => setShowCancel(true), 8000);
+    return () => clearTimeout(id);
+  }, [active, staking]);
+  if (!active) return null;
   return (
     <div className="modal">
       <div className="modal__card" style={{ textAlign: 'center' }}>
@@ -202,6 +212,11 @@ export function StakingOverlay() {
           <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
             {fmtUsd(match.stakeCents)} · {t('stakingHint')}
           </div>
+        )}
+        {showCancel && onCancel && (
+          <button className="btn btn--ghost" style={{ marginTop: 16 }} onClick={onCancel}>
+            {t('cancel')}
+          </button>
         )}
       </div>
     </div>

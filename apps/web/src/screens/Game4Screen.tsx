@@ -10,8 +10,9 @@ import { IconMenu } from '../components/icons';
 import type { DiceSkin } from '../lib/diceSkins';
 import { applyMove4, applyRoll4, newGame4, pickAutoMove4, type Game4 } from '../lib/ludo4';
 import { BOT_MOVE_MS, BOT_ROLL_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
-import { playCapture, playDice } from '../lib/sound';
+import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
+import { t } from '../lib/i18n';
 
 const PLAYERS = [
   { name: 'YOU', flag: '🌍' },
@@ -112,6 +113,23 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const dieValue = roll?.value ?? 6;
   const rollKey = roll?.key ?? 0;
 
+  // Game over: show a win/lose card instead of a frozen board (was a dead end).
+  const over = game.phase === 'over';
+  const iWon = over && game.winner === mySeat;
+  const overFired = useRef(false);
+  useEffect(() => {
+    if (over && !overFired.current) {
+      overFired.current = true;
+      if (iWon) playWin();
+    }
+    if (!over) overFired.current = false;
+  }, [over, iWon]);
+
+  function restart(): void {
+    setRoll(null);
+    setGame(newGame4());
+  }
+
   return (
     <div className="screen screen--game">
       <div className="gamewrap">
@@ -168,6 +186,18 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           </div>
         </div>
       </div>
+
+      {over && (
+        <div className="g4over" role="dialog" aria-modal="true" aria-label={iWon ? t('victory') : t('defeat')}>
+          <div className="g4over__card">
+            <div className="g4over__emoji" aria-hidden="true">{iWon ? '🏆' : '🎲'}</div>
+            <div className="g4over__title">{iWon ? t('victory') : `${PLAYERS[game.winner ?? 0]?.name ?? ''} — ${t('defeat')}`}</div>
+            <div className="g4over__sub">{t('trainingGame')}</div>
+            <button className="btn" onClick={restart}>{t('rematch')}</button>
+            <button className="btn btn--ghost" onClick={onLeave}>{t('home')}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

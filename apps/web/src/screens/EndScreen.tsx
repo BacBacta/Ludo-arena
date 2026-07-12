@@ -56,7 +56,7 @@ function Confetti() {
 }
 
 export function EndScreen({ onRematch }: { onRematch(): void }) {
-  const { result, match, settleTxHash, refunded, league } = useAppState();
+  const { result, match, settleTxHash, refunded, league, walletBacked } = useAppState();
   const dispatch = useAppDispatch();
 
   const won = !!result && !!match && result.winner === match.seat;
@@ -88,9 +88,13 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
           {!staked ? (
             t('trainingGame')
           ) : won ? (
-            <>
-              <b>{t('paidInstant')}</b> {t('onWallet')} · {t('rakeIncluded')} ({fmtUsd(result.rakeCents)})
-            </>
+            walletBacked ? (
+              <>
+                <b>{t('paidInstant')}</b> {t('onWallet')} · {t('rakeIncluded')} ({fmtUsd(result.rakeCents)})
+              </>
+            ) : (
+              t('demoPayout')
+            )
           ) : (
             t('lossSafety')
           )}

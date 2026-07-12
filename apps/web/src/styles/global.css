@@ -1234,3 +1234,50 @@ small.muted { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .token__body--hop { animation: none; }
 }
+
+/* ---- Practice (4P) game-over card — was a frozen dead end ---- */
+.g4over {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 16, 44, 0.62);
+  backdrop-filter: blur(3px);
+  animation: g4fade 0.25s ease;
+}
+@keyframes g4fade { from { opacity: 0; } to { opacity: 1; } }
+.g4over__card {
+  width: 100%;
+  max-width: 320px;
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 26px 22px 22px;
+  text-align: center;
+  box-shadow: 0 18px 40px rgba(8, 16, 44, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.g4over__emoji { font-size: 52px; line-height: 1; }
+.g4over__title { font-family: var(--font-display); font-size: 24px; font-weight: 700; color: #14245c; }
+.g4over__sub { font-size: 13px; color: #6b7794; margin-bottom: 6px; }
+@media (prefers-reduced-motion: reduce) { .g4over { animation: none; } }
+
+/* ---- matchmaking cancel + crash fallback ---- */
+.mm-cancel { margin-top: 18px; max-width: 220px; }
+.crash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.crash__card {
+  width: 100%; max-width: 300px; background: #ffffff; border-radius: 22px;
+  padding: 26px 22px 22px; text-align: center; box-shadow: 0 18px 40px rgba(8, 16, 44, 0.45);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.crash__emoji { font-size: 48px; }
+.crash__title { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: #14245c; }
+.crash__sub { font-size: 13px; color: #6b7794; margin-bottom: 6px; }
+
+/* leave/forfeit button in the staked game bar */
+.gamebar__btn--leave { color: #ffd7d2; }
+.gamebar__btn--leave:active { color: #ff9b90; }

@@ -509,6 +509,12 @@ wss.on('connection', (ws, req) => {
         if (session.room && session.seat !== null) session.room.move(session.seat, msg.token);
         break;
 
+      case 'game.resign':
+        // deliberate forfeit → the room finishes with the other seat as winner,
+        // driving the normal game.over + settlement path for the opponent.
+        if (session.room && session.seat !== null) session.room.resign(session.seat);
+        break;
+
       case 'limits.set': {
         const pid = playerId(session.wallet, session.id);
         const selfExcludedUntil = msg.selfExcludeDays ? utcPlusDays(msg.selfExcludeDays) : undefined;

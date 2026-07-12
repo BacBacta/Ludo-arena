@@ -80,7 +80,15 @@ function AvatarCard({
   );
 }
 
-export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: number): void }) {
+export function GameScreen({
+  onRoll,
+  onMove,
+  onLeave,
+}: {
+  onRoll(): void;
+  onMove(token: number): void;
+  onLeave(): void;
+}) {
   const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn } =
     useAppState();
   const dispatch = useAppDispatch();
@@ -219,6 +227,17 @@ export function GameScreen({ onRoll, onMove }: { onRoll(): void; onMove(token: n
           </button>
           <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
             <IconMenu />
+          </button>
+          <button
+            className="gamebar__btn gamebar__btn--leave"
+            aria-label={t('leaveGame')}
+            onClick={() => {
+              // leaving a live match forfeits it (opponent wins); confirm when a real stake is at risk
+              const staked = (match?.stakeCents ?? 0) > 0;
+              if (!staked || window.confirm(t('forfeitConfirm'))) onLeave();
+            }}
+          >
+            ✕
           </button>
         </div>
       </div>

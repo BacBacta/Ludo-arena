@@ -85,6 +85,8 @@ export interface SessionEvents {
 export interface GameSession {
   roll(): void;
   move(token: number): void;
+  /** Deliberately forfeit the current match (the opponent wins). */
+  resign(): void;
   dispose(): void;
 }
 
@@ -124,6 +126,15 @@ export class LocalBotSession implements GameSession {
     if (this.disposed || this.state.turn !== 0 || this.state.phase !== 'awaiting-move') return;
     if (!this.state.legal.includes(token)) return;
     this.applyMove(0, token);
+  }
+
+  resign(): void {
+    if (this.disposed) return;
+    // forfeit vs the local bot: the opponent (seat 1) wins; no real stake moves.
+    const pot = this.stakeCents * 2;
+    const rakeCents = Math.floor((pot * RAKE_BPS) / 10_000);
+    this.ev.onOver({ winner: 1, reason: 'resign', payoutCents: pot - rakeCents, rakeCents, eloDelta: -14 });
+    this.disposed = true;
   }
 
   dispose(): void {
@@ -452,6 +463,11 @@ export class RemoteSession implements GameSession {
 
   move(token: number): void {
     this.send({ t: 'game.move', token });
+  }
+
+  resign(): void {
+    // server forfeits the room → game.over(reason:'resign') drives the rest.
+    this.send({ t: 'game.resign' });
   }
 
   dispose(): void {

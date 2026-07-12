@@ -2,7 +2,7 @@ import { useAppDispatch, useAppState } from '../state/store';
 import { IconUsers } from '../components/icons';
 import { t } from '../lib/i18n';
 
-export function Matchmaking() {
+export function Matchmaking({ onCancel }: { onCancel(): void }) {
   const { match, privateCode } = useAppState();
   const dispatch = useAppDispatch();
 
@@ -68,6 +68,11 @@ export function Matchmaking() {
             </div>
             {match.stakeCents > 0 && <small className="muted">{t('escrow')}</small>}
           </>
+        )}
+        {!match && (
+          <button className="btn btn--ghost mm-cancel" onClick={onCancel}>
+            {t('cancel')}
+          </button>
         )}
       </div>
     </div>

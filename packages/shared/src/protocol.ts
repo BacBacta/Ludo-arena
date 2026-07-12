@@ -101,6 +101,8 @@ export type ClientMsg =
   | { t: 'limits.set'; dailyLimitCents?: number; selfExcludeDays?: number }
   | { t: 'game.roll' }
   | { t: 'game.move'; token: number }
+  // Forfeit the current match on purpose (the only deliberate exit from a game).
+  | { t: 'game.resign' }
   | { t: 'game.rematch' }
   | { t: 'ping' };
 
@@ -238,6 +240,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return Number.isInteger(m.token) && m.token >= 0 && m.token <= 3 ? m : null;
     case 'queue.leave':
     case 'game.roll':
+    case 'game.resign':
     case 'game.rematch':
     case 'ping':
       return m;

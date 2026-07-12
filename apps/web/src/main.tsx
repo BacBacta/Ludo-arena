@@ -1,17 +1,25 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { StoreProvider } from './state/store';
 import './styles/global.css';
+
+// Global safety net: surface (don't swallow) async failures instead of a
+// silent white screen. A real error tracker plugs in here later.
+window.addEventListener('error', (e) => console.error('[window.error]', e.error ?? e.message));
+window.addEventListener('unhandledrejection', (e) => console.error('[unhandledrejection]', e.reason));
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root not found');
 
 createRoot(root).render(
   <StrictMode>
-    <StoreProvider>
-      <App />
-    </StoreProvider>
+    <ErrorBoundary>
+      <StoreProvider>
+        <App />
+      </StoreProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );
 
