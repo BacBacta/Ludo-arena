@@ -1048,15 +1048,44 @@ small.muted { font-size: 12px; }
   15% { transform: translateY(0) rotate(5deg); }
 }
 .ludodie--tap:active:not(:disabled) { transform: scale(0.94); }
-/* rolling: the tile spins through a couple of turns and settles — the face
-   value cycles underneath so you watch the die tumble onto its number. */
-.ludodie--rolling .die { animation: ludotumble 0.72s cubic-bezier(0.3, 0, 0.3, 1); }
-@keyframes ludotumble {
-  0%   { transform: rotate(0) scale(1); }
-  25%  { transform: rotate(180deg) scale(0.82); }
-  50%  { transform: rotate(370deg) scale(1.12); }
-  75%  { transform: rotate(560deg) scale(0.92); }
-  100% { transform: rotate(720deg) scale(1); }
+/* rolling: a real die somersaulting — leaves the hand fast, tumbles over
+   three UNEQUAL axes (X 2 flips, Y 3 flips, Z 1 spin) with the rotation rate
+   decaying, then a short damped settling wobble and a flat thud onto its number.
+   The pip value cycles underneath so you watch it land. Self-contained:
+   perspective() is the FIRST function in every transform, so no container edit. */
+.ludodie--rolling .die {
+  animation: dietumble3d 0.72s cubic-bezier(0.2, 0.68, 0.28, 1) both;
+  transform-origin: 50% 50%;
+}
+@keyframes dietumble3d {
+  /* leaves the hand */
+  0% {
+    transform: perspective(340px) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(1);
+  }
+  /* fast burst up (front-loaded) */
+  15% {
+    transform: perspective(340px) rotateX(216deg) rotateY(324deg) rotateZ(108deg) scale(1.08);
+  }
+  /* peak of the arc — still spinning hard */
+  35% {
+    transform: perspective(340px) rotateX(504deg) rotateY(756deg) rotateZ(252deg) scale(1.12);
+  }
+  /* ~95% of every rotation already done: energy bleeding off */
+  60% {
+    transform: perspective(340px) rotateX(684deg) rotateY(1044deg) rotateZ(342deg) scale(1.05);
+  }
+  /* thud flat — overshoots the target and squashes */
+  80% {
+    transform: perspective(340px) rotateX(726deg) rotateY(1092deg) rotateZ(366deg) scale(0.94);
+  }
+  /* damped wobble back under the target, tiny rebound */
+  92% {
+    transform: perspective(340px) rotateX(714deg) rotateY(1072deg) rotateZ(354deg) scale(1.02);
+  }
+  /* settled: every axis a clean 360-multiple, scale 1 → face-on & upright */
+  100% {
+    transform: perspective(340px) rotateX(720deg) rotateY(1080deg) rotateZ(360deg) scale(1);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .ludodie--tap:not(:disabled), .ludodie--rolling .die { animation: none !important; }
@@ -1162,7 +1191,7 @@ small.muted { font-size: 12px; }
 /* pawn wrapper: centred in its cell (foot above the border line) */
 .token__body { transform: translate(0px, -0.04px) scale(1.16); }
 /* per-cell hop while walking — no more sliding (synced to WALK_STEP_MS) */
-.token__body--hop { animation: pawnhop 0.36s ease-in-out infinite; }
+.token__body--hop { animation: pawnhop 0.30s ease-in-out infinite; }
 @keyframes pawnhop {
   0%, 100% { transform: translate(0px, -0.04px) scale(1.16); }
   45% { transform: translate(0px, -0.3px) scale(1.16); }
