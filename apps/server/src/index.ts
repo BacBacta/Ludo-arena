@@ -626,9 +626,13 @@ function normalizeWallet(w?: string): string | undefined {
 
 async function stakeBlock(session: Session, stake: StakeCents): Promise<string | null> {
   if (stake <= 0) return null;
-  // Never take real stakes when settlement can't survive a restart (in-memory /
+  // Never take REAL stakes when settlement can't survive a restart (in-memory /
   // Redis-only): a crash would drop the settlement job and lock funds in escrow.
-  if (!store.settlementDurable()) return 'Staked games are temporarily unavailable — free practice only.';
+  // Only wallet-backed players lock real funds on-chain; wallet-less demo players
+  // stake simulated balances (no escrow, no settlement job) so they're unaffected.
+  if (session.wallet && !store.settlementDurable()) {
+    return 'Staked games are temporarily unavailable — free practice only.';
+  }
   if (isGeoBlocked(session.country)) return 'Staked games are not available in your region.';
   const limits = await store.getLimits(playerId(session.wallet, session.id), utcToday());
   if (limits.selfExcludedUntil) return `Self-excluded until ${limits.selfExcludedUntil}.`;
