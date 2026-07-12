@@ -995,11 +995,11 @@ small.muted { font-size: 12px; }
 }
 
 /* 4-player practice: banner positions on the four quadrants */
-.pbanner--q0 { left: 26%; top: 95.5%; }  /* blue bottom-left */
-.pbanner--q1 { left: 26%; top: 4.5%; }   /* red top-left */
-.pbanner--q2 { left: 74%; top: 4.5%; }   /* green top-right */
-.pbanner--q3 { left: 74%; top: 95.5%; }  /* yellow bottom-right */
-.huddie--big { width: 84px; height: 84px; border-radius: 20px; padding: 8px; }
+.pbanner--q0 { left: 25%; top: 97%; }   /* blue bottom-left */
+.pbanner--q1 { left: 25%; top: 3%; }    /* red top-left */
+.pbanner--q2 { left: 75%; top: 3%; }    /* green top-right */
+.pbanner--q3 { left: 75%; top: 97%; }   /* yellow bottom-right */
+.huddie--big { width: 84px; height: 84px; border-radius: 20px; padding: 8px; background: #ffffff; }
 .huddie--big .die { filter: drop-shadow(0 2px 3px rgba(15,26,68,.3)); }
 .linkbtn {
   border: none;

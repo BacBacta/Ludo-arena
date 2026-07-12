@@ -32,6 +32,9 @@ function seatSkin(seat: number): DiceSkin {
 }
 
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
+/** Active-die halo colour per seat (blue/red/green/yellow), lightly translucent. */
+const seatHex = (seat: number): string =>
+  ['rgba(62,99,221,.7)', 'rgba(229,72,77,.7)', 'rgba(70,167,88,.7)', 'rgba(244,180,0,.75)'][seat] ?? 'rgba(62,99,221,.7)';
 
 export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const { soundOn, balanceCents } = useAppState();
@@ -149,7 +152,13 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
                 <DieFace value={dieValue} skin={seatSkin(0)} />
               </button>
             ) : (
-              <div className={`huddie huddie--big${tumble !== null ? ' huddie--rolling' : ''}`} aria-label={`${activeName} die`}>
+              <div
+                className={`huddie huddie--big${tumble !== null ? ' huddie--rolling' : ''}`}
+                aria-label={`${activeName} die`}
+                style={{
+                  boxShadow: `0 4px 10px rgba(15,26,68,.35), 0 0 0 3px ${seatHex(activeSeat)}, inset 0 1px 0 rgba(255,255,255,.5)`,
+                }}
+              >
                 <DieFace value={dieValue} skin={seatSkin(activeSeat)} />
               </div>
             )}
