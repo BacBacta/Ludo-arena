@@ -39,16 +39,16 @@ export interface PlayerBanner4 {
 
 function homeCenter(qx: number, qy: number): [number, number] {
   const isTop = qy === 0;
-  const hy = isTop ? qy + 1.35 : qy + 0.25;
-  return [qx + 3, hy + 2.2];
+  const hy = isTop ? qy + 1.05 : qy + 0.45; // label band sits on the OUTER edge
+  return [qx + 3, hy + 2.25];
 }
 function quadSlots(qx: number, qy: number): Array<[number, number]> {
   const [cx, cy] = homeCenter(qx, qy);
   return [
-    [cx - 0.8, cy - 0.8],
-    [cx + 0.8, cy - 0.8],
-    [cx - 0.8, cy + 0.8],
-    [cx + 0.8, cy + 0.8],
+    [cx - 0.85, cy - 0.85],
+    [cx + 0.85, cy - 0.85],
+    [cx - 0.85, cy + 0.85],
+    [cx + 0.85, cy + 0.85],
   ];
 }
 function starPoints(cx: number, cy: number, r: number): string {
@@ -83,9 +83,8 @@ function Pawn({ seat }: { seat: number }) {
         </linearGradient>
         {/* head: radial glossy sphere, hot-spot upper-left */}
         <radialGradient id={hid} cx="35%" cy="28%" r="85%">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="22%" stopColor={c[0]} />
-          <stop offset="62%" stopColor={c[1]} />
+          <stop offset="0%" stopColor={c[0]} />
+          <stop offset="45%" stopColor={c[1]} />
           <stop offset="100%" stopColor={c[2]} />
         </radialGradient>
       </defs>
@@ -98,9 +97,8 @@ function Pawn({ seat }: { seat: number }) {
         stroke={dark}
         strokeWidth={0.026}
       />
-      {/* broad lengthwise gloss down the flare + bright edge */}
-      <path d="M -0.11 0.44 C -0.2 0.18 -0.09 0.0 -0.06 -0.12" fill="none" stroke="#ffffff" strokeWidth={0.09} strokeLinecap="round" opacity={0.3} />
-      <path d="M 0.14 0.42 C 0.2 0.2 0.12 0.04 0.09 -0.1" fill="none" stroke={c[0]} strokeWidth={0.04} strokeLinecap="round" opacity={0.6} />
+      {/* slim gloss streak down the flare */}
+      <path d="M -0.13 0.4 C -0.19 0.2 -0.1 0.02 -0.07 -0.1" fill="none" stroke="#ffffff" strokeWidth={0.05} strokeLinecap="round" opacity={0.5} />
       {/* neck occlusion */}
       <ellipse cx={0} cy={-0.2} rx={0.11} ry={0.04} fill={dark} opacity={0.4} />
       {/* glossy spherical head */}
@@ -114,18 +112,18 @@ function Pawn({ seat }: { seat: number }) {
 
 function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [string, string, string] }) {
   const isTop = y === 0;
-  const hy = isTop ? y + 1.35 : y + 0.25;
+  const hy = isTop ? y + 1.05 : y + 0.45;
   const slots = quadSlots(x, y);
   return (
     <g>
-      {/* flat solid quadrant (Ludo Club is matte, not glossy) + faint top sheen */}
-      <rect x={x} y={y} width={6} height={6} rx={0.5} fill={colors[1]} />
-      <rect x={x + 0.82} y={hy + 0.08} width={4.4} height={4.4} rx={0.5} fill="rgba(16,24,48,.14)" />
-      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.5} fill="#ffffff" />
-      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.5} fill="none" stroke={colors[2]} strokeWidth={0.05} opacity={0.14} />
+      {/* flat solid quadrant, square edges — the board reads as ONE continuous surface */}
+      <rect x={x} y={y} width={6} height={6} fill={colors[1]} />
+      {/* white home square with a soft drop edge */}
+      <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill="rgba(16,24,48,.16)" />
+      <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill="#ffffff" />
       {/* flat grey shadow coasters (pawns rest on these) */}
       {slots.map(([sx, sy], i) => (
-        <ellipse key={i} cx={sx} cy={sy + 0.06} rx={0.46} ry={0.3} fill="#dfe4ee" />
+        <ellipse key={i} cx={sx} cy={sy + 0.08} rx={0.48} ry={0.3} fill="#dfe4ee" />
       ))}
     </g>
   );
@@ -221,6 +219,9 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
     <div className={`boardwrap${shake ? ' boardwrap--shake' : ''}`}>
       <svg viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ludo board" shapeRendering="geometricPrecision">
         <defs>
+          <clipPath id="board4clip">
+            <rect x={0} y={0} width={15} height={15} rx={0.35} />
+          </clipPath>
           <radialGradient id="pawnCast4" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#0f1f4d" stopOpacity="0.42" />
             <stop offset="58%" stopColor="#0f1f4d" stopOpacity="0.2" />
@@ -232,15 +233,16 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
             <stop offset="100%" stopColor="#eef2f9" />
           </radialGradient>
         </defs>
-        <rect x={0} y={0} width={15} height={15} rx={0.4} fill="#ffffff" />
+        <g clipPath="url(#board4clip)">
+        <rect x={0} y={0} width={15} height={15} fill="#ffffff" />
 
         {QUADS.map((q) => (
           <Quadrant key={`${q.o[0]}-${q.o[1]}`} x={q.o[0]} y={q.o[1]} colors={q.c} />
         ))}
 
-        {/* track cells */}
+        {/* track cells: continuous grid, shared hairline borders (no gaps) */}
         {TRACK.map(([x, y], i) => (
-          <rect key={i} x={x + 0.015} y={y + 0.015} width={0.97} height={0.97} rx={0.06} fill="#ffffff" stroke="#d4dbe8" strokeWidth={0.03} />
+          <rect key={i} x={x} y={y} width={1} height={1} fill="#ffffff" stroke="#cdd5e1" strokeWidth={0.045} />
         ))}
 
         {/* safe stars — neutral grey (Ludo Club) */}
@@ -266,11 +268,10 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
           col.map(([x, y], i) => (
             <rect
               key={`h${seat}-${i}`}
-              x={x + 0.02}
-              y={y + 0.02}
-              width={0.96}
-              height={0.96}
-              rx={0.08}
+              x={x}
+              y={y}
+              width={1}
+              height={1}
               fill={SEAT_COLORS[seat]![1]}
               stroke={SEAT_COLORS[seat]![2]}
               strokeWidth={0.035}
@@ -285,11 +286,10 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
           return (
             <rect
               key={`d${seat}`}
-              x={cell[0] + 0.02}
-              y={cell[1] + 0.02}
-              width={0.96}
-              height={0.96}
-              rx={0.08}
+              x={cell[0]}
+              y={cell[1]}
+              width={1}
+              height={1}
               fill={SEAT_COLORS[seat]![1]}
               stroke={SEAT_COLORS[seat]![2]}
               strokeWidth={0.035}
@@ -361,6 +361,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
             })}
           </g>
         ))}
+        </g>
       </svg>
 
       {/* plain white name labels painted on each quadrant (Ludo Club style) */}

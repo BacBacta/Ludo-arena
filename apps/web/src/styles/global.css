@@ -1123,8 +1123,8 @@ small.muted { font-size: 12px; }
   transform: translate(-50%, -50%);
   color: #ffffff;
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 16px;
+  font-weight: 600;
+  font-size: 14px;
   letter-spacing: 0.4px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
@@ -1132,7 +1132,35 @@ small.muted { font-size: 12px; }
   pointer-events: none;
 }
 .plabel--active { text-shadow: 0 0 9px rgba(255, 255, 255, 0.7), 0 1px 3px rgba(0, 0, 0, 0.45); }
-.plabel--q0 { left: 25%; top: 91.5%; }
-.plabel--q1 { left: 25%; top: 8.5%; }
-.plabel--q2 { left: 75%; top: 8.5%; }
-.plabel--q3 { left: 75%; top: 91.5%; }
+.plabel--q0 { left: 25%; top: 96.6%; }
+.plabel--q1 { left: 25%; top: 3.4%; }
+.plabel--q2 { left: 75%; top: 3.4%; }
+.plabel--q3 { left: 75%; top: 96.6%; }
+
+
+/* corner avatar rows hugging the board (Ludo-Club 4-player structure) */
+.avrow { display: flex; justify-content: space-between; align-items: center; min-height: 60px; padding: 2px 4px; }
+.avrow__side { display: flex; align-items: center; gap: 8px; }
+.seatav {
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  background: #e3e9f3;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 10px rgba(8, 16, 44, 0.4);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+.seatav svg { width: 78%; height: 78%; }
+.seatav--active { transform: scale(1.1); box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.9), 0 5px 12px rgba(8, 16, 44, 0.45); }
+/* awaiting your roll: the tile shows the ink splat, pips appear after the roll */
+.ludodie--armed .die { opacity: 0.12; }
+/* keep the white tile visible while the face is hidden (armed/rolling) */
+.ludodie--armed, .ludodie--rolling {
+  background: #ffffff;
+  box-shadow: 0 5px 12px rgba(8, 16, 44, 0.45), inset 0 -3px 0 rgba(15, 26, 68, 0.08);
+}
+.ludodie--rolling .die { opacity: 0; }

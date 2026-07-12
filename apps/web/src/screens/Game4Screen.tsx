@@ -34,6 +34,28 @@ const WHITE_DIE: DiceSkin = {
 
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
 
+/** Grey placeholder avatar tile at a board corner; the active seat lifts slightly. */
+function SeatAvatar({ name, active }: { name: string; active: boolean }) {
+  return (
+    <div className={`seatav${active ? ' seatav--active' : ''}`} aria-label={name}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx={12} cy={9} r={4.4} fill="#aab6c9" />
+        <path d="M3.5 21c1.4-4 5-6 8.5-6s7.1 2 8.5 6z" fill="#aab6c9" />
+      </svg>
+    </div>
+  );
+}
+
+/** Non-interactive white die shown beside a bot's avatar while it plays. */
+function Die({ value, tumble }: { value: number; tumble: number | null }) {
+  return (
+    <div className={`ludodie${tumble !== null ? ' ludodie--rolling' : ''}`}>
+      <DieFace value={value} skin={WHITE_DIE} />
+      {tumble !== null && <InkSplat />}
+    </div>
+  );
+}
+
 /** Black ink-splat overlay shown while the die tumbles (Ludo Club roll cue). */
 function InkSplat() {
   return (
@@ -122,10 +144,6 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const activeSeat = game.turn;
 
   const dieValue = tumble ?? roll?.value ?? 6;
-  const activeName = PLAYERS[activeSeat]?.name ?? '';
-  // die sits at the active seat's board corner (blue bottom-left, red top-left,
-  // green top-right, yellow bottom-right) — like Ludo Club's per-player die.
-  const cornerCls = ['bl', 'tl', 'tr', 'br'][activeSeat] ?? 'bl';
 
   return (
     <div className="screen screen--game">
@@ -143,30 +161,44 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           </button>
         </div>
 
-        <div className="gamestage">
-          <Board4
-            game={game}
-            mySeat={mySeat}
-            onTokenTap={(token) => myTurn && game.phase === 'awaiting-move' && doMove(gameRef.current, mySeat, token)}
-            banners={PLAYERS.map((p, seat) => ({ seat, name: p.name, flag: p.flag, active: seat === activeSeat }))}
-          />
-          <div className={`dcorner dcorner--${cornerCls}`}>
-            {myTurn ? (
+        {/* top corner avatars: Ana (left) / Young (right); die appears beside the active one */}
+        <div className="avrow">
+          <div className="avrow__side">
+            <SeatAvatar name="Ana" active={activeSeat === 1} />
+            {activeSeat === 1 && <Die value={dieValue} tumble={tumble} />}
+          </div>
+          <div className="avrow__side">
+            {activeSeat === 2 && <Die value={dieValue} tumble={tumble} />}
+            <SeatAvatar name="Young" active={activeSeat === 2} />
+          </div>
+        </div>
+
+        <Board4
+          game={game}
+          mySeat={mySeat}
+          onTokenTap={(token) => myTurn && game.phase === 'awaiting-move' && doMove(gameRef.current, mySeat, token)}
+          banners={PLAYERS.map((p, seat) => ({ seat, name: p.name, flag: p.flag, active: seat === activeSeat }))}
+        />
+
+        {/* bottom corner avatars: YOU (left) / Dragan (right) */}
+        <div className="avrow">
+          <div className="avrow__side">
+            <SeatAvatar name="YOU" active={myTurn} />
+            {myTurn && (
               <button
-                className={`ludodie ludodie--tap${tumble !== null ? ' ludodie--rolling' : ''}`}
+                className={`ludodie ludodie--tap${tumble !== null ? ' ludodie--rolling' : ''}${canRoll && tumble === null ? ' ludodie--armed' : ''}`}
                 disabled={!canRoll}
                 onClick={() => canRoll && doRoll(gameRef.current, mySeat)}
                 aria-label="your die"
               >
                 <DieFace value={dieValue} skin={WHITE_DIE} />
-                {tumble !== null && <InkSplat />}
+                {(tumble !== null || canRoll) && <InkSplat />}
               </button>
-            ) : (
-              <div className={`ludodie${tumble !== null ? ' ludodie--rolling' : ''}`} aria-label={`${activeName} die`}>
-                <DieFace value={dieValue} skin={WHITE_DIE} />
-                {tumble !== null && <InkSplat />}
-              </div>
             )}
+          </div>
+          <div className="avrow__side">
+            {activeSeat === 3 && <Die value={dieValue} tumble={tumble} />}
+            <SeatAvatar name="Dragan" active={activeSeat === 3} />
           </div>
         </div>
       </div>
