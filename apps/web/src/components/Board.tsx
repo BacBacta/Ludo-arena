@@ -21,11 +21,12 @@ import type { GameState, Seat } from '@ludo/game-engine';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playHop } from '../lib/sound';
 
-/** Classic palette: [light, base, dark] per colour. */
-const RED = ['#FF7A6E', '#E5484D', '#B02E33'] as const;
-const GREEN = ['#5FCB68', '#46A758', '#2E7A3C'] as const;
-const YELLOW = ['#FFD54F', '#F4B400', '#C08900'] as const;
-const BLUE = ['#6B93F0', '#3E63DD', '#2947A8'] as const;
+/** True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — matches the
+ *  4-player board (Board4) so the staked board reads with the same premium look. */
+const RED = ['#FF7B6E', '#E62E2A', '#AC1C1A'] as const;
+const GREEN = ['#5FCE79', '#25A544', '#16792E'] as const;
+const YELLOW = ['#FFDD4A', '#F6C200', '#C08A00'] as const;
+const BLUE = ['#63C4EC', '#1F8FD4', '#105F97'] as const;
 
 const SEAT_COLOR: ReadonlyArray<readonly [string, string, string]> = [BLUE, GREEN];
 
@@ -181,32 +182,20 @@ function Quadrant({
   colors: readonly [string, string, string];
   inactive?: boolean;
 }) {
-  const gid = `qq${x}-${y}`;
   const isTop = y === 0;
   const hy = isTop ? y + 1.35 : y + 0.25; // home-square top
   const slots = quadSlots(x, y);
   return (
     <g opacity={inactive ? 0.42 : 1}>
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={colors[0]} />
-          <stop offset="100%" stopColor={colors[1]} />
-        </linearGradient>
-      </defs>
-      <rect x={x} y={y} width={6} height={6} rx={0.5} fill={`url(#${gid})`} />
-      {/* soft top gloss on the colour band */}
-      <rect x={x + 0.3} y={y + 0.3} width={5.4} height={1.4} rx={0.6} fill="#ffffff" opacity={0.12} />
+      {/* flat solid quadrant (Ludo-Club matte) — no gradient, reads as a true colour */}
+      <rect x={x} y={y} width={6} height={6} rx={0.5} fill={colors[1]} />
       {/* big white home square, lifted with a soft cast shadow */}
       {!inactive && <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.55} fill="rgba(16,24,48,.18)" />}
       <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="#ffffff" opacity={inactive ? 0.85 : 1} />
-      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="none" stroke={colors[2]} strokeWidth={0.06} opacity={0.16} />
-      {/* four resting slots (grey rings) — pawns sit on top of these */}
+      {/* four solid grey resting discs sized to frame the peg foot (matches Board4) */}
       {!inactive &&
         slots.map(([sx, sy], i) => (
-          <g key={i}>
-            <circle cx={sx} cy={sy} r={0.5} fill="#e5e9f1" />
-            <circle cx={sx} cy={sy} r={0.5} fill="none" stroke="#cfd6e3" strokeWidth={0.055} />
-          </g>
+          <circle key={i} cx={sx} cy={sy} r={0.56} fill="#d4dae6" />
         ))}
     </g>
   );
@@ -276,15 +265,16 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         shapeRendering="geometricPrecision"
       >
         <defs>
-          <linearGradient id="pegBlue" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#8AAEFF" />
-            <stop offset="50%" stopColor="#3E63DD" />
-            <stop offset="100%" stopColor="#2540A8" />
+          {/* compressed highlight so the peg reads the TRUE saturated colour (not washed) */}
+          <linearGradient id="pegBlue" x1="0" y1="0" x2="0.12" y2="1">
+            <stop offset="0%" stopColor="#63C4EC" />
+            <stop offset="20%" stopColor="#1F8FD4" />
+            <stop offset="100%" stopColor="#105F97" />
           </linearGradient>
-          <linearGradient id="pegGreen" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#7BDD84" />
-            <stop offset="50%" stopColor="#46A758" />
-            <stop offset="100%" stopColor="#2E7A3C" />
+          <linearGradient id="pegGreen" x1="0" y1="0" x2="0.12" y2="1">
+            <stop offset="0%" stopColor="#5FCE79" />
+            <stop offset="20%" stopColor="#25A544" />
+            <stop offset="100%" stopColor="#16792E" />
           </linearGradient>
         </defs>
 
@@ -387,6 +377,7 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
             let y: number;
             if (pos === -1) {
               [x, y] = baseSlotXY(seat as Seat, token);
+              y -= 0.15; // seat the foot-bulb centred on the grey resting disc
             } else {
               [x, y] = tokenXY(seat as Seat, token, pos);
               const other = row[1 - token];
@@ -409,7 +400,7 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
                     <animate attributeName="r" values=".52;.64;.52" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
-                <g className={`token__body${pos !== (game.positions[seat]?.[token] ?? pos) ? ' token__body--hop' : ''}`}>
+                <g className={`token__body${pos !== (game.positions[seat]?.[token] ?? pos) ? ' token__body--hop' : ''}${pos === -1 ? ' token__body--base' : ''}`}>
                   <Pawn seat={seat as Seat} />
                 </g>
               </g>

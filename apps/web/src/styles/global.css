@@ -1290,3 +1290,8 @@ small.muted { font-size: 12px; }
 .linklike { background: none; border: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
 .legal__doc { max-height: 80vh; overflow-y: auto; }
 .legal__body { font-size: 12.5px; line-height: 1.5; white-space: pre-line; color: var(--txt); margin-bottom: 14px; text-align: left; }
+
+/* the staked board now uses the 3D cube die too — neutralise the old flat-die
+   nudge/tumble on the 6 cube faces (they target descendant .die elements) */
+.dicebtn .die3d__face .die, .huddie .die3d__face .die { animation: none !important; }
+.dicebtn .die3d-stage, .huddie .die3d-stage { margin: 0 auto; }

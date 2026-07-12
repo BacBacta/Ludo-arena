@@ -3,6 +3,7 @@ import { BLITZ } from '@ludo/game-engine';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { Board } from '../components/Board';
 import { DieFace } from '../components/Die';
+import { Die3D } from '../components/Die3D';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
 import { skinById } from '../lib/diceSkins';
 import { playDice } from '../lib/sound';
@@ -99,8 +100,8 @@ export function GameScreen({
   // Keep each side's dice separate so an opponent roll never animates my die.
   const myRollIndex = lastDice && lastDice.seat === mySeat ? lastDice.index : 0;
   const oppRollIndex = lastDice && lastDice.seat !== mySeat ? lastDice.index : 0;
-  const myTumble = useTumble(myRollIndex, true);
-  const oppTumble = useTumble(oppRollIndex, false);
+  useTumble(myRollIndex, true); // haptic buzz on my roll; the visual is Die3D's
+  const oppTumble = useTumble(oppRollIndex, false); // drives the "is rolling…" message
 
   // Remember each side's last settled value (lastDice only holds the newest roll).
   const [myVal, setMyVal] = useState(6);
@@ -132,8 +133,10 @@ export function GameScreen({
           ? `${match.opponent.name} ${t('oppRolling')}`
           : `${match.opponent.name} ${t('oppTurn')}`;
 
-  const myFace = myTumble ?? myVal;
-  const oppFace = oppTumble ?? oppVal;
+  // Drive the 3D dice straight from lastDice so the value is fresh on the same
+  // render the roll index bumps (the derived myVal/oppVal lag by one commit).
+  const myDieVal = lastDice && lastDice.seat === mySeat ? lastDice.value : myVal;
+  const oppDieVal = lastDice && lastDice.seat !== mySeat ? lastDice.value : oppVal;
 
   return (
     <div className="screen screen--game">
@@ -146,11 +149,8 @@ export function GameScreen({
           </div>
           <div className="cornerstack">
             {!myTurn && (
-              <div
-                className={`huddie${oppTumble !== null ? ' huddie--rolling' : ''}`}
-                aria-label={`${match.opponent.name} die`}
-              >
-                <DieFace value={oppFace} skin={OPP_SKIN} />
+              <div className="huddie" aria-label={`${match.opponent.name} die`}>
+                <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKIN} />
               </div>
             )}
             <AvatarCard
@@ -178,7 +178,7 @@ export function GameScreen({
             <AvatarCard initial={t('you').slice(0, 1).toUpperCase()} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {myTurn && !handoff && (
               <button
-                className={`dicebtn${myTumble !== null ? ' dicebtn--rolling' : ''}`}
+                className="dicebtn"
                 disabled={!canRoll}
                 onClick={() => {
                   playDice(); // immediate feedback; the server result lands ~RTT later
@@ -186,7 +186,7 @@ export function GameScreen({
                 }}
                 aria-label={`${t('you')} die`}
               >
-                <DieFace value={myFace} skin={skin} />
+                <Die3D value={myDieVal} rollKey={myRollIndex} skin={skin} />
               </button>
             )}
           </div>
