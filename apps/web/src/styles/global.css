@@ -1281,3 +1281,12 @@ small.muted { font-size: 12px; }
 /* leave/forfeit button in the staked game bar */
 .gamebar__btn--leave { color: #ffd7d2; }
 .gamebar__btn--leave:active { color: #ff9b90; }
+
+/* ---- legal / age-consent gate ---- */
+.legal__draft { background: #fff4d6; color: #7a5b00; border-radius: 8px; padding: 8px 10px; font-size: 11.5px; font-weight: 600; margin: 6px 0 12px; }
+.legal__check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; margin: 8px 0; text-align: left; color: var(--txt); cursor: pointer; }
+.legal__check input { margin-top: 2px; width: 18px; height: 18px; flex: 0 0 18px; }
+.legal__links { margin: 10px 0 14px; font-size: 13px; }
+.linklike { background: none; border: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
+.legal__doc { max-height: 80vh; overflow-y: auto; }
+.legal__body { font-size: 12.5px; line-height: 1.5; white-space: pre-line; color: var(--txt); margin-bottom: 14px; text-align: left; }

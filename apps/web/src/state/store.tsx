@@ -108,6 +108,9 @@ export interface AppState {
   diceModalOpen: boolean;
   /** First-session welcome (E6.4): open until the player has been onboarded. */
   onboardOpen: boolean;
+  /** Age (18+) + Terms/Privacy consent, required once before staked play. */
+  legalAccepted: boolean;
+  legalOpen: boolean;
 }
 
 const ONBOARD_KEY = 'ludo.onboarded';
@@ -121,6 +124,23 @@ function firstSession(): boolean {
 function markOnboarded(): void {
   try {
     localStorage.setItem(ONBOARD_KEY, '1');
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Age (18+) + Terms/Privacy consent, required once before any staked play. */
+const LEGAL_KEY = 'ludo.legal.v1';
+function legalAcceptedInit(): boolean {
+  try {
+    return localStorage.getItem(LEGAL_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function markLegalAccepted(): void {
+  try {
+    localStorage.setItem(LEGAL_KEY, '1');
   } catch {
     /* storage unavailable */
   }
@@ -159,6 +179,8 @@ export const initialState: AppState = {
   diceSkin: loadSkinId(),
   diceModalOpen: false,
   onboardOpen: firstSession(),
+  legalAccepted: legalAcceptedInit(),
+  legalOpen: false,
 };
 
 export type Action =
@@ -192,7 +214,9 @@ export type Action =
   | { type: 'TOGGLE_SOUND' }
   | { type: 'SET_DICE_SKIN'; id: string }
   | { type: 'DICE_MODAL'; open: boolean }
-  | { type: 'ONBOARD_DONE' };
+  | { type: 'ONBOARD_DONE' }
+  | { type: 'LEGAL_MODAL'; open: boolean }
+  | { type: 'ACCEPT_LEGAL' };
 
 export function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
@@ -298,6 +322,11 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'ONBOARD_DONE':
       markOnboarded();
       return { ...s, onboardOpen: false };
+    case 'LEGAL_MODAL':
+      return { ...s, legalOpen: a.open };
+    case 'ACCEPT_LEGAL':
+      markLegalAccepted();
+      return { ...s, legalAccepted: true, legalOpen: false };
     default:
       return s;
   }

@@ -13,7 +13,7 @@ import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { EndScreen } from './screens/EndScreen';
-import { DiceModal, FairnessModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { DiceModal, FairnessModal, LegalModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits } from './lib/session';
 import { connectWallet, lockStake, walletBalanceCents, type Wallet } from './lib/minipay';
 import { playCapture, playDice, playWin } from './lib/sound';
@@ -219,6 +219,22 @@ export default function App() {
   const move = useCallback((token: number) => sessionRef.current?.move(token), []);
   const rematch = useCallback(() => startMatch(state.stakeCents), [startMatch, state.stakeCents]);
 
+  // Age (18+) + Terms/Privacy consent gate: required once before any staked action.
+  const pendingStakeAction = useRef<(() => void) | null>(null);
+  const gateStaked = useCallback(
+    (stake: StakeCents, run: () => void) => {
+      if (stake > 0 && !state.legalAccepted) {
+        pendingStakeAction.current = run;
+        dispatch({ type: 'LEGAL_MODAL', open: true });
+        return;
+      }
+      run();
+    },
+    [state.legalAccepted, dispatch],
+  );
+  const onPlay = useCallback((stake: StakeCents) => gateStaked(stake, () => void startMatch(stake)), [gateStaked, startMatch]);
+  const onCreateTable = useCallback((stake: StakeCents) => gateStaked(stake, () => createTable(stake)), [gateStaked, createTable]);
+
   const applyLimits = useCallback(
     async (payload: { dailyLimitCents?: number; selfExcludeDays?: number }) => {
       const limits = await sendLimits(SERVER_URL, payload, walletRef.current?.address);
@@ -234,7 +250,7 @@ export default function App() {
 
   return (
     <>
-      {state.screen === 'lobby' && <Lobby onPlay={startMatch} onCreateTable={createTable} />}
+      {state.screen === 'lobby' && <Lobby onPlay={onPlay} onCreateTable={onCreateTable} />}
       {state.screen === 'matchmaking' && (
         <Matchmaking
           onCancel={() => {
@@ -251,6 +267,14 @@ export default function App() {
         <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} />
       )}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
+      <LegalModal
+        onAccept={() => {
+          dispatch({ type: 'ACCEPT_LEGAL' });
+          const run = pendingStakeAction.current;
+          pendingStakeAction.current = null;
+          run?.();
+        }}
+      />
       <WelcomeModal onStartFree={() => startMatch(0)} />
       <StakingOverlay
         onCancel={() => {

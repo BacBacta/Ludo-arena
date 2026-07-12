@@ -63,7 +63,11 @@ export function Toast() {
     return () => clearTimeout(id);
   }, [toast, dispatch]);
   if (!toast) return null;
-  return <div className="toast">{toast}</div>;
+  return (
+    <div className="toast" role="status" aria-live="polite">
+      {toast}
+    </div>
+  );
 }
 
 const LIMIT_OPTIONS = [25, 50, 100, 200];
@@ -159,6 +163,79 @@ export function DiceModal() {
         <div style={{ marginTop: 10, textAlign: 'center' }} className="muted">
           {t('closeHint')}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * DRAFT legal text — placeholders the operator MUST replace with real,
+ * lawyer-reviewed Terms and a Privacy Policy before any real-money launch.
+ * Kept in English (single review language) with a visible DRAFT banner.
+ */
+const TOS_DRAFT = `1. Ludo Arena is a skill-and-chance 1v1 game. Staked matches wager real
+stablecoins held in a non-custodial escrow smart contract; the operator never
+custodies player funds. 2. You must be at least 18 years old and legally
+permitted to wager where you live. Staked play is void where prohibited.
+3. A house fee (rake) is deducted from each settled pot. 4. Outcomes are
+determined by provably-fair dice; disputes are resolved from the on-chain
+record. 5. No refunds except the on-chain escrow's own refund paths.
+6. Play responsibly — set a daily limit or self-exclude in Settings.
+[DRAFT — replace with counsel-reviewed Terms before launch.]`;
+
+const PRIVACY_DRAFT = `We store only what the game needs: a wallet address (if
+you connect one), gameplay/ELO records, and responsible-gaming limits. We do not
+sell personal data. On-chain stakes and settlements are public by nature of the
+blockchain. Local device storage keeps your preferences and consent. Contact the
+operator to request deletion of off-chain records.
+[DRAFT — replace with a counsel-reviewed Privacy Policy before launch.]`;
+
+/** Age (18+) + Terms/Privacy consent gate, shown once before any staked play. */
+export function LegalModal({ onAccept }: { onAccept(): void }) {
+  const { legalOpen } = useAppState();
+  const dispatch = useAppDispatch();
+  const [age, setAge] = useState(false);
+  const [agree, setAgree] = useState(false);
+  const [view, setView] = useState<'gate' | 'tos' | 'privacy'>('gate');
+  if (!legalOpen) return null;
+
+  if (view !== 'gate') {
+    return (
+      <div className="modal" onClick={() => setView('gate')}>
+        <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
+          <h3>{view === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h3>
+          <div className="legal__draft">{t('legalDraft')}</div>
+          <p className="legal__body">{view === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
+          <button className="btn btn--ghost" onClick={() => setView('gate')}>
+            {t('cancel')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal" role="dialog" aria-modal="true" aria-label={t('legalTitle')}>
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+        <h3>{t('legalTitle')}</h3>
+        <div className="legal__draft">{t('legalDraft')}</div>
+        <label className="legal__check">
+          <input type="checkbox" checked={age} onChange={(e) => setAge(e.target.checked)} /> {t('legalAge')}
+        </label>
+        <label className="legal__check">
+          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> {t('legalAgree')}
+        </label>
+        <div className="legal__links">
+          <button className="linklike" onClick={() => setView('tos')}>{t('legalReadTos')}</button>
+          {' · '}
+          <button className="linklike" onClick={() => setView('privacy')}>{t('legalReadPrivacy')}</button>
+        </div>
+        <button className="btn" disabled={!age || !agree} onClick={onAccept}>
+          {t('legalAccept')}
+        </button>
+        <button className="btn btn--ghost" style={{ marginTop: 8 }} onClick={() => dispatch({ type: 'LEGAL_MODAL', open: false })}>
+          {t('cancel')}
+        </button>
       </div>
     </div>
   );
