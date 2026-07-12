@@ -419,42 +419,56 @@ export class PersistentStore implements Store {
     return { promoted: Number(res.rows[0]?.promoted ?? 0), relegated: Number(res.rows[0]?.relegated ?? 0) };
   }
 
-  async applyAntiTilt(playerId: string, won: boolean, rakeCents: number): Promise<{ cents: number; totalCents: number }> {
+  async applyAntiTilt(playerId: string, won: boolean): Promise<{ grantedTickets: number; totalTickets: number }> {
     if (won) {
-      const res = await this.pool.query<{ cashback_cents: number }>(
-        `UPDATE players SET loss_streak = 0, lost_rake_cents = 0 WHERE id = $1 RETURNING cashback_cents`,
+      const res = await this.pool.query<{ freeroll_tickets: number }>(
+        `UPDATE players SET loss_streak = 0 WHERE id = $1 RETURNING freeroll_tickets`,
         [playerId],
       );
-      return { cents: 0, totalCents: res.rows[0]?.cashback_cents ?? 0 };
+      return { grantedTickets: 0, totalTickets: res.rows[0]?.freeroll_tickets ?? 0 };
     }
-    // Increment streak + accumulate rake; if the threshold is hit, credit a
-    // share and reset — all in one statement.
-    const res = await this.pool.query<{ cashback_cents: number; granted: number }>(
+    // Increment the streak; on the threshold, grant ticket(s) and reset —
+    // all in one statement. (Tickets replace the old cents cashback: a real,
+    // spendable reward with no unbacked cash liability.)
+    const res = await this.pool.query<{ freeroll_tickets: number; granted: number }>(
       `WITH cur AS (
-         SELECT loss_streak + 1 AS streak, lost_rake_cents + $2 AS rake FROM players WHERE id = $1
+         SELECT loss_streak + 1 AS streak FROM players WHERE id = $1
        ),
        calc AS (
-         SELECT streak >= $3 AS hit,
-           CASE WHEN streak >= $3 THEN round(rake * $4 / 10000.0) ELSE 0 END::int AS grant,
-           streak, rake FROM cur
+         SELECT streak >= $2 AS hit,
+           CASE WHEN streak >= $2 THEN $3 ELSE 0 END::int AS grant,
+           streak FROM cur
        )
        UPDATE players p SET
          loss_streak = CASE WHEN c.hit THEN 0 ELSE c.streak END,
-         lost_rake_cents = CASE WHEN c.hit THEN 0 ELSE c.rake END,
-         cashback_cents = p.cashback_cents + c.grant,
+         freeroll_tickets = p.freeroll_tickets + c.grant,
          updated_at = now()
        FROM calc c WHERE p.id = $1
-       RETURNING p.cashback_cents, c.grant AS granted`,
-      [playerId, rakeCents, ANTI_TILT.losses, ANTI_TILT.rakeShareBps],
+       RETURNING p.freeroll_tickets, c.grant AS granted`,
+      [playerId, ANTI_TILT.losses, ANTI_TILT.rewardTickets],
     );
     const row = res.rows[0];
-    if (!row) return { cents: 0, totalCents: 0 };
-    return { cents: row.granted, totalCents: row.cashback_cents };
+    if (!row) return { grantedTickets: 0, totalTickets: 0 };
+    return { grantedTickets: row.granted, totalTickets: row.freeroll_tickets };
   }
 
-  async getCashback(playerId: string): Promise<number> {
-    const res = await this.pool.query<{ cashback_cents: number }>(`SELECT cashback_cents FROM players WHERE id = $1`, [playerId]);
-    return res.rows[0]?.cashback_cents ?? 0;
+  async grantTickets(playerId: string, n: number): Promise<number> {
+    const res = await this.pool.query<{ freeroll_tickets: number }>(
+      `UPDATE players SET freeroll_tickets = freeroll_tickets + $2, updated_at = now()
+       WHERE id = $1 RETURNING freeroll_tickets`,
+      [playerId, n],
+    );
+    return res.rows[0]?.freeroll_tickets ?? 0;
+  }
+
+  async spendTickets(playerId: string, n: number): Promise<number | null> {
+    // Atomic conditional decrement: no row updated = insufficient balance.
+    const res = await this.pool.query<{ freeroll_tickets: number }>(
+      `UPDATE players SET freeroll_tickets = freeroll_tickets - $2, updated_at = now()
+       WHERE id = $1 AND freeroll_tickets >= $2 RETURNING freeroll_tickets`,
+      [playerId, n],
+    );
+    return res.rows[0]?.freeroll_tickets ?? null;
   }
 
   async getLimits(playerId: string, today: string): Promise<LimitsState> {

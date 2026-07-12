@@ -69,8 +69,8 @@ export interface SessionEvents {
   onLeague(league: LeagueState): void;
   /** Private table created (E4.4): share the code with a friend. */
   onTableCreated(code: string, stakeCents: StakeCents): void;
-  /** Anti-tilt cashback total (E4.5); `cents` > 0 means a new grant just landed. */
-  onCashback(cents: number, totalCents: number): void;
+  /** Freeroll tickets granted (anti-tilt bonus, freeroll win) with the new total. */
+  onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win'): void;
   /** Responsible-gaming limits (E5.2). */
   onLimits(limits: LimitsState): void;
   /** Geo-gating (E5.4): staked play disabled in this region. */
@@ -399,7 +399,6 @@ export class RemoteSession implements GameSession {
         if (msg.challenge) this.ev.onChallenge(msg.challenge);
         if (msg.streak) this.ev.onStreak(msg.streak);
         if (msg.league) this.ev.onLeague(msg.league);
-        if (msg.cashbackCents !== undefined) this.ev.onCashback(0, msg.cashbackCents);
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
         if (msg.resumed) {
@@ -453,8 +452,8 @@ export class RemoteSession implements GameSession {
       case 'table.created':
         this.ev.onTableCreated(msg.code, msg.stakeCents);
         break;
-      case 'cashback':
-        this.ev.onCashback(msg.cents, msg.totalCents);
+      case 'tickets.grant':
+        this.ev.onTickets(msg.granted, msg.total, msg.reason);
         break;
       case 'limits.update':
         this.ev.onLimits(msg.limits);

@@ -121,11 +121,13 @@ export interface Store {
   getLeague(playerId: string): Promise<LeagueState>;
   rolloverLeagues(): Promise<{ promoted: number; relegated: number }>;
 
-  // Anti-tilt cashback (E4.5). Call once per player per staked game: a win
-  // resets the streak; a loss accumulates the game's rake and, after
-  // ANTI_TILT.losses in a row, credits a share of it (returned as `cents`).
-  applyAntiTilt(playerId: string, won: boolean, rakeCents: number): Promise<{ cents: number; totalCents: number }>;
-  getCashback(playerId: string): Promise<number>;
+  /** Anti-tilt (E4.5): winner resets the loss streak; the loser's 3rd straight
+   *  staked loss grants ANTI_TILT.rewardTickets freeroll tickets. */
+  applyAntiTilt(playerId: string, won: boolean): Promise<{ grantedTickets: number; totalTickets: number }>;
+  /** Freeroll ticket ledger: grant returns the new total; spend is atomic and
+   *  returns the new total, or null when the balance is insufficient. */
+  grantTickets(playerId: string, n: number): Promise<number>;
+  spendTickets(playerId: string, n: number): Promise<number | null>;
 
   // Responsible gaming (E5.2). `today` is a UTC date string; the daily staked
   // total resets when the stored day differs. selfExcludedUntil is null when

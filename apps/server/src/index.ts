@@ -259,16 +259,18 @@ function wireRoom(room: Room): void {
       .then((league) => winnerSession?.send({ t: 'league.update', league }))
       .catch((e) => console.error('[league] addLeaguePoints', e));
 
-    // Anti-tilt cashback (E4.5): only for staked games — winner resets, loser
-    // accumulates rake and gets a cashback after 3 losses in a row.
+    // Anti-tilt bonus (E4.5): only for staked games — a win resets the streak,
+    // the 3rd straight loss grants freeroll ticket(s) (spendable, no cash liability).
     if (result.stakeCents > 0) {
-      store.applyAntiTilt(winnerId, true, 0).catch((e) => console.error('[cashback] win', e));
+      store.applyAntiTilt(winnerId, true).catch((e) => console.error('[anti-tilt] win', e));
       store
-        .applyAntiTilt(loserId, false, result.rakeCents)
-        .then(({ cents, totalCents }) => {
-          if (cents > 0) loserSession?.send({ t: 'cashback', cents, totalCents });
+        .applyAntiTilt(loserId, false)
+        .then(({ grantedTickets, totalTickets }) => {
+          if (grantedTickets > 0) {
+            loserSession?.send({ t: 'tickets.grant', granted: grantedTickets, total: totalTickets, reason: 'anti-tilt' });
+          }
         })
-        .catch((e) => console.error('[cashback] loss', e));
+        .catch((e) => console.error('[anti-tilt] loss', e));
     }
 
     // Staked game with both wallets known → settle the payout on-chain (E3.3).
@@ -412,7 +414,6 @@ wss.on('connection', (ws, req) => {
           challenge: await store.getChallenge(rpid, utcToday()),
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
           league: await store.getLeague(rpid),
-          cashbackCents: await store.getCashback(rpid),
           limits: await store.getLimits(rpid, utcToday()),
           stakingBlocked: isGeoBlocked(country),
         });
@@ -448,9 +449,8 @@ wss.on('connection', (ws, req) => {
       // Streak is persisted only for wallet-linked players (anon rows are ephemeral).
       const streak = msg.wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
       const league = await store.getLeague(pid);
-      const cashbackCents = await store.getCashback(pid);
       const limits = await store.getLimits(pid, utcToday());
-      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, cashbackCents, limits, stakingBlocked: isGeoBlocked(country) });
+      send(ws, { t: 'hello.ok', sessionToken: id, elo, challenge, streak, league, limits, stakingBlocked: isGeoBlocked(country) });
       return;
     }
 

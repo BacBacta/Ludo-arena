@@ -201,30 +201,42 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
-    it('cashes back 20% of rake after 3 staked losses, resets on a win', async () => {
+    it('grants a freeroll ticket after 3 staked losses, resets on a win', async () => {
       const store = make();
       await store.init();
       const id = 'anon:' + Math.random().toString(16).slice(2, 8);
       await store.getOrCreatePlayer(id, { name: 'T', flag: '🌍' });
 
-      // rake 4 cents per staked loss (25c stake game)
-      expect(await store.applyAntiTilt(id, false, 4)).toMatchObject({ cents: 0, totalCents: 0 });
-      expect(await store.applyAntiTilt(id, false, 4)).toMatchObject({ cents: 0, totalCents: 0 });
-      // 3rd loss: 20% of 12 = round(2.4) = 2 cents cashback
-      expect(await store.applyAntiTilt(id, false, 4)).toMatchObject({ cents: 2, totalCents: 2 });
-      expect(await store.getCashback(id)).toBe(2);
+      expect(await store.applyAntiTilt(id, false)).toMatchObject({ grantedTickets: 0, totalTickets: 0 });
+      expect(await store.applyAntiTilt(id, false)).toMatchObject({ grantedTickets: 0, totalTickets: 0 });
+      // 3rd straight loss: +1 ticket, streak resets
+      expect(await store.applyAntiTilt(id, false)).toMatchObject({ grantedTickets: 1, totalTickets: 1 });
 
       // streak reset after the grant: two more losses don't trigger again
-      await store.applyAntiTilt(id, false, 4);
-      await store.applyAntiTilt(id, false, 4);
-      expect(await store.getCashback(id)).toBe(2);
+      await store.applyAntiTilt(id, false);
+      await store.applyAntiTilt(id, false);
+      // a win resets the streak, so the count starts over
+      expect(await store.applyAntiTilt(id, true)).toMatchObject({ grantedTickets: 0, totalTickets: 1 });
+      await store.applyAntiTilt(id, false);
+      await store.applyAntiTilt(id, false);
+      expect(await store.applyAntiTilt(id, false)).toMatchObject({ grantedTickets: 1, totalTickets: 2 });
 
-      // a win resets the accumulated rake, so the count starts over
-      expect(await store.applyAntiTilt(id, true, 0)).toMatchObject({ cents: 0, totalCents: 2 });
-      await store.applyAntiTilt(id, false, 10);
-      await store.applyAntiTilt(id, false, 10);
-      const third = await store.applyAntiTilt(id, false, 10); // 20% of 30 = 6
-      expect(third).toMatchObject({ cents: 6, totalCents: 8 });
+      await store.close();
+    });
+
+    it('grants and atomically spends freeroll tickets', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'S', flag: '🌍' });
+
+      expect(await store.spendTickets(id, 1)).toBeNull(); // nothing to spend
+      expect(await store.grantTickets(id, 3)).toBe(3);
+      expect(await store.spendTickets(id, 1)).toBe(2);
+      expect(await store.spendTickets(id, 2)).toBe(0);
+      expect(await store.spendTickets(id, 1)).toBeNull(); // insufficient again
+      // tickets surface in the challenge state shown to the client
+      expect((await store.getChallenge(id, '2026-08-10')).tickets).toBe(0);
 
       await store.close();
     });

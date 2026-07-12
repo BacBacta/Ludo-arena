@@ -30,9 +30,14 @@ export interface StreakState {
   rewardGranted: number; // tickets granted by this login's milestone (0 if none)
 }
 
-/** Anti-tilt cashback (E4.5): after N consecutive staked losses, refund a
- *  share of the rake those games paid. */
-export const ANTI_TILT = { losses: 3, rakeShareBps: 2000 } as const; // 20% of rake
+/** Anti-tilt bonus (E4.5): after N consecutive staked losses the player is
+ *  granted freeroll ticket(s) — a real, spendable reward (see FREEROLL) with no
+ *  unbacked cash liability (the old cents-cashback had no payout path). */
+export const ANTI_TILT = { losses: 3, rewardTickets: 1 } as const;
+
+/** Daily freeroll (v1): a ticket-gated free 1v1 — entry costs a ticket, the
+ *  winner takes both entries plus a house bonus. */
+export const FREEROLL = { entryTickets: 1, winnerTickets: 3 } as const;
 
 /** Responsible gaming (E5.2): default/max daily stake cap per player, in cents. */
 export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 200;
@@ -98,7 +103,7 @@ export type ClientMsg =
   // Reveal this session's raw entropy (verified against the hello commit) — sent
   // once, right after match.found, before the game's dice are finalized.
   | { t: 'game.entropy'; entropy: string }
-  | { t: 'queue.join'; stake: StakeCents }
+  | { t: 'queue.join'; stake: StakeCents; freeroll?: boolean }
   | { t: 'queue.leave' }
   // Private tables (E4.4): create returns a code; a friend joins with it.
   | { t: 'table.create'; stake: StakeCents }
@@ -149,7 +154,6 @@ export type ServerMsg =
       challenge?: ChallengeState;
       streak?: StreakState;
       league?: LeagueState;
-      cashbackCents?: number; // accumulated anti-tilt cashback (E4.5)
       limits?: LimitsState; // responsible-gaming state (E5.2)
       stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
     }
@@ -197,8 +201,8 @@ export type ServerMsg =
   | { t: 'challenge.update'; challenge: ChallengeState }
   // Weekly league standings after a game (E4.3).
   | { t: 'league.update'; league: LeagueState }
-  // Anti-tilt cashback granted after a losing streak (E4.5).
-  | { t: 'cashback'; cents: number; totalCents: number }
+  // Freeroll tickets granted (anti-tilt bonus E4.5, or a freeroll win).
+  | { t: 'tickets.grant'; granted: number; total: number; reason: 'anti-tilt' | 'freeroll-win' }
   // Responsible-gaming state after hello or a limits.set (E5.2).
   | { t: 'limits.update'; limits: LimitsState }
   | { t: 'error'; code: ErrorCode; message: string }
@@ -238,6 +242,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'game.entropy':
       return typeof m.entropy === 'string' && m.entropy.length >= 16 && m.entropy.length <= 128 ? m : null;
     case 'queue.join':
+      if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
+      return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
     case 'table.create':
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
     case 'table.join':

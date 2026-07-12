@@ -240,28 +240,34 @@ export class MemoryStore implements Store {
     return { promoted, relegated };
   }
 
-  async applyAntiTilt(playerId: string, won: boolean, rakeCents: number): Promise<{ cents: number; totalCents: number }> {
+  async applyAntiTilt(playerId: string, won: boolean): Promise<{ grantedTickets: number; totalTickets: number }> {
     const row = this.players.get(playerId);
-    if (!row) return { cents: 0, totalCents: 0 };
+    if (!row) return { grantedTickets: 0, totalTickets: 0 };
     if (won) {
       row.lossStreak = 0;
-      row.lostRakeCents = 0;
-      return { cents: 0, totalCents: row.cashbackCents };
+      return { grantedTickets: 0, totalTickets: row.tickets };
     }
     row.lossStreak += 1;
-    row.lostRakeCents += rakeCents;
     if (row.lossStreak >= ANTI_TILT.losses) {
-      const cents = Math.round((row.lostRakeCents * ANTI_TILT.rakeShareBps) / 10_000);
-      row.cashbackCents += cents;
       row.lossStreak = 0;
-      row.lostRakeCents = 0;
-      return { cents, totalCents: row.cashbackCents };
+      row.tickets += ANTI_TILT.rewardTickets;
+      return { grantedTickets: ANTI_TILT.rewardTickets, totalTickets: row.tickets };
     }
-    return { cents: 0, totalCents: row.cashbackCents };
+    return { grantedTickets: 0, totalTickets: row.tickets };
   }
 
-  async getCashback(playerId: string): Promise<number> {
-    return this.players.get(playerId)?.cashbackCents ?? 0;
+  async grantTickets(playerId: string, n: number): Promise<number> {
+    const row = this.players.get(playerId);
+    if (!row) return 0;
+    row.tickets += n;
+    return row.tickets;
+  }
+
+  async spendTickets(playerId: string, n: number): Promise<number | null> {
+    const row = this.players.get(playerId);
+    if (!row || row.tickets < n) return null;
+    row.tickets -= n;
+    return row.tickets;
   }
 
   async getLimits(playerId: string, today: string): Promise<LimitsState> {

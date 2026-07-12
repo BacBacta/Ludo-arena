@@ -12,7 +12,7 @@ export function Lobby({
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, cashbackCents, limits, stakingBlocked, balanceCents } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate, also enforced server-side. */
@@ -78,12 +78,6 @@ export function Lobby({
             : `${fmtUsd(stakeCents)} → ${t('win')} ${fmtUsd(potCents(stakeCents))}`}
         </small>
       </button>
-
-      {cashbackCents > 0 && (
-        <div className="cashback">
-          💛 {t('cashbackHeld')} <b>{fmtUsd(cashbackCents)}</b>
-        </div>
-      )}
 
       <div style={{ height: 14 }} />
 

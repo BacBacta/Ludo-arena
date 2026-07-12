@@ -36,10 +36,9 @@ export default function App() {
       streak: state.streak,
       league: state.league,
       tickets: state.tickets,
-      cashbackCents: state.cashbackCents,
       limits: state.limits,
     });
-  }, [state.challenge, state.streak, state.league, state.tickets, state.cashbackCents, state.limits]);
+  }, [state.challenge, state.streak, state.league, state.tickets, state.limits]);
 
   const refreshBalance = useCallback(
     async (wallet: Wallet) => {
@@ -109,9 +108,12 @@ export default function App() {
       },
       onSettled: (txHash) => dispatch({ type: 'SETTLED', txHash }),
       onTableCreated: (code) => dispatch({ type: 'TABLE_CREATED', code }),
-      onCashback: (cents, totalCents) => {
-        dispatch({ type: 'CASHBACK', totalCents });
-        if (cents > 0) dispatch({ type: 'TOAST', message: `💛 ${t('cashbackToast')} +${fmtUsd(cents)}` });
+      onTickets: (granted, total, reason) => {
+        dispatch({ type: 'TICKETS', total });
+        if (granted > 0) {
+          const label = reason === 'anti-tilt' ? t('antiTiltTicket') : t('freerollWonToast');
+          dispatch({ type: 'TOAST', message: `${label} +${granted} 🎟️` });
+        }
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
       onGeo: (stakingBlocked) => dispatch({ type: 'GEO', stakingBlocked }),
