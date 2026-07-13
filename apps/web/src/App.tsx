@@ -157,6 +157,7 @@ export default function App() {
         const key = seat === matchSeatRef.current ? 'autoPlayedYou' : 'autoPlayedOpp';
         dispatch({ type: 'TOAST', message: `${t(key)} · ${count}/${max}` });
       },
+      onEmote: (seat, id) => dispatch({ type: 'EMOTE', seat, id }),
       onOver: (result) => {
         const won = result.winner === (matchSeatRef.current ?? 0);
         if (won) playWin();
@@ -489,7 +490,7 @@ export default function App() {
         />
       )}
       {state.screen === 'game' && !state.practice4 && !state.online4 && (
-        <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} />
+        <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} onEmote={(id) => sessionRef.current?.emote(id)} />
       )}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
       <LegalModal

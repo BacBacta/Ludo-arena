@@ -49,6 +49,7 @@ export class Room {
   private diceIndex = 0;
   private clock: ReturnType<typeof setTimeout> | null = null;
   private autoMoveStreak: [number, number] = [0, 0];
+  private lastEmoteAt: [number, number] = [0, 0]; // per-seat emote throttle
   private deadlineTs = 0;
   private over = false;
   /** Ticket-gated freeroll game (entry already paid; winner gets the ticket prize). */
@@ -144,6 +145,15 @@ export class Room {
   resign(seat: Seat): void {
     if (this.over) return;
     this.finish(seat === 0 ? 1 : 0, 'resign');
+  }
+
+  /** Quick emote broadcast to both players, throttled per seat (anti-spam). */
+  emote(seat: Seat, id: string): void {
+    if (this.over) return;
+    const now = Date.now();
+    if (now - this.lastEmoteAt[seat] < 1200) return;
+    this.lastEmoteAt[seat] = now;
+    this.broadcast({ t: 'game.emote', seat, id });
   }
 
   getState(): GameState {

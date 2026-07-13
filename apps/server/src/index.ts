@@ -852,6 +852,13 @@ wss.on('connection', (ws, req) => {
         else if (session.room && session.seat !== null) session.room.resign(session.seat);
         break;
 
+      case 'emote':
+        // Quick emote to the current game — routed to whichever room the player
+        // is in; the room throttles per seat. id is EMOTES-validated in parse.
+        if (session.room4 && session.seat4 !== null) session.room4.emote(session.seat4, msg.id);
+        else if (session.room && session.seat !== null) session.room.emote(session.seat, msg.id);
+        break;
+
       case 'game.entropy': {
         // Anti-grinding reveal: verify the raw entropy against the hello commit,
         // store it, and finalize the game once both players have revealed.

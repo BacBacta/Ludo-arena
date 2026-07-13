@@ -48,6 +48,7 @@ export class Room4 {
   private diceIndex = 0;
   private clock: ReturnType<typeof setTimeout> | null = null;
   private autoStreak: number[] = [0, 0, 0, 0];
+  private lastEmoteAt: number[] = [0, 0, 0, 0]; // per-seat emote throttle
   private deadlineTs = 0;
   private over = false;
   onResult?: (r: Room4Result) => void;
@@ -118,6 +119,16 @@ export class Room4 {
     const s = this.seats[seat];
     if (this.over || !s || s.bot) return;
     this.handOverToBot(seat, false);
+  }
+
+  /** Quick emote broadcast to the table, throttled per seat (anti-spam). A seat
+   *  handed to a bot (resigned/dropped) can't emote — its human forfeited. */
+  emote(seat: number, id: string): void {
+    if (this.over || seat < 0 || seat > 3 || this.seats[seat]?.bot) return;
+    const now = Date.now();
+    if (now - (this.lastEmoteAt[seat] ?? 0) < 1200) return;
+    this.lastEmoteAt[seat] = now;
+    this.broadcast({ t: 'game.emote', seat, id });
   }
 
   /** A human dropped (socket closed): a bot drives the seat and the client is

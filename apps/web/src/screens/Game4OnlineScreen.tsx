@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
 import { Die3D } from '../components/Die3D';
 import { SeatAvatar, SeatDie, WHITE_DIE } from '../components/Seat4';
+import { EmoteBar, EmoteFloat } from '../components/Emote';
 import { IconMenu } from '../components/icons';
 import type { Player4Info } from '@ludo/shared';
 import type { Game4 } from '@ludo/game-engine';
@@ -74,6 +75,7 @@ export function Game4OnlineScreen({
     remoteRef.current?.dispose();
     winFired.current = false;
     overRef.current = null;
+    dispatch({ type: 'CLEAR_EMOTES' }); // rematch reuses this screen; drop last game's emotes
     setStatus('connecting');
     setPlayers([]);
     setGame(null);
@@ -120,6 +122,7 @@ export function Game4OnlineScreen({
           setActiveTurn(seat);
           setRolling(false);
         },
+        onEmote: (seat, id) => dispatch({ type: 'EMOTE', seat, id }),
         onOver: (info) => {
           overRef.current = info;
           setOver(info);
@@ -224,7 +227,12 @@ export function Game4OnlineScreen({
       <SeatDie value={dieVal} rollKey={dieKey} />
     ) : null;
 
-    const av = <SeatAvatar name={name} active={active} />;
+    const av = (
+      <span className="seatav">
+        <EmoteFloat seat={seat} />
+        <SeatAvatar name={name} active={active} />
+      </span>
+    );
     return <div className="avrow__side">{CORNER[seat] === 'left' ? <>{av}{inner}</> : <>{inner}{av}</>}</div>;
   }
 
@@ -239,6 +247,7 @@ export function Game4OnlineScreen({
           <div className="coinchip" style={{ visibility: potCents > 0 ? 'visible' : 'hidden' }}>
             <span className="coinchip__c" /> {fmtUsd(potCents)}
           </div>
+          <EmoteBar onEmote={(id) => remoteRef.current?.emote(id)} dir="down" />
           <button className="chromebtn" aria-label="leave" onClick={onLeave}>
             ✕
           </button>

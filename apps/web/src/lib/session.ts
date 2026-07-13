@@ -66,6 +66,8 @@ export interface SessionEvents {
   /** The turn clock expired and the server auto-played for `seat`; at `max`
    *  consecutive auto-plays that seat forfeits. Lets the UI explain the pacing. */
   onAutoPlayed(seat: Seat, count: number, max: number): void;
+  /** A player (this one or the opponent) sent a quick emote. */
+  onEmote(seat: number, id: string): void;
   onOver(result: GameResult): void;
   onInfo(message: string): void;
   /** On-chain settlement confirmed (E3.3): the payout tx is mined. */
@@ -99,6 +101,8 @@ export interface SessionEvents {
 export interface GameSession {
   roll(): void;
   move(token: number): void;
+  /** Send a quick emote to the opponent (id must be in EMOTES). */
+  emote(id: string): void;
   /** Deliberately forfeit the current match (the opponent wins). */
   resign(): void;
   /** Ask for a rematch on THIS live session (true direct rematch — the server
@@ -144,6 +148,11 @@ export class LocalBotSession implements GameSession {
     if (this.disposed || this.state.turn !== 0 || this.state.phase !== 'awaiting-move') return;
     if (!this.state.legal.includes(token)) return;
     this.applyMove(0, token);
+  }
+
+  emote(id: string): void {
+    // no socket to broadcast to — echo the player's own emote locally (seat 0)
+    if (!this.disposed) this.ev.onEmote(0, id);
   }
 
   resign(): void {
@@ -606,6 +615,9 @@ export class RemoteSession implements GameSession {
       case 'game.auto':
         this.ev.onAutoPlayed(msg.seat, msg.count, msg.max);
         break;
+      case 'game.emote':
+        this.ev.onEmote(msg.seat, msg.id);
+        break;
       case 'game.over':
         this.inGame = false;
         this.ev.onOver(msg);
@@ -649,6 +661,10 @@ export class RemoteSession implements GameSession {
 
   move(token: number): void {
     this.send({ t: 'game.move', token });
+  }
+
+  emote(id: string): void {
+    this.send({ t: 'emote', id });
   }
 
   resign(): void {

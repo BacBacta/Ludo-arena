@@ -87,6 +87,8 @@ export interface AppState {
   match: MatchInfo | null;
   game: GameState | null;
   lastDice: { value: number; index: number; seat: Seat } | null;
+  /** Latest emote per seat; `n` bumps each time so the float re-animates. */
+  emotes: Record<number, { id: string; n: number }>;
   /** All rolls this game, for client-side fairness verification (E5.1). */
   diceHistory: Array<{ index: number; value: number; seat: Seat }>;
   turnDeadlineTs: number | null;
@@ -176,6 +178,7 @@ export const initialState: AppState = {
   match: null,
   game: null,
   lastDice: null,
+  emotes: {},
   diceHistory: [],
   turnDeadlineTs: null,
   activeTurn: 0,
@@ -207,6 +210,8 @@ export type Action =
   | { type: 'MATCH_FOUND'; match: MatchInfo }
   | { type: 'GAME_STATE'; game: GameState }
   | { type: 'DICE'; value: number; index: number; seat: Seat }
+  | { type: 'EMOTE'; seat: number; id: string }
+  | { type: 'CLEAR_EMOTES' }
   | { type: 'MOVED'; game: GameState; capture: boolean }
   | { type: 'TURN'; seat: Seat; deadlineTs: number }
   | { type: 'GAME_OVER'; result: GameResult }
@@ -243,9 +248,9 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SELECT_STAKE':
       return { ...s, stakeCents: a.stake };
     case 'START_PRACTICE4':
-      return { ...s, screen: 'game', practice4: true, online4: false, match: null, game: null, result: null, lastDice: null };
+      return { ...s, screen: 'game', practice4: true, online4: false, match: null, game: null, result: null, lastDice: null, emotes: {} };
     case 'START_ONLINE4':
-      return { ...s, screen: 'game', online4: true, online4Stake: a.stakeCents, practice4: false, match: null, game: null, result: null, lastDice: null };
+      return { ...s, screen: 'game', online4: true, online4Stake: a.stakeCents, practice4: false, match: null, game: null, result: null, lastDice: null, emotes: {} };
     case 'START_MATCHMAKING':
       return {
         ...s,
@@ -269,7 +274,7 @@ export function reducer(s: AppState, a: Action): AppState {
       return {
         ...s,
         match: a.match,
-        privateCode: null, // friend joined; the game is starting
+        privateCode: null, emotes: {}, // friend joined; the game is starting
         // Balance only ever changes via SET_BALANCE (refreshed from the wallet):
         // staked play requires a wallet, so there is no simulated debit anymore.
       };
@@ -281,6 +286,10 @@ export function reducer(s: AppState, a: Action): AppState {
         lastDice: { value: a.value, index: a.index, seat: a.seat },
         diceHistory: [...s.diceHistory, { index: a.index, value: a.value, seat: a.seat }],
       };
+    case 'EMOTE':
+      return { ...s, emotes: { ...s.emotes, [a.seat]: { id: a.id, n: (s.emotes[a.seat]?.n ?? 0) + 1 } } };
+    case 'CLEAR_EMOTES':
+      return { ...s, emotes: {} };
     case 'MOVED':
       // Challenge progress is server-authoritative (CHALLENGE_UPDATE), not derived here.
       return { ...s, game: a.game };
@@ -320,7 +329,7 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_BALANCE':
       return { ...s, balanceCents: a.cents, walletBacked: true };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
+      return { ...s, screen: 'lobby', emotes: {}, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
     case 'TOAST':
       return { ...s, toast: a.message };
     case 'CLEAR_TOAST':

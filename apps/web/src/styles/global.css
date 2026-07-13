@@ -853,6 +853,42 @@ small.muted { font-size: 12px; }
 .t4chip--sel { background: linear-gradient(180deg, #ffe27a, #f5b301); border-bottom-color: #c98f00; }
 .t4chip--sel b, .t4chip--sel small { color: #6b4d00; }
 .t4chip:active { transform: scale(0.95); }
+
+/* ---- in-game emotes ---- */
+.emotebar { position: relative; display: inline-flex; }
+.emotebar__toggle {
+  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  font-size: 20px; line-height: 1; background: var(--surface); color: var(--txt);
+  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
+}
+.emotebar__toggle:active { transform: scale(0.92); }
+.emotebar__row {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 20;
+  display: flex; gap: 2px; padding: 6px 8px; background: var(--surface);
+  border-radius: 22px; box-shadow: 0 10px 26px rgba(23, 43, 99, 0.4);
+  animation: emoteRow 0.14s ease-out;
+}
+.emotebar--up .emotebar__row { bottom: 100%; margin-bottom: 8px; }
+.emotebar--down .emotebar__row { top: 100%; margin-top: 8px; }
+.emotebar__e { border: none; background: none; font-size: 24px; line-height: 1; cursor: pointer; padding: 3px; border-radius: 8px; }
+.emotebar__e:active { transform: scale(0.85); }
+@keyframes emoteRow { from { opacity: 0; transform: translateX(-50%) scale(0.85); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
+
+/* floating emoji over an avatar; the parent is position:relative */
+.cornerstack, .seatav { position: relative; }
+.seatav { display: inline-block; }
+.emotefloat {
+  position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
+  font-size: 30px; pointer-events: none; z-index: 6; will-change: transform, opacity;
+  animation: emoteFloat 1.8s ease-out forwards;
+}
+@keyframes emoteFloat {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(0.5); }
+  14% { opacity: 1; transform: translate(-50%, -6px) scale(1.2); }
+  30% { transform: translate(-50%, -14px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -52px) scale(0.85); }
+}
+@media (prefers-reduced-motion: reduce) { .emotefloat { animation-duration: 0.01ms; opacity: 0; } .emotebar__row { animation: none; } }
 .hash {
   font-family: ui-monospace, monospace;
   font-size: 10px;

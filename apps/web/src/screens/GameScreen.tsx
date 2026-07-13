@@ -5,6 +5,7 @@ import { Board } from '../components/Board';
 import { DieFace } from '../components/Die';
 import { Die3D } from '../components/Die3D';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
+import { EmoteBar, EmoteFloat } from '../components/Emote';
 import { skinById } from '../lib/diceSkins';
 import { playDice } from '../lib/sound';
 import { t } from '../lib/i18n';
@@ -85,10 +86,12 @@ export function GameScreen({
   onRoll,
   onMove,
   onLeave,
+  onEmote,
 }: {
   onRoll(): void;
   onMove(token: number): void;
   onLeave(): void;
+  onEmote(id: string): void;
 }) {
   const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn } =
     useAppState();
@@ -148,6 +151,7 @@ export function GameScreen({
             {match.stakeCents > 0 ? `${t('pot')} ${fmtUsd(match.potCents)}` : t('training')}
           </div>
           <div className="cornerstack">
+            <EmoteFloat seat={1 - mySeat} />
             {!myTurn && (
               <div className="huddie" aria-label={`${match.opponent.name} die`}>
                 <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKIN} />
@@ -175,6 +179,7 @@ export function GameScreen({
         {/* my corner: avatar bottom-left (my quadrant side), my gold die beside it */}
         <div className="gamecorner gamecorner--bottom">
           <div className="cornerstack">
+            <EmoteFloat seat={mySeat} />
             <AvatarCard initial={t('you').slice(0, 1).toUpperCase()} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {myTurn && !handoff && (
               <button
@@ -225,6 +230,7 @@ export function GameScreen({
               <DieFace value={5} skin={skin} />
             </span>
           </button>
+          <EmoteBar onEmote={onEmote} />
           <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
             <IconMenu />
           </button>

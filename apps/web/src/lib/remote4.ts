@@ -38,6 +38,8 @@ export interface Remote4Events {
   onDice(value: number, index: number, seat: number): void;
   onMoved(seat: number, token: number, capture: boolean, state: Game4): void;
   onTurn(seat: number, deadlineTs: number): void;
+  /** A seat sent a quick emote (broadcast to the table). */
+  onEmote(seat: number, id: string): void;
   onOver(info: Over4Info): void;
   /** Staked payout confirmed on-chain (game.settled4). */
   onSettled(txHash: string): void;
@@ -160,6 +162,9 @@ export class Remote4 {
       case 'game.turn4':
         this.ev.onTurn(msg.seat, msg.deadlineTs);
         break;
+      case 'game.emote':
+        this.ev.onEmote(msg.seat, msg.id);
+        break;
       case 'game.over4':
         this.inGame = false;
         this.ev.onOver({ winner: msg.winner, payoutCents: msg.payoutCents, rakeCents: msg.rakeCents, fairnessReveal: msg.fairnessReveal });
@@ -196,6 +201,10 @@ export class Remote4 {
 
   move(token: number): void {
     this.send({ t: 'game.move', token });
+  }
+
+  emote(id: string): void {
+    this.send({ t: 'emote', id });
   }
 
   resign(): void {

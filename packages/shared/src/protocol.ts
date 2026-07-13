@@ -15,6 +15,12 @@ export type StakeCents = (typeof ALLOWED_STAKES_CENTS)[number];
 /** House share, in basis points (900 = 9%). */
 export const RAKE_BPS = 900;
 
+/** In-game quick emotes: a FIXED, curated, positive/neutral set (no free text →
+ *  no moderation surface, no harassment vector in a real-money game). Server
+ *  rate-limits per seat. Ids are the emoji themselves. */
+export const EMOTES = ['👍', '😂', '😮', '😢', '🔥', '💪', '🍀', '🎲'] as const;
+export type Emote = (typeof EMOTES)[number];
+
 /** Daily challenge (E4.1): capture N opponent tokens in a day → freeroll tickets. */
 export const DAILY_CHALLENGE = { captures: 3, rewardTickets: 1 } as const;
 
@@ -209,6 +215,8 @@ export type ClientMsg =
   | { t: 'game.rematch' }
   // Unlock a premium dice skin by spending its ticket price (PREMIUM_SKINS).
   | { t: 'skin.buy'; skinId: string }
+  // Send a quick emote to the current game (1v1 or 4p); id must be in EMOTES.
+  | { t: 'emote'; id: string }
   // Claim a cosmetic bought with cUSD on-chain (CosmeticsStore): the server
   // verifies the tx emitted Purchased(buyer=provenWallet, itemId=keccak(id))
   // before granting ownership. Dormant until the store is deployed (rec 6).
@@ -287,6 +295,8 @@ export type ServerMsg =
       state: GameState;
     }
   | { t: 'game.turn'; seat: Seat; deadlineTs: number }
+  // A player sent a quick emote (broadcast to the room; seat 0-3 for 1v1/4p).
+  | { t: 'game.emote'; seat: number; id: string }
   // The turn clock expired and the server played automatically for a slow or
   // absent player; after `max` consecutive auto-plays the seat forfeits. Sent so
   // clients can EXPLAIN the pacing instead of looking silently stuck (UX).
@@ -399,6 +409,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof m.skinId === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.skinId) ? m : null;
     case 'cosmetic.claim':
       return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) && typeof m.id === 'string' && cosmeticById(m.id) !== undefined ? m : null;
+    case 'emote':
+      return typeof m.id === 'string' && (EMOTES as readonly string[]).includes(m.id) ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
