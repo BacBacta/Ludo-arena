@@ -2,8 +2,12 @@ import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@lud
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
+import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
+
+/** MiniPay top-up deeplink — the required alternative to an "insufficient" error. */
+const ADD_CASH = 'https://link.minipay.xyz/add_cash?tokens=USDT,USDC';
 
 
 export function Lobby({
@@ -23,7 +27,7 @@ export function Lobby({
   /** Connect MiniPay/injected wallet; resolves true when connected. */
   onConnectWallet(): Promise<boolean>;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
@@ -36,8 +40,7 @@ export function Lobby({
     if (stakingBlocked) return t('geoBlocked');
     if (limits.selfExcludedUntil) return `${t('rgExcludedUntil')} ${limits.selfExcludedUntil}`;
     if (limits.stakedTodayCents + stake > limits.dailyLimitCents) return t('rgLimitHit');
-    if (balanceCents < stake) return t('insufficient');
-    return null;
+    return null; // low balance is handled separately (MiniPay Add-Cash deeplink)
   }
 
   /** Staked play needs a REAL wallet (no demo money): true = handled (blocked
@@ -48,9 +51,16 @@ export function Lobby({
       void onConnectWallet(); // attempt (instant inside MiniPay); toasts if none
       return true;
     }
+    // Compliance blocks (geo / self-exclusion / daily cap) take priority.
     const blocked = stakeBlockedMsg(stake);
     if (blocked) {
       dispatch({ type: 'TOAST', message: blocked });
+      return true;
+    }
+    // Low balance: MiniPay requires a top-up deeplink, not an error message.
+    if (balanceCents < stake) {
+      if (isMiniPay()) window.location.href = ADD_CASH;
+      else dispatch({ type: 'TOAST', message: t('insufficient') });
       return true;
     }
     return false;
@@ -131,6 +141,23 @@ export function Lobby({
       </button>
 
       <div style={{ height: 14 }} />
+
+      {/* Stable identity card: same name + country flag every session (wallet-keyed),
+          with ELO + W/L. The player's public identity — never a raw 0x address. */}
+      {profile.name && (
+        <div className="card profilecard">
+          <div className="profilecard__id">
+            <span className="profilecard__flag">{profile.flag}</span>
+            <b>{profile.name}</b>
+            <span className="profilecard__div">{DIVISIONS[league.division] ?? ''}</span>
+          </div>
+          <div className="profilecard__stats">
+            <span><b>{profile.elo}</b> ELO</span>
+            <span className="profilecard__w">{profile.wins} {t('winsShort')}</span>
+            <span className="profilecard__l">{Math.max(0, profile.games - profile.wins)} {t('lossesShort')}</span>
+          </div>
+        </div>
+      )}
 
       {/* day-zero aware: at 0 days the card sells the action, not the zero */}
       <div className="streak">

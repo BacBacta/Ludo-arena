@@ -86,6 +86,8 @@ export interface SessionEvents {
   onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win' | 'sync'): void;
   /** Premium dice skins the player owns (from hello.ok). */
   onSkins(ownedIds: string[]): void;
+  /** Own stable profile from hello.ok: identity (name/flag) + ELO + W/L. */
+  onProfile(p: { name?: string; flag?: string; elo?: number; games?: number; wins?: number }): void;
   /** Responsible-gaming limits (E5.2). */
   onLimits(limits: LimitsState): void;
   /** Geo-gating (E5.4): staked play disabled in this region. */
@@ -579,6 +581,7 @@ export class RemoteSession implements GameSession {
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
+        this.ev.onProfile({ name: msg.name, flag: msg.flag, elo: msg.elo, games: msg.games, wins: msg.wins });
         if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
         if (msg.resumed) {
           this.inGame = true;

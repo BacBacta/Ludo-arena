@@ -97,8 +97,13 @@ export interface Store {
   getOrCreatePlayer(
     id: string,
     defaults: { wallet?: string; name: string; flag: string },
-  ): Promise<{ elo: number }>;
+  ): Promise<{ elo: number; gamesPlayed: number; wins: number }>;
   updateElo(id: string, elo: number): Promise<void>;
+  /** Increment a player's win count (profile W/L). Called for the winner. */
+  recordWin(id: string): Promise<void>;
+  /** Increment games_played only (no ELO change) — for 4-player games, where
+   *  updateElo (which bumps games_played) doesn't run. No-op for unknown ids. */
+  recordPlayed(id: string): Promise<void>;
   recordGame(rec: GameRecord): Promise<void>;
 
   // Settlements (durable, E3.3)

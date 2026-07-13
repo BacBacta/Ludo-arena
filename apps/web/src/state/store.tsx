@@ -21,6 +21,14 @@ import { loadSkinId, saveSkinId } from '../lib/diceSkins';
 const CACHE_KEY = 'ludo.retention';
 
 /** Retention state cached client-side so the lobby shows it before connecting. */
+export interface Profile {
+  name: string;
+  flag: string;
+  elo: number;
+  games: number;
+  wins: number;
+}
+
 interface RetentionCache {
   challenge: ChallengeState;
   streak: StreakState;
@@ -28,6 +36,7 @@ interface RetentionCache {
   tickets: number;
   ownedSkins: string[];
   limits: LimitsState;
+  profile: Profile;
 }
 
 const DEFAULT_RETENTION: RetentionCache = {
@@ -37,6 +46,7 @@ const DEFAULT_RETENTION: RetentionCache = {
   tickets: 0,
   ownedSkins: [],
   limits: { dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS, stakedTodayCents: 0, selfExcludedUntil: null },
+  profile: { name: '', flag: '🌍', elo: 1200, games: 0, wins: 0 },
 };
 
 function loadRetention(): RetentionCache {
@@ -80,6 +90,8 @@ export interface AppState {
   tickets: number;
   /** Premium dice skins unlocked (server-authoritative; cached for the lobby). */
   ownedSkins: string[];
+  /** Own stable profile (identity + ELO + W/L), cached for the lobby card. */
+  profile: Profile;
   /** Responsible-gaming limits (E5.2). */
   limits: LimitsState;
   /** Geo-gating (E5.4): staked play disabled in this region. */
@@ -173,6 +185,7 @@ export const initialState: AppState = {
   league: loadRetention().league,
   tickets: loadRetention().tickets,
   ownedSkins: loadRetention().ownedSkins,
+  profile: loadRetention().profile,
   limits: loadRetention().limits,
   stakingBlocked: false,
   match: null,
@@ -226,6 +239,7 @@ export type Action =
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
   | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
+  | { type: 'PROFILE'; profile: Partial<Profile> }
   | { type: 'LIMITS_UPDATE'; limits: LimitsState }
   | { type: 'GEO'; stakingBlocked: boolean }
   | { type: 'SET_BALANCE'; cents: number }
@@ -315,6 +329,16 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, tickets: a.total };
     case 'OWNED_SKINS':
       return { ...s, ownedSkins: a.ownedIds, tickets: a.tickets ?? s.tickets };
+    case 'PROFILE': {
+      // Merge only defined fields (hello.ok omits them for anon players).
+      const next = { ...s.profile };
+      if (a.profile.name) next.name = a.profile.name;
+      if (a.profile.flag) next.flag = a.profile.flag;
+      if (typeof a.profile.elo === 'number') next.elo = a.profile.elo;
+      if (typeof a.profile.games === 'number') next.games = a.profile.games;
+      if (typeof a.profile.wins === 'number') next.wins = a.profile.wins;
+      return { ...s, profile: next };
+    }
     case 'LIMITS_UPDATE':
       return { ...s, limits: a.limits };
     case 'GEO':

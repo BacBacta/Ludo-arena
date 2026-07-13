@@ -49,8 +49,9 @@ export default function App() {
       tickets: state.tickets,
       ownedSkins: state.ownedSkins,
       limits: state.limits,
+      profile: state.profile,
     });
-  }, [state.challenge, state.streak, state.league, state.tickets, state.ownedSkins, state.limits]);
+  }, [state.challenge, state.streak, state.league, state.tickets, state.ownedSkins, state.limits, state.profile]);
 
   const refreshBalance = useCallback(
     async (wallet: Wallet) => {
@@ -188,6 +189,7 @@ export default function App() {
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
       onSkins: (ownedIds) => dispatch({ type: 'OWNED_SKINS', ownedIds }),
+      onProfile: (p) => dispatch({ type: 'PROFILE', profile: p }),
       onGeo: (stakingBlocked) => dispatch({ type: 'GEO', stakingBlocked }),
       onRefunded: (txHash) => {
         dispatch({ type: 'REFUNDED', txHash });

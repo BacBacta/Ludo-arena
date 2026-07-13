@@ -256,6 +256,12 @@ export type ServerMsg =
       t: 'hello.ok';
       sessionToken: string;
       elo: number;
+      // Own stable profile (identity): derived name + country flag + W/L record.
+      // MiniPay: never surface a raw 0x address — this is the display identity.
+      name?: string;
+      flag?: string;
+      games?: number;
+      wins?: number;
       resumed?: ResumedGame;
       challenge?: ChallengeState;
       streak?: StreakState;

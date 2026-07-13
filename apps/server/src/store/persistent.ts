@@ -58,6 +58,8 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS streak_days INTEGER NOT NULL DEFAUL
 ALTER TABLE players ADD COLUMN IF NOT EXISTS division INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS weekly_points INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS players_league_idx ON players(division, weekly_points DESC);
+-- Profile W/L (games_played already tracked in updateElo).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS wins INTEGER NOT NULL DEFAULT 0;
 
 -- Anti-tilt (E4.5): rewards are freeroll TICKETS, not cash. loss_streak drives
 -- the grant; lost_rake_cents/cashback_cents are legacy columns from the retired
@@ -207,15 +209,24 @@ export class PersistentStore implements Store {
   async getOrCreatePlayer(
     id: string,
     defaults: { wallet?: string; name: string; flag: string },
-  ): Promise<{ elo: number }> {
-    const res = await this.pool.query<{ elo: number }>(
+  ): Promise<{ elo: number; gamesPlayed: number; wins: number }> {
+    const res = await this.pool.query<{ elo: number; games_played: number; wins: number }>(
       `INSERT INTO players (id, wallet, name, flag)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (id) DO UPDATE SET updated_at = now()
-       RETURNING elo`,
+       RETURNING elo, games_played, wins`,
       [id, defaults.wallet ?? null, defaults.name, defaults.flag],
     );
-    return { elo: res.rows[0]?.elo ?? 1200 };
+    const r = res.rows[0];
+    return { elo: r?.elo ?? 1200, gamesPlayed: r?.games_played ?? 0, wins: r?.wins ?? 0 };
+  }
+
+  async recordWin(id: string): Promise<void> {
+    await this.pool.query(`UPDATE players SET wins = wins + 1, updated_at = now() WHERE id = $1`, [id]);
+  }
+
+  async recordPlayed(id: string): Promise<void> {
+    await this.pool.query(`UPDATE players SET games_played = games_played + 1, updated_at = now() WHERE id = $1`, [id]);
   }
 
   async updateElo(id: string, elo: number): Promise<void> {

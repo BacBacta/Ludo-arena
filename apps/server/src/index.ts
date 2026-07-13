@@ -376,6 +376,8 @@ function wireRoom(room: Room): void {
       .addLeaguePoints(winnerId, leaguePointsForWin(result.stakeCents))
       .then((league) => winnerSession?.send({ t: 'league.update', league }))
       .catch((e) => console.error('[league] addLeaguePoints', e));
+    // Profile W/L: bump the winner's win count (games_played is bumped in updateElo).
+    store.recordWin(winnerId).catch((e) => console.error('[profile] recordWin', e));
 
     // Freeroll prize: winner takes both entries plus the house bonus, in tickets.
     if (result.freeroll) {
@@ -588,10 +590,17 @@ wss.on('connection', (ws, req) => {
         await recordConsent(resumedSession, msg.consent);
         const rProof = issueWalletNonce(resumedSession);
         const rpid = playerId(resumedSession.wallet, resumedSession.id);
+        const rStats = resumedSession.wallet
+          ? await store.getOrCreatePlayer(rpid, { wallet: resumedSession.wallet, name: resumedSession.name, flag: resumedSession.flag })
+          : { gamesPlayed: 0, wins: 0 };
         send(ws, {
           t: 'hello.ok',
           sessionToken: resumedSession.id,
           elo: resumedSession.elo,
+          name: resumedSession.name,
+          flag: resumedSession.flag,
+          games: rStats.gamesPlayed,
+          wins: rStats.wins,
           resumed: resumedGame(resumedSession),
           challenge: await store.getChallenge(rpid, utcToday()),
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
@@ -612,7 +621,10 @@ wss.on('connection', (ws, req) => {
       const idKey = playerId(wallet, id);
       const { name, flag } = deriveIdentity(idKey, country);
       // Wallet-linked players keep their ELO across sessions (Postgres).
-      const elo = wallet ? (await store.getOrCreatePlayer(idKey, { wallet, name, flag })).elo : 1200;
+      const stats = wallet
+        ? await store.getOrCreatePlayer(idKey, { wallet, name, flag })
+        : { elo: 1200, gamesPlayed: 0, wins: 0 };
+      const elo = stats.elo;
       session = makeSession(id, ws, {
         id,
         wallet,
@@ -641,6 +653,10 @@ wss.on('connection', (ws, req) => {
         t: 'hello.ok',
         sessionToken: id,
         elo,
+        name,
+        flag,
+        games: stats.gamesPlayed,
+        wins: stats.wins,
         challenge,
         streak,
         league,
@@ -1432,6 +1448,16 @@ function leave4(sessionParam: Session): void {
   }
 }
 
+/** Profile W/L for a finished 4-player game: every human seat played a game; the
+ *  human at the winning seat also gets a win. Anon/bot rows just no-op. */
+function recordRoom4Stats(humans: Session[], winnerSeat: number): void {
+  humans.forEach((h, seat) => {
+    const pid = playerId(h.wallet, h.id);
+    store.recordPlayed(pid).catch((e) => console.error('[profile] recordPlayed4', e));
+    if (seat === winnerSeat) store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
+  });
+}
+
 function startRoom4(humans: Session[]): void {
   const gameId = randomBytes(16).toString('hex');
   const seats: Seat4[] = [];
@@ -1449,6 +1475,7 @@ function startRoom4(humans: Session[]): void {
   }
   const fairness = createFairness4(seatSeeds);
   const room = new Room4(gameId, seats, fairness, 0, 0); // free table: no tickets, no cUSD
+  room.onResult = (r) => recordRoom4Stats(humans, r.winnerSeat);
   room.onEnd = () => rooms4.delete(gameId);
   rooms4.set(gameId, room);
   const players = room.players();
@@ -1563,7 +1590,10 @@ function startStaked4Room(p: PendingStaked4): void {
   pendingStaked4.delete(p.gameId);
   const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag }));
   const room = new Room4(p.gameId, seats, p.fairness, 0, 0, p.pot, p.rake);
-  room.onResult = (r) => settleStaked4(p, r.winnerSeat);
+  room.onResult = (r) => {
+    recordRoom4Stats(p.humans, r.winnerSeat);
+    settleStaked4(p, r.winnerSeat);
+  };
   room.onEnd = () => rooms4.delete(p.gameId);
   rooms4.set(p.gameId, room);
   p.humans.forEach((h, seat) => {

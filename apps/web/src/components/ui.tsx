@@ -8,6 +8,7 @@ import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
 import { PREMIUM_SKINS, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
+import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
 
@@ -56,9 +57,12 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
             <span className="topbar__dot" />
             {fmtCents(balanceCents)} USDT
           </div>
+        ) : isMiniPay() ? (
+          // MiniPay requirement: never show a "Connect" button inside MiniPay —
+          // the wallet is auto-connected on launch; show nothing until it lands.
+          null
         ) : (
-          // No wallet → no balance to show (there is no demo money): an honest
-          // connect CTA instead of a fake number.
+          // Regular browser: an honest connect CTA (no demo money to fake).
           <button className="topbar__balance topbar__connect" onClick={() => void onConnect?.()}>
             {t('connectWallet')}
           </button>

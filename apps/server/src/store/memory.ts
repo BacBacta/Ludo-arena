@@ -30,6 +30,8 @@ interface PlayerRow {
   name: string;
   flag: string;
   elo: number;
+  gamesPlayed: number;
+  wins: number;
   challengeDate?: string;
   captures: number;
   done: boolean;
@@ -107,12 +109,14 @@ export class MemoryStore implements Store {
   async getOrCreatePlayer(
     id: string,
     defaults: { wallet?: string; name: string; flag: string },
-  ): Promise<{ elo: number }> {
+  ): Promise<{ elo: number; gamesPlayed: number; wins: number }> {
     const existing = this.players.get(id);
-    if (existing) return { elo: existing.elo };
+    if (existing) return { elo: existing.elo, gamesPlayed: existing.gamesPlayed ?? 0, wins: existing.wins ?? 0 };
     this.players.set(id, {
       ...defaults,
       elo: 1200,
+      gamesPlayed: 0,
+      wins: 0,
       captures: 0,
       done: false,
       tickets: 0,
@@ -126,11 +130,22 @@ export class MemoryStore implements Store {
       stakedTodayCents: 0,
       dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS,
     });
-    return { elo: 1200 };
+    return { elo: 1200, gamesPlayed: 0, wins: 0 };
   }
   async updateElo(id: string, elo: number): Promise<void> {
     const row = this.players.get(id);
-    if (row) row.elo = elo;
+    if (row) {
+      row.elo = elo;
+      row.gamesPlayed = (row.gamesPlayed ?? 0) + 1; // mirror the durable games_played++
+    }
+  }
+  async recordWin(id: string): Promise<void> {
+    const row = this.players.get(id);
+    if (row) row.wins = (row.wins ?? 0) + 1;
+  }
+  async recordPlayed(id: string): Promise<void> {
+    const row = this.players.get(id);
+    if (row) row.gamesPlayed = (row.gamesPlayed ?? 0) + 1;
   }
   async recordGame(rec: GameRecord): Promise<void> {
     this.games.set(rec.gameId, structuredClone(rec));
