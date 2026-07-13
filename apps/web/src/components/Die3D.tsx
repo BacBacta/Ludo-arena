@@ -78,13 +78,26 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rollKey]);
 
+  // The 3D cube is used ONLY while tumbling. At rest we show the plain 2D die
+  // face — so the result is guaranteed perfectly flat (no cube corners / side
+  // faces can ever peek), exactly like Ludo Club's settled die.
+  if (!rolling) {
+    return (
+      <div className="die3d-stage">
+        <div className="die3d-flat">
+          <DieFace value={value} skin={skin} />
+        </div>
+        <span className="die3d__shadow" aria-hidden="true" />
+      </div>
+    );
+  }
+
   return (
     <div className="die3d-stage">
-      <div className={`die3d-lift${rolling ? ' die3d-lift--rolling' : ''}`}>
-        {/* isometric tilt ONLY while rolling (shows the cube's depth as it
-            tumbles); it eases back to flat on landing so the RESULT is presented
-            face-on / 2D, like Ludo Club. */}
-        <div className={`die3d-tilt${rolling ? ' die3d-tilt--rolling' : ''}`}>
+      <div className="die3d-lift die3d-lift--rolling">
+        {/* isometric tilt while tumbling (shows the cube's depth); on landing the
+            component swaps to the flat 2D face above, so the RESULT is face-on. */}
+        <div className="die3d-tilt die3d-tilt--rolling">
           <div className="die3d" style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
             {FACES.map((f) => (
               <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
@@ -94,7 +107,7 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
           </div>
         </div>
       </div>
-      <span className={`die3d__shadow${rolling ? ' die3d__shadow--rolling' : ''}`} aria-hidden="true" />
+      <span className="die3d__shadow die3d__shadow--rolling" aria-hidden="true" />
     </div>
   );
 }
