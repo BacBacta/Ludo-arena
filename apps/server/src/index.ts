@@ -18,10 +18,12 @@ import {
   MAX_DAILY_GAMES_VS_SAME,
   parseClientMsg,
   potCents,
+  potCents4,
   TABLE_CODE_CHARS,
   TABLE_CODE_LEN,
   TOS_VERSION,
   walletProofMessage,
+  type Player4Info,
   type ResumedGame,
   type ServerMsg,
   type StakeCents,
@@ -44,6 +46,8 @@ import { Room, type Client } from './room.js';
 import { createFairness, createFairness4, createSeedCommit, finalizeFairness, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
+import { createArbiterN, GameStatusN, JOIN_TIMEOUT_N_S } from './settlement4.js';
+import { type Fairness4 } from './fairness.js';
 import { createStore, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -105,6 +109,30 @@ const freerollMatchmaker = new Matchmaker<Session>();
 const rooms4 = new Map<string, Room4>();
 const freeroll4Waiting: Session[] = [];
 let freeroll4Timer: ReturnType<typeof setTimeout> | null = null;
+// Staked cUSD 4-player: one wait queue per stake (4 real stakers required, no
+// bots), plus games awaiting all 4 on-chain deposits before Room4 starts.
+interface StakedQueue4 {
+  waiting: Session[];
+  timer: ReturnType<typeof setTimeout> | null;
+}
+const staked4 = new Map<number, StakedQueue4>();
+function staked4Queue(stake: number): StakedQueue4 {
+  let q = staked4.get(stake);
+  if (!q) {
+    q = { waiting: [], timer: null };
+    staked4.set(stake, q);
+  }
+  return q;
+}
+interface PendingStaked4 {
+  gameId: string;
+  humans: Session[]; // seat index = position in this array
+  stake: number;
+  pot: number;
+  rake: number;
+  fairness: Fairness4;
+}
+const pendingStaked4 = new Map<string, PendingStaked4>();
 // Per-room write chain: snapshots must reach the store in transition order.
 const roomWrites = new Map<string, Promise<void>>();
 // Private tables (E4.4): share code → host waiting for a friend to join.
@@ -169,6 +197,9 @@ function postOpsAlert(message: string): void {
 
 // On-chain settlement (E3.3). null when no ARBITER_PRIVATE_KEY is configured.
 const arbiter = createArbiter();
+// N-player settlement for staked 4-player games (LudoEscrowN). null until the
+// N-player escrow is deployed + configured → staked 4-player stays deferred.
+const arbiterN = createArbiterN();
 // gameId → who to notify with game.settled once the payout tx is mined.
 const settlementNotify = new Map<string, { sessionIds: [string, string]; winner: Seat }>();
 const settlementQueue = arbiter
@@ -195,6 +226,7 @@ const settlementQueue = arbiter
     })
   : null;
 if (arbiter) console.log(`[ludo-server] settlement enabled — arbiter ${arbiter.address} on chain ${arbiter.chainId}`);
+if (arbiterN) console.log(`[ludo-server] staked 4-player enabled — LudoEscrowN arbiter ${arbiterN.address} on chain ${arbiterN.chainId}`);
 // Compliance nudge: real settlement is on but no jurisdictions are geo-blocked and
 // the country header is only trustworthy behind a trusted edge (Cloudflare/Vercel).
 if (arbiter && BLOCKED_COUNTRIES.size === 0) {
@@ -687,8 +719,35 @@ wss.on('connection', (ws, req) => {
         }
         const stake4 = msg.stakeCents ?? 0;
         if (stake4 > 0) {
-          // Staked cUSD 4-player tables land with the LudoEscrowN integration.
-          session.send({ t: 'error', code: 'BAD_STATE', message: 'Staked 4-player tables are coming soon — play the free table for now.' });
+          // Staked cUSD 4-player: needs the N-player escrow + a wallet, and the
+          // same money-mode parity gates as 1v1 (consent + wallet-proof + durable
+          // settlement + geo + daily limit). No bots — 4 real stakers required.
+          if (!arbiterN) {
+            session.send({ t: 'error', code: 'BAD_STATE', message: 'Staked 4-player tables are coming soon — play the free table for now.' });
+            break;
+          }
+          if (!session.wallet) {
+            session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to play a staked 4-player table.' });
+            break;
+          }
+          const blocked4 = await stakeBlock(session, stake4 as StakeCents);
+          if (blocked4) {
+            session.send({ t: 'error', code: 'LIMIT_REACHED', message: blocked4 });
+            break;
+          }
+          const sq = staked4Queue(stake4);
+          if (sq.waiting.includes(session)) {
+            session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in the queue.' });
+            break;
+          }
+          sq.waiting.push(session);
+          session.send({ t: 'queue.ok', position: sq.waiting.length });
+          if (sq.waiting.length >= TABLE4.seats) {
+            tryStartStaked4(stake4);
+          } else if (!sq.timer) {
+            // No bot-fill for money: cancel the queue if 4 stakers don't gather.
+            sq.timer = setTimeout(() => cancelStaked4(stake4), TABLE4.stakedFillMs);
+          }
           break;
         }
         // Free table: bot-fill after a short wait, no entry, no prize.
@@ -1280,14 +1339,22 @@ function send(ws: WebSocket, msg: ServerMsg): void {
 
 // ---- 4-player online Sit&Go (ticket entry, bot-filled) --------------------
 
-/** Refund one 4-player entry ticket to a waiting player who left before start. */
-/** Remove a session from the free 4-player wait queue (no refund — free table). */
+/** Remove a session from the free OR staked 4-player wait queues (no on-chain
+ *  money is locked until match.found4, so leaving a queue needs no refund). */
 function leave4(sessionParam: Session): void {
   const i = freeroll4Waiting.indexOf(sessionParam);
   if (i >= 0) freeroll4Waiting.splice(i, 1);
   if (freeroll4Waiting.length === 0 && freeroll4Timer) {
     clearTimeout(freeroll4Timer);
     freeroll4Timer = null;
+  }
+  for (const [, q] of staked4) {
+    const j = q.waiting.indexOf(sessionParam);
+    if (j >= 0) q.waiting.splice(j, 1);
+    if (q.waiting.length === 0 && q.timer) {
+      clearTimeout(q.timer);
+      q.timer = null;
+    }
   }
 }
 
@@ -1340,6 +1407,140 @@ function tryStartFreeroll4(force: boolean): void {
     startRoom4(humans);
     if (freeroll4Waiting.length > 0) freeroll4Timer = setTimeout(() => tryStartFreeroll4(true), TABLE4.botFillMs);
   }
+}
+
+// ---- staked cUSD 4-player (LudoEscrowN) ------------------------------------
+
+/** 4 real stakers gathered → run the staked table. */
+function tryStartStaked4(stake: number): void {
+  const q = staked4Queue(stake);
+  if (q.waiting.length < TABLE4.seats) return;
+  if (q.timer) {
+    clearTimeout(q.timer);
+    q.timer = null;
+  }
+  const humans = q.waiting.splice(0, TABLE4.seats);
+  startStakedRoom4(humans, stake);
+}
+
+/** The staked queue never gathered 4 stakers → release them. No money was locked
+ *  yet (deposits only happen after match.found4), so there's nothing to refund. */
+function cancelStaked4(stake: number): void {
+  const q = staked4Queue(stake);
+  if (q.timer) {
+    clearTimeout(q.timer);
+    q.timer = null;
+  }
+  for (const s of q.waiting.splice(0, q.waiting.length)) {
+    s.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Not enough players for a staked table right now — try the free table or a different stake.' });
+  }
+}
+
+/** Announce the staked match; each client locks its stake in LudoEscrowN, then the
+ *  server polls until all 4 are Active before starting play (C3 for 4-player). */
+function startStakedRoom4(humans: Session[], stake: number): void {
+  if (!arbiterN) return;
+  const gameId = randomBytes(16).toString('hex');
+  const pot = potCents4(stake);
+  const rake = stake * 4 - pot;
+  const seatSeeds = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
+  const fairness = createFairness4(seatSeeds);
+  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false }));
+  pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, fairness });
+  // count each seat's stake toward the daily limit (E5.2)
+  void Promise.all(humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), stake))).catch((e) => console.error('[4p] dailyStake', e));
+  humans.forEach((h, seat) => {
+    h.pendingGameId = gameId; // block other joins while staking
+    h.send({ t: 'match.found4', gameId, seat, players, entryTickets: 0, prizeTickets: 0, stakeCents: stake, potCents: pot, fairnessCommit: fairness.commit });
+  });
+  pollStaked4Lock(gameId, 0);
+}
+
+function pollStaked4Lock(gameId: string, attempt: number): void {
+  const p = pendingStaked4.get(gameId);
+  if (!p || !arbiterN) return;
+  void arbiterN
+    .gameStatus(gameId)
+    .then(({ status }) => {
+      if (pendingStaked4.get(gameId) !== p) return;
+      if (status === GameStatusN.Active) {
+        startStaked4Room(p);
+        return;
+      }
+      if (attempt >= MAX_LOCK_POLLS) {
+        pendingStaked4.delete(gameId);
+        for (const h of p.humans) {
+          h.pendingGameId = undefined;
+          h.send({ t: 'error', code: 'INTERNAL', message: 'Not all 4 stakes were locked in time — table cancelled. Any locked stake is refunded shortly.' });
+        }
+        scheduleRefundUnfilled4(gameId, p.humans);
+        return;
+      }
+      setTimeout(() => pollStaked4Lock(gameId, attempt + 1), LOCK_POLL_MS);
+    })
+    .catch((e) => {
+      console.error('[4p stake-gate] poll failed', e instanceof Error ? e.message : e);
+      if (attempt < MAX_LOCK_POLLS && pendingStaked4.get(gameId) === p) setTimeout(() => pollStaked4Lock(gameId, attempt + 1), LOCK_POLL_MS);
+    });
+}
+
+/** All 4 stakes Active → create + start the Room4, settling the winner on win. */
+function startStaked4Room(p: PendingStaked4): void {
+  pendingStaked4.delete(p.gameId);
+  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag }));
+  const room = new Room4(p.gameId, seats, p.fairness, 0, 0, p.pot, p.rake);
+  room.onResult = (r) => settleStaked4(p, r.winnerSeat);
+  room.onEnd = () => rooms4.delete(p.gameId);
+  rooms4.set(p.gameId, room);
+  p.humans.forEach((h, seat) => {
+    h.pendingGameId = undefined;
+    h.room4 = room;
+    h.seat4 = seat;
+  });
+  room.start();
+}
+
+/** Winner decided → arbiter signs + submits settle() on LudoEscrowN. */
+function settleStaked4(p: PendingStaked4, winnerSeat: number): void {
+  const winner = p.humans[winnerSeat];
+  if (!winner?.wallet || !arbiterN) return;
+  submitSettle4(p.gameId, getAddress(winner.wallet), winnerSeat, p.humans, 0);
+}
+
+const MAX_SETTLE4_ATTEMPTS = 6;
+function submitSettle4(gameId: string, winner: `0x${string}`, winnerSeat: number, humans: Session[], attempt: number): void {
+  if (!arbiterN) return;
+  void arbiterN
+    .submitSettle(gameId, winner)
+    .then((txHash) => {
+      for (const h of humans) h.send({ t: 'game.settled4', gameId, txHash, winner: winnerSeat });
+      console.log(`[4p settle] ${gameId} settled in ${txHash}`);
+    })
+    .catch((e) => {
+      console.error(`[4p settle] ${gameId} attempt ${attempt + 1} failed:`, e instanceof Error ? e.message : e);
+      if (attempt + 1 >= MAX_SETTLE4_ATTEMPTS) {
+        postOpsAlert(`[settlement4][ALERT] PAYOUT FAILED after ${attempt + 1} attempts — 4p game ${gameId}, winner ${winner}. Funds locked in LudoEscrowN; manual settle/refund required.`);
+        return;
+      }
+      setTimeout(() => submitSettle4(gameId, winner, winnerSeat, humans, attempt + 1), Math.min(2_000 * 2 ** attempt, 30_000));
+    });
+}
+
+/** Refund every depositor of a table that never filled (after JOIN_TIMEOUT). */
+function scheduleRefundUnfilled4(gameId: string, humans: Session[]): void {
+  if (!arbiterN) return;
+  setTimeout(
+    () => {
+      void arbiterN!
+        .submitRefundUnfilled(gameId)
+        .then((txHash) => {
+          for (const h of humans) h.send({ t: 'game.refunded4', gameId, txHash });
+          console.log(`[4p refund] ${gameId} refundUnfilled ${txHash}`);
+        })
+        .catch((e) => console.error(`[4p refund] ${gameId} failed:`, e instanceof Error ? e.message : e));
+    },
+    (JOIN_TIMEOUT_N_S + 5) * 1_000,
+  );
 }
 
 // ELO windows widen while players wait: re-check the queues every second.

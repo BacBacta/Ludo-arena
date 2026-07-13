@@ -129,6 +129,12 @@ export function potCents(stake: StakeCents): number {
   return pot - Math.floor((pot * RAKE_BPS) / 10_000);
 }
 
+/** 4-player winner payout = 4·stake − rake (same rounding as potCents). */
+export function potCents4(stake: number): number {
+  const pot = stake * 4;
+  return pot - Math.floor((pot * RAKE_BPS) / 10_000);
+}
+
 // ---------- Client -> Server ----------
 
 export type ClientMsg =

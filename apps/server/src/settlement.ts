@@ -35,7 +35,7 @@ const celoSepolia = defineChain({
   testnet: true,
 });
 
-const CHAINS: Record<string, Chain> = { celo, 'celo-sepolia': celoSepolia };
+export const CHAINS: Record<string, Chain> = { celo, 'celo-sepolia': celoSepolia };
 
 const SETTLE_ABI = [
   { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'sig', type: 'bytes' }], outputs: [] },
