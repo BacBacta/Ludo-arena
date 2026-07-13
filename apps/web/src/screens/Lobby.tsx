@@ -1,5 +1,5 @@
 import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@ludo/shared';
-import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
+import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
 import { isMiniPay } from '../lib/minipay';
@@ -31,7 +31,7 @@ export function Lobby({
   /** Tap a league row → open that player's public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, recentOpponents } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
@@ -159,6 +159,37 @@ export function Lobby({
             <span><b>{profile.elo}</b> ELO</span>
             <span className="profilecard__w">{profile.wins} {t('winsShort')}</span>
             <span className="profilecard__l">{Math.max(0, profile.games - profile.wins)} {t('lossesShort')}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Rivals & recent opponents (C4): who you've faced in 1v1 + YOUR local
+          record vs each. A rival (played ≥ RIVAL_GAMES) is badged. Tap → profile. */}
+      {recentOpponents.length > 0 && (
+        <div className="card rivalscard">
+          <h3>
+            <span className="chip-ic chip-ic--opp"><IconUsers /></span>
+            {t('rivalsTitle')}
+          </h3>
+          <div className="rivalrow">
+            {recentOpponents.map((o, i) => {
+              const rival = o.wins + o.losses >= RIVAL_GAMES;
+              return (
+                <button
+                  key={o.pid ?? i}
+                  className={`rival${rival ? ' rival--rival' : ''}`}
+                  disabled={!o.pid}
+                  onClick={() => o.pid && onViewProfile(o.pid)}
+                >
+                  <span className={`rival__av ${frameClass(o.frame)}`} aria-hidden="true">{o.flag}</span>
+                  <b className="rival__name">{o.name}</b>
+                  <small className="rival__wl">
+                    <span className="profilecard__w">{o.wins}</span>–<span className="profilecard__l">{o.losses}</span>
+                  </small>
+                  {rival && <span className="rival__badge" aria-label={t('rivalBadge')}>⚔️</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

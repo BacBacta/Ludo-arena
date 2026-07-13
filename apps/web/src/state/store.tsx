@@ -33,6 +33,59 @@ export interface Profile {
   pid?: string;
 }
 
+/** A player you've faced in 1v1, with YOUR local head-to-head record vs them —
+ *  the social-memory feature (E-social C4). Purely client-side: the W/L is what
+ *  this device has seen, so it needs no server round-trip. A rival = games >= 3. */
+export interface RecentOpponent {
+  pid?: string;
+  name: string;
+  flag: string;
+  frame?: string;
+  wins: number; // MY wins vs them
+  losses: number; // MY losses vs them
+  lastTs: number;
+}
+
+const RECENT_KEY = 'ludo.recentOpponents';
+const RECENT_MAX = 8;
+export const RIVAL_GAMES = 3; // played this many times → a rival
+
+function loadRecentOpponents(): RecentOpponent[] {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    const arr = raw ? (JSON.parse(raw) as RecentOpponent[]) : [];
+    return Array.isArray(arr) ? arr.slice(0, RECENT_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentOpponents(list: RecentOpponent[]): void {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Upsert one finished 1v1 into the recent-opponents ledger (most-recent first). */
+function recordOpponent(
+  list: RecentOpponent[],
+  opp: { pid?: string; name: string; flag: string; frame?: string },
+  won: boolean,
+  now: number,
+): RecentOpponent[] {
+  const existing = list.find((o) => o.pid === opp.pid);
+  const merged = existing
+    ? list.map((o) =>
+        o.pid === opp.pid
+          ? { ...o, name: opp.name, flag: opp.flag, frame: opp.frame, wins: o.wins + (won ? 1 : 0), losses: o.losses + (won ? 0 : 1), lastTs: now }
+          : o,
+      )
+    : [{ pid: opp.pid, name: opp.name, flag: opp.flag, frame: opp.frame, wins: won ? 1 : 0, losses: won ? 0 : 1, lastTs: now }, ...list];
+  return [...merged].sort((a, b) => b.lastTs - a.lastTs).slice(0, RECENT_MAX);
+}
+
 interface RetentionCache {
   challenge: ChallengeState;
   streak: StreakState;
@@ -96,6 +149,7 @@ export interface AppState {
   ownedSkins: string[];
   /** Own stable profile (identity + ELO + W/L), cached for the lobby card. */
   profile: Profile;
+  recentOpponents: RecentOpponent[];
   /** Tap-on-avatar profile sheet: pid being viewed; data null while loading. */
   viewProfile: { pid: string; data: PublicProfile | null; failed?: boolean } | null;
   /** Responsible-gaming limits (E5.2). */
@@ -194,6 +248,7 @@ export const initialState: AppState = {
   ownedSkins: loadRetention().ownedSkins,
   profile: loadRetention().profile,
   viewProfile: null,
+  recentOpponents: loadRecentOpponents(),
   limits: loadRetention().limits,
   stakingBlocked: false,
   match: null,
@@ -322,10 +377,21 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, game: a.game };
     case 'TURN':
       return { ...s, turnDeadlineTs: a.deadlineTs, activeTurn: a.seat };
-    case 'GAME_OVER':
+    case 'GAME_OVER': {
       // On-chain payout is settled by the arbiter (E3.3) and reflected via
       // SET_BALANCE — no simulated credit (staked play requires a wallet).
-      return { ...s, screen: 'end', result: a.result, settleTxHash: null, refunded: false, reconnecting: false, staking: 'idle' };
+      const base = { ...s, screen: 'end' as const, result: a.result, settleTxHash: null, refunded: false, reconnecting: false, staking: 'idle' as const };
+      // Remember a REAL 1v1 opponent (pid present) + my result — the rivalry
+      // ledger. Bots (no pid) and 4-player games are skipped.
+      const opp = s.match?.opponent;
+      if (opp?.pid && s.match) {
+        const won = a.result.winner === s.match.seat;
+        const recentOpponents = recordOpponent(s.recentOpponents, opp, won, Date.now());
+        saveRecentOpponents(recentOpponents);
+        return { ...base, recentOpponents };
+      }
+      return base;
+    }
     case 'SETTLED':
       return { ...s, settleTxHash: a.txHash };
     case 'REFUNDED':
