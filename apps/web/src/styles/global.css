@@ -855,6 +855,21 @@ small.muted { font-size: 12px; }
 .screen--end { position: relative; overflow: hidden; }
 .end__emoji { font-size: 44px; }
 .end__title { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: 0.5px; color: #fff; text-shadow: 0 2px 0 rgba(23,43,99,.35); }
+/* ranking ceremony (C5): animated ELO delta + resulting rating, on the blue stage */
+.eloreveal {
+  display: inline-flex; align-items: baseline; gap: 10px;
+  padding: 5px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  animation: eloPop 0.5s cubic-bezier(0.34, 1.5, 0.64, 1) both;
+}
+.eloreveal__delta { font-family: var(--font-display); font-weight: 700; font-size: 20px; display: inline-flex; align-items: center; gap: 3px; }
+.eloreveal__arrow { font-size: 11px; }
+.eloreveal--up .eloreveal__delta { color: #58e39a; }
+.eloreveal--down .eloreveal__delta { color: #ff8080; }
+.eloreveal__rating { font-family: var(--font-display); font-size: 16px; color: rgba(255, 255, 255, 0.95); font-variant-numeric: tabular-nums; }
+.eloreveal__rating small { font-size: 10px; color: rgba(255, 255, 255, 0.6); }
+@keyframes eloPop { 0% { opacity: 0; transform: translateY(8px) scale(0.8); } 100% { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .eloreveal { animation: none; } }
 .end__amount {
   font-family: var(--font-display);
   font-size: 44px;

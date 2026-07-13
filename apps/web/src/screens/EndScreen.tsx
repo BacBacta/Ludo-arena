@@ -56,8 +56,24 @@ function Confetti() {
   );
 }
 
+/** Ranking ceremony: the ELO change counts up with a coloured arrow, and the
+ *  resulting rating slides in — the moment that makes a ladder feel like one. */
+function EloReveal({ delta, rating }: { delta: number; rating: number }) {
+  const up = delta >= 0;
+  const mag = useCountUp(Math.abs(delta), 1100);
+  return (
+    <div className={`eloreveal ${up ? 'eloreveal--up' : 'eloreveal--down'}`} role="status">
+      <span className="eloreveal__delta">
+        <span className="eloreveal__arrow" aria-hidden="true">{up ? '▲' : '▼'}</span>
+        {up ? '+' : '−'}{mag}
+      </span>
+      <span className="eloreveal__rating">{rating} <small>ELO</small></span>
+    </div>
+  );
+}
+
 export function EndScreen({ onRematch }: { onRematch(): void }) {
-  const { result, match, settleTxHash, refunded, league, walletBacked } = useAppState();
+  const { result, match, settleTxHash, refunded, league, walletBacked, profile } = useAppState();
   const dispatch = useAppDispatch();
 
   const won = !!result && !!match && result.winner === match.seat;
@@ -85,6 +101,15 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
       : t('shareMsg');
   const shareUrl = `https://wa.me/?text=${encodeURIComponent(`${shareText} ${window.location.origin}`)}`;
 
+  // Native share sheet (mobile / MiniPay) when available; WhatsApp link otherwise.
+  // Must run in the click gesture, so it's a button handler, not an href.
+  function shareResult(): void {
+    const url = window.location.origin;
+    const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+    if (nav?.share) void nav.share({ title: 'Ludo Arena', text: shareText, url }).catch(() => {});
+    else window.open(shareUrl, '_blank', 'noopener');
+  }
+
   const amount = staked ? (won ? `+${fmtUsd(counted)}` : `−${fmtUsd(counted)}`) : `+${counted} XP`;
 
   return (
@@ -109,9 +134,8 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
             t('lossSafety')
           )}
         </div>
-        <small className="muted">
-          ELO {won ? `+${result.eloDelta}` : result.eloDelta} · {DIVISIONS[league.division] ?? ''} {t('league')}
-        </small>
+        <EloReveal delta={result.eloDelta} rating={profile.elo} />
+        <small className="muted">{DIVISIONS[league.division] ?? ''} {t('league')}</small>
         {refunded ? (
           <small className="muted">
             {t('refundedNote')}
@@ -148,9 +172,9 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
             <button className="btn btn--ghost" onClick={() => dispatch({ type: 'GO_LOBBY' })}>
               {t('home')}
             </button>
-            <a className="btn btn--ghost" style={{ textAlign: 'center' }} href={shareUrl} target="_blank" rel="noreferrer">
+            <button className="btn btn--ghost" style={{ textAlign: 'center' }} onClick={shareResult}>
               {t('challengeFriend')}
-            </a>
+            </button>
           </div>
         </div>
       </div>
