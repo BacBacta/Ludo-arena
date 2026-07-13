@@ -51,10 +51,12 @@ export const BASE_SPOTS: ReadonlyArray<ReadonlyArray<readonly [number, number]>>
 /** Default Blitz config. */
 export const BLITZ = {
   tokensPerPlayer: 2,
-  /** Token 0 starts already placed on the start cell (speeds the game up). */
-  firstTokenStartsOnBoard: true,
-  /** Overshoot allowed to finish (no exact roll required). */
-  allowOvershootFinish: true,
+  /** Ludo Club rules: all tokens start in base (need a 6 to bring one out). */
+  firstTokenStartsOnBoard: false,
+  /** Ludo Club rules: EXACT roll required to reach the centre (no overshoot). */
+  allowOvershootFinish: false,
+  /** Ludo Club rules: three consecutive 6s forfeit the turn. */
+  forfeitAfterThreeSixes: true,
   /** ms per decision before auto-move. */
   moveClockMs: 15_000,
   /** consecutive auto-moves before forfeit. */

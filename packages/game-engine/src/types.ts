@@ -11,6 +11,8 @@ export interface GameState {
   /** Playable tokens with the current die (empty outside awaiting-move). */
   legal: number[];
   rollCount: number;
+  /** Consecutive 6s rolled by the current player (Ludo Club: 3 → turn forfeited). */
+  sixStreak: number;
   phase: Phase;
   winner: Seat | null;
 }

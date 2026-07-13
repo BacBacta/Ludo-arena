@@ -24,6 +24,7 @@ export function newGame(): GameState {
     dice: null,
     legal: [],
     rollCount: 0,
+    sixStreak: 0,
     phase: 'awaiting-roll',
     winner: null,
   };
@@ -49,11 +50,12 @@ export function legalMoves(state: GameState, seat: Seat, die: number): number[] 
   tokens.forEach((pos, ti) => {
     if (pos === FINISHED) return;
     if (pos === -1) {
-      if (die === 6) out.push(ti);
+      if (die === 6) out.push(ti); // Ludo Club: need a 6 to leave base
       return;
     }
-    // Overshoot allowed (BLITZ.allowOvershootFinish): always playable.
-    out.push(ti);
+    // Ludo Club: EXACT count to reach the centre — a move that would overshoot
+    // FINISHED is not playable for that token.
+    if (pos + die <= FINISHED) out.push(ti);
   });
   return out;
 }
@@ -65,18 +67,29 @@ export function legalMoves(state: GameState, seat: Seat, die: number): number[] 
 export function applyRoll(state: GameState, die: number): GameState {
   if (state.phase !== 'awaiting-roll') throw new Error('BAD_STATE: not in roll phase');
   if (die < 1 || die > 6 || !Number.isInteger(die)) throw new Error(`invalid die: ${die}`);
-  const legal = legalMoves(state, state.turn, die);
+  const streak = die === 6 ? (state.sixStreak ?? 0) + 1 : 0;
   const next: GameState = {
     ...state,
     positions: state.positions.map((row) => [...row]),
     dice: die,
-    legal,
+    legal: [],
     rollCount: state.rollCount + 1,
+    sixStreak: streak,
   };
+  // Ludo Club: three 6s in a row burn the turn — no move, pass to the opponent.
+  if (streak >= 3) {
+    next.turn = otherSeat(state.turn);
+    next.dice = null;
+    next.sixStreak = 0;
+    next.phase = 'awaiting-roll';
+    return next;
+  }
+  const legal = legalMoves(state, state.turn, die);
+  next.legal = legal;
   if (legal.length === 0) {
     next.turn = otherSeat(state.turn);
     next.dice = null;
-    next.legal = [];
+    next.sixStreak = 0; // turn passes → the opponent's 6-streak starts fresh
     next.phase = 'awaiting-roll';
   } else {
     next.phase = 'awaiting-move';
@@ -102,8 +115,7 @@ export function applyMove(state: GameState, token: number): MoveResult {
   if (pos === -1) {
     pos = 0; // leaves base onto the start cell
   } else {
-    pos = pos + die;
-    if (pos >= FINISHED) pos = FINISHED;
+    pos = pos + die; // exact — legalMoves guarantees pos + die <= FINISHED
   }
   seatRow[token] = pos;
 
@@ -125,7 +137,8 @@ export function applyMove(state: GameState, token: number): MoveResult {
 
   const finished = pos === FINISHED;
   const won = seatRow.every((p) => p === FINISHED);
-  const extraTurn = !won && (die === 6 || capture);
+  // Ludo Club: a 6, a capture, OR bringing a token home all grant another roll.
+  const extraTurn = !won && (die === 6 || capture || finished);
 
   const next: GameState = {
     positions,
@@ -133,6 +146,8 @@ export function applyMove(state: GameState, token: number): MoveResult {
     dice: null,
     legal: [],
     rollCount: state.rollCount,
+    // keep the 6-streak while the same player keeps rolling; reset when the turn passes
+    sixStreak: won || !extraTurn ? 0 : (state.sixStreak ?? 0),
     phase: won ? 'over' : 'awaiting-roll',
     winner: won ? seat : null,
   };
@@ -148,7 +163,7 @@ export function pickAutoMove(state: GameState, seat: Seat, die: number): number 
   const row = state.positions[seat];
   if (!row) return first;
 
-  const canFinish = legal.find((ti) => (row[ti] ?? -1) >= 0 && (row[ti] ?? 0) + die >= FINISHED);
+  const canFinish = legal.find((ti) => (row[ti] ?? -1) >= 0 && (row[ti] ?? 0) + die === FINISHED);
   if (canFinish !== undefined) return canFinish;
 
   const opp = otherSeat(seat);

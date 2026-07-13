@@ -43,6 +43,8 @@ export interface Game4 {
   turn: number;
   dice: number | null;
   legal: number[];
+  /** Consecutive 6s by the current player (Ludo Club: 3 → turn forfeited). */
+  sixStreak: number;
   phase: 'awaiting-roll' | 'awaiting-move' | 'over';
   /** Seats that have finished all tokens, in arrival order (out of the rotation). */
   done: number[];
@@ -63,6 +65,7 @@ export function newGame4(): Game4 {
     turn: 0,
     dice: null,
     legal: [],
+    sixStreak: 0,
     phase: 'awaiting-roll',
     done: [],
     winner: null,
@@ -96,27 +99,39 @@ export function legalMoves4(g: Game4, seat: number, die: number): number[] {
   row.forEach((pos, ti) => {
     if (pos === FINISHED) return;
     if (pos === -1) {
-      if (die === 6) out.push(ti);
+      if (die === 6) out.push(ti); // Ludo Club: need a 6 to leave base
       return;
     }
-    out.push(ti);
+    // Ludo Club: exact count to the centre — no overshoot.
+    if (pos + die <= FINISHED) out.push(ti);
   });
   return out;
 }
 
 export function applyRoll4(g: Game4, die: number): Game4 {
   if (g.phase !== 'awaiting-roll') throw new Error('BAD_STATE');
-  const legal = legalMoves4(g, g.turn, die);
+  const streak = die === 6 ? (g.sixStreak ?? 0) + 1 : 0;
   const next: Game4 = {
     ...g,
     positions: g.positions.map((r) => [...r]),
     dice: die,
-    legal,
+    legal: [],
+    sixStreak: streak,
   };
+  // Ludo Club: three 6s in a row burn the turn — no move, pass on.
+  if (streak >= 3) {
+    next.turn = nextSeat4(g, g.turn);
+    next.dice = null;
+    next.sixStreak = 0;
+    next.phase = 'awaiting-roll';
+    return next;
+  }
+  const legal = legalMoves4(g, g.turn, die);
+  next.legal = legal;
   if (legal.length === 0) {
     next.turn = nextSeat4(g, g.turn);
     next.dice = null;
-    next.legal = [];
+    next.sixStreak = 0; // turn passes → next seat's 6-streak starts fresh
     next.phase = 'awaiting-roll';
   } else {
     next.phase = 'awaiting-move';
@@ -134,7 +149,7 @@ export function applyMove4(g: Game4, token: number): { state: Game4; events: Mov
   const row = positions[seat]!;
 
   let pos = row[token]!;
-  pos = pos === -1 ? 0 : Math.min(pos + die, FINISHED);
+  pos = pos === -1 ? 0 : pos + die; // exact — legalMoves4 guarantees pos + die <= FINISHED
   row[token] = pos;
 
   // capture any opponent (any other seat) sharing this non-safe track cell
@@ -157,13 +172,16 @@ export function applyMove4(g: Game4, token: number): { state: Game4; events: Mov
   const done = seatDone && !g.done.includes(seat) ? [...g.done, seat] : g.done;
   // first player to bring all tokens home wins the practice game
   const won = seatDone && g.winner === null;
-  const extraTurn = !seatDone && (die === 6 || capture);
+  // Ludo Club: a 6, a capture, OR bringing a token home grants another roll.
+  const extraTurn = !seatDone && (die === 6 || capture || finished);
 
   const next: Game4 = {
     positions,
-    turn: won ? seat : extraTurn ? seat : nextSeat4({ ...g, positions, done }, seat),
+    turn: won || extraTurn ? seat : nextSeat4({ ...g, positions, done }, seat),
     dice: null,
     legal: [],
+    // keep the 6-streak while the same seat keeps rolling; reset when the turn passes
+    sixStreak: won || !extraTurn ? 0 : (g.sixStreak ?? 0),
     phase: won ? 'over' : 'awaiting-roll',
     done,
     winner: won ? seat : g.winner,
@@ -179,7 +197,7 @@ export function pickAutoMove4(g: Game4, seat: number, die: number): number | nul
   const row = g.positions[seat];
   if (!row) return first;
 
-  const canFinish = legal.find((ti) => (row[ti] ?? -1) >= 0 && (row[ti] ?? 0) + die >= FINISHED);
+  const canFinish = legal.find((ti) => (row[ti] ?? -1) >= 0 && (row[ti] ?? 0) + die === FINISHED);
   if (canFinish !== undefined) return canFinish;
 
   const canCapture = legal.find((ti) => {

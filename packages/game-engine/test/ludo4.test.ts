@@ -9,6 +9,7 @@ import {
   SEATS4,
   TOKENS4,
 } from '../src/ludo4.js';
+import { FINISHED } from '../src/constants.js';
 
 describe('4-player engine', () => {
   it('starts 4 seats × 4 tokens, all in base', () => {
@@ -63,6 +64,40 @@ describe('4-player engine', () => {
     const { state, events } = applyMove4(g, 0);
     expect(events.capture).toBe(true);
     expect(state.positions[2]![0]).toBe(-1); // captured back to base
+  });
+
+  it('exact count required to finish — an overshoot is not playable', () => {
+    const g = newGame4();
+    const g2 = { ...g, positions: g.positions.map((r, s) => (s === 0 ? [54, FINISHED, FINISHED, FINISHED] : [...r])) };
+    expect(legalMoves4(g2, 0, 2)).toEqual([0]); // 54 + 2 = 56 exact
+    expect(legalMoves4(g2, 0, 3)).toEqual([]); // overshoot → no move
+  });
+
+  it('bringing a token home grants another roll', () => {
+    const g = newGame4();
+    const g2 = {
+      ...g,
+      positions: g.positions.map((r, s) => (s === 0 ? [54, 10, -1, -1] : [...r])),
+      dice: 2,
+      legal: [0],
+      phase: 'awaiting-move' as const,
+    };
+    const { state, events } = applyMove4(g2, 0);
+    expect(events.finished).toBe(true);
+    expect(events.extraTurn).toBe(true);
+    expect(state.turn).toBe(0); // rolls again after a home
+  });
+
+  it('three consecutive 6s forfeit the turn', () => {
+    let g = newGame4();
+    g = { ...g, positions: g.positions.map((r, s) => (s === 0 ? [3, -1, -1, -1] : [...r])) };
+    g = applyMove4(applyRoll4(g, 6), 0).state; // streak 1, extra turn
+    g = applyMove4(applyRoll4(g, 6), 0).state; // streak 2, extra turn
+    expect(g.turn).toBe(0);
+    g = applyRoll4(g, 6); // streak 3 → forfeit
+    expect(g.turn).toBe(1);
+    expect(g.phase).toBe('awaiting-roll');
+    expect(g.sixStreak).toBe(0);
   });
 
   it('a full random-ish game reaches "over" with a winner (bots auto-play)', () => {

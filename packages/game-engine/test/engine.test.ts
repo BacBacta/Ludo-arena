@@ -25,22 +25,29 @@ describe('geometry', () => {
 });
 
 describe('newGame', () => {
-  it('token 0 on the start cell, token 1 in base', () => {
+  it('all tokens start in base (Ludo Club)', () => {
     const g = newGame();
     expect(g.positions).toEqual([
-      [0, -1],
-      [0, -1],
+      [-1, -1],
+      [-1, -1],
     ]);
     expect(g.turn).toBe(0);
+    expect(g.sixStreak).toBe(0);
     expect(g.phase).toBe('awaiting-roll');
   });
 });
 
 describe('legalMoves', () => {
-  it('without a 6, the base token cannot exit', () => {
+  it('without a 6, base tokens cannot exit; a 6 frees both', () => {
     const g = newGame();
-    expect(legalMoves(g, 0, 3)).toEqual([0]);
+    expect(legalMoves(g, 0, 3)).toEqual([]);
     expect(legalMoves(g, 0, 6)).toEqual([0, 1]);
+  });
+  it('exact count required to finish — an overshoot is not playable', () => {
+    // token 0 at rel 54 (2 from FINISHED=56); token 1 already home
+    const g: GameState = { ...newGame(), positions: [[54, FINISHED], [10, -1]] };
+    expect(legalMoves(g, 0, 2)).toEqual([0]); // exact
+    expect(legalMoves(g, 0, 3)).toEqual([]); // 54+3 overshoots → not playable
   });
   it('a finished token is no longer playable', () => {
     const g: GameState = { ...newGame(), positions: [[FINISHED, 4], [0, -1]] };
@@ -50,10 +57,10 @@ describe('legalMoves', () => {
 
 describe('applyRoll / applyMove', () => {
   it('advances by the die value', () => {
-    let g = newGame();
+    let g: GameState = { ...newGame(), positions: [[2, -1], [-1, -1]] };
     g = applyRoll(g, 4);
     const { state } = applyMove(g, 0);
-    expect(state.positions[0]![0]).toBe(4);
+    expect(state.positions[0]![0]).toBe(6);
     expect(state.turn).toBe(1); // not a 6 -> turn passes
   });
   it('6 = roll again', () => {
@@ -91,14 +98,38 @@ describe('applyRoll / applyMove', () => {
     const { events } = applyMove(g, 0);
     expect(events.capture).toBe(false);
   });
-  it('overshoot allowed: reaches FINISHED', () => {
-    let g: GameState = { ...newGame(), positions: [[54, FINISHED], [0, -1]] };
-    g = applyRoll(g, 6); // 54 + 6 = 60 -> clamped to FINISHED
+  it('exact roll finishes a token and wins', () => {
+    let g: GameState = { ...newGame(), positions: [[54, FINISHED], [FINISHED, 10] ] };
+    g = applyRoll(g, 2); // 54 + 2 = 56 exactly
     const { state, events } = applyMove(g, 0);
     expect(state.positions[0]![0]).toBe(FINISHED);
+    expect(events.finished).toBe(true);
     expect(events.won).toBe(true);
     expect(state.winner).toBe(0);
     expect(state.phase).toBe('over');
+  });
+  it('bringing a token home grants another roll (Ludo Club)', () => {
+    // token 0 finishes (rel 54 + 2); token 1 still on the board → not won yet
+    let g: GameState = { ...newGame(), positions: [[54, 10], [0, -1]] };
+    g = applyRoll(g, 2);
+    const { state, events } = applyMove(g, 0);
+    expect(events.finished).toBe(true);
+    expect(events.won).toBe(false);
+    expect(events.extraTurn).toBe(true);
+    expect(state.turn).toBe(0); // rolls again after a home
+  });
+  it('three consecutive 6s forfeit the turn', () => {
+    let g: GameState = { ...newGame(), positions: [[3, -1], [-1, -1]] };
+    g = applyRoll(g, 6); // streak 1
+    g = applyMove(g, 0).state; // move, extra turn (die 6), still seat 0
+    expect(g.turn).toBe(0);
+    g = applyRoll(g, 6); // streak 2
+    g = applyMove(g, 0).state;
+    expect(g.turn).toBe(0);
+    g = applyRoll(g, 6); // streak 3 → forfeit, no move
+    expect(g.turn).toBe(1);
+    expect(g.phase).toBe('awaiting-roll');
+    expect(g.sixStreak).toBe(0);
   });
   it('no possible move -> the turn passes', () => {
     const g: GameState = { ...newGame(), positions: [[-1, -1], [0, -1]] };
@@ -107,8 +138,8 @@ describe('applyRoll / applyMove', () => {
     expect(next.phase).toBe('awaiting-roll');
   });
   it('illegal move rejected', () => {
-    let g = newGame();
-    g = applyRoll(g, 3);
+    let g: GameState = { ...newGame(), positions: [[2, -1], [-1, -1]] };
+    g = applyRoll(g, 4); // legal [0] (token 1 needs a 6 to exit)
     expect(() => applyMove(g, 1)).toThrow(/ILLEGAL_MOVE/);
   });
 });
@@ -116,7 +147,7 @@ describe('applyRoll / applyMove', () => {
 describe('pickAutoMove', () => {
   it('prefers finishing', () => {
     const g: GameState = { ...newGame(), positions: [[52, 10], [0, -1]] };
-    expect(pickAutoMove(g, 0, 5)).toBe(0);
+    expect(pickAutoMove(g, 0, 4)).toBe(0); // 52 + 4 = 56 exact
   });
   it('prefers capturing otherwise', () => {
     // seat 0: token 0 rel 1 -> +2 = abs 3 where seat 1 (rel 29) is capturable
@@ -133,7 +164,7 @@ describe('pickAutoMove', () => {
 
 describe('immutability', () => {
   it('applyMove does not mutate the input state', () => {
-    let g = newGame();
+    let g: GameState = { ...newGame(), positions: [[2, -1], [-1, -1]] };
     g = applyRoll(g, 4);
     const snapshot = JSON.stringify(g);
     applyMove(g, 0);
