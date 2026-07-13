@@ -21,11 +21,12 @@ export interface CompiledContract {
   bytecode: Hex;
 }
 
-export function compileAll(): Record<'LudoEscrow' | 'TestUSD', CompiledContract> {
+export function compileAll(): Record<'LudoEscrow' | 'LudoEscrowN' | 'TestUSD', CompiledContract> {
   const input = {
     language: 'Solidity',
     sources: {
       'LudoEscrow.sol': { content: readFileSync(join(SRC_DIR, 'LudoEscrow.sol'), 'utf8') },
+      'LudoEscrowN.sol': { content: readFileSync(join(SRC_DIR, 'LudoEscrowN.sol'), 'utf8') },
       'TestUSD.sol': { content: readFileSync(join(SRC_DIR, 'TestUSD.sol'), 'utf8') },
     },
     settings: {
@@ -52,6 +53,7 @@ export function compileAll(): Record<'LudoEscrow' | 'TestUSD', CompiledContract>
 
   return {
     LudoEscrow: pick('LudoEscrow.sol', 'LudoEscrow'),
+    LudoEscrowN: pick('LudoEscrowN.sol', 'LudoEscrowN'),
     TestUSD: pick('TestUSD.sol', 'TestUSD'),
   };
 }

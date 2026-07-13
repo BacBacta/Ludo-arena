@@ -68,8 +68,10 @@ contract LudoEscrowTest is Test {
         vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
         vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
         esc.settle(gameId, alice, _sign(gameId, alice));
+        // sig computed first: forge's expectRevert applies to the very next call.
+        bytes memory sig = _sign(gameId, alice);
         vm.expectRevert(LudoEscrow.BadStatus.selector);
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        esc.settle(gameId, alice, sig);
     }
 
     function testBadSignatureRejected() public {
@@ -83,8 +85,9 @@ contract LudoEscrowTest is Test {
     function testWinnerMustBePlayer() public {
         vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
         vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        bytes memory sig = _sign(gameId, address(0xDEAD));
         vm.expectRevert(LudoEscrow.NotAPlayer.selector);
-        esc.settle(gameId, address(0xDEAD), _sign(gameId, address(0xDEAD)));
+        esc.settle(gameId, address(0xDEAD), sig);
     }
 
     function testRefundExpired() public {
@@ -112,8 +115,9 @@ contract LudoEscrowTest is Test {
         assertEq(cusd.balanceOf(alice), 10e18);
         assertEq(cusd.balanceOf(bob), 10e18);
         // cannot settle a voided game
+        bytes memory sig = _sign(gameId, alice);
         vm.expectRevert(LudoEscrow.BadStatus.selector);
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        esc.settle(gameId, alice, sig);
     }
 
     function testVoidGameOnlyArbiter() public {
