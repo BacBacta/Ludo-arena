@@ -10,6 +10,8 @@ import raw from '../deployments.json';
 export interface Deployment {
   chainId: number;
   escrow: Address;
+  /** N-player escrow (LudoEscrowN) for staked 4-player games; absent until deployed. */
+  escrowN?: Address;
   stablecoin: Address;
   arbiter: Address;
   treasury: Address;
@@ -22,3 +24,7 @@ const deployments = raw as Record<string, Deployment>;
 export function deploymentForChain(chainId: number): Deployment | null {
   return Object.values(deployments).find((d) => d.chainId === chainId) ?? null;
 }
+
+/** True once LudoEscrowN is deployed somewhere → staked 4-player can be offered.
+ *  Until then the 4-player table stays free (no wallet prompt, no "coming soon"). */
+export const staked4Available = Object.values(deployments).some((d) => !!d.escrowN);

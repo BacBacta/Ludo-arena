@@ -14,7 +14,7 @@ import {
 } from 'viem';
 import { activeChain } from './chains';
 import { deploymentForChain } from './deployments';
-import { stakeInEscrow, tokenBalanceCents, type StakeStatus } from './escrow';
+import { stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
 
 declare global {
   interface Window {
@@ -89,6 +89,34 @@ export async function lockStake(
     gameId,
     stakeCents,
     // MiniPay pays gas in cUSD; on Celo Sepolia the stake token doubles as gas token
+    feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
+    onStatus,
+  });
+}
+
+/**
+ * Locks the per-seat stake in LudoEscrowN for a 4-player staked table (approve +
+ * join with seatCount=4). Throws if the N-player escrow isn't deployed on the
+ * connected chain (staked 4-player stays off until then).
+ */
+export async function lockStake4(
+  wallet: Wallet,
+  gameId: string,
+  stakeCents: number,
+  onStatus?: (s: StakeStatus) => void,
+): Promise<void> {
+  const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
+  const dep = deploymentForChain(chainId);
+  if (!dep?.escrowN) throw new Error(`No LudoEscrowN deployment for chain ${chainId}`);
+  await stakeInEscrowN({
+    walletClient: wallet.walletClient,
+    publicClient: wallet.publicClient,
+    account: wallet.address,
+    escrow: dep.escrowN,
+    token: dep.stablecoin,
+    gameId,
+    stakeCents,
+    seatCount: 4,
     feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
     onStatus,
   });

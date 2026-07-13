@@ -67,6 +67,8 @@ export interface AppState {
   practice4: boolean;
   /** Online 4-player Sit&Go (ticket entry, up to 4 humans + bot-fill). */
   online4: boolean;
+  /** 4-player online stake per seat: 0 = free table, >0 = cUSD staked. */
+  online4Stake: number;
   balanceCents: number;
   /** True once the balance comes from a connected wallet (no simulated debits). */
   walletBacked: boolean;
@@ -154,6 +156,7 @@ export const initialState: AppState = {
   screen: 'lobby',
   practice4: false,
   online4: false,
+  online4Stake: 0,
   balanceCents: 500,
   walletBacked: false,
   stakeCents: 25,
@@ -193,7 +196,7 @@ export type Action =
   | { type: 'SELECT_STAKE'; stake: StakeCents }
   | { type: 'START_MATCHMAKING'; botMode: boolean }
   | { type: 'START_PRACTICE4' }
-  | { type: 'START_ONLINE4' }
+  | { type: 'START_ONLINE4'; stakeCents: number }
   | { type: 'MATCH_FOUND'; match: MatchInfo }
   | { type: 'GAME_STATE'; game: GameState }
   | { type: 'DICE'; value: number; index: number; seat: Seat }
@@ -234,7 +237,7 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'START_PRACTICE4':
       return { ...s, screen: 'game', practice4: true, online4: false, match: null, game: null, result: null, lastDice: null };
     case 'START_ONLINE4':
-      return { ...s, screen: 'game', online4: true, practice4: false, match: null, game: null, result: null, lastDice: null };
+      return { ...s, screen: 'game', online4: true, online4Stake: a.stakeCents, practice4: false, match: null, game: null, result: null, lastDice: null };
     case 'START_MATCHMAKING':
       return {
         ...s,

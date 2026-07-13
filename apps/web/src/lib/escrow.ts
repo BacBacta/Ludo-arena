@@ -29,6 +29,12 @@ export const ESCROW_ABI = [
   },
 ] as const;
 
+/** LudoEscrowN (N-player) — join takes seatCount; seatsOf lists the depositors. */
+export const ESCROW_N_ABI = [
+  { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }, { name: 'seatCount', type: 'uint8' }], outputs: [] },
+  { type: 'function', name: 'seatsOf', stateMutability: 'view', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [{ name: '', type: 'address[]' }] },
+] as const;
+
 /**
  * The server gameId is 16 random bytes (32 hex chars); the contract keys on
  * bytes32. Left-pad to 32 bytes — canonical, so E3.3 server settlement signs
@@ -108,6 +114,47 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
 
   onStatus?.('joining');
   const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake], ...extra });
+  const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
+  if (r.status !== 'success') throw new Error('join reverted');
+
+  onStatus?.('locked');
+  return { gameId32, stake, approveTx, joinTx };
+}
+
+/**
+ * Locks the caller's stake in the N-player escrow (LudoEscrowN): approve (if the
+ * allowance is short) then join(gameId, token, stake, seatCount). Idempotent-ish:
+ * if this address already deposited, returns without a second join.
+ */
+export async function stakeInEscrowN(params: StakeParams & { seatCount: number }): Promise<StakeReceipt> {
+  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, feeCurrency, onStatus, seatCount } = params;
+  const gameId32 = gameIdToBytes32(gameId);
+  const chain = walletClient.chain ?? null;
+
+  const decimals = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
+  const stake = stakeUnits(stakeCents, decimals);
+
+  // already deposited (e.g. a resumed session)? don't double-lock.
+  const seats = (await publicClient.readContract({ address: escrow, abi: ESCROW_N_ABI, functionName: 'seatsOf', args: [gameId32] })) as readonly Address[];
+  if (seats.some((p) => p.toLowerCase() === account.toLowerCase())) {
+    onStatus?.('locked');
+    return { gameId32, stake, joinTx: '0x' as Hex };
+  }
+
+  const extra = feeCurrency ? { feeCurrency } : {};
+  const signer = walletClient.account ?? account;
+
+  const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
+  let approveTx: Hex | undefined;
+  if (allowance < stake) {
+    onStatus?.('approving');
+    approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra });
+    const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
+    if (r.status !== 'success') throw new Error('approve reverted');
+  }
+
+  onStatus?.('joining');
+  const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount], ...extra });
   const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
   if (r.status !== 'success') throw new Error('join reverted');
 

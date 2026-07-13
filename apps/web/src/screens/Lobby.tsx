@@ -1,4 +1,5 @@
-import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@ludo/shared';
+import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, potCents4, type StakeCents } from '@ludo/shared';
+import { staked4Available } from '../lib/deployments';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { TopBar } from '../components/ui';
 import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
@@ -14,7 +15,7 @@ export function Lobby({
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
   onFreeroll(): void;
-  onPlay4(): void;
+  onPlay4(stake: StakeCents): void;
 }) {
   const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents } = useAppState();
   const dispatch = useAppDispatch();
@@ -47,6 +48,20 @@ export function Lobby({
       return;
     }
     onCreateTable(stakeCents);
+  }
+
+  // 4-player table at the selected stake — but only cUSD-staked once LudoEscrowN
+  // is deployed; until then it stays free (no wallet prompt, no dead option).
+  const stake4 = staked4Available ? stakeCents : 0;
+  function play4() {
+    if (stake4 > 0) {
+      const blocked = stakeBlockedMsg();
+      if (blocked) {
+        dispatch({ type: 'TOAST', message: blocked });
+        return;
+      }
+    }
+    onPlay4(stake4);
   }
 
   const inLeague = league.rank > 0 || league.points > 0;
@@ -115,12 +130,12 @@ export function Lobby({
           </b>
           {t('freerollDesc')}
         </div>
-        <div className="mini mini--action" onClick={onPlay4}>
+        <div className="mini mini--action" onClick={play4}>
           <b>
             <IconUsers className="icon--gold" /> {t('fourPlayer')}
-            <span className="mini__badge">{t('free')}</span>
+            <span className="mini__badge">{stake4 === 0 ? t('free') : fmtUsd(stake4)}</span>
           </b>
-          {t('fourPlayerDesc')}
+          {stake4 === 0 ? t('fourPlayerDesc') : `${t('win')} ${fmtUsd(potCents4(stake4))}`}
         </div>
         <div className="mini mini--action" onClick={createTable}>
           <b>

@@ -9,9 +9,10 @@
  * the session. That's acceptable for TICKET games (no on-chain money at stake).
  */
 import type { Game4 } from '@ludo/game-engine';
-import type { Player4Info, ServerMsg } from '@ludo/shared';
+import { walletProofMessage, type Player4Info, type ServerMsg } from '@ludo/shared';
 import { deviceFingerprint } from './fingerprint';
 import { sha256Hex } from './fairnessVerify';
+import type { WalletAuth } from './session';
 
 export interface Match4Info {
   gameId: string;
@@ -38,6 +39,10 @@ export interface Remote4Events {
   onMoved(seat: number, token: number, capture: boolean, state: Game4): void;
   onTurn(seat: number, deadlineTs: number): void;
   onOver(info: Over4Info): void;
+  /** Staked payout confirmed on-chain (game.settled4). */
+  onSettled(txHash: string): void;
+  /** Staked stakes refunded on-chain — table didn't fill (game.refunded4). */
+  onRefunded(txHash: string): void;
   /** A server error (bad state) — terminal for this session. */
   onError(message: string): void;
   /** The socket could not be reached / dropped before/after the game. */
@@ -58,6 +63,8 @@ export class Remote4 {
     private readonly walletAddress?: string,
     /** 0 = free table; >0 = cUSD stake per seat. */
     private readonly stakeCents: number = 0,
+    /** Consent + wallet signer for a staked table (18+/ToS + SIWE proof). */
+    private readonly auth?: WalletAuth,
   ) {
     this.entropy = randomHex(32);
     // Commit to our entropy (hash) before connecting: the server uses each seat's
@@ -88,6 +95,7 @@ export class Remote4 {
         sessionToken: this.token() ?? undefined,
         wallet: this.walletAddress,
         fingerprint: deviceFingerprint(),
+        consent: this.auth?.consent,
       });
       this.send({ t: 'queue.join4', stakeCents: this.stakeCents });
     };
@@ -115,6 +123,15 @@ export class Remote4 {
           sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
         } catch {
           /* storage unavailable */
+        }
+        // Wallet ownership proof (SIWE) for a staked table: sign the server's nonce.
+        if (msg.walletNonce && this.stakeCents > 0 && this.auth?.signMessage) {
+          void this.auth
+            .signMessage(walletProofMessage(msg.walletNonce))
+            .then((signature) => this.send({ t: 'wallet.prove', signature }))
+            .catch(() => {
+              /* user declined — server keeps staking gated */
+            });
         }
         break;
       case 'queue.ok':
@@ -146,6 +163,12 @@ export class Remote4 {
       case 'game.over4':
         this.inGame = false;
         this.ev.onOver({ winner: msg.winner, payoutCents: msg.payoutCents, rakeCents: msg.rakeCents, fairnessReveal: msg.fairnessReveal });
+        break;
+      case 'game.settled4':
+        this.ev.onSettled(msg.txHash);
+        break;
+      case 'game.refunded4':
+        this.ev.onRefunded(msg.txHash);
         break;
       case 'error':
         this.ev.onError(msg.message);

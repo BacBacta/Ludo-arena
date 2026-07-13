@@ -12,6 +12,8 @@ import { IconMenu } from '../components/icons';
 import type { Player4Info } from '@ludo/shared';
 import type { Game4 } from '@ludo/game-engine';
 import { Remote4, type Match4Info, type Over4Info } from '../lib/remote4';
+import type { WalletAuth } from '../lib/session';
+import type { StakeStatus } from '../lib/escrow';
 import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch } from '../state/store';
 import { t } from '../lib/i18n';
@@ -28,11 +30,17 @@ export function Game4OnlineScreen({
   onLeave,
   serverUrl,
   walletAddress,
+  stakeCents,
+  auth,
+  lockStake,
   onToast,
 }: {
   onLeave(): void;
   serverUrl: string;
   walletAddress?: string;
+  stakeCents: number; // per-seat stake; 0 = free table
+  auth?: WalletAuth;
+  lockStake(gameId: string, stakeCents: number, onStatus?: (s: StakeStatus) => void): Promise<void>;
   onToast(message: string): void;
 }) {
   const dispatch = useAppDispatch();
@@ -47,6 +55,8 @@ export function Game4OnlineScreen({
   const [over, setOver] = useState<Over4Info | null>(null);
   const [rolling, setRolling] = useState(false);
   const [potCents, setPotCents] = useState(0); // cUSD pot (0 = free table)
+  const [staking, setStaking] = useState<StakeStatus | null>(null); // locking my stake on-chain
+  const [settledTx, setSettledTx] = useState<string | null>(null); // payout confirmed on-chain
 
   const mySeatRef = useRef(mySeat);
   mySeatRef.current = mySeat;
@@ -70,6 +80,8 @@ export function Game4OnlineScreen({
     setShown(null);
     setOver(null);
     setRolling(false);
+    setStaking(null);
+    setSettledTx(null);
     remoteRef.current = new Remote4(
       {
         onQueued: () => setStatus((s) => (s === 'connecting' ? 'waiting' : s)),
@@ -77,6 +89,17 @@ export function Game4OnlineScreen({
           setPlayers(m.players);
           setMySeat(m.seat);
           setPotCents(m.potCents);
+          // Staked table: lock my seat's stake on-chain now. The server waits for
+          // all 4 deposits (Active) before dealing, then game.state4 arrives.
+          if (m.stakeCents > 0) {
+            setStaking('approving');
+            lockStake(m.gameId, m.stakeCents, setStaking)
+              .then(() => setStaking(null))
+              .catch(() => {
+                onToast(t('stakeFailed'));
+                onLeave();
+              });
+          }
         },
         onState: (state) => {
           setGame(state);
@@ -107,6 +130,12 @@ export function Game4OnlineScreen({
             playWin();
           }
         },
+        onSettled: (txHash) => setSettledTx(txHash),
+        onRefunded: () => {
+          // Staked table didn't fill → stakes refunded on-chain. Back to lobby.
+          onToast(t('refunded'));
+          onLeave();
+        },
         onError: (message) => {
           onToast(message);
           onLeave();
@@ -122,6 +151,8 @@ export function Game4OnlineScreen({
       },
       serverUrl,
       walletAddress,
+      stakeCents,
+      auth,
     );
   }
 
@@ -149,15 +180,17 @@ export function Game4OnlineScreen({
     [players, mySeat, activeTurn],
   );
 
-  // -------- waiting / connecting: a centred card, no board yet --------
+  // -------- waiting / connecting / staking: a centred card, no board yet --------
   if (!game) {
+    const title = staking ? (staking === 'approving' ? t('stakingApprove') : t('stakingJoin')) : t('findingPlayers');
+    const sub = staking ? t('stakingHint') : stakeCents > 0 ? `${t('win')} ${fmtUsd(potCents)}` : t('fourPlayerDesc');
     return (
       <div className="screen screen--game">
-        <div className="g4over" role="dialog" aria-modal="true" aria-label={t('findingPlayers')}>
+        <div className="g4over" role="dialog" aria-modal="true" aria-label={title}>
           <div className="g4over__card">
-            <div className="g4over__emoji" aria-hidden="true">🎲</div>
-            <div className="g4over__title">{t('findingPlayers')}</div>
-            <div className="g4over__sub">{t('fourPlayerDesc')}</div>
+            <div className="g4over__emoji" aria-hidden="true">{staking ? '🔒' : '🎲'}</div>
+            <div className="g4over__title">{title}</div>
+            <div className="g4over__sub">{sub}</div>
             <button className="btn btn--ghost" onClick={onLeave}>{t('cancel')}</button>
           </div>
         </div>
@@ -232,6 +265,9 @@ export function Game4OnlineScreen({
             <div className="g4over__emoji" aria-hidden="true">{iWon ? '🏆' : '🎲'}</div>
             <div className="g4over__title">{iWon ? t('victory') : `${winnerName} — ${t('defeat')}`}</div>
             <div className="g4over__sub">{iWon && over.payoutCents > 0 ? `+${fmtUsd(over.payoutCents)} cUSD` : t('fourPlayer')}</div>
+            {iWon && over.payoutCents > 0 && (
+              <div className="muted" style={{ fontSize: 12 }}>{settledTx ? t('settled') : t('stakingHint')}</div>
+            )}
             <button className="btn" onClick={connect}>{t('rematch')}</button>
             <button className="btn btn--ghost" onClick={onLeave}>{t('home')}</button>
           </div>

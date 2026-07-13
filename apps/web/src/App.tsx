@@ -17,7 +17,8 @@ import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { DiceModal, FairnessModal, LegalModal, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits, buySkin } from './lib/session';
-import { connectWallet, lockStake, walletBalanceCents, type Wallet } from './lib/minipay';
+import { connectWallet, lockStake, lockStake4, walletBalanceCents, type Wallet } from './lib/minipay';
+import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWin } from './lib/sound';
 import { recordGameResult } from './lib/diceSkins';
 import { t } from './lib/i18n';
@@ -239,11 +240,24 @@ export default function App() {
   // 4-player online Sit&Go: ticket-gated table for up to 4 humans + bot-fill.
   // Self-contained screen (owns its own Remote4 socket); just tear down any
   // 2-player session and switch screens.
-  const startOnline4 = useCallback(() => {
-    sessionRef.current?.dispose();
-    sessionRef.current = null;
-    dispatch({ type: 'START_ONLINE4' });
-  }, [dispatch]);
+  const startOnline4 = useCallback(
+    async (stake: StakeCents) => {
+      sessionRef.current?.dispose();
+      sessionRef.current = null;
+      // Staked 4-player table: connect the wallet up front so stakes can lock on match.
+      if (stake > 0 && !walletRef.current) {
+        const wallet = await connectWallet().catch(() => null);
+        if (wallet) {
+          walletRef.current = wallet;
+          void refreshBalance(wallet);
+        } else {
+          dispatch({ type: 'TOAST', message: t('noWallet') });
+        }
+      }
+      dispatch({ type: 'START_ONLINE4', stakeCents: stake });
+    },
+    [dispatch, refreshBalance],
+  );
 
   // Freeroll: ticket-gated free 1v1 on the server (no bot fallback — the entry
   // ticket only makes sense against a real opponent).
@@ -317,6 +331,18 @@ export default function App() {
   );
   const onPlay = useCallback((stake: StakeCents) => gateStaked(stake, () => void startMatch(stake)), [gateStaked, startMatch]);
   const onCreateTable = useCallback((stake: StakeCents) => gateStaked(stake, () => createTable(stake)), [gateStaked, createTable]);
+  const onPlay4 = useCallback((stake: StakeCents) => gateStaked(stake, () => void startOnline4(stake)), [gateStaked, startOnline4]);
+
+  // Lock a seat's stake in LudoEscrowN for a staked 4-player table (E3.2 for 4p).
+  const lockStakeForOnline4 = useCallback(
+    async (gameId: string, stakeCents: number, onStatus?: (s: StakeStatus) => void): Promise<void> => {
+      const wallet = walletRef.current;
+      if (!wallet) throw new Error('no wallet connected');
+      await lockStake4(wallet, gameId, stakeCents, onStatus);
+      void refreshBalance(wallet);
+    },
+    [refreshBalance],
+  );
 
   const purchaseSkin = useCallback(
     async (skinId: string) => {
@@ -348,7 +374,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={startOnline4} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
@@ -367,6 +393,9 @@ export default function App() {
           onLeave={() => dispatch({ type: 'GO_LOBBY' })}
           serverUrl={SERVER_URL}
           walletAddress={walletRef.current?.address}
+          stakeCents={state.online4Stake}
+          auth={makeAuth()}
+          lockStake={lockStakeForOnline4}
           onToast={(message) => dispatch({ type: 'TOAST', message })}
         />
       )}
