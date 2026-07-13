@@ -19,12 +19,13 @@
     "escrowNTx": "0x8147e9a17f9c1820712db6e7c6779d74f9584179b91ea6443c013f14041dfc38",
     "cosmeticsStore": "0x21acb73097d9f50ae3b169c52cb6e927b26d1b6f",
     "cosmeticsStoreTx": "0x61c1ff042e67f7772f7391a8dd93bef3e44e6a9a6e5d7addb75964022c4411d6",
-    "stablecoin": "0x3ca68b8a7e2c429dec33a34e0589173dfb305be4",
+    "stablecoin": "0x862f0b37b4eb6d121e7d3d51c02c5e58461e5897",
     "stablecoinIsTestUSD": true,
     "stablecoinTx": "0xbd8cd10d7a2714d68e834ca29ab1aa6fd2e516ec54db9e6ff5fb5996cdd9de01",
     "arbiter": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
     "treasury": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
     "rakeBps": 900,
-    "deployedAt": "2026-07-13T12:07:38.700Z"
+    "deployedAt": "2026-07-13T12:07:38.700Z",
+    "stablecoinDecimals": 6
   }
 }
