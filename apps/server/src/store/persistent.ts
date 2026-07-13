@@ -67,6 +67,9 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS wins INTEGER NOT NULL DEFAULT 0;
 -- login (getOrCreatePlayer recomputes it), so no migration/backfill is needed.
 ALTER TABLE players ADD COLUMN IF NOT EXISTS pid TEXT;
 CREATE INDEX IF NOT EXISTS players_pid_idx ON players (pid);
+-- Equipped avatar frame (E-social C3): cosmetic ring shown on the player's
+-- public profile. Client-authoritative (sent in hello, same trust as skins).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS equipped_frame TEXT NOT NULL DEFAULT 'none';
 
 -- Anti-tilt (E4.5): rewards are freeroll TICKETS, not cash. loss_streak drives
 -- the grant; lost_rake_cents/cashback_cents are legacy columns from the retired
@@ -215,14 +218,18 @@ export class PersistentStore implements Store {
 
   async getOrCreatePlayer(
     id: string,
-    defaults: { wallet?: string; name: string; flag: string },
+    defaults: { wallet?: string; name: string; flag: string; frame?: string },
   ): Promise<{ elo: number; gamesPlayed: number; wins: number }> {
     const res = await this.pool.query<{ elo: number; games_played: number; wins: number }>(
-      `INSERT INTO players (id, wallet, name, flag, pid)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (id) DO UPDATE SET updated_at = now(), pid = EXCLUDED.pid
+      // New row: default to 'none' (the column is NOT NULL, so never insert a
+      // raw NULL). Conflict: keep the existing frame when this hello omits one
+      // ($6 null) — a limits/skin one-shot must not wipe an equipped frame.
+      `INSERT INTO players (id, wallet, name, flag, pid, equipped_frame)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'none'))
+       ON CONFLICT (id) DO UPDATE SET updated_at = now(), pid = EXCLUDED.pid,
+         equipped_frame = COALESCE($6, players.equipped_frame)
        RETURNING elo, games_played, wins`,
-      [id, defaults.wallet ?? null, defaults.name, defaults.flag, pidFor(id)],
+      [id, defaults.wallet ?? null, defaults.name, defaults.flag, pidFor(id), defaults.frame ?? null],
     );
     const r = res.rows[0];
     return { elo: r?.elo ?? 1200, gamesPlayed: r?.games_played ?? 0, wins: r?.wins ?? 0 };
@@ -593,6 +600,7 @@ export class PersistentStore implements Store {
     gamesPlayed: number;
     wins: number;
     division: number;
+    frame: string;
   } | null> {
     const res = await this.pool.query<{
       id: string;
@@ -602,14 +610,15 @@ export class PersistentStore implements Store {
       games_played: number;
       wins: number;
       division: number;
+      equipped_frame: string;
     }>(
-      `SELECT id, name, flag, elo, games_played, wins, division FROM players
+      `SELECT id, name, flag, elo, games_played, wins, division, equipped_frame FROM players
        WHERE pid = $1 LIMIT 1`,
       [pid],
     );
     const r = res.rows[0];
     if (!r) return null;
-    return { id: r.id, name: r.name, flag: r.flag, elo: r.elo, gamesPlayed: r.games_played, wins: r.wins, division: r.division };
+    return { id: r.id, name: r.name, flag: r.flag, elo: r.elo, gamesPlayed: r.games_played, wins: r.wins, division: r.division, frame: r.equipped_frame || 'none' };
   }
 
   async headToHead(a: string, b: string): Promise<{ aWins: number; bWins: number }> {

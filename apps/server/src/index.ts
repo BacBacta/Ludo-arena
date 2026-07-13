@@ -80,6 +80,8 @@ interface Session extends Client {
   consentTos?: string;
   /** profile.get throttle: last lookup timestamp (anti-spam, DB-bound query). */
   lastProfileGetAt?: number;
+  /** Equipped avatar frame (cosmetic, client-authoritative like dice skins). */
+  frame?: string;
   /** Last opponent + stake, for a true direct rematch (BACKLOG E4). */
   lastOpponentId?: string;
   lastStake?: StakeCents;
@@ -593,11 +595,12 @@ wss.on('connection', (ws, req) => {
         resumedSession.country = country;
         resumedSession.ip = ip;
         resumedSession.miniPay = msg.miniPay === true;
+        if (msg.frame !== undefined) resumedSession.frame = msg.frame;
         await recordConsent(resumedSession, msg.consent);
         const rProof = issueWalletNonce(resumedSession);
         const rpid = playerId(resumedSession.wallet, resumedSession.id);
         const rStats = resumedSession.wallet
-          ? await store.getOrCreatePlayer(rpid, { wallet: resumedSession.wallet, name: resumedSession.name, flag: resumedSession.flag })
+          ? await store.getOrCreatePlayer(rpid, { wallet: resumedSession.wallet, name: resumedSession.name, flag: resumedSession.flag, frame: msg.frame })
           : { gamesPlayed: 0, wins: 0 };
         send(ws, {
           t: 'hello.ok',
@@ -608,6 +611,7 @@ wss.on('connection', (ws, req) => {
           games: rStats.gamesPlayed,
           wins: rStats.wins,
           pid: resumedSession.wallet ? pidFor(rpid) : undefined,
+          frame: resumedSession.frame,
           resumed: resumedGame(resumedSession),
           challenge: await store.getChallenge(rpid, utcToday()),
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
@@ -629,7 +633,7 @@ wss.on('connection', (ws, req) => {
       const { name, flag } = deriveIdentity(idKey, country);
       // Wallet-linked players keep their ELO across sessions (Postgres).
       const stats = wallet
-        ? await store.getOrCreatePlayer(idKey, { wallet, name, flag })
+        ? await store.getOrCreatePlayer(idKey, { wallet, name, flag, frame: msg.frame })
         : { elo: 1200, gamesPlayed: 0, wins: 0 };
       const elo = stats.elo;
       session = makeSession(id, ws, {
@@ -646,6 +650,7 @@ wss.on('connection', (ws, req) => {
       session.country = country;
       session.ip = ip;
       session.miniPay = msg.miniPay === true; // trusted address, no SIWE (before issueWalletNonce)
+      session.frame = msg.frame; // cosmetic; validated to AVATAR_FRAMES in parse
       sessions.set(id, session);
       persistSession(session);
       const pid = playerId(msg.wallet, id);
@@ -666,6 +671,7 @@ wss.on('connection', (ws, req) => {
         games: stats.gamesPlayed,
         wins: stats.wins,
         pid: wallet ? pidFor(idKey) : undefined,
+        frame: session.frame,
         challenge,
         streak,
         league,
@@ -939,7 +945,7 @@ wss.on('connection', (ws, req) => {
         }
         session.send({
           t: 'profile.info',
-          profile: { pid: msg.pid, name: prof.name, flag: prof.flag, elo: prof.elo, games: prof.gamesPlayed, wins: prof.wins, division: prof.division, h2h },
+          profile: { pid: msg.pid, name: prof.name, flag: prof.flag, elo: prof.elo, games: prof.gamesPlayed, wins: prof.wins, division: prof.division, frame: prof.frame, h2h },
         });
         break;
       }

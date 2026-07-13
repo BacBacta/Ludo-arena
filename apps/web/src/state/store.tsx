@@ -18,6 +18,7 @@ import {
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
 import { loadSkinId, saveSkinId } from '../lib/diceSkins';
+import { loadFrameId, saveFrameId } from '../lib/avatarFrames';
 
 const CACHE_KEY = 'ludo.retention';
 
@@ -128,6 +129,7 @@ export interface AppState {
   soundOn: boolean;
   /** Equipped dice skin id + picker modal state. */
   diceSkin: string;
+  avatarFrame: string;
   diceModalOpen: boolean;
   /** 4-player mode chooser (practice / free online / real money) open state. */
   table4Open: boolean;
@@ -214,6 +216,7 @@ export const initialState: AppState = {
   table4Open: false,
   soundOn: soundEnabled(),
   diceSkin: loadSkinId(),
+  avatarFrame: loadFrameId(),
   diceModalOpen: false,
   onboardOpen: firstSession(),
   legalAccepted: legalAcceptedInit(),
@@ -259,6 +262,7 @@ export type Action =
   | { type: 'SETTINGS'; open: boolean }
   | { type: 'TOGGLE_SOUND' }
   | { type: 'SET_DICE_SKIN'; id: string }
+  | { type: 'EQUIP_FRAME'; id: string }
   | { type: 'DICE_MODAL'; open: boolean }
   | { type: 'TABLE4_MODAL'; open: boolean }
   | { type: 'ONBOARD_DONE' }
@@ -391,6 +395,9 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_DICE_SKIN':
       saveSkinId(a.id);
       return { ...s, diceSkin: a.id };
+    case 'EQUIP_FRAME':
+      saveFrameId(a.id);
+      return { ...s, avatarFrame: a.id };
     case 'DICE_MODAL':
       return { ...s, diceModalOpen: a.open };
     case 'TABLE4_MODAL':

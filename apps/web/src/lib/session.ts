@@ -11,6 +11,7 @@ import {
 import type { GameState, Seat } from '@ludo/game-engine';
 import { deviceFingerprint } from './fingerprint';
 import { isMiniPay } from './minipay';
+import { loadFrameId } from './avatarFrames';
 import { sha256Hex } from './fairnessVerify';
 import {
   WALK_STEP_MS,
@@ -562,6 +563,7 @@ export class RemoteSession implements GameSession {
         fingerprint: deviceFingerprint(),
         consent: this.auth?.consent,
         miniPay: isMiniPay(), // trusted address → server accepts it without SIWE
+        frame: loadFrameId(), // equipped avatar frame (cosmetic, broadcast to others)
       });
       if (initial) {
         if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });

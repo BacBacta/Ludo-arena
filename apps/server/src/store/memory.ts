@@ -33,6 +33,7 @@ interface PlayerRow {
   elo: number;
   gamesPlayed: number;
   wins: number;
+  frame: string;
   challengeDate?: string;
   captures: number;
   done: boolean;
@@ -109,12 +110,16 @@ export class MemoryStore implements Store {
 
   async getOrCreatePlayer(
     id: string,
-    defaults: { wallet?: string; name: string; flag: string },
+    defaults: { wallet?: string; name: string; flag: string; frame?: string },
   ): Promise<{ elo: number; gamesPlayed: number; wins: number }> {
     const existing = this.players.get(id);
-    if (existing) return { elo: existing.elo, gamesPlayed: existing.gamesPlayed ?? 0, wins: existing.wins ?? 0 };
+    if (existing) {
+      if (defaults.frame !== undefined) existing.frame = defaults.frame; // equip re-syncs on hello
+      return { elo: existing.elo, gamesPlayed: existing.gamesPlayed ?? 0, wins: existing.wins ?? 0 };
+    }
     this.players.set(id, {
       ...defaults,
+      frame: defaults.frame ?? 'none',
       elo: 1200,
       gamesPlayed: 0,
       wins: 0,
@@ -355,10 +360,11 @@ export class MemoryStore implements Store {
     gamesPlayed: number;
     wins: number;
     division: number;
+    frame: string;
   } | null> {
     for (const [id, p] of this.players) {
       if (pidFor(id) === pid) {
-        return { id, name: p.name, flag: p.flag, elo: p.elo, gamesPlayed: p.gamesPlayed, wins: p.wins, division: p.division };
+        return { id, name: p.name, flag: p.flag, elo: p.elo, gamesPlayed: p.gamesPlayed, wins: p.wins, division: p.division, frame: p.frame || 'none' };
       }
     }
     return null;

@@ -97,7 +97,7 @@ export interface Store {
   // Players & games (durable)
   getOrCreatePlayer(
     id: string,
-    defaults: { wallet?: string; name: string; flag: string },
+    defaults: { wallet?: string; name: string; flag: string; frame?: string },
   ): Promise<{ elo: number; gamesPlayed: number; wins: number }>;
   updateElo(id: string, elo: number): Promise<void>;
   /** Increment a player's win count (profile W/L). Called for the winner. */
@@ -163,6 +163,7 @@ export interface Store {
     gamesPlayed: number;
     wins: number;
     division: number;
+    frame: string;
   } | null>;
   /** 1v1 head-to-head from recorded games (4p games are not GameRecords). */
   headToHead(a: string, b: string): Promise<{ aWins: number; bWins: number }>;

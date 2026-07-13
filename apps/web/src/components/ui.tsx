@@ -6,6 +6,7 @@ import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
+import { FRAMES, frameClass } from '../lib/avatarFrames';
 import { DIVISIONS, PREMIUM_SKINS, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
 import { isMiniPay } from '../lib/minipay';
@@ -181,7 +182,7 @@ export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: n
 /** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
  *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
 export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {
-  const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins } = useAppState();
+  const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins, avatarFrame } = useAppState();
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(diceModalOpen, close);
@@ -239,6 +240,29 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
             );
           })}
         </div>
+
+        {/* Avatar frames — the cosmetic everyone sees on your profile (C3). */}
+        <h3 style={{ marginTop: 16 }}>{t('framesTitle')}</h3>
+        <div className="framegrid">
+          {FRAMES.map((f) => {
+            const unlocked = f.unlocked(ctx);
+            const equipped = f.id === avatarFrame;
+            return (
+              <button
+                key={f.id}
+                className={`frametile${equipped ? ' frametile--on' : ''}${unlocked ? '' : ' frametile--locked'}`}
+                disabled={!unlocked}
+                onClick={unlocked ? () => dispatch({ type: 'EQUIP_FRAME', id: f.id }) : undefined}
+              >
+                <span className={`frametile__ring ${frameClass(f.id)}`} aria-hidden="true" />
+                <b>{t(f.nameKey)}</b>
+                <small>{equipped ? t('skinEquipped') : unlocked ? t('skinTap') : t(f.hintKey ?? 'skinSoon')}</small>
+                {!unlocked && <span className="skin__lock">🔒</span>}
+              </button>
+            );
+          })}
+        </div>
+
         <div style={{ marginTop: 10, textAlign: 'center' }} className="muted">
           {t('closeHint')}
         </div>
@@ -279,7 +303,7 @@ export function ProfileSheet() {
         ) : (
           <>
             <div className="profilesheet__head">
-              <span className="profilesheet__flag" aria-hidden="true">{p.flag}</span>
+              <span className={`profilesheet__flag ${frameClass(p.frame)}`} aria-hidden="true">{p.flag}</span>
               <div>
                 <b className="profilesheet__name">{p.name}</b>
                 <small className="muted">{DIVISIONS[p.division] ?? ''} {t('league')}</small>

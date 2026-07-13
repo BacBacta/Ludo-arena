@@ -45,6 +45,8 @@ export interface PublicProfile {
   games: number;
   wins: number;
   division: number; // index into DIVISIONS
+  /** Equipped avatar frame id (AVATAR_FRAMES); absent = 'none'. */
+  frame?: string;
   /** Head-to-head vs the REQUESTER (their wins/losses against this player);
    *  present only when both identities are known to the server. */
   h2h?: { wins: number; losses: number };
@@ -119,6 +121,20 @@ export function cosmeticById(id: string): CosmeticItem | undefined {
 /** cUSD price (cents) for a cosmetic, or 0 if it isn't cUSD-purchasable. */
 export function cosmeticCents(id: string): number {
   return cosmeticById(id)?.cents ?? 0;
+}
+
+/**
+ * Avatar frames (E-social C3): a cosmetic ring around a player's avatar, visible
+ * to EVERYONE (own profile card, in-game corners, the tap-to-view profile sheet)
+ * — the first cosmetic that others actually see, which is the whole point after
+ * profiles landed. Ids are the shared allowlist; the visual spec + progression
+ * unlock rules live client-side (avatarFrames.ts). Frames are cosmetic-only and
+ * client-equipped (sent in hello): the server just validates the id is real and
+ * echoes it, exactly like the dice-skin trust model (no money → no proof). */
+export const AVATAR_FRAMES = ['none', 'bronze', 'silver', 'gold', 'champion', 'neon'] as const;
+export type AvatarFrame = (typeof AVATAR_FRAMES)[number];
+export function isAvatarFrame(id: string): id is AvatarFrame {
+  return (AVATAR_FRAMES as readonly string[]).includes(id);
 }
 
 /** Responsible gaming (E5.2): default/max daily stake cap per player, in cents.
@@ -218,6 +234,8 @@ export type ClientMsg =
       entropy?: string;
       entropyCommit?: string;
       fingerprint?: string;
+      /** Equipped avatar frame id (cosmetic, client-authoritative like skins). */
+      frame?: string;
       // 18+/ToS consent the client has recorded locally; the server persists it
       // (per wallet) and requires a match to the current TOS_VERSION for staked play.
       consent?: { tosVersion: string; age18: boolean };
@@ -276,6 +294,8 @@ export interface OpponentInfo {
   flag: string;
   /** Opaque public id for profile.get (tap-on-avatar); absent for bots. */
   pid?: string;
+  /** Equipped avatar frame id (AVATAR_FRAMES); absent = 'none'. */
+  frame?: string;
 }
 
 export type GameOverReason = 'finish' | 'timeout-forfeit' | 'resign';
@@ -304,6 +324,8 @@ export type ServerMsg =
       wins?: number;
       /** My own opaque public id (what others use to view my profile). */
       pid?: string;
+      /** My own equipped avatar frame (echoed so a fresh client re-syncs it). */
+      frame?: string;
       resumed?: ResumedGame;
       challenge?: ChallengeState;
       streak?: StreakState;
@@ -417,6 +439,8 @@ export interface Player4Info {
   bot: boolean;
   /** Opaque public id for profile.get (tap-on-avatar); absent for bots. */
   pid?: string;
+  /** Equipped avatar frame id (AVATAR_FRAMES); absent = 'none'. */
+  frame?: string;
 }
 
 export type ErrorCode =
@@ -453,6 +477,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
         if (typeof c !== 'object' || c === null || typeof c.tosVersion !== 'string' || c.tosVersion.length > 32 || typeof c.age18 !== 'boolean') return null;
       }
       if (m.miniPay !== undefined && typeof m.miniPay !== 'boolean') return null;
+      // Frame is a cosmetic id: drop an unknown value rather than reject the
+      // whole hello (a client on a newer catalog must still connect).
+      if (m.frame !== undefined && (typeof m.frame !== 'string' || !isAvatarFrame(m.frame))) m.frame = undefined;
       return m;
     }
     case 'wallet.prove':

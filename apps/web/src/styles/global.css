@@ -610,6 +610,43 @@ small.muted { font-size: 12px; }
 .profilesheet__shimmer { width: 46px; height: 46px; border-radius: 50%; border: 4px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: pspin 0.9s linear infinite; }
 @keyframes pspin { to { transform: rotate(360deg); } }
 
+/* ---- avatar frames (C3): a cosmetic ring around any avatar/flag ---- */
+.avframe {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; padding: 3px; box-sizing: border-box;
+}
+.avframe--bronze { box-shadow: inset 0 0 0 2px #e8a86a, 0 0 0 2px #b8702f, 0 0 6px rgba(184, 112, 47, 0.55); }
+.avframe--silver { box-shadow: inset 0 0 0 2px #eef2f8, 0 0 0 2px #aab4c4, 0 0 6px rgba(170, 180, 196, 0.6); }
+.avframe--gold { box-shadow: inset 0 0 0 2px #ffe27a, 0 0 0 2.5px #f5b301, 0 0 9px rgba(245, 179, 1, 0.65); }
+.avframe--neon {
+  box-shadow: 0 0 0 2.5px #22e0c8, 0 0 10px rgba(34, 224, 200, 0.75);
+  animation: neonPulse 1.6s ease-in-out infinite;
+}
+.avframe--champion {
+  box-shadow: 0 0 0 2.5px #ff5db1, 0 0 0 5px rgba(245, 179, 1, 0.5), 0 0 12px rgba(255, 93, 177, 0.6);
+  animation: champSpin 3.5s linear infinite;
+}
+@keyframes neonPulse { 0%, 100% { box-shadow: 0 0 0 2.5px #22e0c8, 0 0 8px rgba(34, 224, 200, 0.55); } 50% { box-shadow: 0 0 0 2.5px #46f0d8, 0 0 14px rgba(34, 224, 200, 0.95); } }
+@keyframes champSpin { to { filter: hue-rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .avframe--neon, .avframe--champion { animation: none; } }
+
+/* frame picker (in the cosmetics modal) */
+.framegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.frametile {
+  position: relative; background: linear-gradient(180deg, #ffffff, #f0f3fa);
+  border: 1.5px solid #e0e6f2; border-bottom: 3px solid #d3dcec; border-radius: 14px;
+  padding: 12px 6px 8px; cursor: pointer; text-align: center; color: var(--txt);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.frametile__ring { width: 40px; height: 40px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #ffffff, #dce3ef); }
+.frametile__ring.avframe { padding: 0; } /* the swatch IS the ring */
+.frametile b { font-family: var(--font-display); font-size: 12px; }
+.frametile small { font-size: 9px; color: var(--muted); min-height: 20px; }
+.frametile--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245, 179, 1, 0.35); }
+.frametile--locked { opacity: 0.6; cursor: default; }
+.frametile .skin__lock { position: absolute; top: 6px; right: 8px; font-size: 12px; }
+
 /* bottom action bar: sound · verify · balance · dice skins · menu */
 .gamebar {
   margin-top: 14px;

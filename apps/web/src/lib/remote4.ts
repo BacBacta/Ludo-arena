@@ -12,6 +12,7 @@ import type { Game4 } from '@ludo/game-engine';
 import { walletProofMessage, type Player4Info, type ServerMsg } from '@ludo/shared';
 import { deviceFingerprint } from './fingerprint';
 import { isMiniPay } from './minipay';
+import { loadFrameId } from './avatarFrames';
 import { sha256Hex } from './fairnessVerify';
 import type { WalletAuth } from './session';
 
@@ -100,6 +101,7 @@ export class Remote4 {
         fingerprint: deviceFingerprint(),
         consent: this.auth?.consent,
         miniPay: isMiniPay(), // trusted address → server accepts it without SIWE
+        frame: loadFrameId(), // equipped avatar frame (cosmetic, broadcast to others)
       });
       this.send({ t: 'queue.join4', stakeCents: this.stakeCents });
     };
