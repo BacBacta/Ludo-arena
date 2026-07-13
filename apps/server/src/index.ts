@@ -242,6 +242,35 @@ else console.warn('[ludo-server] settlement disabled (no ARBITER_PRIVATE_KEY)');
 const NAMES = ['Kwame', 'Amara', 'Thabo', 'Zainab', 'Kofi', 'Nia', 'Sekou', 'Fatou'];
 const FLAGS = ['🇨🇲', '🇳🇬', '🇰🇪', '🇬🇭', '🇸🇳', '🇨🇮', '🇿🇦', '🇹🇿'];
 
+/** Deterministic 32-bit hash (FNV-1a) — stable across processes, unlike random. */
+function stableHash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** ISO-3166 alpha-2 → flag emoji (regional indicators); 🌍 for anything else. */
+function countryFlag(iso: string): string {
+  const cc = iso.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return '🌍';
+  return String.fromCodePoint(...[...cc].map((c) => 127397 + c.charCodeAt(0)));
+}
+
+/** Stable identity: a player's display name + flag are DERIVED (not random) from
+ *  their identity key, so a wallet-linked player is the same Kwame 🇨🇲 every
+ *  session — the prerequisite for profiles, friends and leaderboards. The flag
+ *  reflects the real country when the edge provides it. */
+function deriveIdentity(idKey: string, country: string | undefined): { name: string; flag: string } {
+  const h = stableHash(idKey);
+  return {
+    name: NAMES[h % NAMES.length] ?? 'Player',
+    flag: country ? countryFlag(country) : (FLAGS[h % FLAGS.length] ?? '🌍'),
+  };
+}
+
 function toRecord(s: Session): SessionRecord {
   return {
     id: s.id,
@@ -577,14 +606,13 @@ wss.on('connection', (ws, req) => {
         return;
       }
       const id = randomBytes(16).toString('hex');
-      const idx = Math.floor(Math.random() * NAMES.length);
-      const name = NAMES[idx] ?? 'Player';
-      const flag = FLAGS[idx] ?? '🌍';
-      // `wallet` was normalized at the top of the hello handler.
+      // `wallet` was normalized at the top of the hello handler. Identity is
+      // DERIVED from the stable key (wallet → same name/flag every session),
+      // not randomised per connection.
+      const idKey = playerId(wallet, id);
+      const { name, flag } = deriveIdentity(idKey, country);
       // Wallet-linked players keep their ELO across sessions (Postgres).
-      const elo = wallet
-        ? (await store.getOrCreatePlayer(playerId(wallet, id), { wallet, name, flag })).elo
-        : 1200;
+      const elo = wallet ? (await store.getOrCreatePlayer(idKey, { wallet, name, flag })).elo : 1200;
       session = makeSession(id, ws, {
         id,
         wallet,
