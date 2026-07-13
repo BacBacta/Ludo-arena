@@ -1055,11 +1055,12 @@ small.muted { font-size: 12px; }
    flattened by the lift's 2D transform. ---- */
 .die3d-stage { position: relative; width: 52px; height: 52px; margin: 0 auto; }
 /* stronger perspective → the cube shows real depth & edges while it tumbles */
-/* perspective-origin centred at rest so a face-on cube shows ONLY the result
-   face (no corners / side faces); the dramatic off-centre view is used only
-   while the cube is actually tumbling. */
-.die3d-lift { position: absolute; inset: 0; perspective: 240px; perspective-origin: 50% 50%; }
-.die3d-lift--rolling { animation: die3dThrow 0.7s cubic-bezier(0.2, 0.7, 0.25, 1); perspective-origin: 50% 42%; }
+/* Perspective (real 3D depth) is applied ONLY while the cube tumbles. At rest
+   there is NO perspective — a face-on cube then projects orthographically, so
+   its perpendicular side faces have zero width and only the flat result face
+   shows (no corners peeking through the rounded front face). */
+.die3d-lift { position: absolute; inset: 0; perspective: none; perspective-origin: 50% 42%; }
+.die3d-lift--rolling { perspective: 240px; animation: die3dThrow 0.7s cubic-bezier(0.2, 0.7, 0.25, 1); }
 @keyframes die3dThrow {
   0% { transform: translateY(0) scale(1); }
   22% { transform: translateY(-13px) scale(1.1); }
