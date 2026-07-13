@@ -585,6 +585,31 @@ small.muted { font-size: 12px; }
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.85), inset 0 -2px 4px rgba(15, 26, 68, 0.18);
 }
 
+/* tap-on-avatar: an invisible button wrapper (keeps the avatar's own layout) */
+.avtap { background: none; border: 0; padding: 0; cursor: pointer; display: inline-block; -webkit-tap-highlight-color: transparent; }
+.avtap:active { transform: scale(0.96); }
+
+/* tap-on-league-row */
+.board__row--tap { cursor: pointer; }
+.board__row--tap:active { opacity: 0.7; }
+
+/* public profile sheet (tap-on-avatar) */
+.profilesheet__head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.profilesheet__flag { font-size: 40px; line-height: 1; }
+.profilesheet__name { display: block; font-family: var(--font-display); font-size: 20px; }
+.profilesheet__stats { display: flex; gap: 8px; }
+.pstat { flex: 1; text-align: center; background: rgba(23, 37, 84, 0.08); border-radius: 12px; padding: 8px 4px; }
+.pstat b { display: block; font-size: 18px; font-family: var(--font-display); }
+.pstat small { color: var(--muted); font-size: 11px; }
+.pstat--w b { color: var(--accent); }
+.pstat--l b { color: var(--danger); }
+.profilesheet__h2h { margin-top: 12px; text-align: center; font-size: 14px; background: rgba(245, 179, 1, 0.12); border-radius: 12px; padding: 8px; }
+.profilesheet__h2hyou { color: var(--accent); }
+.profilesheet__h2hthem { color: var(--danger); }
+.profilesheet__loading { display: flex; justify-content: center; padding: 26px 0; }
+.profilesheet__shimmer { width: 46px; height: 46px; border-radius: 50%; border: 4px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: pspin 0.9s linear infinite; }
+@keyframes pspin { to { transform: rotate(360deg); } }
+
 /* bottom action bar: sound · verify · balance · dice skins · menu */
 .gamebar {
   margin-top: 14px;
@@ -887,19 +912,27 @@ small.muted { font-size: 12px; }
   box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
 }
 .emotebar__toggle:active { transform: scale(0.92); }
-.emotebar__row {
+/* popover sheet: emoji row + quick-chat pill row */
+.emotebar__sheet {
   position: absolute; left: 50%; transform: translateX(-50%); z-index: 20;
-  display: flex; gap: 2px; padding: 6px 8px; background: var(--surface);
-  border-radius: 22px; box-shadow: 0 10px 26px rgba(23, 43, 99, 0.4);
+  display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; background: var(--surface);
+  border-radius: 18px; box-shadow: 0 10px 26px rgba(23, 43, 99, 0.4);
   animation: emoteRow 0.14s ease-out;
 }
-.emotebar--up .emotebar__row { bottom: 100%; margin-bottom: 8px; }
-.emotebar--down .emotebar__row { top: 100%; margin-top: 8px; }
+.emotebar--up .emotebar__sheet { bottom: 100%; margin-bottom: 8px; }
+.emotebar--down .emotebar__sheet { top: 100%; margin-top: 8px; }
+.emotebar__row { display: flex; gap: 2px; justify-content: center; }
+.emotebar__row--chat { flex-wrap: wrap; max-width: 240px; gap: 5px; }
 .emotebar__e { border: none; background: none; font-size: 24px; line-height: 1; cursor: pointer; padding: 3px; border-radius: 8px; }
 .emotebar__e:active { transform: scale(0.85); }
+.emotebar__qc {
+  border: none; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--txt);
+  background: var(--card-2); border-radius: 999px; padding: 5px 10px; white-space: nowrap;
+}
+.emotebar__qc:active { transform: scale(0.93); }
 @keyframes emoteRow { from { opacity: 0; transform: translateX(-50%) scale(0.85); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
 
-/* floating emoji over an avatar; the parent is position:relative */
+/* floating reaction over an avatar; the parent is position:relative */
 .cornerstack, .emoteanchor { position: relative; }
 .emoteanchor { display: inline-block; }
 .emotefloat {
@@ -913,7 +946,29 @@ small.muted { font-size: 12px; }
   30% { transform: translate(-50%, -14px) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -52px) scale(0.85); }
 }
-@media (prefers-reduced-motion: reduce) { .emotefloat { animation-duration: 0.01ms; opacity: 0; } .emotebar__row { animation: none; } }
+/* quick-chat: a speech bubble instead of an emoji */
+.emotefloat--chat {
+  font-size: 13px; font-weight: 700; color: var(--txt); background: var(--surface);
+  padding: 6px 12px; border-radius: 14px; border-bottom-left-radius: 4px;
+  box-shadow: 0 6px 16px rgba(23, 43, 99, 0.35); white-space: nowrap;
+}
+/* per-emote entrance, layered INSIDE the float so the rise/fade base still runs */
+.emotein { display: inline-block; }
+.emotein--laugh { animation: emoteLaugh 0.7s ease-in-out 2; }
+.emotein--gasp { animation: emoteGasp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.emotein--sad { animation: emoteSad 1.6s ease-out; }
+.emotein--blaze { animation: emoteBlaze 0.32s ease-in-out 4; }
+.emotein--pump { animation: emotePump 0.42s ease-in-out 3; }
+.emotein--spin { animation: emoteSpin 0.7s cubic-bezier(0.34, 1.3, 0.64, 1); }
+.emotein--bounce { animation: emoteBounce 0.5s ease 2; }
+@keyframes emoteLaugh { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-14deg); } 75% { transform: rotate(14deg); } }
+@keyframes emoteGasp { 0% { transform: scale(0.3); } 60% { transform: scale(1.45); } 100% { transform: scale(1); } }
+@keyframes emoteSad { 0% { transform: translateY(-4px); } 100% { transform: translateY(5px) rotate(-6deg); } }
+@keyframes emoteBlaze { 0%, 100% { transform: scale(1) rotate(-3deg); filter: brightness(1); } 50% { transform: scale(1.18) rotate(3deg); filter: brightness(1.35); } }
+@keyframes emotePump { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.28); } }
+@keyframes emoteSpin { 0% { transform: rotate(-360deg) scale(0.4); } 100% { transform: rotate(0) scale(1); } }
+@keyframes emoteBounce { 0%, 100% { transform: translateY(0) rotate(0); } 40% { transform: translateY(-9px) rotate(18deg); } 70% { transform: translateY(2px) rotate(-8deg); } }
+@media (prefers-reduced-motion: reduce) { .emotefloat, .emotein { animation-duration: 0.01ms !important; } .emotefloat { opacity: 0; } .emotebar__sheet { animation: none; } }
 .hash {
   font-family: ui-monospace, monospace;
   font-size: 10px;

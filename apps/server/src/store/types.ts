@@ -4,6 +4,7 @@
  * does not kill in-progress games. Durable records (players, games) live
  * in Postgres. MemoryStore keeps dev zero-config (no restart survival).
  */
+import { createHmac } from 'node:crypto';
 import type { GameState, Seat } from '@ludo/game-engine';
 import type { ChallengeState, GameOverReason, LeagueState, LimitsState, StakeCents, StreakState } from '@ludo/shared';
 
@@ -152,6 +153,20 @@ export interface Store {
   pairGamesToday(a: string, b: string, today: string): Promise<number>;
   bumpPairGame(a: string, b: string, today: string): Promise<void>;
 
+  // Public profiles (E-social). `id` in the result is the INTERNAL player key —
+  // for follow-up store calls only, never sent to clients.
+  getProfileByPid(pid: string): Promise<{
+    id: string;
+    name: string;
+    flag: string;
+    elo: number;
+    gamesPlayed: number;
+    wins: number;
+    division: number;
+  } | null>;
+  /** 1v1 head-to-head from recorded games (4p games are not GameRecords). */
+  headToHead(a: string, b: string): Promise<{ aWins: number; bWins: number }>;
+
   // Generic key/value meta (e.g. the last-processed league week).
   getMeta(key: string): Promise<string | null>;
   setMeta(key: string, value: string): Promise<void>;
@@ -160,4 +175,25 @@ export interface Store {
 /** Stable player id: wallet when known, otherwise anonymous per-session. */
 export function playerId(wallet: string | undefined, sessionId: string): string {
   return wallet ? wallet.toLowerCase() : `anon:${sessionId}`;
+}
+
+/**
+ * Server secret keying the public-pid HMAC. A CONSTANT public salt (the old
+ * design) let anyone with a wallet dictionary reverse pid → wallet offline,
+ * re-exposing the very 0x we hide (MiniPay rule). Keying with a server secret
+ * makes pid unlinkable without it. Set LUDO_PID_SECRET in prod (Fly secret);
+ * the dev fallback is deterministic so local pids stay stable across restarts.
+ * Rotating the secret invalidates stored pids — they self-heal on next login
+ * (getOrCreatePlayer recomputes the column), so no migration is needed.
+ */
+const PID_SECRET = process.env.LUDO_PID_SECRET?.trim() || 'ludo-dev-pid-secret';
+
+/**
+ * Opaque PUBLIC player id (E-social): what other clients use to view a profile.
+ * Derived in Node only (HMAC-keyed, non-reversible by clients) and stored in the
+ * players.pid column so lookups stay indexed without the secret ever touching
+ * SQL. Never a raw wallet / session id (MiniPay rule: no raw 0x surfaces).
+ */
+export function pidFor(id: string): string {
+  return createHmac('sha256', PID_SECRET).update(`ludo-pid:${id}`).digest('hex').slice(0, 16);
 }

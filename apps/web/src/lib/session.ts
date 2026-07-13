@@ -28,6 +28,7 @@ import {
   type OpponentInfo,
   type LeagueState,
   type LimitsState,
+  type PublicProfile,
   type ServerMsg,
   type StakeCents,
   type StreakState,
@@ -87,8 +88,8 @@ export interface SessionEvents {
   onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win' | 'sync'): void;
   /** Premium dice skins the player owns (from hello.ok). */
   onSkins(ownedIds: string[]): void;
-  /** Own stable profile from hello.ok: identity (name/flag) + ELO + W/L. */
-  onProfile(p: { name?: string; flag?: string; elo?: number; games?: number; wins?: number }): void;
+  /** Own stable profile from hello.ok: identity (name/flag) + ELO + W/L + public pid. */
+  onProfile(p: { name?: string; flag?: string; elo?: number; games?: number; wins?: number; pid?: string }): void;
   /** Responsible-gaming limits (E5.2). */
   onLimits(limits: LimitsState): void;
   /** Geo-gating (E5.4): staked play disabled in this region. */
@@ -257,6 +258,66 @@ export type JoinIntent =
   | { kind: 'join'; code: string };
 
 const TOKEN_KEY = 'ludo.sessionToken';
+
+/**
+ * One-shot public-profile fetch (tap-on-avatar, E-social). Deliberately does
+ * NOT resume the session (no sessionToken): a resume rebinds the session's
+ * socket server-side, which would hijack a live game connection. A fresh
+ * anonymous hello — with the wallet when known, so the server can personalize
+ * the head-to-head — is enough for a read.
+ */
+export function fetchProfile(serverUrl: string, pid: string): Promise<PublicProfile | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(serverUrl);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: PublicProfile | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 4000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    ws.onopen = () => {
+      // Anonymous read: no wallet claim → the server never personalizes h2h to an
+      // unproven identity (closes the pairwise-history leak). Authenticated h2h
+      // will ride the live game session instead (C4).
+      ws.send(JSON.stringify({ t: 'hello', entropy }));
+      ws.send(JSON.stringify({ t: 'profile.get', pid }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      // This socket only ever sends hello + one profile.get, so any error is ours.
+      if (msg.t === 'profile.info' && msg.profile.pid === pid) {
+        clearTimeout(timer);
+        done(msg.profile);
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 
 /**
  * One-shot responsible-gaming update (E5.2): opens a short-lived socket, sends
@@ -587,7 +648,7 @@ export class RemoteSession implements GameSession {
         // freeroll/free-table connection carries a throwaway anon identity + 0/0
         // that must not clobber the returning wallet player's cached profile.
         if (this.walletAddress) {
-          this.ev.onProfile({ name: msg.name, flag: msg.flag, elo: msg.elo, games: msg.games, wins: msg.wins });
+          this.ev.onProfile({ name: msg.name, flag: msg.flag, elo: msg.elo, games: msg.games, wins: msg.wins, pid: msg.pid });
         }
         if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
         if (msg.resumed) {

@@ -8,6 +8,7 @@
  */
 import { Redis } from 'ioredis';
 import pg from 'pg';
+import { pidFor } from './types.js';
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ALLOWED_STAKES_CENTS,
@@ -60,6 +61,12 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS weekly_points INTEGER NOT NULL DEFA
 CREATE INDEX IF NOT EXISTS players_league_idx ON players(division, weekly_points DESC);
 -- Profile W/L (games_played already tracked in updateElo).
 ALTER TABLE players ADD COLUMN IF NOT EXISTS wins INTEGER NOT NULL DEFAULT 0;
+-- Public profile lookup (E-social): pid is an HMAC-keyed handle computed in Node
+-- (pidFor(), server-secret keyed so clients can't reverse it) and stored here.
+-- Null for rows created before this column; self-heals on the player's next
+-- login (getOrCreatePlayer recomputes it), so no migration/backfill is needed.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS pid TEXT;
+CREATE INDEX IF NOT EXISTS players_pid_idx ON players (pid);
 
 -- Anti-tilt (E4.5): rewards are freeroll TICKETS, not cash. loss_streak drives
 -- the grant; lost_rake_cents/cashback_cents are legacy columns from the retired
@@ -211,11 +218,11 @@ export class PersistentStore implements Store {
     defaults: { wallet?: string; name: string; flag: string },
   ): Promise<{ elo: number; gamesPlayed: number; wins: number }> {
     const res = await this.pool.query<{ elo: number; games_played: number; wins: number }>(
-      `INSERT INTO players (id, wallet, name, flag)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (id) DO UPDATE SET updated_at = now()
+      `INSERT INTO players (id, wallet, name, flag, pid)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE SET updated_at = now(), pid = EXCLUDED.pid
        RETURNING elo, games_played, wins`,
-      [id, defaults.wallet ?? null, defaults.name, defaults.flag],
+      [id, defaults.wallet ?? null, defaults.name, defaults.flag, pidFor(id)],
     );
     const r = res.rows[0];
     return { elo: r?.elo ?? 1200, gamesPlayed: r?.games_played ?? 0, wins: r?.wins ?? 0 };
@@ -360,8 +367,8 @@ export class PersistentStore implements Store {
 
   private async leagueState(division: number, points: number): Promise<LeagueState> {
     const [top, agg] = await Promise.all([
-      this.pool.query<{ name: string; flag: string; weekly_points: number }>(
-        `SELECT name, flag, weekly_points FROM players
+      this.pool.query<{ name: string; flag: string; weekly_points: number; pid: string | null }>(
+        `SELECT name, flag, weekly_points, pid FROM players
          WHERE division = $1 AND weekly_points > 0 ORDER BY weekly_points DESC LIMIT $2`,
         [division, LEADERBOARD_TOP],
       ),
@@ -375,7 +382,7 @@ export class PersistentStore implements Store {
     ]);
     const ahead = Number(agg.rows[0]?.ahead ?? 0);
     const active = Number(agg.rows[0]?.active ?? 0);
-    const entries: LeaderboardEntry[] = top.rows.map((r) => ({ name: r.name, flag: r.flag, points: r.weekly_points }));
+    const entries: LeaderboardEntry[] = top.rows.map((r) => ({ name: r.name, flag: r.flag, points: r.weekly_points, pid: r.pid ?? undefined }));
     return { division, points, rank: points > 0 ? ahead + 1 : 0, size: active, top: entries };
   }
 
@@ -576,6 +583,45 @@ export class PersistentStore implements Store {
        ON CONFLICT (day, player_lo, player_hi) DO UPDATE SET cnt = pair_games.cnt + 1`,
       [today, lo, hi],
     );
+  }
+
+  async getProfileByPid(pid: string): Promise<{
+    id: string;
+    name: string;
+    flag: string;
+    elo: number;
+    gamesPlayed: number;
+    wins: number;
+    division: number;
+  } | null> {
+    const res = await this.pool.query<{
+      id: string;
+      name: string;
+      flag: string;
+      elo: number;
+      games_played: number;
+      wins: number;
+      division: number;
+    }>(
+      `SELECT id, name, flag, elo, games_played, wins, division FROM players
+       WHERE pid = $1 LIMIT 1`,
+      [pid],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return { id: r.id, name: r.name, flag: r.flag, elo: r.elo, gamesPlayed: r.games_played, wins: r.wins, division: r.division };
+  }
+
+  async headToHead(a: string, b: string): Promise<{ aWins: number; bWins: number }> {
+    const res = await this.pool.query<{ a_wins: string; b_wins: string }>(
+      `SELECT
+         count(*) FILTER (WHERE (player_a = $1 AND winner_seat = 0) OR (player_b = $1 AND winner_seat = 1)) AS a_wins,
+         count(*) FILTER (WHERE (player_a = $2 AND winner_seat = 0) OR (player_b = $2 AND winner_seat = 1)) AS b_wins
+       FROM games
+       WHERE (player_a = $1 AND player_b = $2) OR (player_a = $2 AND player_b = $1)`,
+      [a, b],
+    );
+    return { aWins: Number(res.rows[0]?.a_wins ?? 0), bWins: Number(res.rows[0]?.b_wins ?? 0) };
   }
 
   async getMeta(key: string): Promise<string | null> {

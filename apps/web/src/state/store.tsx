@@ -13,6 +13,7 @@ import {
   type LimitsState,
   type StakeCents,
   type StreakState,
+  type PublicProfile,
 } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
@@ -27,6 +28,8 @@ export interface Profile {
   elo: number;
   games: number;
   wins: number;
+  /** My own opaque public id (what others use to view my profile). */
+  pid?: string;
 }
 
 interface RetentionCache {
@@ -92,6 +95,8 @@ export interface AppState {
   ownedSkins: string[];
   /** Own stable profile (identity + ELO + W/L), cached for the lobby card. */
   profile: Profile;
+  /** Tap-on-avatar profile sheet: pid being viewed; data null while loading. */
+  viewProfile: { pid: string; data: PublicProfile | null; failed?: boolean } | null;
   /** Responsible-gaming limits (E5.2). */
   limits: LimitsState;
   /** Geo-gating (E5.4): staked play disabled in this region. */
@@ -186,6 +191,7 @@ export const initialState: AppState = {
   tickets: loadRetention().tickets,
   ownedSkins: loadRetention().ownedSkins,
   profile: loadRetention().profile,
+  viewProfile: null,
   limits: loadRetention().limits,
   stakingBlocked: false,
   match: null,
@@ -240,6 +246,9 @@ export type Action =
   | { type: 'TICKETS'; total: number }
   | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
   | { type: 'PROFILE'; profile: Partial<Profile> }
+  | { type: 'PROFILE_VIEW'; pid: string }
+  | { type: 'PROFILE_INFO'; pid: string; profile: PublicProfile | null }
+  | { type: 'PROFILE_CLOSE' }
   | { type: 'LIMITS_UPDATE'; limits: LimitsState }
   | { type: 'GEO'; stakingBlocked: boolean }
   | { type: 'SET_BALANCE'; cents: number }
@@ -338,8 +347,19 @@ export function reducer(s: AppState, a: Action): AppState {
       if (typeof a.profile.elo === 'number') next.elo = a.profile.elo;
       if (typeof a.profile.games === 'number') next.games = a.profile.games;
       if (typeof a.profile.wins === 'number') next.wins = a.profile.wins;
+      if (a.profile.pid) next.pid = a.profile.pid;
       return { ...s, profile: next };
     }
+    case 'PROFILE_VIEW':
+      return { ...s, viewProfile: { pid: a.pid, data: null } };
+    case 'PROFILE_INFO':
+      // Ignore stale answers (the sheet moved on to another pid or closed) and a
+      // late failure that would overwrite already-loaded data for the same pid.
+      if (s.viewProfile?.pid !== a.pid) return s;
+      if (a.profile === null && s.viewProfile.data) return s;
+      return { ...s, viewProfile: { pid: a.pid, data: a.profile, failed: a.profile === null } };
+    case 'PROFILE_CLOSE':
+      return { ...s, viewProfile: null };
     case 'LIMITS_UPDATE':
       return { ...s, limits: a.limits };
     case 'GEO':

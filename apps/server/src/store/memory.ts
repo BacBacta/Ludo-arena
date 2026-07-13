@@ -3,6 +3,7 @@
  * Same semantics as PersistentStore within one process lifetime — by design
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
+import { pidFor } from './types.js';
 import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ANTI_TILT,
@@ -207,15 +208,15 @@ export class MemoryStore implements Store {
   }
 
   private leagueState(division: number, points: number): LeagueState {
-    const inDivision = [...this.players.values()]
-      .filter((p) => p.division === division)
-      .sort((a, b) => b.weeklyPoints - a.weeklyPoints);
+    const inDivision = [...this.players.entries()]
+      .filter(([, p]) => p.division === division)
+      .sort(([, a], [, b]) => b.weeklyPoints - a.weeklyPoints);
     const top: LeaderboardEntry[] = inDivision
-      .filter((p) => p.weeklyPoints > 0)
+      .filter(([, p]) => p.weeklyPoints > 0)
       .slice(0, LEADERBOARD_TOP)
-      .map((p) => ({ name: p.name, flag: p.flag, points: p.weeklyPoints }));
-    const ahead = inDivision.filter((p) => p.weeklyPoints > points).length;
-    const active = inDivision.filter((p) => p.weeklyPoints > 0).length;
+      .map(([id, p]) => ({ name: p.name, flag: p.flag, points: p.weeklyPoints, pid: pidFor(id) }));
+    const ahead = inDivision.filter(([, p]) => p.weeklyPoints > points).length;
+    const active = inDivision.filter(([, p]) => p.weeklyPoints > 0).length;
     return { division, points, rank: points > 0 ? ahead + 1 : 0, size: active, top };
   }
 
@@ -344,6 +345,36 @@ export class MemoryStore implements Store {
   async bumpPairGame(a: string, b: string, today: string): Promise<void> {
     const key = this.pairKey(a, b, today);
     this.pairGames.set(key, (this.pairGames.get(key) ?? 0) + 1);
+  }
+
+  async getProfileByPid(pid: string): Promise<{
+    id: string;
+    name: string;
+    flag: string;
+    elo: number;
+    gamesPlayed: number;
+    wins: number;
+    division: number;
+  } | null> {
+    for (const [id, p] of this.players) {
+      if (pidFor(id) === pid) {
+        return { id, name: p.name, flag: p.flag, elo: p.elo, gamesPlayed: p.gamesPlayed, wins: p.wins, division: p.division };
+      }
+    }
+    return null;
+  }
+
+  async headToHead(a: string, b: string): Promise<{ aWins: number; bWins: number }> {
+    let aWins = 0;
+    let bWins = 0;
+    for (const g of this.games.values()) {
+      const winner = g.winnerSeat === 0 ? g.playerA : g.playerB;
+      if ((g.playerA === a && g.playerB === b) || (g.playerA === b && g.playerB === a)) {
+        if (winner === a) aWins++;
+        else if (winner === b) bWins++;
+      }
+    }
+    return { aWins, bWins };
   }
 
   async getMeta(key: string): Promise<string | null> {

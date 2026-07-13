@@ -49,7 +49,7 @@ import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, JOIN_TIMEOUT_N_S } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
 import { type Fairness4 } from './fairness.js';
-import { createStore, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
+import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
   process.loadEnvFile();
@@ -78,6 +78,8 @@ interface Session extends Client {
   ip?: string; // socket IP (server-derived anti-collusion signal, E5.3)
   /** ToS version this session accepted (18+/consent gate for staked play). */
   consentTos?: string;
+  /** profile.get throttle: last lookup timestamp (anti-spam, DB-bound query). */
+  lastProfileGetAt?: number;
   /** Last opponent + stake, for a true direct rematch (BACKLOG E4). */
   lastOpponentId?: string;
   lastStake?: StakeCents;
@@ -605,6 +607,7 @@ wss.on('connection', (ws, req) => {
           flag: resumedSession.flag,
           games: rStats.gamesPlayed,
           wins: rStats.wins,
+          pid: resumedSession.wallet ? pidFor(rpid) : undefined,
           resumed: resumedGame(resumedSession),
           challenge: await store.getChallenge(rpid, utcToday()),
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
@@ -662,6 +665,7 @@ wss.on('connection', (ws, req) => {
         flag,
         games: stats.gamesPlayed,
         wins: stats.wins,
+        pid: wallet ? pidFor(idKey) : undefined,
         challenge,
         streak,
         league,
@@ -904,11 +908,41 @@ wss.on('connection', (ws, req) => {
         break;
 
       case 'emote':
-        // Quick emote to the current game — routed to whichever room the player
-        // is in; the room throttles per seat. id is EMOTES-validated in parse.
+        // Quick emote or quick-chat to the current game — routed to whichever
+        // room the player is in; the room throttles per seat. id is validated
+        // against EMOTES/QUICK_CHATS in parse (closed sets, no free text).
         if (session.room4 && session.seat4 !== null) session.room4.emote(session.seat4, msg.id);
         else if (session.room && session.seat !== null) session.room.emote(session.seat, msg.id);
         break;
+
+      case 'profile.get': {
+        // Public profile by opaque pid (tap-on-avatar). Throttled per session:
+        // it is the only client-triggered DB lookup outside the game loop.
+        const now = Date.now();
+        if (now - (session.lastProfileGetAt ?? 0) < 500) break;
+        session.lastProfileGetAt = now;
+        const prof = await store.getProfileByPid(msg.pid);
+        if (!prof) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Unknown player' });
+          break;
+        }
+        // Head-to-head vs the requester (1v1 games only), omitted when empty.
+        // GATED on a PROVEN wallet: a fresh profile.get socket can claim any
+        // `wallet` in hello (unproven), so personalizing h2h to that claim would
+        // leak arbitrary players' pairwise records. Only a SIWE/MiniPay-proven
+        // session may read its own h2h. (Authenticated in-game h2h lands in C4.)
+        const requesterId = playerId(session.wallet, session.id);
+        let h2h: { wins: number; losses: number } | undefined;
+        if (session.walletProven && prof.id !== requesterId) {
+          const r = await store.headToHead(requesterId, prof.id);
+          if (r.aWins + r.bWins > 0) h2h = { wins: r.aWins, losses: r.bWins };
+        }
+        session.send({
+          t: 'profile.info',
+          profile: { pid: msg.pid, name: prof.name, flag: prof.flag, elo: prof.elo, games: prof.gamesPlayed, wins: prof.wins, division: prof.division, h2h },
+        });
+        break;
+      }
 
       case 'game.entropy': {
         // Anti-grinding reveal: verify the raw entropy against the hello commit,
@@ -1114,7 +1148,7 @@ function resumedGame(s: Session): ResumedGame | undefined {
     state: s.room.getState(),
     stakeCents: s.room.stakeCents,
     potCents: potCents(s.room.stakeCents),
-    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag },
+    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined },
     fairnessCommit: s.room.fairness.commit,
   };
 }
@@ -1348,7 +1382,7 @@ function matchFoundMsg(gameId: string, seat: Seat, opp: Session, stake: StakeCen
     t: 'match.found',
     gameId,
     seat,
-    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag },
+    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined },
     stakeCents: stake,
     potCents: pot,
     fairnessCommit: commit,
@@ -1483,7 +1517,7 @@ function startRoom4(humans: Session[]): void {
   for (let i = 0; i < TABLE4.seats; i++) {
     const h = humans[i];
     if (h) {
-      seats.push({ client: h, bot: false, name: h.name, flag: h.flag });
+      seats.push({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
       const bot = BOT4_NAMES[i % BOT4_NAMES.length]!;
@@ -1564,7 +1598,7 @@ function startStakedRoom4(humans: Session[], stake: number): void {
   const rake = stake * 4 - pot;
   const seatSeeds = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
   const fairness = createFairness4(seatSeeds);
-  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false }));
+  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined }));
   pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, fairness });
   // count each seat's stake toward the daily limit (E5.2)
   void Promise.all(humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), stake))).catch((e) => console.error('[4p] dailyStake', e));
@@ -1606,7 +1640,7 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
 /** All 4 stakes Active → create + start the Room4, settling the winner on win. */
 function startStaked4Room(p: PendingStaked4): void {
   pendingStaked4.delete(p.gameId);
-  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag }));
+  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined }));
   const room = new Room4(p.gameId, seats, p.fairness, 0, 0, p.pot, p.rake);
   room.onResult = (r) => {
     recordRoom4Stats(p.humans, r.winnerSeat, r.seats);

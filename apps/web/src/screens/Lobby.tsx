@@ -17,6 +17,7 @@ export function Lobby({
   onPlay4,
   onPractice4,
   onConnectWallet,
+  onViewProfile,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
@@ -26,6 +27,8 @@ export function Lobby({
   onPractice4(): void;
   /** Connect MiniPay/injected wallet; resolves true when connected. */
   onConnectWallet(): Promise<boolean>;
+  /** Tap a league row → open that player's public profile sheet. */
+  onViewProfile(pid: string): void;
 }) {
   const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile } = useAppState();
   const dispatch = useAppDispatch();
@@ -232,7 +235,7 @@ export function Lobby({
         {league.top.length > 0 ? (
           <ol className="board">
             {league.top.map((e, i) => (
-              <li key={i}>
+              <li key={i} className={e.pid ? 'board__row--tap' : undefined} onClick={() => e.pid && onViewProfile(e.pid)}>
                 <span>
                   {i + 1}. {e.flag} {e.name}
                 </span>

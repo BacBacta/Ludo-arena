@@ -6,7 +6,7 @@ import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
-import { PREMIUM_SKINS, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
+import { DIVISIONS, PREMIUM_SKINS, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
 import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
@@ -253,6 +253,57 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
  * selected — a real-money table could start unannounced). Here the three flavours
  * are named side by side, with their own stake selection for real money.
  */
+/**
+ * Tap-on-avatar public profile (E-social): who this player is — identity,
+ * division, ELO, W/L — plus your 1v1 head-to-head when the server knows both
+ * of you. Opens instantly with a loading shimmer; fed by fetchProfile().
+ */
+export function ProfileSheet() {
+  const { viewProfile } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'PROFILE_CLOSE' });
+  const trapRef = useFocusTrap<HTMLDivElement>(!!viewProfile, close);
+  if (!viewProfile) return null;
+  const p = viewProfile.data;
+  const losses = p ? Math.max(0, p.games - p.wins) : 0;
+  const winPct = p && p.games > 0 ? Math.round((p.wins / p.games) * 100) : null;
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card profilesheet" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        {viewProfile.failed ? (
+          <p className="muted" style={{ textAlign: 'center', margin: '18px 0' }}>{t('profileUnavailable')}</p>
+        ) : !p ? (
+          <div className="profilesheet__loading" aria-label="loading">
+            <span className="profilesheet__shimmer" />
+          </div>
+        ) : (
+          <>
+            <div className="profilesheet__head">
+              <span className="profilesheet__flag" aria-hidden="true">{p.flag}</span>
+              <div>
+                <b className="profilesheet__name">{p.name}</b>
+                <small className="muted">{DIVISIONS[p.division] ?? ''} {t('league')}</small>
+              </div>
+            </div>
+            <div className="profilesheet__stats">
+              <div className="pstat"><b>{p.elo}</b><small>ELO</small></div>
+              <div className="pstat pstat--w"><b>{p.wins}</b><small>{t('winsShort')}</small></div>
+              <div className="pstat pstat--l"><b>{losses}</b><small>{t('lossesShort')}</small></div>
+              {winPct !== null && <div className="pstat"><b>{winPct}%</b><small>{t('winRate')}</small></div>}
+            </div>
+            {p.h2h && (
+              <div className="profilesheet__h2h">
+                {t('h2h')} : <b className="profilesheet__h2hyou">{p.h2h.wins}</b> – <b className="profilesheet__h2hthem">{p.h2h.losses}</b>
+              </div>
+            )}
+          </>
+        )}
+        <button className="btn btn--ghost" style={{ width: '100%', marginTop: 12 }} onClick={close}>{t('cancel')}</button>
+      </div>
+    </div>
+  );
+}
+
 export function Table4Modal({ onPractice, onFree, onStaked }: {
   onPractice(): void;
   onFree(): void;

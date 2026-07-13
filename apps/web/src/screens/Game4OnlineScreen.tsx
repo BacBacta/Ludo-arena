@@ -35,6 +35,7 @@ export function Game4OnlineScreen({
   auth,
   lockStake,
   onToast,
+  onViewProfile,
 }: {
   onLeave(): void;
   serverUrl: string;
@@ -43,6 +44,8 @@ export function Game4OnlineScreen({
   auth?: WalletAuth;
   lockStake(gameId: string, stakeCents: number, onStatus?: (s: StakeStatus) => void): Promise<void>;
   onToast(message: string): void;
+  /** Tap a human seat's avatar → their public profile sheet. */
+  onViewProfile(pid: string): void;
 }) {
   const dispatch = useAppDispatch();
   const remoteRef = useRef<Remote4 | null>(null);
@@ -231,7 +234,13 @@ export function Game4OnlineScreen({
     const av = (
       <span className="emoteanchor">
         <EmoteFloat seat={seat} />
-        <SeatAvatar name={name} flag={flag} active={active} />
+        {players[seat]?.pid && !players[seat]?.bot ? (
+          <button className="avtap" aria-label={`${name} profile`} onClick={() => onViewProfile(players[seat]!.pid!)}>
+            <SeatAvatar name={name} flag={flag} active={active} />
+          </button>
+        ) : (
+          <SeatAvatar name={name} flag={flag} active={active} />
+        )}
       </span>
     );
     return <div className="avrow__side">{CORNER[seat] === 'left' ? <>{av}{inner}</> : <>{inner}{av}</>}</div>;

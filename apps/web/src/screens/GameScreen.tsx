@@ -91,11 +91,14 @@ export function GameScreen({
   onMove,
   onLeave,
   onEmote,
+  onViewProfile,
 }: {
   onRoll(): void;
   onMove(token: number): void;
   onLeave(): void;
   onEmote(id: string): void;
+  /** Tap the opponent's avatar → their public profile sheet. */
+  onViewProfile(pid: string): void;
 }) {
   const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn, profile } =
     useAppState();
@@ -161,13 +164,19 @@ export function GameScreen({
                 <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKIN} />
               </div>
             )}
-            <AvatarCard
-              initial={match.opponent.name.slice(0, 1).toUpperCase()}
-              flag={match.opponent.flag}
-              color="var(--p2)"
-              active={!myTurn}
-              deadlineTs={turnDeadlineTs}
-            />
+            <button
+              className="avtap"
+              aria-label={`${match.opponent.name} profile`}
+              onClick={() => match.opponent.pid && onViewProfile(match.opponent.pid)}
+            >
+              <AvatarCard
+                initial={match.opponent.name.slice(0, 1).toUpperCase()}
+                flag={match.opponent.flag}
+                color="var(--p2)"
+                active={!myTurn}
+                deadlineTs={turnDeadlineTs}
+              />
+            </button>
           </div>
         </div>
 

@@ -23,6 +23,8 @@ export interface Seat4 {
   bot: boolean; // true once a bot drives this seat (empty seat, resign, or drop)
   name: string;
   flag: string;
+  /** Opaque public id (profile.get); absent for bots. */
+  pid?: string;
 }
 
 export interface Room4Result {
@@ -73,7 +75,7 @@ export class Room4 {
   }
 
   players(): Player4Info[] {
-    return this.seats.map((s) => ({ name: s.name, flag: s.flag, bot: s.bot }));
+    return this.seats.map((s) => ({ name: s.name, flag: s.flag, bot: s.bot, pid: s.pid }));
   }
 
   seatOf(clientId: string): number {

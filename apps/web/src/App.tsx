@@ -15,8 +15,8 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { DiceModal, FairnessModal, LegalModal, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
-import { sendLimits, buySkin, claimCosmetic } from './lib/session';
+import { DiceModal, FairnessModal, LegalModal, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { sendLimits, buySkin, claimCosmetic, fetchProfile } from './lib/session';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet } from './lib/minipay';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWin } from './lib/sound';
@@ -357,6 +357,25 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Tap-on-avatar: open the profile sheet and fetch over a one-shot socket
+   *  (works everywhere — lobby, in-game, end screen — no live session needed). */
+  const profileFetching = useRef(false);
+  const onViewProfile = useCallback(
+    (pid: string) => {
+      // In-flight guard: each fetch is a fresh socket, so ignore rapid re-taps
+      // until the current lookup settles (bounds the per-tap connection cost).
+      if (profileFetching.current) return;
+      profileFetching.current = true;
+      dispatch({ type: 'PROFILE_VIEW', pid });
+      void fetchProfile(SERVER_URL, pid)
+        .then((profile) => dispatch({ type: 'PROFILE_INFO', pid, profile }))
+        .finally(() => {
+          profileFetching.current = false;
+        });
+    },
+    [dispatch],
+  );
+
   const roll = useCallback(() => sessionRef.current?.roll(), []);
   const move = useCallback((token: number) => sessionRef.current?.move(token), []);
   // True direct rematch: reuse the still-open session so the server can re-pair
@@ -468,7 +487,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onViewProfile={onViewProfile} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
@@ -491,10 +510,11 @@ export default function App() {
           auth={makeAuth()}
           lockStake={lockStakeForOnline4}
           onToast={(message) => dispatch({ type: 'TOAST', message })}
+          onViewProfile={onViewProfile}
         />
       )}
       {state.screen === 'game' && !state.practice4 && !state.online4 && (
-        <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} onEmote={(id) => sessionRef.current?.emote(id)} />
+        <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} onEmote={(id) => sessionRef.current?.emote(id)} onViewProfile={onViewProfile} />
       )}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
       <LegalModal
@@ -517,6 +537,7 @@ export default function App() {
         }}
       />
       <FairnessModal />
+      <ProfileSheet />
       <DiceModal onBuy={purchaseSkin} onBuyCusd={purchaseCosmeticCusd} />
       <SettingsModal onApply={applyLimits} />
       <RealityCheckModal

@@ -21,6 +21,35 @@ export const RAKE_BPS = 900;
 export const EMOTES = ['👍', '😂', '😮', '😢', '🔥', '💪', '🍀', '🎲'] as const;
 export type Emote = (typeof EMOTES)[number];
 
+/** Quick-chat presets: closed, localized-client-side ids (same zero-free-text
+ *  policy as EMOTES). They travel on the SAME game.emote channel (same per-seat
+ *  throttle); the client renders them as a speech bubble instead of an emoji. */
+export const QUICK_CHATS = ['gg', 'ouch', 'hurry', 'rematch', 'gl', 'wow'] as const;
+export type QuickChat = (typeof QUICK_CHATS)[number];
+
+/** True when a game.emote id is a quick-chat preset (vs a plain emoji emote). */
+export function isQuickChat(id: string): id is QuickChat {
+  return (QUICK_CHATS as readonly string[]).includes(id);
+}
+
+/**
+ * Public player profile (E-social): what ANY player may see about another by
+ * tapping their avatar. Keyed by `pid` — an opaque server-derived hash, NEVER a
+ * wallet address (MiniPay rule: no raw 0x surfaces) and NEVER reversible client-side.
+ */
+export interface PublicProfile {
+  pid: string;
+  name: string;
+  flag: string;
+  elo: number;
+  games: number;
+  wins: number;
+  division: number; // index into DIVISIONS
+  /** Head-to-head vs the REQUESTER (their wins/losses against this player);
+   *  present only when both identities are known to the server. */
+  h2h?: { wins: number; losses: number };
+}
+
 /** Daily challenge (E4.1): capture N opponent tokens in a day → freeroll tickets. */
 export const DAILY_CHALLENGE = { captures: 3, rewardTickets: 1 } as const;
 
@@ -142,6 +171,8 @@ export interface LeaderboardEntry {
   name: string;
   flag: string;
   points: number;
+  /** Opaque public id for profile.get (tap-on-leaderboard-row). */
+  pid?: string;
 }
 
 export interface LeagueState {
@@ -219,8 +250,11 @@ export type ClientMsg =
   | { t: 'game.rematch' }
   // Unlock a premium dice skin by spending its ticket price (PREMIUM_SKINS).
   | { t: 'skin.buy'; skinId: string }
-  // Send a quick emote to the current game (1v1 or 4p); id must be in EMOTES.
+  // Send a quick emote or quick-chat to the current game (1v1 or 4p); id must
+  // be in EMOTES or QUICK_CHATS (closed sets — no free text, ever).
   | { t: 'emote'; id: string }
+  // Fetch another player's public profile by their opaque pid (tap-on-avatar).
+  | { t: 'profile.get'; pid: string }
   // Claim a cosmetic bought with cUSD on-chain (CosmeticsStore): the server
   // verifies the tx emitted Purchased(buyer=provenWallet, itemId=keccak(id))
   // before granting ownership. Dormant until the store is deployed (rec 6).
@@ -240,6 +274,8 @@ export interface OpponentInfo {
   name: string;
   elo: number;
   flag: string;
+  /** Opaque public id for profile.get (tap-on-avatar); absent for bots. */
+  pid?: string;
 }
 
 export type GameOverReason = 'finish' | 'timeout-forfeit' | 'resign';
@@ -266,6 +302,8 @@ export type ServerMsg =
       flag?: string;
       games?: number;
       wins?: number;
+      /** My own opaque public id (what others use to view my profile). */
+      pid?: string;
       resumed?: ResumedGame;
       challenge?: ChallengeState;
       streak?: StreakState;
@@ -331,6 +369,9 @@ export type ServerMsg =
   | { t: 'challenge.update'; challenge: ChallengeState }
   // Weekly league standings after a game (E4.3).
   | { t: 'league.update'; league: LeagueState }
+  // Another player's public profile (answer to profile.get); `pid` echoes the
+  // request so a stale answer can't fill the wrong sheet.
+  | { t: 'profile.info'; profile: PublicProfile }
   // Freeroll tickets granted (anti-tilt bonus E4.5, or a freeroll win).
   | { t: 'tickets.grant'; granted: number; total: number; reason: 'anti-tilt' | 'freeroll-win' | 'sync' }
   // Premium-skin ownership after a successful skin.buy (spend confirmed), with the
@@ -374,6 +415,8 @@ export interface Player4Info {
   name: string;
   flag: string;
   bot: boolean;
+  /** Opaque public id for profile.get (tap-on-avatar); absent for bots. */
+  pid?: string;
 }
 
 export type ErrorCode =
@@ -421,7 +464,10 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'cosmetic.claim':
       return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) && typeof m.id === 'string' && cosmeticById(m.id) !== undefined ? m : null;
     case 'emote':
-      return typeof m.id === 'string' && (EMOTES as readonly string[]).includes(m.id) ? m : null;
+      return typeof m.id === 'string' && ((EMOTES as readonly string[]).includes(m.id) || isQuickChat(m.id)) ? m : null;
+    case 'profile.get':
+      // opaque pid: short hex hash — reject anything else (never a wallet)
+      return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

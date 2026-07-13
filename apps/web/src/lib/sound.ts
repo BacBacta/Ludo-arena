@@ -361,3 +361,65 @@ export function playTap(kind: 'tap' | 'select' = 'tap'): void {
     tick(ac, out, send, now, { freq: 3200, q: 2, dur: 0.02, peak: 0.05, pan: 0, sendAmt: 0.2 });
   });
 }
+
+/**
+ * Per-emote signature (E-social): each emote has its own short, charming cue —
+ * same premium bus/reverb as everything else, ≤400 ms, never harsh. Quick-chat
+ * presets (non-emoji ids) get a soft speech-bubble double pop.
+ */
+export function playEmote(id: string): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    switch (id) {
+      case '👍': // approving pop
+        mode(ac, out, send, now, 660, 0.09, 0.12, 'triangle', 0.3);
+        mode(ac, out, send, now + 0.07, 880, 0.12, 0.1, 'triangle', 0.4);
+        break;
+      case '😂': { // giggle: two quick staccato pairs
+        const g = [1318.5, 1046.5, 1318.5, 1046.5];
+        g.forEach((f, i) => mode(ac, out, send, now + i * 0.07, f, 0.05, 0.09, 'square', 0.25));
+        break;
+      }
+      case '😮': { // surprise: rising sweep
+        const o = ac.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(320, now);
+        o.frequency.exponentialRampToValueAtTime(950, now + 0.22);
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+        o.connect(g);
+        g.connect(out);
+        o.start(now);
+        o.stop(now + 0.28);
+        break;
+      }
+      case '😢': // soft minor droop
+        mode(ac, out, send, now, 494, 0.22, 0.09, 'sine', 0.5);
+        mode(ac, out, send, now + 0.16, 392, 0.3, 0.08, 'sine', 0.6);
+        break;
+      case '🔥': // blaze: accelerating crackle + low body
+        [0, 0.05, 0.09, 0.12].forEach((dt, i) =>
+          tick(ac, out, send, now + dt, { freq: 2400 + i * 700, q: 1.6, dur: 0.03, peak: 0.09, pan: (i % 2) * 0.5 - 0.25, sendAmt: 0.5 }),
+        );
+        mode(ac, out, send, now, 165, 0.28, 0.1, 'sawtooth', 0.4);
+        break;
+      case '💪': // flex: two low punches
+        mode(ac, out, send, now, 180, 0.12, 0.16, 'triangle', 0.3);
+        mode(ac, out, send, now + 0.12, 220, 0.16, 0.14, 'triangle', 0.35);
+        break;
+      case '🍀': // luck: sparkle arpeggio up
+        [784, 988, 1175].forEach((f, i) => mode(ac, out, send, now + i * 0.08, f, 0.18, 0.09, 'sine', 0.6));
+        tick(ac, out, send, now + 0.26, { freq: 5200, q: 1.4, dur: 0.05, peak: 0.07, pan: 0.2, sendAmt: 1 });
+        break;
+      case '🎲': // mini dice: two clacks
+        tick(ac, out, send, now, { freq: 1900, q: 2.4, dur: 0.03, peak: 0.12, pan: -0.2, sendAmt: 0.4 });
+        tick(ac, out, send, now + 0.09, { freq: 1500, q: 2.4, dur: 0.035, peak: 0.1, pan: 0.2, sendAmt: 0.4 });
+        break;
+      default: // quick-chat bubble: soft double pop
+        mode(ac, out, send, now, 550, 0.07, 0.09, 'triangle', 0.3);
+        mode(ac, out, send, now + 0.08, 720, 0.09, 0.08, 'triangle', 0.35);
+    }
+  });
+}
