@@ -292,6 +292,10 @@ export type ServerMsg =
       state: GameState;
     }
   | { t: 'game.turn'; seat: Seat; deadlineTs: number }
+  // The turn clock expired and the server played automatically for a slow or
+  // absent player; after `max` consecutive auto-plays the seat forfeits. Sent so
+  // clients can EXPLAIN the pacing instead of looking silently stuck (UX).
+  | { t: 'game.auto'; seat: Seat; count: number; max: number }
   | {
       t: 'game.over';
       winner: Seat;

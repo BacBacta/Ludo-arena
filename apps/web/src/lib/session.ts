@@ -63,6 +63,9 @@ export interface SessionEvents {
   onDice(value: number, index: number, seat: Seat): void;
   onMoved(state: GameState, capture: boolean, extraTurn: boolean): void;
   onTurn(seat: Seat, deadlineTs: number): void;
+  /** The turn clock expired and the server auto-played for `seat`; at `max`
+   *  consecutive auto-plays that seat forfeits. Lets the UI explain the pacing. */
+  onAutoPlayed(seat: Seat, count: number, max: number): void;
   onOver(result: GameResult): void;
   onInfo(message: string): void;
   /** On-chain settlement confirmed (E3.3): the payout tx is mined. */
@@ -599,6 +602,9 @@ export class RemoteSession implements GameSession {
         break;
       case 'game.turn':
         this.ev.onTurn(msg.seat, msg.deadlineTs);
+        break;
+      case 'game.auto':
+        this.ev.onAutoPlayed(msg.seat, msg.count, msg.max);
         break;
       case 'game.over':
         this.inGame = false;

@@ -157,7 +157,9 @@ export const initialState: AppState = {
   practice4: false,
   online4: false,
   online4Stake: 0,
-  balanceCents: 500,
+  // No wallet yet → no balance. Staked play REQUIRES a connected wallet (no
+  // simulated demo money); the header shows a connect CTA until SET_BALANCE.
+  balanceCents: 0,
   walletBacked: false,
   stakeCents: 25,
   challenge: loadRetention().challenge,
@@ -262,9 +264,8 @@ export function reducer(s: AppState, a: Action): AppState {
         ...s,
         match: a.match,
         privateCode: null, // friend joined; the game is starting
-        // Wallet-backed games lock funds on-chain (balance refreshed from the
-        // wallet). Without a wallet, keep the simulated debit for the dev demo.
-        balanceCents: s.walletBacked ? s.balanceCents : s.balanceCents - a.match.stakeCents,
+        // Balance only ever changes via SET_BALANCE (refreshed from the wallet):
+        // staked play requires a wallet, so there is no simulated debit anymore.
       };
     case 'GAME_STATE':
       return { ...s, screen: 'game', game: a.game };
@@ -279,14 +280,10 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, game: a.game };
     case 'TURN':
       return { ...s, turnDeadlineTs: a.deadlineTs, activeTurn: a.seat };
-    case 'GAME_OVER': {
-      const won = a.result.winner === (s.match?.seat ?? 0);
+    case 'GAME_OVER':
       // On-chain payout is settled by the arbiter (E3.3) and reflected via
-      // SET_BALANCE; only the simulated dev path credits the balance here.
-      const balanceCents =
-        !s.walletBacked && won ? s.balanceCents + a.result.payoutCents : s.balanceCents;
-      return { ...s, screen: 'end', result: a.result, settleTxHash: null, refunded: false, reconnecting: false, staking: 'idle', balanceCents };
-    }
+      // SET_BALANCE — no simulated credit (staked play requires a wallet).
+      return { ...s, screen: 'end', result: a.result, settleTxHash: null, refunded: false, reconnecting: false, staking: 'idle' };
     case 'SETTLED':
       return { ...s, settleTxHash: a.txHash };
     case 'REFUNDED':

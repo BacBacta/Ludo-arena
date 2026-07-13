@@ -246,6 +246,11 @@ export class Room {
       const token = pickAutoMove(this.state, seat, die) ?? this.state.legal[0];
       if (token !== undefined) this.applyAndBroadcast(seat, token);
     }
+    // Tell both clients this was an auto-play and how close the seat is to a
+    // timeout-forfeit — the waiting player sees progress instead of a stall.
+    if (!this.over) {
+      this.broadcast({ t: 'game.auto', seat, count: this.autoMoveStreak[seat], max: BLITZ.forfeitAfterAutoMoves });
+    }
   }
 
   private finish(winner: Seat, reason: GameOverReason): void {

@@ -11,13 +11,16 @@ export function Lobby({
   onCreateTable,
   onFreeroll,
   onPlay4,
+  onConnectWallet,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
   onFreeroll(): void;
   onPlay4(stake: StakeCents): void;
+  /** Connect MiniPay/injected wallet; resolves true when connected. */
+  onConnectWallet(): Promise<boolean>;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate, also enforced server-side. */
@@ -30,24 +33,32 @@ export function Lobby({
     return null;
   }
 
+  /** Staked play needs a REAL wallet (no demo money): true = handled (blocked
+   *  or connecting), so the caller must not start the game. */
+  function guardStaked(stake: number): boolean {
+    if (stake === 0) return false;
+    if (!walletBacked) {
+      void onConnectWallet(); // attempt (instant inside MiniPay); toasts if none
+      return true;
+    }
+    const blocked = stakeBlockedMsg();
+    if (blocked) {
+      dispatch({ type: 'TOAST', message: blocked });
+      return true;
+    }
+    return false;
+  }
+
   // All rationalised tiers fit the picker now (0 / 25¢ / $1 / $5).
   const lobbyStakes = ALLOWED_STAKES_CENTS;
 
   function play() {
-    const blocked = stakeBlockedMsg();
-    if (blocked) {
-      dispatch({ type: 'TOAST', message: blocked });
-      return;
-    }
+    if (guardStaked(stakeCents)) return;
     onPlay(stakeCents);
   }
 
   function createTable() {
-    const blocked = stakeBlockedMsg();
-    if (blocked) {
-      dispatch({ type: 'TOAST', message: blocked });
-      return;
-    }
+    if (guardStaked(stakeCents)) return;
     onCreateTable(stakeCents);
   }
 
@@ -55,13 +66,7 @@ export function Lobby({
   // is deployed; until then it stays free (no wallet prompt, no dead option).
   const stake4 = staked4Available ? stakeCents : 0;
   function play4() {
-    if (stake4 > 0) {
-      const blocked = stakeBlockedMsg();
-      if (blocked) {
-        dispatch({ type: 'TOAST', message: blocked });
-        return;
-      }
-    }
+    if (guardStaked(stake4)) return;
     onPlay4(stake4);
   }
 
@@ -69,7 +74,7 @@ export function Lobby({
 
   return (
     <div className="screen screen--lobby">
-      <TopBar />
+      <TopBar onConnect={onConnectWallet} />
 
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
@@ -77,17 +82,31 @@ export function Lobby({
       <div className="hero">
         <div className="hero__kicker">{t('chooseStake')}</div>
         <div className="gstakes">
-          {lobbyStakes.map((s) => (
-            <button
-              key={s}
-              className={`gstake${s === stakeCents ? ' gstake--sel' : ''}${s === 0 ? ' gstake--free' : ''}`}
-              onClick={() => dispatch({ type: 'SELECT_STAKE', stake: s })}
-            >
-              <b>{s === 0 ? t('free') : s >= 100 ? `$${s / 100}` : `${s}¢`}</b>
-              <small>{s === 0 ? t('training') : `${t('win')} ${fmtUsd(potCents(s))}`}</small>
-            </button>
-          ))}
+          {lobbyStakes.map((s) => {
+            // Staked tiers are visibly locked until a real wallet backs the
+            // balance (no demo money); tapping one attempts the connection.
+            const locked = s > 0 && !walletBacked;
+            return (
+              <button
+                key={s}
+                className={`gstake${s === stakeCents ? ' gstake--sel' : ''}${s === 0 ? ' gstake--free' : ''}${locked ? ' gstake--locked' : ''}`}
+                onClick={() => {
+                  dispatch({ type: 'SELECT_STAKE', stake: s });
+                  if (locked) void onConnectWallet();
+                }}
+              >
+                <b>{s === 0 ? t('free') : s >= 100 ? `$${s / 100}` : `${s}¢`}</b>
+                <small>{s === 0 ? t('training') : locked ? `🔒 ${t('needsWallet')}` : `${t('win')} ${fmtUsd(potCents(s))}`}</small>
+              </button>
+            );
+          })}
         </div>
+        {/* responsible-gaming budget, visible where the money decision is made */}
+        {stakeCents > 0 && walletBacked && (
+          <small className="muted" style={{ display: 'block', marginTop: 6 }}>
+            {t('realityStaked')} {fmtUsd(limits.stakedTodayCents)} / {fmtUsd(limits.dailyLimitCents)}
+          </small>
+        )}
       </div>
 
       <button className="btn btn--hero" onClick={play}>
@@ -136,7 +155,8 @@ export function Lobby({
             <IconUsers className="icon--gold" /> {t('fourPlayer')}
             <span className="mini__badge">{stake4 === 0 ? t('free') : fmtUsd(stake4)}</span>
           </b>
-          {stake4 === 0 ? t('fourPlayerDesc') : `${t('win')} ${fmtUsd(potCents4(stake4))}`}
+          {/* the coupling to the 1v1 stake picker is SAID, not implied */}
+          {stake4 === 0 ? t('fourPlayerDesc') : `${t('win')} ${fmtUsd(potCents4(stake4))} · ${t('sameStakeNote')}`}
         </div>
         <div className="mini mini--action" onClick={createTable}>
           <b>
@@ -144,6 +164,18 @@ export function Lobby({
           </b>
           {t('privateTableDesc')}
         </div>
+      </div>
+
+      {/* One-glance rules of the money game: what you pay, what you can win,
+          what the house takes, and what tickets are. Kills the #1 confusion. */}
+      <div className="card howcard">
+        <h3>💡 {t('howTitle')}</h3>
+        <ol className="howlist">
+          <li>{t('howStep1')}</li>
+          <li>{t('howStep2')}</li>
+          <li>{t('howStep3')}</li>
+        </ol>
+        <small className="muted">{t('howTickets')}</small>
       </div>
 
       <div className="card">

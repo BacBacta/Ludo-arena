@@ -98,13 +98,40 @@ const COSMETIC_SEED: Array<{ id: string; cents: number }> = [
 console.log(`[switch] network=${networkName} deployer=${account.address} store=${store}`);
 const { MockUSDT } = compileAll();
 
-// 1. deploy MockUSDT
-const usdtTx = await walletClient.deployContract({ abi: MockUSDT.abi, bytecode: MockUSDT.bytecode, args: [] });
-const usdtReceipt = await publicClient.waitForTransactionReceipt({ hash: usdtTx });
-if (usdtReceipt.status !== 'success' || !usdtReceipt.contractAddress) throw new Error(`MockUSDT deploy failed (tx ${usdtTx})`);
-const usdt = usdtReceipt.contractAddress;
-const decimals = Number(await publicClient.readContract({ address: usdt, abi: ERC20_DECIMALS_ABI, functionName: 'decimals' }));
-console.log(`[switch] MockUSDT → ${usdt} (${decimals} decimals, tx ${usdtTx})`);
+// Load-balanced public RPCs may serve a read from a node that hasn't seen the
+// deploy block yet — retry reads before giving up (mirrors deploy.ts readBack).
+async function readWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      await new Promise((r) => setTimeout(r, 2_500));
+    }
+  }
+  throw lastError;
+}
+
+// 1. reuse an already-deployed token (USDT_ADDRESS) or deploy a fresh MockUSDT
+let usdt: Address;
+let usdtTx: Hex | 'reused';
+const reuse = env('USDT_ADDRESS') as Address | undefined;
+if (reuse) {
+  usdt = reuse;
+  usdtTx = 'reused';
+  console.log(`[switch] reusing token ${usdt}`);
+} else {
+  const tx = await walletClient.deployContract({ abi: MockUSDT.abi, bytecode: MockUSDT.bytecode, args: [] });
+  const rcpt = await publicClient.waitForTransactionReceipt({ hash: tx });
+  if (rcpt.status !== 'success' || !rcpt.contractAddress) throw new Error(`MockUSDT deploy failed (tx ${tx})`);
+  usdt = rcpt.contractAddress;
+  usdtTx = tx;
+}
+const decimals = Number(
+  await readWithRetry(() => publicClient.readContract({ address: usdt, abi: ERC20_DECIMALS_ABI, functionName: 'decimals' })),
+);
+console.log(`[switch] MockUSDT ${usdt} (${decimals} decimals, tx ${usdtTx})`);
 
 // 2. re-point the CosmeticsStore at the new token
 const setTokenTx = await walletClient.writeContract({ account, chain: preset.chain, address: store, abi: STORE_ABI, functionName: 'setToken', args: [usdt] });
@@ -125,14 +152,14 @@ await publicClient.waitForTransactionReceipt({ hash: seedTx });
 console.log(`[switch] re-seeded ${COSMETIC_SEED.length} prices in ${decimals}-dec (tx ${seedTx})`);
 
 // verify on-chain
-const onToken = await publicClient.readContract({ address: store, abi: STORE_ABI, functionName: 'token' });
+const onToken = await readWithRetry(() => publicClient.readContract({ address: store, abi: STORE_ABI, functionName: 'token' }));
 if (String(onToken).toLowerCase() !== usdt.toLowerCase()) throw new Error('post-switch verify failed: store token mismatch');
 console.log('[switch] verified: store token now MockUSDT');
 
 // 4. update deployments.json (keep escrow/escrowN/cosmeticsStore; swap token only)
 dep.stablecoin = usdt;
 dep.stablecoinIsTestUSD = true;
-dep.stablecoinTx = usdtTx;
+if (usdtTx !== 'reused') dep.stablecoinTx = usdtTx;
 dep.stablecoinDecimals = decimals;
 const serialized = JSON.stringify(deployments, null, 2) + '\n';
 writeFileSync(deploymentsPath, serialized);

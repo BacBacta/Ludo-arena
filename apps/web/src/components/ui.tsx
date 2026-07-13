@@ -10,7 +10,7 @@ import { PREMIUM_SKINS, cosmeticCents } from '@ludo/shared';
 import { cosmeticsCusdAvailable } from '../lib/deployments';
 import { t } from '../lib/i18n';
 
-export function TopBar() {
+export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
   const { balanceCents, walletBacked, soundOn } = useAppState();
   const dispatch = useAppDispatch();
   return (
@@ -46,12 +46,18 @@ export function TopBar() {
         >
           {soundOn ? <IconSoundOn /> : <IconSoundOff className="icon--muted" />}
         </button>
-        <div className="topbar__balance">
-          {/* gray dot + Demo label until a real wallet backs the balance */}
-          <span className="topbar__dot" style={walletBacked ? undefined : { background: 'var(--muted)' }} />
-          {!walletBacked && <span className="muted">{t('demo')} ·&nbsp;</span>}
-          {fmtCents(balanceCents)} USDT
-        </div>
+        {walletBacked ? (
+          <div className="topbar__balance">
+            <span className="topbar__dot" />
+            {fmtCents(balanceCents)} USDT
+          </div>
+        ) : (
+          // No wallet → no balance to show (there is no demo money): an honest
+          // connect CTA instead of a fake number.
+          <button className="topbar__balance topbar__connect" onClick={() => void onConnect?.()}>
+            {t('connectWallet')}
+          </button>
+        )}
       </div>
     </div>
   );

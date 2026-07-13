@@ -17,7 +17,7 @@ import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { DiceModal, FairnessModal, LegalModal, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits, buySkin, claimCosmetic } from './lib/session';
-import { connectWallet, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet } from './lib/minipay';
+import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet } from './lib/minipay';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWin } from './lib/sound';
 import { recordGameResult } from './lib/diceSkins';
@@ -33,6 +33,12 @@ export default function App() {
   const sessionRef = useRef<GameSession | null>(null);
   const walletRef = useRef<Wallet | null>(null);
   const matchSeatRef = useRef<number>(0);
+  // Gameplay pedagogy: a roll that ends the turn with NO move (no legal move, or
+  // the three-sixes burn) looks like a silent bug — track the dice stream so the
+  // UI can explain it. Reset on every match start/resume.
+  const lastDiceRef = useRef<{ seat: number; value: number } | null>(null);
+  const movedSinceDiceRef = useRef(true);
+  const sixRunRef = useRef<{ seat: number; run: number }>({ seat: -1, run: 0 });
 
   // Persist the latest retention state so the lobby shows it before reconnecting.
   useEffect(() => {
@@ -53,6 +59,30 @@ export default function App() {
     },
     [dispatch],
   );
+
+  /** Connect the wallet (MiniPay/injected) and refresh the on-chain balance.
+   *  Staked play REQUIRES this — there is no simulated demo money. Returns true
+   *  when connected; toasts (unless silent) when no wallet is available. */
+  const connectWalletCta = useCallback(
+    async (silent = false): Promise<boolean> => {
+      if (walletRef.current) return true;
+      const wallet = await connectWallet().catch(() => null);
+      if (!wallet) {
+        if (!silent) dispatch({ type: 'TOAST', message: t('noWallet') });
+        return false;
+      }
+      walletRef.current = wallet;
+      void refreshBalance(wallet);
+      return true;
+    },
+    [dispatch, refreshBalance],
+  );
+
+  // Inside MiniPay the wallet is ambient — connect silently on launch so the
+  // header shows the real balance and the staked tiers are playable at once.
+  useEffect(() => {
+    if (isMiniPay()) void connectWalletCta(true);
+  }, [connectWalletCta]);
 
   /** Lock the stake on-chain for a staked match; leave the match on failure. */
   const stakeForMatch = useCallback(
@@ -79,6 +109,9 @@ export default function App() {
     return {
       onMatchFound: (match) => {
         matchSeatRef.current = match.seat;
+        lastDiceRef.current = null;
+        movedSinceDiceRef.current = true;
+        sixRunRef.current = { seat: -1, run: 0 };
         dispatch({ type: 'MATCH_FOUND', match });
         if (match.stakeCents > 0) void stakeForMatch(match.gameId, match.stakeCents);
       },
@@ -86,13 +119,38 @@ export default function App() {
       onDice: (value, index, seat) => {
         // own rolls already played the rattle on button press (no RTT lag)
         if (seat !== matchSeatRef.current) playDice();
+        // consecutive-6 run per roller (three 6s burn the turn — Ludo Club rule)
+        const r = sixRunRef.current;
+        if (value === 6) r.run = r.seat === seat ? r.run + 1 : 1;
+        else r.run = 0;
+        r.seat = seat;
+        lastDiceRef.current = { seat, value };
+        movedSinceDiceRef.current = false;
         dispatch({ type: 'DICE', value, index, seat });
       },
       onMoved: (game, capture) => {
+        movedSinceDiceRef.current = true;
         if (capture) playCapture();
         dispatch({ type: 'MOVED', game, capture });
       },
-      onTurn: (seat, deadlineTs) => dispatch({ type: 'TURN', seat, deadlineTs }),
+      onTurn: (seat, deadlineTs) => {
+        // The previous roll ended the turn with no move → say WHY (else it reads
+        // as a bug): three 6s in a row burn the turn; otherwise no legal move.
+        const last = lastDiceRef.current;
+        if (last && !movedSinceDiceRef.current && last.seat !== seat) {
+          if (last.value === 6 && sixRunRef.current.seat === last.seat && sixRunRef.current.run >= 3) {
+            dispatch({ type: 'TOAST', message: t('threeSixes') });
+          } else if (last.seat === matchSeatRef.current) {
+            dispatch({ type: 'TOAST', message: `🎲 ${t('noMove')}` });
+          }
+          lastDiceRef.current = null;
+        }
+        dispatch({ type: 'TURN', seat, deadlineTs });
+      },
+      onAutoPlayed: (seat, count, max) => {
+        const key = seat === matchSeatRef.current ? 'autoPlayedYou' : 'autoPlayedOpp';
+        dispatch({ type: 'TOAST', message: `${t(key)} · ${count}/${max}` });
+      },
       onOver: (result) => {
         const won = result.winner === (matchSeatRef.current ?? 0);
         if (won) playWin();
@@ -132,6 +190,9 @@ export default function App() {
       onReconnecting: () => dispatch({ type: 'RECONNECTING' }),
       onResumed: (match, game) => {
         matchSeatRef.current = match.seat;
+        lastDiceRef.current = null;
+        movedSinceDiceRef.current = true;
+        sixRunRef.current = { seat: -1, run: 0 };
         dispatch({ type: 'RESUME', match, game });
       },
       onGone: () => {
@@ -167,54 +228,40 @@ export default function App() {
         dispatch({ type: 'START_PRACTICE4' });
         return;
       }
+      // Staked game: the wallet is REQUIRED (no simulated demo money) so the
+      // stake can be locked on match. No wallet → stay in the lobby.
+      if (!(await connectWalletCta())) return;
       dispatch({ type: 'START_MATCHMAKING', botMode: false });
 
-      // Staked game: connect the wallet up front so funds can be locked on match.
-      if (!walletRef.current) {
-        const wallet = await connectWallet().catch(() => null);
-        if (wallet) {
-          walletRef.current = wallet;
-          void refreshBalance(wallet);
-        } else {
-          dispatch({ type: 'TOAST', message: t('noWallet') });
-        }
-      }
-
       const ev = makeEvents();
-      // PvP: real-time server, falls back to the local bot if unreachable
+      // PvP: real-time server. If it's unreachable, fall back to a FREE local
+      // bot game — never a simulated staked one (money must always be real).
       sessionRef.current = new RemoteSession(
         ev,
         stake,
         SERVER_URL,
         () => {
           dispatch({ type: 'TOAST', message: t('offline') });
-          sessionRef.current = new LocalBotSession(ev, stake);
+          sessionRef.current = new LocalBotSession(ev, 0);
         },
         walletRef.current?.address,
         { kind: 'queue' },
         makeAuth(),
       );
     },
-    [dispatch, makeEvents, refreshBalance, makeAuth],
+    [dispatch, makeEvents, connectWalletCta, makeAuth],
   );
 
   // Private tables (E4.4): open a remote session with a create/join intent.
   const openPrivate = useCallback(
     async (stake: StakeCents, intent: JoinIntent) => {
       sessionRef.current?.dispose();
+      // Creating a staked table REQUIRES the wallet (no demo money). Joining by
+      // code: the table's stake is unknown until the server replies, so only
+      // ATTEMPT the connection — the server refuses staked joiners without one.
+      if (stake > 0 && !(await connectWalletCta())) return;
+      if (intent.kind === 'join') await connectWalletCta(true);
       dispatch({ type: 'START_MATCHMAKING', botMode: false });
-      // Joining by code/link: the table's stake is unknown until the server
-      // replies, so connect the wallet up-front — a staked table refuses
-      // demo joiners (money-mode parity) and the stake must lock on match.
-      if ((stake > 0 || intent.kind === 'join') && !walletRef.current) {
-        const wallet = await connectWallet().catch(() => null);
-        if (wallet) {
-          walletRef.current = wallet;
-          void refreshBalance(wallet);
-        } else {
-          dispatch({ type: 'TOAST', message: t('noWallet') });
-        }
-      }
       const ev = makeEvents();
       sessionRef.current = new RemoteSession(
         ev,
@@ -229,7 +276,7 @@ export default function App() {
         makeAuth(),
       );
     },
-    [dispatch, makeEvents, refreshBalance, makeAuth],
+    [dispatch, makeEvents, connectWalletCta, makeAuth],
   );
 
   const createTable = useCallback(
@@ -244,19 +291,12 @@ export default function App() {
     async (stake: StakeCents) => {
       sessionRef.current?.dispose();
       sessionRef.current = null;
-      // Staked 4-player table: connect the wallet up front so stakes can lock on match.
-      if (stake > 0 && !walletRef.current) {
-        const wallet = await connectWallet().catch(() => null);
-        if (wallet) {
-          walletRef.current = wallet;
-          void refreshBalance(wallet);
-        } else {
-          dispatch({ type: 'TOAST', message: t('noWallet') });
-        }
-      }
+      // Staked 4-player table: the wallet is REQUIRED so the stake can lock on
+      // match (no simulated demo money). No wallet → stay in the lobby.
+      if (stake > 0 && !(await connectWalletCta())) return;
       dispatch({ type: 'START_ONLINE4', stakeCents: stake });
     },
-    [dispatch, refreshBalance],
+    [dispatch, connectWalletCta],
   );
 
   // Freeroll: ticket-gated free 1v1 on the server (no bot fallback — the entry
@@ -408,7 +448,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onConnectWallet={connectWalletCta} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
