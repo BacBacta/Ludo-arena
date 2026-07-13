@@ -190,6 +190,10 @@ export type ClientMsg =
       // 18+/ToS consent the client has recorded locally; the server persists it
       // (per wallet) and requires a match to the current TOS_VERSION for staked play.
       consent?: { tosVersion: string; age18: boolean };
+      // True when running inside MiniPay: the wallet is auto-connected and trusted,
+      // and MiniPay does NOT support personal_sign — so the server accepts the
+      // address as proven WITHOUT a SIWE signature (which would fail there).
+      miniPay?: boolean;
     }
   // Wallet ownership proof (SIWE-style): sign the `walletNonce` from hello.ok so
   // the server can bind RG limits / self-exclusion to a *verified* address.
@@ -405,6 +409,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
         const c = m.consent as { tosVersion?: unknown; age18?: unknown };
         if (typeof c !== 'object' || c === null || typeof c.tosVersion !== 'string' || c.tosVersion.length > 32 || typeof c.age18 !== 'boolean') return null;
       }
+      if (m.miniPay !== undefined && typeof m.miniPay !== 'boolean') return null;
       return m;
     }
     case 'wallet.prove':

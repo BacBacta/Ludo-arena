@@ -45,6 +45,13 @@ describe('compatible', () => {
     // once the fresh entry has waited 20 s, its window reaches 300
     expect(compatible(veteran, { ...fresh, enqueuedAt: T0 - 20_000 }, T0)).toBe(true);
   });
+
+  it('rejects two DIFFERENT sessions that share a durable identity (same wallet, two tabs)', () => {
+    const a = { ...entry('tab-a', 1200, T0, true), identity: '0xwallet' };
+    const b = { ...entry('tab-b', 1200, T0, true), identity: '0xwallet' };
+    expect(compatible(a, b, T0, 25)).toBe(false); // would double-count games + farm a self-win
+    expect(compatible(a, { ...b, identity: '0xother' }, T0, 25)).toBe(true); // distinct players pair
+  });
 });
 
 describe('Matchmaker.join', () => {

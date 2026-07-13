@@ -8,6 +8,10 @@ import type { StakeCents } from '@ludo/shared';
 
 export interface QueueEntry<T> {
   session: T;
+  /** Durable player identity (wallet, or anon:session). Two DIFFERENT sessions
+   *  that resolve to the same identity (e.g. the same wallet in two tabs) must
+   *  not self-pair — that would double-count games/wins and farm a self-win. */
+  identity?: string;
   entropy: string;
   elo: number;
   enqueuedAt: number;
@@ -31,6 +35,7 @@ export function compatible<T>(a: QueueEntry<T>, b: QueueEntry<T>, now: number, s
   // A session can never be paired with itself (a double queue.join must not
   // self-match — that would run a one-player game / farm freeroll tickets).
   if (a.session === b.session) return false;
+  if (a.identity !== undefined && a.identity === b.identity) return false; // same durable player
   // Money-mode parity: staked games never mix a real-wallet player with a demo
   // (simulated) player — the real stake would be locked against nothing.
   if (stake > 0 && a.walletBacked !== b.walletBacked) return false;

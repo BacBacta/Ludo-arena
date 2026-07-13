@@ -10,6 +10,7 @@ import {
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
 import { deviceFingerprint } from './fingerprint';
+import { isMiniPay } from './minipay';
 import { sha256Hex } from './fairnessVerify';
 import {
   WALK_STEP_MS,
@@ -499,6 +500,7 @@ export class RemoteSession implements GameSession {
         wallet: this.walletAddress,
         fingerprint: deviceFingerprint(),
         consent: this.auth?.consent,
+        miniPay: isMiniPay(), // trusted address → server accepts it without SIWE
       });
       if (initial) {
         if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });
@@ -581,7 +583,12 @@ export class RemoteSession implements GameSession {
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
-        this.ev.onProfile({ name: msg.name, flag: msg.flag, elo: msg.elo, games: msg.games, wins: msg.wins });
+        // Only apply the profile from a WALLET-backed session — a wallet-less
+        // freeroll/free-table connection carries a throwaway anon identity + 0/0
+        // that must not clobber the returning wallet player's cached profile.
+        if (this.walletAddress) {
+          this.ev.onProfile({ name: msg.name, flag: msg.flag, elo: msg.elo, games: msg.games, wins: msg.wins });
+        }
         if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
         if (msg.resumed) {
           this.inGame = true;

@@ -330,7 +330,8 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'OWNED_SKINS':
       return { ...s, ownedSkins: a.ownedIds, tickets: a.tickets ?? s.tickets };
     case 'PROFILE': {
-      // Merge only defined fields (hello.ok omits them for anon players).
+      // Merge only defined fields. (The session layer already suppresses profile
+      // updates from wallet-less connections, so this never gets anon 0/0 data.)
       const next = { ...s.profile };
       if (a.profile.name) next.name = a.profile.name;
       if (a.profile.flag) next.flag = a.profile.flag;

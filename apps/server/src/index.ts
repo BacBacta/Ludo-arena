@@ -85,6 +85,9 @@ interface Session extends Client {
   /** Wallet ownership proof (SIWE): the nonce we issued + whether it's proven. */
   walletNonce?: string;
   walletProven?: boolean;
+  /** Running inside MiniPay: the auto-connected address is trusted, so ownership
+   *  is accepted WITHOUT a SIWE signature (MiniPay can't personal_sign). */
+  miniPay?: boolean;
 }
 
 // Geo-gating (E5.4): ISO country codes where staked play is disabled.
@@ -587,6 +590,7 @@ wss.on('connection', (ws, req) => {
         if (msg.fingerprint) resumedSession.fingerprint = msg.fingerprint;
         resumedSession.country = country;
         resumedSession.ip = ip;
+        resumedSession.miniPay = msg.miniPay === true;
         await recordConsent(resumedSession, msg.consent);
         const rProof = issueWalletNonce(resumedSession);
         const rpid = playerId(resumedSession.wallet, resumedSession.id);
@@ -638,6 +642,7 @@ wss.on('connection', (ws, req) => {
       session.fingerprint = msg.fingerprint;
       session.country = country;
       session.ip = ip;
+      session.miniPay = msg.miniPay === true; // trusted address, no SIWE (before issueWalletNonce)
       sessions.set(id, session);
       persistSession(session);
       const pid = playerId(msg.wallet, id);
@@ -725,6 +730,7 @@ wss.on('connection', (ws, req) => {
           persistSession(session);
           const fpair = freerollMatchmaker.join(0, {
             session,
+            identity: playerId(session.wallet, session.id),
             entropy: session.entropy,
             elo: session.elo,
             enqueuedAt: Date.now(),
@@ -746,6 +752,7 @@ wss.on('connection', (ws, req) => {
         persistSession(session);
         const pair = matchmaker.join(msg.stake, {
           session,
+          identity: playerId(session.wallet, session.id),
           entropy: session.entropy,
           elo: session.elo,
           enqueuedAt: Date.now(),
@@ -1036,6 +1043,7 @@ wss.on('connection', (ws, req) => {
         session.stake = stake;
         const pair = matchmaker.join(stake, {
           session,
+          identity: playerId(session.wallet, session.id),
           entropy: session.entropy,
           elo: session.elo,
           enqueuedAt: Date.now(),
@@ -1162,6 +1170,12 @@ async function recordConsent(session: Session, consent?: { tosVersion: string; a
  *  with an unproven wallet gets a nonce to sign. */
 function issueWalletNonce(session: Session): { walletNonce?: string; walletProven?: boolean } {
   if (!session.wallet) return {};
+  // MiniPay: the wallet is auto-connected + trusted and cannot personal_sign, so
+  // accept the address as proven with NO nonce/signature (the required model).
+  if (session.miniPay) {
+    session.walletProven = true;
+    return { walletProven: true };
+  }
   if (session.walletProven) return { walletProven: true };
   session.walletNonce = randomBytes(16).toString('hex');
   return { walletNonce: session.walletNonce, walletProven: false };
@@ -1449,12 +1463,16 @@ function leave4(sessionParam: Session): void {
 }
 
 /** Profile W/L for a finished 4-player game: every human seat played a game; the
- *  human at the winning seat also gets a win. Anon/bot rows just no-op. */
-function recordRoom4Stats(humans: Session[], winnerSeat: number): void {
+ *  human at the winning seat gets a win — UNLESS that seat was handed to a bot
+ *  (the human resigned/dropped/auto-forfeited), so a quitter isn't credited a win
+ *  a bot earned. Anon/bot player rows just no-op. */
+function recordRoom4Stats(humans: Session[], winnerSeat: number, seats: Seat4[]): void {
   humans.forEach((h, seat) => {
     const pid = playerId(h.wallet, h.id);
     store.recordPlayed(pid).catch((e) => console.error('[profile] recordPlayed4', e));
-    if (seat === winnerSeat) store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
+    if (seat === winnerSeat && !seats[seat]?.bot) {
+      store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
+    }
   });
 }
 
@@ -1475,7 +1493,7 @@ function startRoom4(humans: Session[]): void {
   }
   const fairness = createFairness4(seatSeeds);
   const room = new Room4(gameId, seats, fairness, 0, 0); // free table: no tickets, no cUSD
-  room.onResult = (r) => recordRoom4Stats(humans, r.winnerSeat);
+  room.onResult = (r) => recordRoom4Stats(humans, r.winnerSeat, r.seats);
   room.onEnd = () => rooms4.delete(gameId);
   rooms4.set(gameId, room);
   const players = room.players();
@@ -1591,7 +1609,7 @@ function startStaked4Room(p: PendingStaked4): void {
   const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag }));
   const room = new Room4(p.gameId, seats, p.fairness, 0, 0, p.pot, p.rake);
   room.onResult = (r) => {
-    recordRoom4Stats(p.humans, r.winnerSeat);
+    recordRoom4Stats(p.humans, r.winnerSeat, r.seats);
     settleStaked4(p, r.winnerSeat);
   };
   room.onEnd = () => rooms4.delete(p.gameId);

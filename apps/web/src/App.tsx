@@ -222,9 +222,12 @@ export default function App() {
     const wallet = walletRef.current;
     return {
       consent: consentRef.current ? { tosVersion: TOS_VERSION, age18: true } : undefined,
-      signMessage: wallet
-        ? (message: string) => wallet.walletClient.signMessage({ account: wallet.address, message })
-        : undefined,
+      // MiniPay does not support personal_sign — never offer a signer there (the
+      // server trusts the auto-connected address without SIWE). Browsers still sign.
+      signMessage:
+        wallet && !isMiniPay()
+          ? (message: string) => wallet.walletClient.signMessage({ account: wallet.address, message })
+          : undefined,
     };
   }, []);
 
