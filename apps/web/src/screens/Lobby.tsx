@@ -3,6 +3,7 @@ import { staked4Available } from '../lib/deployments';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { TopBar } from '../components/ui';
 import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
+import { playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
 
 
@@ -91,6 +92,7 @@ export function Lobby({
                 key={s}
                 className={`gstake${s === stakeCents ? ' gstake--sel' : ''}${s === 0 ? ' gstake--free' : ''}${locked ? ' gstake--locked' : ''}`}
                 onClick={() => {
+                  playTap('select');
                   dispatch({ type: 'SELECT_STAKE', stake: s });
                   if (locked) void onConnectWallet();
                 }}
@@ -109,7 +111,7 @@ export function Lobby({
         )}
       </div>
 
-      <button className="btn btn--hero" onClick={play}>
+      <button className="btn btn--hero" onClick={() => { playTap(); play(); }}>
         {t('play')}
         <small>
           {stakeCents === 0

@@ -339,7 +339,6 @@ small.muted { font-size: 12px; }
 .soundtoggle .icon--muted { color: rgba(255, 255, 255, 0.55); }
 /* on-blue h/values keep gold; TurnChip idle ring lighter on white pills */
 .ringwrap { background: #dfe5f1; }
-.mini--soon::after { color: #a8b4cc; border-color: #d5dcea; background: #ffffff; }
 
 /* TopBar */
 .topbar {
@@ -842,6 +841,30 @@ small.muted { font-size: 12px; }
   cursor: pointer;
   padding: 2px 4px;
 }
+/* Cosmetics shop entry: an accent-tinted pill (vs the bare sound toggle) with a
+   sparkle badge, so it reads as "shop/skins" instead of a settings icon. */
+.shopbtn {
+  position: relative;
+  background: rgba(245, 179, 1, 0.18);
+  border: 1px solid rgba(245, 179, 1, 0.5);
+  color: var(--accent-2);
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  line-height: 0;
+}
+.shopbtn:active { transform: scale(0.94); }
+.shopbtn .icon { width: 18px; height: 18px; }
+.shopbtn__spark {
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  font-size: 10px;
+  color: #fff2c2;
+  text-shadow: 0 0 6px rgba(245, 179, 1, 0.9);
+}
 .verify {
   margin: 10px 0;
   padding: 8px;
@@ -872,23 +895,6 @@ small.muted { font-size: 12px; }
 }
 .mini--action { cursor: pointer; }
 .mini--action:active { transform: scale(0.98); }
-/* not functional yet: visibly parked so it doesn't erode trust */
-.mini--soon { position: relative; }
-.mini--soon > * { opacity: 0.5; }
-.mini--soon::after { opacity: 1; }
-.mini--soon::after {
-  content: 'SOON';
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 1px 5px;
-}
 /* daily-challenge progress segments */
 .progress { display: flex; gap: 5px; margin-top: 10px; }
 .progress span {

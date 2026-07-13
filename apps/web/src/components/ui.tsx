@@ -27,9 +27,12 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
         LUDO <span>ARENA</span>
       </div>
       <div className="topbar__right">
+        {/* Cosmetics shop entry — accent-tinted + a sparkle so it reads as a SHOP,
+            not a settings toggle (it used to reuse .soundtoggle and vanish). */}
         <button
-          className="soundtoggle"
+          className="shopbtn"
           title={t('diceTitle')}
+          aria-label={t('diceTitle')}
           onClick={() => dispatch({ type: 'DICE_MODAL', open: true })}
         >
           <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round">
@@ -38,6 +41,7 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
             <circle cx={15.5} cy={15.5} r={1.3} fill="currentColor" stroke="none" />
             <circle cx={12} cy={12} r={1.3} fill="currentColor" stroke="none" />
           </svg>
+          <span className="shopbtn__spark" aria-hidden="true">✦</span>
         </button>
         <button
           className="soundtoggle"

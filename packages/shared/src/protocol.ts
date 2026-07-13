@@ -43,11 +43,6 @@ export const ANTI_TILT = { losses: 3, rewardTickets: 1 } as const;
  *  winner takes both entries plus a house bonus. */
 export const FREEROLL = { entryTickets: 1, winnerTickets: 3 } as const;
 
-/** 4-player online Sit&Go paid in freeroll TICKETS (no cUSD escrow yet): seats
- *  fill with real players + bots; entry costs a ticket, winner takes the prize
- *  (1 ticket sinks per game — the ticket-economy equivalent of the rake). */
-export const FREEROLL4 = { seats: 4, entryTickets: 1, winnerTickets: 3, botFillMs: 12_000 } as const;
-
 /** 4-player table config. A FREE table fills empty seats with bots after
  *  `botFillMs`; a cUSD-STAKED table needs 4 real stakers (bots have no funds)
  *  and is cancelled + refunded if it doesn't fill within `stakedFillMs`. */

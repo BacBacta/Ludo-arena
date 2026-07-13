@@ -32,20 +32,6 @@ function audio(): AudioContext | null {
   }
 }
 
-function tone(ac: AudioContext, freq: number, t0: number, dur: number, type: OscillatorType, peak: number): void {
-  const osc = ac.createOscillator();
-  const g = ac.createGain();
-  osc.type = type;
-  osc.frequency.value = freq;
-  osc.connect(g);
-  g.connect(ac.destination);
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(peak, t0 + 0.012);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  osc.start(t0);
-  osc.stop(t0 + dur + 0.02);
-}
-
 function play(build: (ac: AudioContext, now: number) => void): void {
   if (!soundEnabled()) return;
   const ac = audio();
@@ -281,17 +267,97 @@ export function playHop(): void {
   });
 }
 
-/** Capture: a short descending two-tone. */
+/**
+ * Capture: a satisfying "thwack" that routes through the SAME premium bus +
+ * reverb as the dice (the old two-tone bypassed both → cheap 80s blip). A hard
+ * noise transient + a resonant body + a quick pitched-down whoosh "removal".
+ */
 export function playCapture(): void {
   play((ac, now) => {
-    tone(ac, 520, now, 0.1, 'triangle', 0.18);
-    tone(ac, 320, now + 0.08, 0.14, 'triangle', 0.18);
+    const { out, send } = bus(ac);
+    // impact: sharp hit + two body modes (reuses the die's material primitives)
+    impact(ac, out, send, now, 1.1, 0, 150, 900);
+    // a short downward "swipe" as the captured token is knocked home
+    const o = ac.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(560, now);
+    o.frequency.exponentialRampToValueAtTime(150, now + 0.16);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.14, now + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    const lp = ac.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1400;
+    o.connect(lp);
+    lp.connect(g);
+    g.connect(out);
+    const s = ac.createGain();
+    s.gain.value = 0.4;
+    g.connect(s);
+    s.connect(send);
+    o.start(now);
+    o.stop(now + 0.2);
   });
 }
 
-/** Win: a rising major arpeggio. */
+/**
+ * Win: a warm consonant fanfare (root–3rd–5th–octave) with a bass root and a
+ * reverb tail — routed through the bus so it sits in the same premium space as
+ * the rest, not the old dry sine arpeggio.
+ */
 export function playWin(): void {
   play((ac, now) => {
-    [523, 659, 784, 1047].forEach((f, i) => tone(ac, f, now + i * 0.1, 0.22, 'sine', 0.16));
+    const { out, send } = bus(ac);
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    notes.forEach((f, i) => {
+      mode(ac, out, send, now + i * 0.11, f, 0.5, 0.16, 'triangle', 0.6);
+      mode(ac, out, send, now + i * 0.11, f * 2, 0.3, 0.05, 'sine', 0.4); // shimmer
+    });
+    mode(ac, out, send, now, 130.81, 0.7, 0.22, 'sine', 0.5); // C3 bass root
+    // sparkle tail
+    tick(ac, out, send, now + 0.34, { freq: 5200, q: 1.4, dur: 0.06, peak: 0.1, pan: 0.2, sendAmt: 1 });
+  });
+}
+
+/** Loss: a soft, brief descending cue of commiseration (never harsh). */
+export function playLose(): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    mode(ac, out, send, now, 330, 0.4, 0.12, 'sine', 0.5);
+    mode(ac, out, send, now + 0.14, 247, 0.5, 0.12, 'sine', 0.5); // minor drop
+  });
+}
+
+/**
+ * Payout count-up (the #1 money moment, previously silent): a rising cascade of
+ * coin ticks pitched up over `steps`, ending on a bright chime. Call once as the
+ * end-screen number counts up.
+ */
+export function playPayout(steps = 10): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    const n = Math.max(3, Math.min(16, steps));
+    for (let i = 0; i < n; i++) {
+      const t0 = now + i * 0.05;
+      const freq = 1400 + (i / n) * 1600; // climbs as the total rises
+      tick(ac, out, send, t0, { freq, q: 2.4, dur: 0.03, peak: 0.11, pan: (Math.random() * 2 - 1) * 0.4, sendAmt: 0.5 });
+      mode(ac, out, send, t0, freq * 0.5, 0.05, 0.06, 'sine', 0.3);
+    }
+    // landing chime
+    const end = now + n * 0.05;
+    mode(ac, out, send, end, 1046.5, 0.5, 0.16, 'triangle', 0.7);
+    mode(ac, out, send, end, 1567.98, 0.5, 0.09, 'sine', 0.7);
+  });
+}
+
+/** Soft UI tap for CTAs/selection — tiny, pitch-jittered to avoid fatigue. */
+export function playTap(kind: 'tap' | 'select' = 'tap'): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    const base = kind === 'select' ? 880 : 660;
+    const freq = base * (1 + (Math.random() * 2 - 1) * 0.04); // ±~1 semitone jitter
+    mode(ac, out, send, now, freq, 0.07, kind === 'select' ? 0.12 : 0.08, 'triangle', 0.25);
+    tick(ac, out, send, now, { freq: 3200, q: 2, dur: 0.02, peak: 0.05, pan: 0, sendAmt: 0.2 });
   });
 }

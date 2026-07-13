@@ -161,7 +161,9 @@ export const initialState: AppState = {
   // simulated demo money); the header shows a connect CTA until SET_BALANCE.
   balanceCents: 0,
   walletBacked: false,
-  stakeCents: 25,
+  // Default to Free: a cold, wallet-less visitor's first PLAY should be the free
+  // practice game the onboarding promises — not a locked 25¢ tile that does nothing.
+  stakeCents: 0,
   challenge: loadRetention().challenge,
   streak: loadRetention().streak,
   league: loadRetention().league,

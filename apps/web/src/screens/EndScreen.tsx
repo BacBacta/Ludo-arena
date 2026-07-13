@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { DIVISIONS } from '@ludo/shared';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { activeChain } from '../lib/chains';
+import { playPayout, playLose } from '../lib/sound';
 import { t } from '../lib/i18n';
 
 /** Eased 0→target counter for the payout reveal. */
@@ -63,6 +64,15 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
   const staked = !!match && match.stakeCents > 0;
   const targetCents = !result || !match ? 0 : staked ? (won ? result.payoutCents : match.stakeCents) : won ? 50 : 20;
   const counted = useCountUp(targetCents);
+
+  // The money moment finally has audio: a coin cascade under the payout count-up
+  // for a real win; a soft commiseration cue on a loss. Fires once per result.
+  useEffect(() => {
+    if (!result || !match) return;
+    if (won && staked && result.payoutCents > 0) playPayout(11);
+    else if (!won) playLose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result?.winner]);
 
   if (!result || !match) return null;
 
