@@ -291,7 +291,16 @@ export default function App() {
 
   const roll = useCallback(() => sessionRef.current?.roll(), []);
   const move = useCallback((token: number) => sessionRef.current?.move(token), []);
-  const rematch = useCallback(() => startMatch(state.stakeCents), [startMatch, state.stakeCents]);
+  // True direct rematch: reuse the still-open session so the server can re-pair
+  // the same opponent (it re-queues if they didn't ask / the cap is hit). Falls
+  // back to a fresh session (local bot, or a dropped socket).
+  const rematch = useCallback(() => {
+    if (sessionRef.current?.rematch()) {
+      dispatch({ type: 'START_MATCHMAKING', botMode: false });
+    } else {
+      void startMatch(state.stakeCents);
+    }
+  }, [dispatch, startMatch, state.stakeCents]);
 
   // Age (18+) + Terms/Privacy consent gate: required once before any staked action.
   const pendingStakeAction = useRef<(() => void) | null>(null);

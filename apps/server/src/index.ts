@@ -73,6 +73,10 @@ interface Session extends Client {
   ip?: string; // socket IP (server-derived anti-collusion signal, E5.3)
   /** ToS version this session accepted (18+/consent gate for staked play). */
   consentTos?: string;
+  /** Last opponent + stake, for a true direct rematch (BACKLOG E4). */
+  lastOpponentId?: string;
+  lastStake?: StakeCents;
+  rematchWanted?: boolean;
   /** Wallet ownership proof (SIWE): the nonce we issued + whether it's proven. */
   walletNonce?: string;
   walletProven?: boolean;
@@ -843,27 +847,62 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'game.rematch': {
-        // v1: re-queue at the same stake (instant rematch: BACKLOG E4)
-        if (!session.room && session.stake !== null) {
-          const blockedRematch = await stakeBlock(session, session.stake);
-          if (blockedRematch) {
-            session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedRematch });
+        if (session.room || session.pendingGameId) break;
+        const stake = session.lastStake ?? session.stake ?? 0;
+        // True direct rematch: if the last opponent is still connected, idle, and
+        // has ALSO asked to rematch us at the same stake, pair the two of them
+        // directly — but only while the anti-collusion cap still allows another
+        // game between them (else fall through to matchmaking a fresh opponent).
+        const opp = session.lastOpponentId ? sessions.get(session.lastOpponentId) : undefined;
+        if (
+          opp &&
+          opp.alive &&
+          !opp.room &&
+          !opp.pendingGameId &&
+          opp.rematchWanted &&
+          opp.lastOpponentId === session.id &&
+          (opp.lastStake ?? 0) === stake
+        ) {
+          const collusion = await collusionBlock(session, opp, stake);
+          const blockA = await stakeBlock(session, stake);
+          const blockB = await stakeBlock(opp, stake);
+          if (!collusion && !blockA && !blockB) {
+            // both waiting elsewhere are removed from any queue before we pair them
+            matchmaker.leaveAll(session);
+            matchmaker.leaveAll(opp);
+            await store.queueRemove(session.id);
+            await store.queueRemove(opp.id);
+            session.rematchWanted = false;
+            opp.rematchWanted = false;
+            session.stake = stake;
+            opp.stake = stake;
+            await startGame(stake, session, opp);
             break;
           }
-          const pair = matchmaker.join(session.stake, {
-            session,
-            entropy: session.entropy,
-            elo: session.elo,
-            enqueuedAt: Date.now(),
-            walletBacked: !!session.wallet,
-          });
-          if (pair) {
-            await store.queueRemove(pair[0].session.id);
-            await startGame(session.stake, pair[0].session, pair[1].session);
-          } else {
-            await store.queuePush(session.stake, session.id);
-            session.send({ t: 'queue.ok', position: 1 });
-          }
+          // cap hit / blocked → fall through to matchmaking a different opponent
+        }
+        // No ready partner (or direct rematch refused): remember the wish and
+        // re-queue for any opponent at this stake.
+        const blockedRematch = await stakeBlock(session, stake);
+        if (blockedRematch) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedRematch });
+          break;
+        }
+        session.rematchWanted = true;
+        session.stake = stake;
+        const pair = matchmaker.join(stake, {
+          session,
+          entropy: session.entropy,
+          elo: session.elo,
+          enqueuedAt: Date.now(),
+          walletBacked: !!session.wallet,
+        });
+        if (pair) {
+          await store.queueRemove(pair[0].session.id);
+          await startGame(stake, pair[0].session, pair[1].session);
+        } else {
+          await store.queuePush(stake, session.id);
+          session.send({ t: 'queue.ok', position: 1 });
         }
         break;
       }
@@ -1168,6 +1207,14 @@ function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fa
   b.seat = 1;
   a.pendingGameId = undefined;
   b.pendingGameId = undefined;
+  // Remember the pairing so either player can request a true direct rematch after
+  // the game ends; a new game supersedes any pending rematch wish.
+  a.lastOpponentId = b.id;
+  b.lastOpponentId = a.id;
+  a.lastStake = stake;
+  b.lastStake = stake;
+  a.rematchWanted = false;
+  b.rematchWanted = false;
   wireRoom(room);
   persistSession(a);
   persistSession(b);

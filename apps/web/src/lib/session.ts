@@ -98,6 +98,10 @@ export interface GameSession {
   move(token: number): void;
   /** Deliberately forfeit the current match (the opponent wins). */
   resign(): void;
+  /** Ask for a rematch on THIS live session (true direct rematch — the server
+   *  re-pairs the same opponent if they also asked, else re-queues). Returns
+   *  true if handled here; false → the caller should start a fresh session. */
+  rematch(): boolean;
   dispose(): void;
 }
 
@@ -146,6 +150,10 @@ export class LocalBotSession implements GameSession {
     const rakeCents = Math.floor((pot * RAKE_BPS) / 10_000);
     this.ev.onOver({ winner: 1, reason: 'resign', payoutCents: pot - rakeCents, rakeCents, eloDelta: -14 });
     this.disposed = true;
+  }
+
+  rematch(): boolean {
+    return false; // local bot: no live socket to reuse — the caller starts fresh
   }
 
   dispose(): void {
@@ -575,6 +583,14 @@ export class RemoteSession implements GameSession {
   resign(): void {
     // server forfeits the room → game.over(reason:'resign') drives the rest.
     this.send({ t: 'game.resign' });
+  }
+
+  rematch(): boolean {
+    // Reuse the still-open socket: the server re-pairs the same opponent if they
+    // also asked (respecting the anti-collusion cap), else re-queues us.
+    if (this.disposed || !this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    this.send({ t: 'game.rematch' });
+    return true;
   }
 
   dispose(): void {

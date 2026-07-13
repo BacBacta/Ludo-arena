@@ -17,7 +17,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `game.roll` | `{}` | Requests the roll (if it is their turn and phase is `awaiting-roll`). |
 | `game.move` | `{ token }` | Plays token `token` (0 or 1). |
 | `game.resign` | `{}` | Deliberately forfeits the current match — the opponent wins and the normal `game.over`/settlement path runs. |
-| `game.rematch` | `{}` | Offers a same-stake rematch. |
+| `game.rematch` | `{}` | Rematch at the same stake. If the LAST opponent is still connected, idle, and also sent `game.rematch` (and the anti-collusion cap `MAX_DAILY_GAMES_VS_SAME` still allows another game between them), the two are paired directly; otherwise the requester is re-queued for any opponent. Sent on the still-open session (no re-`hello`). |
 | `ping` | `{}` | Keepalive (every 20 s). |
 
 ## Server → Client
