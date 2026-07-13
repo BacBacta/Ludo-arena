@@ -17,6 +17,7 @@ import {
   createWalletClient,
   defineChain,
   http,
+  type Abi,
   type Address,
   type Chain,
   type Hex,
@@ -122,9 +123,9 @@ const rakeBps = BigInt(env('RAKE_BPS') ?? '900');
 console.log(`[deploy] network=${networkName} chainId=${preset.chain.id} rpc=${rpc}`);
 console.log(`[deploy] deployer=${account.address} arbiter=${arbiter} treasury=${treasury} rakeBps=${rakeBps}`);
 
-const { LudoEscrow, TestUSD } = compileAll();
+const { LudoEscrow, LudoEscrowN, TestUSD } = compileAll();
 
-async function deployContract(label: string, abi: typeof LudoEscrow.abi, bytecode: Hex, args: unknown[]): Promise<{ address: Address; txHash: Hex }> {
+async function deployContract(label: string, abi: Abi, bytecode: Hex, args: unknown[]): Promise<{ address: Address; txHash: Hex }> {
   const txHash = await walletClient.deployContract({ abi, bytecode, args });
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
   if (receipt.status !== 'success' || !receipt.contractAddress) {
@@ -143,6 +144,13 @@ if (!stablecoin) {
 }
 
 const escrow = await deployContract('LudoEscrow', LudoEscrow.abi, LudoEscrow.bytecode, [
+  arbiter,
+  treasury,
+  rakeBps,
+]);
+
+// N-player escrow (LudoEscrowN) for staked 4-player games — same arbiter/treasury/rake.
+const escrowN = await deployContract('LudoEscrowN', LudoEscrowN.abi, LudoEscrowN.bytecode, [
   arbiter,
   treasury,
   rakeBps,
@@ -186,6 +194,8 @@ deployments[networkName] = {
   chainId: preset.chain.id,
   escrow: escrow.address,
   escrowTx: escrow.txHash,
+  escrowN: escrowN.address,
+  escrowNTx: escrowN.txHash,
   stablecoin,
   ...(stablecoinTx ? { stablecoinIsTestUSD: true, stablecoinTx } : {}),
   arbiter,
