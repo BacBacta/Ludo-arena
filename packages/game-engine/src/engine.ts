@@ -119,19 +119,20 @@ export function applyMove(state: GameState, token: number): MoveResult {
   }
   seatRow[token] = pos;
 
-  // Capture (only on the track, outside safe cells)
+  // Capture (only on the track, outside safe cells). Ludo Club: a LONE opponent
+  // token goes home, but a PAIR (two of the opponent's tokens stacked) is
+  // protected — it can't be cut (no blockade / no passage rule here, per config).
   let capture = false;
   const cell = absCell(seat, pos);
   if (cell !== null && !SAFE_CELLS.has(cell)) {
     const opp = otherSeat(seat);
     const oppRow = positions[opp];
     if (oppRow) {
-      oppRow.forEach((oppPos, oi) => {
-        if (absCell(opp, oppPos) === cell) {
-          oppRow[oi] = -1;
-          capture = true;
-        }
-      });
+      const onCell = oppRow.reduce<number[]>((acc, oppPos, oi) => (absCell(opp, oppPos) === cell ? [...acc, oi] : acc), []);
+      if (onCell.length === 1) {
+        oppRow[onCell[0]!] = -1;
+        capture = true;
+      }
     }
   }
 
@@ -174,7 +175,8 @@ export function pickAutoMove(state: GameState, seat: Seat, die: number): number 
     const np = p + die;
     const cell = absCell(seat, np);
     if (cell === null || SAFE_CELLS.has(cell)) return false;
-    return oppRow.some((op) => absCell(opp, op) === cell);
+    // a protected pair (2 opponent tokens on the cell) can't be cut → not a capture
+    return oppRow.filter((op) => absCell(opp, op) === cell).length === 1;
   });
   if (canCapture !== undefined) return canCapture;
 

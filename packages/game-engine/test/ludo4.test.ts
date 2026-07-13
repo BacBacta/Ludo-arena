@@ -66,6 +66,22 @@ describe('4-player engine', () => {
     expect(state.positions[2]![0]).toBe(-1); // captured back to base
   });
 
+  it('a stacked pair is protected from capture', () => {
+    // seat 0 token 0 at rel 2 → +3 = abs 5; seat 2 has a pair on abs 5 (rel 31)
+    const g = newGame4();
+    const g2 = {
+      ...g,
+      positions: [[2, -1, -1, -1], [-1, -1, -1, -1], [31, 31, -1, -1], [-1, -1, -1, -1]],
+      turn: 0,
+      dice: 3,
+      legal: [0],
+      phase: 'awaiting-move' as const,
+    };
+    const { state, events } = applyMove4(g2, 0);
+    expect(events.capture).toBe(false);
+    expect(state.positions[2]!.slice(0, 2)).toEqual([31, 31]); // pair intact
+  });
+
   it('exact count required to finish — an overshoot is not playable', () => {
     const g = newGame4();
     const g2 = { ...g, positions: g.positions.map((r, s) => (s === 0 ? [54, FINISHED, FINISHED, FINISHED] : [...r])) };

@@ -85,6 +85,21 @@ describe('applyRoll / applyMove', () => {
     expect(state.positions[1]![0]).toBe(-1);
     expect(state.turn).toBe(0);
   });
+  it('a stacked pair is protected — a single opponent cannot cut it', () => {
+    // seat 0 token 0 at rel 1 → +2 = abs 3; seat 1 has BOTH tokens on abs 3 (rel 29) = a pair
+    let g: GameState = { ...newGame(), positions: [[1, -1], [29, 29]] };
+    g = applyRoll(g, 2);
+    const { state, events } = applyMove(g, 0);
+    expect(events.capture).toBe(false);
+    expect(state.positions[1]).toEqual([29, 29]); // pair untouched
+  });
+  it('a lone opponent (not a pair) is captured', () => {
+    let g: GameState = { ...newGame(), positions: [[1, -1], [29, -1]] };
+    g = applyRoll(g, 2);
+    const { state, events } = applyMove(g, 0);
+    expect(events.capture).toBe(true);
+    expect(state.positions[1]![0]).toBe(-1);
+  });
   it('no capture on a safe cell', () => {
     // abs 8 is safe. seat 0 rel 8; seat 1: abs 8 = rel (8-26+52)%52 = 34
     let g: GameState = {

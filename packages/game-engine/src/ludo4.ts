@@ -152,18 +152,19 @@ export function applyMove4(g: Game4, token: number): { state: Game4; events: Mov
   pos = pos === -1 ? 0 : pos + die; // exact — legalMoves4 guarantees pos + die <= FINISHED
   row[token] = pos;
 
-  // capture any opponent (any other seat) sharing this non-safe track cell
+  // Capture on this non-safe track cell. Ludo Club: a LONE opponent token is sent
+  // home, but a PAIR of one opponent's tokens is protected (can't be cut). Each
+  // opponent seat is judged independently — singles fall, pairs stand.
   let capture = false;
   const cell = absCell4(seat, pos);
   if (cell !== null && !SAFE_CELLS.has(cell)) {
     positions.forEach((oppRow, oppSeat) => {
       if (oppSeat === seat) return;
-      oppRow.forEach((op, oi) => {
-        if (absCell4(oppSeat, op) === cell) {
-          oppRow[oi] = -1;
-          capture = true;
-        }
-      });
+      const onCell = oppRow.reduce<number[]>((acc, op, oi) => (absCell4(oppSeat, op) === cell ? [...acc, oi] : acc), []);
+      if (onCell.length === 1) {
+        oppRow[onCell[0]!] = -1;
+        capture = true;
+      }
     });
   }
 
@@ -205,7 +206,8 @@ export function pickAutoMove4(g: Game4, seat: number, die: number): number | nul
     if (p < 0) return false;
     const cell = absCell4(seat, p + die);
     if (cell === null || SAFE_CELLS.has(cell)) return false;
-    return g.positions.some((oppRow, os) => os !== seat && oppRow.some((op) => absCell4(os, op) === cell));
+    // a lone opponent token is capturable; a protected pair is not
+    return g.positions.some((oppRow, os) => os !== seat && oppRow.filter((op) => absCell4(os, op) === cell).length === 1);
   });
   if (canCapture !== undefined) return canCapture;
 
