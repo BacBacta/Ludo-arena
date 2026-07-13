@@ -50,7 +50,7 @@ export function TopBar() {
           {/* gray dot + Demo label until a real wallet backs the balance */}
           <span className="topbar__dot" style={walletBacked ? undefined : { background: 'var(--muted)' }} />
           {!walletBacked && <span className="muted">{t('demo')} ·&nbsp;</span>}
-          {fmtCents(balanceCents)} cUSD
+          {fmtCents(balanceCents)} USDT
         </div>
       </div>
     </div>
@@ -216,7 +216,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                       : canBuyTickets
                         ? `${t('skinUnlock')} ${price} 🎟️${cusdBuyable ? ` · ${fmtUsd(cusd)}` : ''}`
                         : cusdBuyable
-                          ? `${fmtUsd(cusd)} cUSD`
+                          ? `${fmtUsd(cusd)} USDT`
                           : t(s.hintKey ?? 'skinSoon')}
                 </small>
                 {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : '🔒'}</span>}

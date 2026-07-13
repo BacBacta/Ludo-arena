@@ -21,7 +21,7 @@ export interface CompiledContract {
   bytecode: Hex;
 }
 
-export function compileAll(): Record<'LudoEscrow' | 'LudoEscrowN' | 'CosmeticsStore' | 'TestUSD', CompiledContract> {
+export function compileAll(): Record<'LudoEscrow' | 'LudoEscrowN' | 'CosmeticsStore' | 'TestUSD' | 'MockUSDT', CompiledContract> {
   const input = {
     language: 'Solidity',
     sources: {
@@ -29,6 +29,7 @@ export function compileAll(): Record<'LudoEscrow' | 'LudoEscrowN' | 'CosmeticsSt
       'LudoEscrowN.sol': { content: readFileSync(join(SRC_DIR, 'LudoEscrowN.sol'), 'utf8') },
       'CosmeticsStore.sol': { content: readFileSync(join(SRC_DIR, 'CosmeticsStore.sol'), 'utf8') },
       'TestUSD.sol': { content: readFileSync(join(SRC_DIR, 'TestUSD.sol'), 'utf8') },
+      'MockUSDT.sol': { content: readFileSync(join(SRC_DIR, 'MockUSDT.sol'), 'utf8') },
     },
     settings: {
       optimizer: { enabled: true, runs: 200 },
@@ -57,5 +58,6 @@ export function compileAll(): Record<'LudoEscrow' | 'LudoEscrowN' | 'CosmeticsSt
     LudoEscrowN: pick('LudoEscrowN.sol', 'LudoEscrowN'),
     CosmeticsStore: pick('CosmeticsStore.sol', 'CosmeticsStore'),
     TestUSD: pick('TestUSD.sol', 'TestUSD'),
+    MockUSDT: pick('MockUSDT.sol', 'MockUSDT'),
   };
 }

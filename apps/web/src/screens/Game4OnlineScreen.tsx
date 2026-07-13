@@ -264,7 +264,7 @@ export function Game4OnlineScreen({
           <div className="g4over__card">
             <div className="g4over__emoji" aria-hidden="true">{iWon ? '🏆' : '🎲'}</div>
             <div className="g4over__title">{iWon ? t('victory') : `${winnerName} — ${t('defeat')}`}</div>
-            <div className="g4over__sub">{iWon && over.payoutCents > 0 ? `+${fmtUsd(over.payoutCents)} cUSD` : t('fourPlayer')}</div>
+            <div className="g4over__sub">{iWon && over.payoutCents > 0 ? `+${fmtUsd(over.payoutCents)} USDT` : t('fourPlayer')}</div>
             {iWon && over.payoutCents > 0 && (
               <div className="muted" style={{ fontSize: 12 }}>{settledTx ? t('settled') : t('stakingHint')}</div>
             )}

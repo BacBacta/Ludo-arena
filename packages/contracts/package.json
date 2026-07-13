@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "deploy": "tsx script/deploy.ts",
+    "switch-stablecoin": "tsx script/switchStablecoin.ts",
     "smoke": "tsx script/smoke.ts",
     "node": "hardhat node",
     "typecheck": "tsc --noEmit"

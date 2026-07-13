@@ -125,7 +125,7 @@ const rakeBps = BigInt(env('RAKE_BPS') ?? '900');
 console.log(`[deploy] network=${networkName} chainId=${preset.chain.id} rpc=${rpc}`);
 console.log(`[deploy] deployer=${account.address} arbiter=${arbiter} treasury=${treasury} rakeBps=${rakeBps}`);
 
-const { LudoEscrow, LudoEscrowN, CosmeticsStore, TestUSD } = compileAll();
+const { LudoEscrow, LudoEscrowN, CosmeticsStore, MockUSDT } = compileAll();
 
 async function deployContract(label: string, abi: Abi, bytecode: Hex, args: unknown[]): Promise<{ address: Address; txHash: Hex }> {
   const txHash = await walletClient.deployContract({ abi, bytecode, args });
@@ -140,10 +140,21 @@ async function deployContract(label: string, abi: Abi, bytecode: Hex, args: unkn
 let stablecoin = (env('STABLECOIN') ?? preset.stablecoin) as Address | undefined;
 let stablecoinTx: Hex | undefined;
 if (!stablecoin) {
-  const deployed = await deployContract('TestUSD', TestUSD.abi, TestUSD.bytecode, []);
+  // Testnet faucet token: a 6-decimal MockUSDT so the flow exercises real USDT
+  // decimals (not TestUSD's 18). Override with STABLECOIN for a real token.
+  const deployed = await deployContract('MockUSDT', MockUSDT.abi, MockUSDT.bytecode, []);
   stablecoin = deployed.address;
   stablecoinTx = deployed.txHash;
 }
+
+// Read the stablecoin's own decimals so cosmetic prices (below) are correct for
+// any token — 6 for USDT, 18 for cUSD/TestUSD. Never assume.
+const ERC20_DECIMALS_ABI = [
+  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
+] as const;
+const stablecoinDecimals = Number(
+  await publicClient.readContract({ address: stablecoin, abi: ERC20_DECIMALS_ABI, functionName: 'decimals' }),
+);
 
 const escrow = await deployContract('LudoEscrow', LudoEscrow.abi, LudoEscrow.bytecode, [
   arbiter,
@@ -167,11 +178,12 @@ const cosmetics = await deployContract('CosmeticsStore', CosmeticsStore.abi, Cos
 
 // Seed the initial cosmetics catalogue (mirrors shared PREMIUM_COSMETICS) so the
 // store is purchasable the moment it's deployed. itemId = keccak256(bytes(id));
-// price = cents → base units at the stablecoin's decimals (TestUSD/cUSD are 18).
+// price = cents → base units at the stablecoin's OWN decimals (read above).
 const COSMETIC_SEED: Array<{ id: string; cents: number }> = [
   { id: 'obsidian', cents: 100 },
   { id: 'aurora', cents: 200 },
 ];
+const priceUnit = 10n ** BigInt(stablecoinDecimals - 2); // cents → base units
 const STORE_SEED_ABI = [
   { type: 'function', name: 'setPrices', stateMutability: 'nonpayable', inputs: [{ name: 'itemIds', type: 'bytes32[]' }, { name: 'prices', type: 'uint256[]' }], outputs: [] },
 ] as const;
@@ -183,7 +195,7 @@ const seedTx = await walletClient.writeContract({
   functionName: 'setPrices',
   args: [
     COSMETIC_SEED.map((c) => keccak256(toBytes(c.id))),
-    COSMETIC_SEED.map((c) => BigInt(c.cents) * 10n ** 16n),
+    COSMETIC_SEED.map((c) => BigInt(c.cents) * priceUnit),
   ],
 });
 await publicClient.waitForTransactionReceipt({ hash: seedTx });
@@ -232,6 +244,7 @@ deployments[networkName] = {
   cosmeticsStore: cosmetics.address,
   cosmeticsStoreTx: cosmetics.txHash,
   stablecoin,
+  stablecoinDecimals,
   ...(stablecoinTx ? { stablecoinIsTestUSD: true, stablecoinTx } : {}),
   arbiter,
   treasury,
