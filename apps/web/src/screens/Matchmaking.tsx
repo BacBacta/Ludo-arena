@@ -3,7 +3,7 @@ import { IconUsers } from '../components/icons';
 import { t } from '../lib/i18n';
 
 export function Matchmaking({ onCancel }: { onCancel(): void }) {
-  const { match, privateCode } = useAppState();
+  const { match, privateCode, botMode } = useAppState();
   const dispatch = useAppDispatch();
 
   const link = privateCode ? `${window.location.origin}${window.location.pathname}#/g/${privateCode}` : '';
@@ -48,7 +48,7 @@ export function Matchmaking({ onCancel }: { onCancel(): void }) {
             </div>
           </div>
         ) : null}
-        {!privateCode && <div>{match ? t('found') : t('searching')}</div>}
+        {!privateCode && <div>{match ? t('found') : botMode ? t('preparingPractice') : t('searching')}</div>}
         {match && (
           <>
             <div className="vs">

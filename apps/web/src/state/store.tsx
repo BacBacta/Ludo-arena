@@ -110,6 +110,8 @@ export interface AppState {
   /** Equipped dice skin id + picker modal state. */
   diceSkin: string;
   diceModalOpen: boolean;
+  /** 4-player mode chooser (practice / free online / real money) open state. */
+  table4Open: boolean;
   /** First-session welcome (E6.4): open until the player has been onboarded. */
   onboardOpen: boolean;
   /** Age (18+) + Terms/Privacy consent, required once before staked play. */
@@ -187,6 +189,7 @@ export const initialState: AppState = {
   toast: null,
   fairModalOpen: false,
   settingsOpen: false,
+  table4Open: false,
   soundOn: soundEnabled(),
   diceSkin: loadSkinId(),
   diceModalOpen: false,
@@ -229,6 +232,7 @@ export type Action =
   | { type: 'TOGGLE_SOUND' }
   | { type: 'SET_DICE_SKIN'; id: string }
   | { type: 'DICE_MODAL'; open: boolean }
+  | { type: 'TABLE4_MODAL'; open: boolean }
   | { type: 'ONBOARD_DONE' }
   | { type: 'LEGAL_MODAL'; open: boolean }
   | { type: 'ACCEPT_LEGAL' }
@@ -335,6 +339,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, diceSkin: a.id };
     case 'DICE_MODAL':
       return { ...s, diceModalOpen: a.open };
+    case 'TABLE4_MODAL':
+      return { ...s, table4Open: a.open };
     case 'ONBOARD_DONE':
       markOnboarded();
       return { ...s, onboardOpen: false };

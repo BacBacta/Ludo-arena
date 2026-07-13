@@ -6,8 +6,9 @@ import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
-import { PREMIUM_SKINS, cosmeticCents } from '@ludo/shared';
-import { cosmeticsCusdAvailable } from '../lib/deployments';
+import { PREMIUM_SKINS, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
+import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
+import { playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
 
 export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
@@ -237,6 +238,68 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
         <div style={{ marginTop: 10, textAlign: 'center' }} className="muted">
           {t('closeHint')}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 4-player mode chooser. The old design hid the free-vs-staked choice inside the
+ * 1v1 stake picker (tapping "4-Player" silently inherited whatever 1v1 stake was
+ * selected — a real-money table could start unannounced). Here the three flavours
+ * are named side by side, with their own stake selection for real money.
+ */
+export function Table4Modal({ onPractice, onFree, onStaked }: {
+  onPractice(): void;
+  onFree(): void;
+  onStaked(stake: number): void;
+}) {
+  const { table4Open, walletBacked } = useAppState();
+  const dispatch = useAppDispatch();
+  const [stake, setStake] = useState<number>(25);
+  const close = (): void => void dispatch({ type: 'TABLE4_MODAL', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(table4Open, close);
+  if (!table4Open) return null;
+  const staked = (ALLOWED_STAKES_CENTS as readonly number[]).filter((s) => s > 0);
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>{t('fourPlayer')}</h3>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t('t4Pick')}</p>
+        <div className="t4modes">
+          <button className="t4mode" onClick={() => { playTap(); onPractice(); }}>
+            <span className="t4mode__ic" aria-hidden="true">🤖</span>
+            <span className="t4mode__txt"><b>{t('t4Practice')}</b><small>{t('t4PracticeD')}</small></span>
+          </button>
+          <button className="t4mode" onClick={() => { playTap(); onFree(); }}>
+            <span className="t4mode__ic" aria-hidden="true">🌍</span>
+            <span className="t4mode__txt"><b>{t('t4FreeOnline')}</b><small>{t('t4FreeOnlineD')}</small></span>
+          </button>
+          {staked4Available && (
+            <div className="t4mode t4mode--real">
+              <div className="t4mode__row">
+                <span className="t4mode__ic" aria-hidden="true">💵</span>
+                <span className="t4mode__txt"><b>{t('t4Real')}</b><small>{t('t4RealD')}</small></span>
+              </div>
+              <div className="t4chips">
+                {staked.map((s) => (
+                  <button
+                    key={s}
+                    className={`t4chip${s === stake ? ' t4chip--sel' : ''}`}
+                    onClick={() => { playTap('select'); setStake(s); }}
+                  >
+                    <b>{s >= 100 ? `$${s / 100}` : `${s}¢`}</b>
+                    <small>{t('win')} {fmtUsd(potCents4(s))}</small>
+                  </button>
+                ))}
+              </div>
+              <button className="btn" style={{ marginTop: 4 }} onClick={() => { playTap(); onStaked(stake); }}>
+                {walletBacked ? `${t('play')} · ${fmtUsd(stake)}` : t('connectWallet')}
+              </button>
+            </div>
+          )}
+        </div>
+        <div style={{ marginTop: 12, textAlign: 'center' }} className="muted">{t('closeHint')}</div>
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
-import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, potCents4, type StakeCents } from '@ludo/shared';
-import { staked4Available } from '../lib/deployments';
+import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@ludo/shared';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
-import { TopBar } from '../components/ui';
+import { TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
 import { playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
@@ -12,25 +11,32 @@ export function Lobby({
   onCreateTable,
   onFreeroll,
   onPlay4,
+  onPractice4,
   onConnectWallet,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
   onFreeroll(): void;
   onPlay4(stake: StakeCents): void;
+  /** Launch the offline 4-player practice game (you + 3 bots). */
+  onPractice4(): void;
   /** Connect MiniPay/injected wallet; resolves true when connected. */
   onConnectWallet(): Promise<boolean>;
 }) {
   const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked } = useAppState();
   const dispatch = useAppDispatch();
 
-  /** Compliance + responsible-gaming gate, also enforced server-side. */
-  function stakeBlockedMsg(): string | null {
-    if (stakeCents === 0) return null;
+  /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
+   *  server-side). Must take the stake as an argument — the 4-player sheet has
+   *  its own stake, decoupled from the 1v1 hero picker, so reading the global
+   *  stakeCents here would gate the wrong amount (and skip the gate entirely
+   *  when the hero picker sits at its default Free/0). */
+  function stakeBlockedMsg(stake: number): string | null {
+    if (stake === 0) return null;
     if (stakingBlocked) return t('geoBlocked');
     if (limits.selfExcludedUntil) return `${t('rgExcludedUntil')} ${limits.selfExcludedUntil}`;
-    if (limits.stakedTodayCents + stakeCents > limits.dailyLimitCents) return t('rgLimitHit');
-    if (balanceCents < stakeCents) return t('insufficient');
+    if (limits.stakedTodayCents + stake > limits.dailyLimitCents) return t('rgLimitHit');
+    if (balanceCents < stake) return t('insufficient');
     return null;
   }
 
@@ -42,7 +48,7 @@ export function Lobby({
       void onConnectWallet(); // attempt (instant inside MiniPay); toasts if none
       return true;
     }
-    const blocked = stakeBlockedMsg();
+    const blocked = stakeBlockedMsg(stake);
     if (blocked) {
       dispatch({ type: 'TOAST', message: blocked });
       return true;
@@ -63,13 +69,17 @@ export function Lobby({
     onCreateTable(stakeCents);
   }
 
-  // 4-player table at the selected stake — but only cUSD-staked once LudoEscrowN
-  // is deployed; until then it stays free (no wallet prompt, no dead option).
-  const stake4 = staked4Available ? stakeCents : 0;
-  function play4() {
-    if (guardStaked(stake4)) return;
-    onPlay4(stake4);
-  }
+  // 4-player: a mode chooser (practice / free online / real money) with its OWN
+  // stake — decoupled from the 1v1 picker so a staked table can never start by
+  // surprise. Each option closes the sheet and launches; staked also guards.
+  const closeSheet = (): void => void dispatch({ type: 'TABLE4_MODAL', open: false });
+  const sheetPractice = (): void => { closeSheet(); onPractice4(); };
+  const sheetFree = (): void => { closeSheet(); onPlay4(0); };
+  const sheetStaked = (s: number): void => {
+    if (guardStaked(s)) return; // not backed / blocked → keep the sheet open to retry
+    closeSheet();
+    onPlay4(s as StakeCents); // s is drawn from ALLOWED_STAKES_CENTS
+  };
 
   const inLeague = league.rank > 0 || league.points > 0;
 
@@ -115,8 +125,8 @@ export function Lobby({
         {t('play')}
         <small>
           {stakeCents === 0
-            ? `${t('free')} · ${t('training')}`
-            : `${fmtUsd(stakeCents)} → ${t('win')} ${fmtUsd(potCents(stakeCents))}`}
+            ? `1v1 · ${t('training')}`
+            : `1v1 · ${fmtUsd(stakeCents)} → ${t('win')} ${fmtUsd(potCents(stakeCents))}`}
         </small>
       </button>
 
@@ -152,13 +162,13 @@ export function Lobby({
           </b>
           {t('freerollDesc')}
         </div>
-        <div className="mini mini--action" onClick={play4}>
+        <div className="mini mini--action" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
           <b>
             <IconUsers className="icon--gold" /> {t('fourPlayer')}
-            <span className="mini__badge">{stake4 === 0 ? t('free') : fmtUsd(stake4)}</span>
+            <span className="mini__badge">▸</span>
           </b>
-          {/* the coupling to the 1v1 stake picker is SAID, not implied */}
-          {stake4 === 0 ? t('fourPlayerDesc') : `${t('win')} ${fmtUsd(potCents4(stake4))} · ${t('sameStakeNote')}`}
+          {/* names the three modes so the choice is explicit, not inherited */}
+          {`${t('t4Practice')} · ${t('t4FreeOnline')} · ${t('t4Real')}`}
         </div>
         <div className="mini mini--action" onClick={createTable}>
           <b>
@@ -250,6 +260,8 @@ export function Lobby({
         {' · '}
         <a onClick={() => dispatch({ type: 'SETTINGS', open: true })}>{t('rgLink')}</a>
       </div>
+
+      <Table4Modal onPractice={sheetPractice} onFree={sheetFree} onStaked={sheetStaked} />
     </div>
   );
 }

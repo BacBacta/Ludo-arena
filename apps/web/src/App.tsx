@@ -65,7 +65,13 @@ export default function App() {
    *  when connected; toasts (unless silent) when no wallet is available. */
   const connectWalletCta = useCallback(
     async (silent = false): Promise<boolean> => {
-      if (walletRef.current) return true;
+      // Already connected: re-read the balance so a transient first-fetch failure
+      // self-heals on retry (else walletBacked could stay false forever and the
+      // staked gate — which reads walletBacked — could never be passed).
+      if (walletRef.current) {
+        void refreshBalance(walletRef.current);
+        return true;
+      }
       const wallet = await connectWallet().catch(() => null);
       if (!wallet) {
         if (!silent) dispatch({ type: 'TOAST', message: t('noWallet') });
@@ -223,9 +229,12 @@ export default function App() {
     async (stake: StakeCents) => {
       sessionRef.current?.dispose();
       sessionRef.current = null;
-      // Free/practice → local 4-player game (you + 3 bots); staked → 2-player PvP.
+      // The hero is always 1v1 (honours the "BLITZ 1V1" kicker): Free launches a
+      // 1v1 practice game vs a bot; staked launches 1v1 PvP. All 4-player modes
+      // live in their own sheet (the free-vs-staked choice used to hide here).
       if (stake === 0) {
-        dispatch({ type: 'START_PRACTICE4' });
+        dispatch({ type: 'START_MATCHMAKING', botMode: true });
+        sessionRef.current = new LocalBotSession(makeEvents(), 0);
         return;
       }
       // Staked game: the wallet is REQUIRED (no simulated demo money) so the
@@ -372,6 +381,12 @@ export default function App() {
   const onPlay = useCallback((stake: StakeCents) => gateStaked(stake, () => void startMatch(stake)), [gateStaked, startMatch]);
   const onCreateTable = useCallback((stake: StakeCents) => gateStaked(stake, () => createTable(stake)), [gateStaked, createTable]);
   const onPlay4 = useCallback((stake: StakeCents) => gateStaked(stake, () => void startOnline4(stake)), [gateStaked, startOnline4]);
+  // Offline 4-player practice (you + 3 bots) — the sheet's "Practice" option.
+  const onPractice4 = useCallback(() => {
+    sessionRef.current?.dispose();
+    sessionRef.current = null;
+    dispatch({ type: 'START_PRACTICE4' });
+  }, [dispatch]);
 
   // Lock a seat's stake in LudoEscrowN for a staked 4-player table (E3.2 for 4p).
   const lockStakeForOnline4 = useCallback(
@@ -448,7 +463,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onConnectWallet={connectWalletCta} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
