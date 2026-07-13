@@ -1054,9 +1054,6 @@ small.muted { font-size: 12px; }
    Perspective is on .die3d-lift (the cube's DIRECT parent) so the 3D isn't
    flattened by the lift's 2D transform. ---- */
 .die3d-stage { position: relative; width: 52px; height: 52px; margin: 0 auto; }
-/* the settled die is a plain flat 2D face (no cube) → always perfectly face-on */
-.die3d-flat { position: absolute; inset: 0; }
-.die3d-flat .die { width: 100%; height: 100%; display: block; }
 /* stronger perspective → the cube shows real depth & edges while it tumbles */
 /* Perspective (real 3D depth) is applied ONLY while the cube tumbles. At rest
    there is NO perspective — a face-on cube then projects orthographically, so
@@ -1073,16 +1070,6 @@ small.muted { font-size: 12px; }
   95% { transform: translateY(0) scale(0.98, 1.02); }
   100% { transform: translateY(0) scale(1); }
 }
-/* isometric tilt applied ONLY while rolling — the cube shows real depth as it
-   tumbles, then eases back to flat so the RESULT is displayed face-on (2D). */
-.die3d-tilt {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-  transform: none;
-  transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.25, 1);
-}
-.die3d-tilt--rolling { transform: rotateX(-17deg) rotateY(23deg); }
 .die3d {
   position: absolute;
   inset: 0;

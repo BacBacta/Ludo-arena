@@ -78,36 +78,23 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rollKey]);
 
-  // The 3D cube is used ONLY while tumbling. At rest we show the plain 2D die
-  // face — so the result is guaranteed perfectly flat (no cube corners / side
-  // faces can ever peek), exactly like Ludo Club's settled die.
-  if (!rolling) {
-    return (
-      <div className="die3d-stage">
-        <div className="die3d-flat">
-          <DieFace value={value} skin={skin} />
-        </div>
-        <span className="die3d__shadow" aria-hidden="true" />
-      </div>
-    );
-  }
-
+  // The cube is ALWAYS mounted so the CSS transition can animate the tumble (a
+  // freshly-mounted element can't transition — that broke the roll). Perspective
+  // is applied ONLY while rolling; at rest there is none, so the face-on cube
+  // projects orthographically and shows ONLY the flat result face. No tilt, so
+  // there's no lean-back-to-flat settle that would flash the side faces/corners.
   return (
     <div className="die3d-stage">
-      <div className="die3d-lift die3d-lift--rolling">
-        {/* isometric tilt while tumbling (shows the cube's depth); on landing the
-            component swaps to the flat 2D face above, so the RESULT is face-on. */}
-        <div className="die3d-tilt die3d-tilt--rolling">
-          <div className="die3d" style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
-            {FACES.map((f) => (
-              <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
-                <DieFace value={f.v} skin={skin} />
-              </div>
-            ))}
-          </div>
+      <div className={`die3d-lift${rolling ? ' die3d-lift--rolling' : ''}`}>
+        <div className="die3d" style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
+          {FACES.map((f) => (
+            <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
+              <DieFace value={f.v} skin={skin} />
+            </div>
+          ))}
         </div>
       </div>
-      <span className="die3d__shadow die3d__shadow--rolling" aria-hidden="true" />
+      <span className={`die3d__shadow${rolling ? ' die3d__shadow--rolling' : ''}`} aria-hidden="true" />
     </div>
   );
 }
