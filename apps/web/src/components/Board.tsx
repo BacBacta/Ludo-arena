@@ -220,6 +220,28 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
   const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
   const positions = useAnimatedPositions(game.positions);
 
+  // Fan out every token sharing a TRACK cell (both colours) so none is hidden.
+  const trackGroups = new Map<number, Array<{ seat: number; token: number }>>();
+  positions.forEach((row, seat) =>
+    row.forEach((pos, token) => {
+      if (pos < 0 || pos > LAST_TRACK_REL) return;
+      const cell = ((SEAT_START[seat] ?? 0) + pos) % TRACK_LEN;
+      const g = trackGroups.get(cell);
+      if (g) g.push({ seat, token });
+      else trackGroups.set(cell, [{ seat, token }]);
+    }),
+  );
+  function fanOffset(seat: number, token: number, pos: number): [number, number] {
+    if (pos < 0 || pos > LAST_TRACK_REL) return [0, 0];
+    const group = trackGroups.get(((SEAT_START[seat] ?? 0) + pos) % TRACK_LEN);
+    if (!group || group.length < 2) return [0, 0];
+    const idx = group.findIndex((o) => o.seat === seat && o.token === token);
+    const n = group.length;
+    const r = n === 2 ? 0.17 : 0.22;
+    const a = (idx / n) * Math.PI * 2 - Math.PI / 2;
+    return [Math.cos(a) * r, Math.sin(a) * r];
+  }
+
   const prevRef = useRef(game.positions);
   const [bursts, setBursts] = useState<Burst[]>([]);
   const [shake, setShake] = useState(false);
@@ -380,8 +402,9 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
               y -= 0.15; // seat the foot-bulb centred on the grey resting disc
             } else {
               [x, y] = tokenXY(seat as Seat, token, pos);
-              const other = row[1 - token];
-              if (pos === other && token === 1) x += 0.3;
+              const [dx, dy] = fanOffset(seat, token, pos);
+              x += dx;
+              y += dy;
             }
             const isMine = (seat as Seat) === mySeat;
             const isMovable = isMine && movable.includes(token);

@@ -4,7 +4,7 @@
  * Same candy visual language as the 2-player <Board>, driven by ludo4 geometry.
  */
 import { useEffect, useRef, useState } from 'react';
-import { SAFE_CELLS, TRACK } from '@ludo/game-engine';
+import { LAST_TRACK_REL, SAFE_CELLS, TRACK } from '@ludo/game-engine';
 import { HOME_COLUMNS4, SEAT_START4, tokenXY4, type Game4 } from '@ludo/game-engine';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playHop } from '../lib/sound';
@@ -193,6 +193,30 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
   const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
   const positions = useAnimated4(game.positions);
 
+  // Group every token by the TRACK cell it shares (across ALL seats) so co-located
+  // tokens of ANY colour fan out and stay individually visible.
+  const trackGroups = new Map<number, Array<{ seat: number; token: number }>>();
+  positions.forEach((row, seat) =>
+    row.forEach((pos, token) => {
+      if (pos < 0 || pos > LAST_TRACK_REL) return; // base/home/centre don't overlap across seats
+      const cell = ((SEAT_START4[seat] ?? 0) + pos) % TRACK.length;
+      const g = trackGroups.get(cell);
+      if (g) g.push({ seat, token });
+      else trackGroups.set(cell, [{ seat, token }]);
+    }),
+  );
+  /** Small circular fan so N tokens on one cell each stay visible (0 for a lone token). */
+  function fanOffset(seat: number, token: number, pos: number): [number, number] {
+    if (pos < 0 || pos > LAST_TRACK_REL) return [0, 0];
+    const group = trackGroups.get(((SEAT_START4[seat] ?? 0) + pos) % TRACK.length);
+    if (!group || group.length < 2) return [0, 0];
+    const idx = group.findIndex((o) => o.seat === seat && o.token === token);
+    const n = group.length;
+    const r = n === 2 ? 0.17 : 0.22;
+    const a = (idx / n) * Math.PI * 2 - Math.PI / 2;
+    return [Math.cos(a) * r, Math.sin(a) * r];
+  }
+
   const prevRef = useRef(game.positions);
   const [bursts, setBursts] = useState<Burst[]>([]);
   const [shake, setShake] = useState(false);
@@ -328,9 +352,10 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
               y -= BASE_FOOT_LIFT; // seat the foot-bulb centred on the grey circle
             } else {
               [x, y] = tokenXY4(seat, token, pos);
-              // fan out co-located tokens of the same seat a touch
-              const dupes = row.filter((p, k) => k < token && p === pos && p >= 0).length;
-              x += dupes * 0.22;
+              // fan out every token sharing this cell (any colour) so all stay visible
+              const [dx, dy] = fanOffset(seat, token, pos);
+              x += dx;
+              y += dy;
             }
             const isMine = seat === mySeat;
             const isMovable = isMine && movable.includes(token);
