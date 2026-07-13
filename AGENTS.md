@@ -32,7 +32,7 @@ npm run dev:server          # server ws://localhost:8787
 
 ## Definition of Done
 
-- `npm run typecheck` and `npm test` pass.
+- `npm run lint`, `npm run typecheck`, and `npm test` pass (all enforced in CI).
 - If the engine is touched: `npm run simulate` passes (0 unfinished games).
 - If the protocol is touched: `docs/PROTOCOL.md` updated.
 - No secret or private key committed (`.env` only, `.env.example` up to date).

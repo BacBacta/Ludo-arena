@@ -91,6 +91,8 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
       id = setTimeout(() => doMove(gameRef.current, seat, game.legal[0]!), settle + FORCED_MOVE_MS);
     }
     return () => clearTimeout(id);
+    // doRoll/doMove are stable via gameRef; re-run only when the game state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game]);
 
   const myTurn = game.turn === mySeat;

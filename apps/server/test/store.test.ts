@@ -175,8 +175,8 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
 
       // distinct weekly points in Silver (default division 1)
       const pts = [50, 40, 30, 20, 10];
-      let leadState = await store.addLeaguePoints(ids[0]!, pts[0]!);
-      for (let i = 1; i < ids.length; i++) leadState = await store.addLeaguePoints(ids[i]!, pts[i]!);
+      await store.addLeaguePoints(ids[0]!, pts[0]!);
+      for (let i = 1; i < ids.length; i++) await store.addLeaguePoints(ids[i]!, pts[i]!);
 
       const top = await store.getLeague(ids[0]!);
       expect(top).toMatchObject({ division: 1, points: 50, rank: 1 });

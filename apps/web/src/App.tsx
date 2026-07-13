@@ -8,7 +8,7 @@ import {
   type SessionEvents,
   type WalletAuth,
 } from './lib/session';
-import { fmtUsd, saveRetention, useAppDispatch, useAppState } from './state/store';
+import { saveRetention, useAppDispatch, useAppState } from './state/store';
 import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
