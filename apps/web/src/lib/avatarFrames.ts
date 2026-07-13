@@ -43,6 +43,14 @@ export function frameClass(id: string | undefined): string {
   return fid === 'none' ? '' : `avframe avframe--${fid}`;
 }
 
+/** Ring-only variant (box-shadow, no layout props) — for avatars that already
+ *  own their sizing/shape (the in-game corner cards), so the ring is purely
+ *  additive and can't disturb the countdown ring or seat scaling. */
+export function frameRing(id: string | undefined): string {
+  const fid = id && (AVATAR_FRAMES as readonly string[]).includes(id) ? id : 'none';
+  return fid === 'none' ? '' : `avframe--${fid}`;
+}
+
 const FRAME_KEY = 'ludo.avatarFrame';
 
 export function loadFrameId(): string {

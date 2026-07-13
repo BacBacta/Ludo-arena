@@ -1154,7 +1154,7 @@ function resumedGame(s: Session): ResumedGame | undefined {
     state: s.room.getState(),
     stakeCents: s.room.stakeCents,
     potCents: potCents(s.room.stakeCents),
-    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined },
+    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame },
     fairnessCommit: s.room.fairness.commit,
   };
 }
@@ -1388,7 +1388,7 @@ function matchFoundMsg(gameId: string, seat: Seat, opp: Session, stake: StakeCen
     t: 'match.found',
     gameId,
     seat,
-    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined },
+    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame },
     stakeCents: stake,
     potCents: pot,
     fairnessCommit: commit,
@@ -1523,7 +1523,7 @@ function startRoom4(humans: Session[]): void {
   for (let i = 0; i < TABLE4.seats; i++) {
     const h = humans[i];
     if (h) {
-      seats.push({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined });
+      seats.push({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
       const bot = BOT4_NAMES[i % BOT4_NAMES.length]!;
@@ -1604,7 +1604,7 @@ function startStakedRoom4(humans: Session[], stake: number): void {
   const rake = stake * 4 - pot;
   const seatSeeds = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
   const fairness = createFairness4(seatSeeds);
-  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined }));
+  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame }));
   pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, fairness });
   // count each seat's stake toward the daily limit (E5.2)
   void Promise.all(humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), stake))).catch((e) => console.error('[4p] dailyStake', e));
@@ -1646,7 +1646,7 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
 /** All 4 stakes Active → create + start the Room4, settling the winner on win. */
 function startStaked4Room(p: PendingStaked4): void {
   pendingStaked4.delete(p.gameId);
-  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined }));
+  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame }));
   const room = new Room4(p.gameId, seats, p.fairness, 0, 0, p.pot, p.rake);
   room.onResult = (r) => {
     recordRoom4Stats(p.humans, r.winnerSeat, r.seats);

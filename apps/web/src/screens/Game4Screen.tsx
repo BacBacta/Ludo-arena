@@ -24,13 +24,14 @@ const PLAYERS = [
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
 
 export function Game4Screen({ onLeave }: { onLeave(): void }) {
-  const { balanceCents, profile } = useAppState();
+  const { balanceCents, profile, avatarFrame } = useAppState();
   const dispatch = useAppDispatch();
   const mySeat = 0;
   // Premium corner avatars carry a country flag: bots have fixed flags; my seat
   // uses my real identity flag, falling back to the generic globe.
   const seatFlag = (seat: number): string =>
     (seat === mySeat ? profile.flag : '') || PLAYERS[seat]?.flag || '🌍';
+  const seatFrame = (seat: number): string | undefined => (seat === mySeat ? avatarFrame : undefined);
 
   const [game, setGame] = useState<Game4>(newGame4);
   const gameRef = useRef(game);
@@ -147,12 +148,12 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         {/* top corner avatars: Ana (left) / Young (right); die appears beside the active one */}
         <div className="avrow">
           <div className="avrow__side">
-            <SeatAvatar name="Ana" flag={seatFlag(1)} active={activeSeat === 1} />
+            <SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} active={activeSeat === 1} />
             {activeSeat === 1 && <SeatDie value={dieValue} rollKey={rollKey} />}
           </div>
           <div className="avrow__side">
             {activeSeat === 2 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <SeatAvatar name="Young" flag={seatFlag(2)} active={activeSeat === 2} />
+            <SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} active={activeSeat === 2} />
           </div>
         </div>
 
@@ -166,7 +167,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         {/* bottom corner avatars: YOU (left) / Dragan (right) */}
         <div className="avrow">
           <div className="avrow__side">
-            <SeatAvatar name="YOU" flag={seatFlag(0)} active={myTurn} />
+            <SeatAvatar name="YOU" flag={seatFlag(0)} frame={seatFrame(0)} active={myTurn} />
             {myTurn && (
               <button
                 className="ludodie ludodie--tap"
@@ -180,7 +181,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           </div>
           <div className="avrow__side">
             {activeSeat === 3 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <SeatAvatar name="Dragan" flag={seatFlag(3)} active={activeSeat === 3} />
+            <SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} active={activeSeat === 3} />
           </div>
         </div>
       </div>

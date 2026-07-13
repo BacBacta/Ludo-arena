@@ -24,6 +24,8 @@ export interface Client {
   name: string;
   elo: number;
   flag: string;
+  /** Equipped avatar frame (cosmetic); shown on the opponent's in-game corner. */
+  frame?: string;
 }
 
 export interface RoomResult {

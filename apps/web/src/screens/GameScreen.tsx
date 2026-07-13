@@ -7,6 +7,7 @@ import { Die3D } from '../components/Die3D';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
 import { EmoteBar, EmoteFloat } from '../components/Emote';
 import { skinById } from '../lib/diceSkins';
+import { frameRing } from '../lib/avatarFrames';
 import { playDice } from '../lib/sound';
 import { t } from '../lib/i18n';
 
@@ -60,6 +61,7 @@ function useTumble(rollIndex: number, vibrate: boolean): number | null {
 function AvatarCard({
   initial,
   flag,
+  frame,
   color,
   active,
   deadlineTs,
@@ -68,6 +70,8 @@ function AvatarCard({
   /** Country flag emoji; when present it replaces the plain initial for a
    *  framed, identity-rich avatar (Ludo-Club style). */
   flag?: string;
+  /** Equipped avatar frame id → a cosmetic ring around the card. */
+  frame?: string;
   color: string;
   active: boolean;
   deadlineTs: number | null;
@@ -78,7 +82,7 @@ function AvatarCard({
     ? `conic-gradient(${low ? 'var(--danger)' : 'var(--accent)'} ${frac * 360}deg, rgba(255,255,255,.35) 0deg)`
     : 'rgba(255,255,255,.4)';
   return (
-    <div className={`avcard${active ? ' avcard--turn' : ''}${low ? ' ring--low' : ''}`} style={{ background: ring }}>
+    <div className={`avcard${active ? ' avcard--turn' : ''}${low ? ' ring--low' : ''} ${frameRing(frame)}`} style={{ background: ring }}>
       <div className="avcard__face" style={{ background: color }}>
         {flag ? <span className="avcard__flag">{flag}</span> : initial}
       </div>
@@ -100,7 +104,7 @@ export function GameScreen({
   /** Tap the opponent's avatar → their public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn, profile } =
+  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn, profile, avatarFrame } =
     useAppState();
   const dispatch = useAppDispatch();
   const skin = skinById(diceSkin);
@@ -172,6 +176,7 @@ export function GameScreen({
               <AvatarCard
                 initial={match.opponent.name.slice(0, 1).toUpperCase()}
                 flag={match.opponent.flag}
+                frame={match.opponent.frame}
                 color="var(--p2)"
                 active={!myTurn}
                 deadlineTs={turnDeadlineTs}
@@ -194,7 +199,7 @@ export function GameScreen({
         <div className="gamecorner gamecorner--bottom">
           <div className="cornerstack">
             <EmoteFloat seat={mySeat} />
-            <AvatarCard initial={(profile.name || t('you')).slice(0, 1).toUpperCase()} flag={profile.flag} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
+            <AvatarCard initial={(profile.name || t('you')).slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {myTurn && !handoff && (
               <button
                 className="dicebtn"
