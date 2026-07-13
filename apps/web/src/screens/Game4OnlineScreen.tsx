@@ -8,12 +8,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
 import { Die3D } from '../components/Die3D';
 import { SeatAvatar, SeatDie, WHITE_DIE } from '../components/Seat4';
-import { IconMenu, IconTicket } from '../components/icons';
-import { FREEROLL4, type Player4Info } from '@ludo/shared';
+import { IconMenu } from '../components/icons';
+import type { Player4Info } from '@ludo/shared';
 import type { Game4 } from '@ludo/game-engine';
 import { Remote4, type Match4Info, type Over4Info } from '../lib/remote4';
 import { playCapture, playDice, playWin } from '../lib/sound';
-import { useAppDispatch } from '../state/store';
+import { fmtUsd, useAppDispatch } from '../state/store';
 import { t } from '../lib/i18n';
 
 type Status = 'connecting' | 'waiting' | 'playing' | 'over';
@@ -28,15 +28,11 @@ export function Game4OnlineScreen({
   onLeave,
   serverUrl,
   walletAddress,
-  tickets,
-  onSyncTickets,
   onToast,
 }: {
   onLeave(): void;
   serverUrl: string;
   walletAddress?: string;
-  tickets: number;
-  onSyncTickets(total: number): void;
   onToast(message: string): void;
 }) {
   const dispatch = useAppDispatch();
@@ -50,6 +46,7 @@ export function Game4OnlineScreen({
   const [shown, setShown] = useState<Roll4 | null>(null);
   const [over, setOver] = useState<Over4Info | null>(null);
   const [rolling, setRolling] = useState(false);
+  const [potCents, setPotCents] = useState(0); // cUSD pot (0 = free table)
 
   const mySeatRef = useRef(mySeat);
   mySeatRef.current = mySeat;
@@ -79,6 +76,7 @@ export function Game4OnlineScreen({
         onMatch: (m: Match4Info) => {
           setPlayers(m.players);
           setMySeat(m.seat);
+          setPotCents(m.potCents);
         },
         onState: (state) => {
           setGame(state);
@@ -108,10 +106,6 @@ export function Game4OnlineScreen({
             winFired.current = true;
             playWin();
           }
-        },
-        onTickets: (total, reason) => {
-          onSyncTickets(total);
-          if (reason === 'freeroll-win') onToast(`${t('freerollWonToast')} +${FREEROLL4.winnerTickets} 🎟️`);
         },
         onError: (message) => {
           onToast(message);
@@ -208,8 +202,9 @@ export function Game4OnlineScreen({
           <button className="chromebtn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
             <IconMenu />
           </button>
-          <div className="coinchip">
-            <IconTicket /> {tickets}
+          {/* cUSD pot chip — hidden on a free table (keeps the top bar balanced) */}
+          <div className="coinchip" style={{ visibility: potCents > 0 ? 'visible' : 'hidden' }}>
+            <span className="coinchip__c" /> {fmtUsd(potCents)}
           </div>
           <button className="chromebtn" aria-label="leave" onClick={onLeave}>
             ✕
@@ -236,10 +231,8 @@ export function Game4OnlineScreen({
           <div className="g4over__card">
             <div className="g4over__emoji" aria-hidden="true">{iWon ? '🏆' : '🎲'}</div>
             <div className="g4over__title">{iWon ? t('victory') : `${winnerName} — ${t('defeat')}`}</div>
-            <div className="g4over__sub">{iWon ? `+${over.prizeTickets} 🎟️` : t('fourPlayer')}</div>
-            {tickets >= FREEROLL4.entryTickets && (
-              <button className="btn" onClick={connect}>{t('rematch')}</button>
-            )}
+            <div className="g4over__sub">{iWon && over.payoutCents > 0 ? `+${fmtUsd(over.payoutCents)} cUSD` : t('fourPlayer')}</div>
+            <button className="btn" onClick={connect}>{t('rematch')}</button>
             <button className="btn btn--ghost" onClick={onLeave}>{t('home')}</button>
           </div>
         </div>

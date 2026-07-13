@@ -39,6 +39,9 @@ export class Room4 {
   readonly gameId: string;
   readonly entryTickets: number;
   readonly prizeTickets: number;
+  /** cUSD payout to the winner + rake (0 for free/ticket tables). */
+  readonly payoutCents: number;
+  readonly rakeCents: number;
   readonly fairness: Fairness4;
   private state: Game4 = newGame4();
   private seats: Seat4[];
@@ -50,12 +53,22 @@ export class Room4 {
   onResult?: (r: Room4Result) => void;
   onEnd?: (room: Room4) => void;
 
-  constructor(gameId: string, seats: Seat4[], fairness: Fairness4, entryTickets: number, prizeTickets: number) {
+  constructor(
+    gameId: string,
+    seats: Seat4[],
+    fairness: Fairness4,
+    entryTickets: number,
+    prizeTickets: number,
+    payoutCents = 0,
+    rakeCents = 0,
+  ) {
     this.gameId = gameId;
     this.seats = seats;
     this.fairness = fairness;
     this.entryTickets = entryTickets;
     this.prizeTickets = prizeTickets;
+    this.payoutCents = payoutCents;
+    this.rakeCents = rakeCents;
   }
 
   players(): Player4Info[] {
@@ -222,6 +235,8 @@ export class Room4 {
       t: 'game.over4',
       winner: winnerSeat,
       prizeTickets: this.prizeTickets,
+      payoutCents: this.payoutCents,
+      rakeCents: this.rakeCents,
       fairnessReveal: { serverSeed: this.fairness.serverSeed, seeds: this.fairness.seeds },
     });
     this.onResult?.({ gameId: this.gameId, winnerSeat, seats: this.seats, fairness: this.fairness });

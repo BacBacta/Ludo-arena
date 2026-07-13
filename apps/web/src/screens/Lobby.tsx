@@ -115,16 +115,10 @@ export function Lobby({
           </b>
           {t('freerollDesc')}
         </div>
-        <div
-          className={`mini mini--action${tickets < 1 ? ' mini--dim' : ''}`}
-          onClick={() => {
-            if (tickets < 1) dispatch({ type: 'TOAST', message: t('freerollNeedTicket') });
-            else onPlay4();
-          }}
-        >
+        <div className="mini mini--action" onClick={onPlay4}>
           <b>
             <IconUsers className="icon--gold" /> {t('fourPlayer')}
-            <span className="mini__badge">🎟️ {tickets}</span>
+            <span className="mini__badge">{t('free')}</span>
           </b>
           {t('fourPlayerDesc')}
         </div>

@@ -367,8 +367,6 @@ export default function App() {
           onLeave={() => dispatch({ type: 'GO_LOBBY' })}
           serverUrl={SERVER_URL}
           walletAddress={walletRef.current?.address}
-          tickets={state.tickets}
-          onSyncTickets={(total) => dispatch({ type: 'TICKETS', total })}
           onToast={(message) => dispatch({ type: 'TOAST', message })}
         />
       )}

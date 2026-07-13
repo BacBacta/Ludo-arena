@@ -17,14 +17,15 @@ export interface Match4Info {
   gameId: string;
   seat: number;
   players: Player4Info[];
-  entryTickets: number;
-  prizeTickets: number;
+  stakeCents: number; // 0 = free table; >0 = cUSD stake per seat
+  potCents: number; // winner's cUSD payout (0 for free)
   fairnessCommit: string;
 }
 
 export interface Over4Info {
   winner: number;
-  prizeTickets: number;
+  payoutCents: number; // winner's cUSD payout (0 for free)
+  rakeCents: number;
   fairnessReveal: { serverSeed: string; seeds: string[] };
 }
 
@@ -37,9 +38,7 @@ export interface Remote4Events {
   onMoved(seat: number, token: number, capture: boolean, state: Game4): void;
   onTurn(seat: number, deadlineTs: number): void;
   onOver(info: Over4Info): void;
-  /** Ticket total from the server (entry-spend sync, or a win payout). */
-  onTickets(total: number, reason: 'sync' | 'freeroll-win'): void;
-  /** A server error (no ticket, bad state) — terminal for this session. */
+  /** A server error (bad state) — terminal for this session. */
   onError(message: string): void;
   /** The socket could not be reached / dropped before/after the game. */
   onGone(): void;
@@ -57,6 +56,8 @@ export class Remote4 {
     private readonly ev: Remote4Events,
     private readonly serverUrl: string,
     private readonly walletAddress?: string,
+    /** 0 = free table; >0 = cUSD stake per seat. */
+    private readonly stakeCents: number = 0,
   ) {
     this.entropy = randomHex(32);
     // Commit to our entropy (hash) before connecting: the server uses each seat's
@@ -88,7 +89,7 @@ export class Remote4 {
         wallet: this.walletAddress,
         fingerprint: deviceFingerprint(),
       });
-      this.send({ t: 'queue.join4' });
+      this.send({ t: 'queue.join4', stakeCents: this.stakeCents });
     };
     ws.onclose = () => {
       clearTimeout(failTimer);
@@ -125,8 +126,8 @@ export class Remote4 {
           gameId: msg.gameId,
           seat: msg.seat,
           players: msg.players,
-          entryTickets: msg.entryTickets,
-          prizeTickets: msg.prizeTickets,
+          stakeCents: msg.stakeCents,
+          potCents: msg.potCents,
           fairnessCommit: msg.fairnessCommit,
         });
         break;
@@ -144,10 +145,7 @@ export class Remote4 {
         break;
       case 'game.over4':
         this.inGame = false;
-        this.ev.onOver({ winner: msg.winner, prizeTickets: msg.prizeTickets, fairnessReveal: msg.fairnessReveal });
-        break;
-      case 'tickets.grant':
-        if (msg.reason === 'sync' || msg.reason === 'freeroll-win') this.ev.onTickets(msg.total, msg.reason);
+        this.ev.onOver({ winner: msg.winner, payoutCents: msg.payoutCents, rakeCents: msg.rakeCents, fairnessReveal: msg.fairnessReveal });
         break;
       case 'error':
         this.ev.onError(msg.message);

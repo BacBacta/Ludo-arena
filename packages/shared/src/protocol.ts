@@ -44,6 +44,11 @@ export const FREEROLL = { entryTickets: 1, winnerTickets: 3 } as const;
  *  (1 ticket sinks per game — the ticket-economy equivalent of the rake). */
 export const FREEROLL4 = { seats: 4, entryTickets: 1, winnerTickets: 3, botFillMs: 12_000 } as const;
 
+/** 4-player table config. A FREE table fills empty seats with bots after
+ *  `botFillMs`; a cUSD-STAKED table needs 4 real stakers (bots have no funds)
+ *  and is cancelled + refunded if it doesn't fill within `stakedFillMs`. */
+export const TABLE4 = { seats: 4, botFillMs: 12_000, stakedFillMs: 60_000 } as const;
+
 /** Premium dice skins unlockable by SPENDING freeroll tickets (a cosmetic sink
  *  that gives tickets a second use; the cUSD purchase rail lands with mainnet).
  *  Maps skin id → ticket price. Server-authoritative: the server spends the
@@ -148,8 +153,10 @@ export type ClientMsg =
   // once, right after match.found, before the game's dice are finalized.
   | { t: 'game.entropy'; entropy: string }
   | { t: 'queue.join'; stake: StakeCents; freeroll?: boolean }
-  // 4-player online Sit&Go queue (ticket entry). roll/move/resign are reused.
-  | { t: 'queue.join4' }
+  // 4-player online table. stakeCents 0 (or omitted) = FREE table (bot-fill);
+  // an allowed cUSD stake = staked table (4 real stakers, escrow pot).
+  // roll/move/resign are reused.
+  | { t: 'queue.join4'; stakeCents?: number }
   | { t: 'queue.leave' }
   // Private tables (E4.4): create returns a code; a friend joins with it.
   | { t: 'table.create'; stake: StakeCents }
@@ -264,14 +271,16 @@ export type ServerMsg =
   | { t: 'skin.owned'; ownedIds: string[]; tickets: number }
   // Responsible-gaming state after hello or a limits.set (E5.2).
   | { t: 'limits.update'; limits: LimitsState }
-  // ---- 4-player online (Game4 state; seats 0-3; ticket pot) ----
+  // ---- 4-player online (Game4 state; seats 0-3) ----
   | {
       t: 'match.found4';
       gameId: string;
       seat: number; // 0-3
       players: Player4Info[]; // index = seat
-      entryTickets: number;
-      prizeTickets: number;
+      entryTickets: number; // legacy ticket entry (0 for free/cUSD tables)
+      prizeTickets: number; // legacy ticket prize (0 for free/cUSD tables)
+      stakeCents: number; // 0 = free table; >0 = cUSD stake per seat
+      potCents: number; // winner's cUSD payout (4*stake - rake); 0 for free
       fairnessCommit: string;
     }
   | { t: 'game.state4'; state: Game4 }
@@ -281,9 +290,15 @@ export type ServerMsg =
   | {
       t: 'game.over4';
       winner: number; // 0-3
-      prizeTickets: number; // granted to the winner (0 for non-winners' view)
+      prizeTickets: number; // legacy ticket prize (0 for free/cUSD)
+      payoutCents: number; // winner's cUSD payout (0 for free)
+      rakeCents: number; // rake taken from the pot (0 for free)
       fairnessReveal: { serverSeed: string; seeds: string[] };
     }
+  // 4-player on-chain settlement confirmed (arbiter settle() mined).
+  | { t: 'game.settled4'; gameId: string; txHash: string; winner: number }
+  // 4-player stake refunded on-chain (table didn't fill, or a stuck game).
+  | { t: 'game.refunded4'; gameId: string; txHash: string }
   | { t: 'error'; code: ErrorCode; message: string }
   | { t: 'pong' };
 
@@ -350,6 +365,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'game.move':
       return Number.isInteger(m.token) && m.token >= 0 && m.token <= 3 ? m : null;
     case 'queue.join4':
+      // free (0/undefined) or a supported cUSD stake only
+      return m.stakeCents === undefined || (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stakeCents) ? m : null;
     case 'queue.leave':
     case 'game.roll':
     case 'game.resign':
