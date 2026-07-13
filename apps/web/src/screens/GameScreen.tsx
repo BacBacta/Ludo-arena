@@ -59,11 +59,15 @@ function useTumble(rollIndex: number, vibrate: boolean): number | null {
  */
 function AvatarCard({
   initial,
+  flag,
   color,
   active,
   deadlineTs,
 }: {
   initial: string;
+  /** Country flag emoji; when present it replaces the plain initial for a
+   *  framed, identity-rich avatar (Ludo-Club style). */
+  flag?: string;
   color: string;
   active: boolean;
   deadlineTs: number | null;
@@ -76,7 +80,7 @@ function AvatarCard({
   return (
     <div className={`avcard${active ? ' avcard--turn' : ''}${low ? ' ring--low' : ''}`} style={{ background: ring }}>
       <div className="avcard__face" style={{ background: color }}>
-        {initial}
+        {flag ? <span className="avcard__flag">{flag}</span> : initial}
       </div>
     </div>
   );
@@ -93,7 +97,7 @@ export function GameScreen({
   onLeave(): void;
   onEmote(id: string): void;
 }) {
-  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn } =
+  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn, profile } =
     useAppState();
   const dispatch = useAppDispatch();
   const skin = skinById(diceSkin);
@@ -159,6 +163,7 @@ export function GameScreen({
             )}
             <AvatarCard
               initial={match.opponent.name.slice(0, 1).toUpperCase()}
+              flag={match.opponent.flag}
               color="var(--p2)"
               active={!myTurn}
               deadlineTs={turnDeadlineTs}
@@ -171,7 +176,7 @@ export function GameScreen({
           mySeat={mySeat}
           onTokenTap={onMove}
           banners={[
-            { seat: 0, name: t('you').toUpperCase(), flag: '🌍', active: myTurn },
+            { seat: 0, name: (profile.name || t('you')).toUpperCase(), flag: profile.flag || '🌍', active: myTurn },
             { seat: 1, name: match.opponent.name, flag: match.opponent.flag, active: !myTurn },
           ]}
         />
@@ -180,7 +185,7 @@ export function GameScreen({
         <div className="gamecorner gamecorner--bottom">
           <div className="cornerstack">
             <EmoteFloat seat={mySeat} />
-            <AvatarCard initial={t('you').slice(0, 1).toUpperCase()} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
+            <AvatarCard initial={(profile.name || t('you')).slice(0, 1).toUpperCase()} flag={profile.flag} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {myTurn && !handoff && (
               <button
                 className="dicebtn"

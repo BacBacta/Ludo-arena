@@ -235,12 +235,11 @@ export default function App() {
     async (stake: StakeCents) => {
       sessionRef.current?.dispose();
       sessionRef.current = null;
-      // The hero is always 1v1 (honours the "BLITZ 1V1" kicker): Free launches a
-      // 1v1 practice game vs a bot; staked launches 1v1 PvP. All 4-player modes
-      // live in their own sheet (the free-vs-staked choice used to hide here).
+      // Free PLAY launches a full 4-player practice game (you + 3 bots) — a lively
+      // board is the default free experience. Staked PLAY is 1v1 PvP. The other
+      // 4-player modes (free online, real money) live in the "4-player" sheet.
       if (stake === 0) {
-        dispatch({ type: 'START_MATCHMAKING', botMode: true });
-        sessionRef.current = new LocalBotSession(makeEvents(), 0);
+        dispatch({ type: 'START_PRACTICE4' });
         return;
       }
       // Staked game: the wallet is REQUIRED (no simulated demo money) so the

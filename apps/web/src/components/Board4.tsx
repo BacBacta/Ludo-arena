@@ -132,7 +132,8 @@ function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [st
       {/* white home square with a soft drop edge */}
       <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill="rgba(16,24,48,.16)" />
       <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill="#ffffff" />
-      {/* solid flat grey resting discs (Ludo Club) — sized to frame the peg foot */}
+      {/* All four resting discs — the 4-player engine gives each seat four base
+          tokens, so every disc frames an actual peg foot (Ludo Club). */}
       {slots.map(([sx, sy], i) => (
         <circle key={i} cx={sx} cy={sy} r={0.56} fill="#d4dae6" />
       ))}

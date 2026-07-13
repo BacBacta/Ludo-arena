@@ -145,23 +145,42 @@ function starPoints(cx: number, cy: number, r: number): string {
 
 /** Chunky glossy Ludo-Club peg: bulb head, flared skirt, cast shadow, hot specular. */
 function Pawn({ seat }: { seat: Seat }) {
-  const grad = seat === 0 ? 'url(#pegBlue)' : 'url(#pegGreen)';
-  const dark = SEAT_COLOR[seat]![2];
+  const c = SEAT_COLOR[seat] ?? BLUE;
+  const dark = c[2];
+  const rim = c[0];
+  const gid = `peg-${seat}`;
+  const hid = `peghead-${seat}`;
   return (
     <>
+      <defs>
+        {/* body: thin light rim at the top, then the TRUE colour dominates */}
+        <linearGradient id={gid} x1="0" y1="0" x2="0.12" y2="1">
+          <stop offset="0%" stopColor={c[0]} />
+          <stop offset="20%" stopColor={c[1]} />
+          <stop offset="100%" stopColor={c[2]} />
+        </linearGradient>
+        {/* head: radial glossy sphere, hot-spot upper-left (matches Board4) */}
+        <radialGradient id={hid} cx="34%" cy="27%" r="82%">
+          <stop offset="0%" stopColor={c[0]} />
+          <stop offset="34%" stopColor={c[1]} />
+          <stop offset="100%" stopColor={c[2]} />
+        </radialGradient>
+      </defs>
       {/* soft contact shadow, directly under the foot */}
       <ellipse cx={0.02} cy={0.36} rx={0.3} ry={0.08} fill="rgba(16,24,48,.3)" />
       {/* teardrop: ball top blending smoothly into a flared cone foot */}
       <path
         d="M -0.3 0.28 C -0.3 0.06 -0.17 -0.06 -0.13 -0.24 C -0.1 -0.4 0.1 -0.4 0.13 -0.24 C 0.17 -0.06 0.3 0.06 0.3 0.28 Q 0.3 0.36 0 0.36 Q -0.3 0.36 -0.3 0.28 Z"
-        fill={grad}
+        fill={`url(#${gid})`}
         stroke={dark}
         strokeWidth={0.026}
       />
-      <circle cx={0} cy={-0.28} r={0.17} fill={grad} stroke={dark} strokeWidth={0.026} />
-      <path d="M -0.13 -0.24 Q 0 -0.14 0.13 -0.24" fill={grad} stroke="none" />
+      <circle cx={0} cy={-0.28} r={0.17} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.026} />
+      <path d="M -0.13 -0.24 Q 0 -0.14 0.13 -0.24" fill={`url(#${hid})`} stroke="none" />
+      {/* glossy highlights: hot-spot on the ball + streak down the cone + rim reflection */}
       <ellipse cx={-0.065} cy={-0.34} rx={0.065} ry={0.05} fill="#ffffff" opacity={0.95} />
       <path d="M -0.12 0.26 C -0.16 0.08 -0.09 -0.06 -0.06 -0.16" fill="none" stroke="#ffffff" strokeWidth={0.045} strokeLinecap="round" opacity={0.45} />
+      <path d="M 0.145 -0.33 A 0.17 0.17 0 0 1 0.06 -0.13" fill="none" stroke={rim} strokeWidth={0.03} strokeLinecap="round" opacity={0.85} />
     </>
   );
 }
@@ -192,9 +211,10 @@ function Quadrant({
       {/* big white home square, lifted with a soft cast shadow */}
       {!inactive && <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.55} fill="rgba(16,24,48,.18)" />}
       <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="#ffffff" opacity={inactive ? 0.85 : 1} />
-      {/* four solid grey resting discs sized to frame the peg foot (matches Board4) */}
+      {/* Only the TWO lower resting discs — the tokens rest there (2-token blitz),
+          so empty upper discs no longer read as missing pieces. */}
       {!inactive &&
-        slots.map(([sx, sy], i) => (
+        slots.slice(2).map(([sx, sy], i) => (
           <circle key={i} cx={sx} cy={sy} r={0.56} fill="#d4dae6" />
         ))}
     </g>
@@ -286,20 +306,6 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         aria-label="Ludo board"
         shapeRendering="geometricPrecision"
       >
-        <defs>
-          {/* compressed highlight so the peg reads the TRUE saturated colour (not washed) */}
-          <linearGradient id="pegBlue" x1="0" y1="0" x2="0.12" y2="1">
-            <stop offset="0%" stopColor="#63C4EC" />
-            <stop offset="20%" stopColor="#1F8FD4" />
-            <stop offset="100%" stopColor="#105F97" />
-          </linearGradient>
-          <linearGradient id="pegGreen" x1="0" y1="0" x2="0.12" y2="1">
-            <stop offset="0%" stopColor="#5FCE79" />
-            <stop offset="20%" stopColor="#25A544" />
-            <stop offset="100%" stopColor="#16792E" />
-          </linearGradient>
-        </defs>
-
         {/* flat white plate (edge-to-edge; the wrapper gives the soft shadow) */}
         <rect x={0} y={0} width={15} height={15} rx={0.4} fill="#ffffff" />
 

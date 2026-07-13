@@ -570,6 +570,20 @@ small.muted { font-size: 12px; }
   border: 2.5px solid #ffffff;
   box-shadow: 0 6px 14px rgba(15, 26, 68, 0.35);
 }
+/* country flag on a light inner disc — the seat colour reads as a premium frame */
+.avcard__flag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #ffffff, #e7ecf7);
+  font-size: 23px;
+  line-height: 1;
+  text-shadow: none;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.85), inset 0 -2px 4px rgba(15, 26, 68, 0.18);
+}
 
 /* bottom action bar: sound · verify · balance · dice skins · menu */
 .gamebar {
@@ -886,8 +900,8 @@ small.muted { font-size: 12px; }
 @keyframes emoteRow { from { opacity: 0; transform: translateX(-50%) scale(0.85); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
 
 /* floating emoji over an avatar; the parent is position:relative */
-.cornerstack, .seatav { position: relative; }
-.seatav { display: inline-block; }
+.cornerstack, .emoteanchor { position: relative; }
+.emoteanchor { display: inline-block; }
 .emotefloat {
   position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
   font-size: 30px; pointer-events: none; z-index: 6; will-change: transform, opacity;
@@ -1305,6 +1319,7 @@ small.muted { font-size: 12px; }
   transition: transform 0.2s ease;
 }
 .seatav svg { width: 78%; height: 78%; }
+.seatav__flag { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 30px; line-height: 1; text-shadow: 0 1px 2px rgba(8, 16, 44, 0.25); }
 .seatav--active { transform: scale(1.1); box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.9), 0 5px 12px rgba(8, 16, 44, 0.45); }
 /* the die is a clean floating 3D cube (no navy slot) — matches Ludo Club */
 

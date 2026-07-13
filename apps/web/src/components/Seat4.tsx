@@ -19,13 +19,17 @@ export const WHITE_DIE: DiceSkin = {
 };
 
 /** Grey placeholder avatar tile at a board corner; the active seat lifts slightly. */
-export function SeatAvatar({ name, active }: { name: string; active: boolean }) {
+export function SeatAvatar({ name, flag, active }: { name: string; flag?: string; active: boolean }) {
   return (
     <div className={`seatav${active ? ' seatav--active' : ''}`} aria-label={name}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx={12} cy={9} r={4.4} fill="#aab6c9" />
-        <path d="M3.5 21c1.4-4 5-6 8.5-6s7.1 2 8.5 6z" fill="#aab6c9" />
-      </svg>
+      {flag ? (
+        <span className="seatav__flag">{flag}</span>
+      ) : (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx={12} cy={9} r={4.4} fill="#aab6c9" />
+          <path d="M3.5 21c1.4-4 5-6 8.5-6s7.1 2 8.5 6z" fill="#aab6c9" />
+        </svg>
+      )}
     </div>
   );
 }

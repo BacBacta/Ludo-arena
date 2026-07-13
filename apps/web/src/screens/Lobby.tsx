@@ -135,7 +135,7 @@ export function Lobby({
         {t('play')}
         <small>
           {stakeCents === 0
-            ? `1v1 · ${t('training')}`
+            ? `${t('training')} · ${t('fourPlayer')}`
             : `1v1 · ${fmtUsd(stakeCents)} → ${t('win')} ${fmtUsd(potCents(stakeCents))}`}
         </small>
       </button>

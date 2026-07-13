@@ -216,6 +216,7 @@ export function Game4OnlineScreen({
   function renderCorner(seat: number): JSX.Element {
     const active = activeTurn === seat;
     const name = seat === mySeat ? t('you') : players[seat]?.name ?? '';
+    const flag = players[seat]?.flag;
     const myTurnHere = seat === mySeat && activeTurn === mySeat && status === 'playing';
     const dieHere = shown?.seat === seat;
 
@@ -228,9 +229,9 @@ export function Game4OnlineScreen({
     ) : null;
 
     const av = (
-      <span className="seatav">
+      <span className="emoteanchor">
         <EmoteFloat seat={seat} />
-        <SeatAvatar name={name} active={active} />
+        <SeatAvatar name={name} flag={flag} active={active} />
       </span>
     );
     return <div className="avrow__side">{CORNER[seat] === 'left' ? <>{av}{inner}</> : <>{inner}{av}</>}</div>;
