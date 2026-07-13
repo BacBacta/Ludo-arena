@@ -218,21 +218,37 @@ export class PersistentStore implements Store {
 
   async getOrCreatePlayer(
     id: string,
-    defaults: { wallet?: string; name: string; flag: string; frame?: string },
-  ): Promise<{ elo: number; gamesPlayed: number; wins: number }> {
-    const res = await this.pool.query<{ elo: number; games_played: number; wins: number }>(
-      // New row: default to 'none' (the column is NOT NULL, so never insert a
-      // raw NULL). Conflict: keep the existing frame when this hello omits one
-      // ($6 null) — a limits/skin one-shot must not wipe an equipped frame.
+    defaults: {
+      wallet?: string;
+      name: string;
+      flag: string;
+      frame?: string;
+      customName?: string;
+      customFlag?: string;
+    },
+  ): Promise<{ elo: number; gamesPlayed: number; wins: number; name: string; flag: string }> {
+    const res = await this.pool.query<{ elo: number; games_played: number; wins: number; name: string; flag: string }>(
+      // frame ($6): NOT NULL column → COALESCE to 'none' on insert; keep existing
+      // on a frame-less hello. name/flag: an edited profile ($7/$8) overwrites the
+      // stored identity; a hello without edits keeps it (COALESCE), so a returning
+      // player never loses their custom name/flag to the derived fallback.
       `INSERT INTO players (id, wallet, name, flag, pid, equipped_frame)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'none'))
+       VALUES ($1, $2, COALESCE($7, $3), COALESCE($8, $4), $5, COALESCE($6, 'none'))
        ON CONFLICT (id) DO UPDATE SET updated_at = now(), pid = EXCLUDED.pid,
-         equipped_frame = COALESCE($6, players.equipped_frame)
-       RETURNING elo, games_played, wins`,
-      [id, defaults.wallet ?? null, defaults.name, defaults.flag, pidFor(id), defaults.frame ?? null],
+         equipped_frame = COALESCE($6, players.equipped_frame),
+         name = COALESCE($7, players.name),
+         flag = COALESCE($8, players.flag)
+       RETURNING elo, games_played, wins, name, flag`,
+      [id, defaults.wallet ?? null, defaults.name, defaults.flag, pidFor(id), defaults.frame ?? null, defaults.customName ?? null, defaults.customFlag ?? null],
     );
     const r = res.rows[0];
-    return { elo: r?.elo ?? 1200, gamesPlayed: r?.games_played ?? 0, wins: r?.wins ?? 0 };
+    return {
+      elo: r?.elo ?? 1200,
+      gamesPlayed: r?.games_played ?? 0,
+      wins: r?.wins ?? 0,
+      name: r?.name ?? defaults.customName ?? defaults.name,
+      flag: r?.flag ?? defaults.customFlag ?? defaults.flag,
+    };
   }
 
   async recordWin(id: string): Promise<void> {

@@ -149,18 +149,25 @@ export function Lobby({
       {/* Stable identity card: same name + country flag every session (wallet-keyed),
           with ELO + W/L. The player's public identity — never a raw 0x address. */}
       {profile.name && (
-        <div className="card profilecard">
+        <button
+          className="card profilecard"
+          onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
+          aria-label={t('editProfile')}
+        >
           <div className="profilecard__id">
             <span className={`profilecard__flag ${frameClass(avatarFrame)}`}>{profile.flag}</span>
-            <b>{profile.name}</b>
-            <span className="profilecard__div">{DIVISIONS[league.division] ?? ''}</span>
+            <div className="profilecard__meta">
+              <b>{profile.name}</b>
+              <span className="profilecard__div">{DIVISIONS[league.division] ?? ''}</span>
+            </div>
           </div>
           <div className="profilecard__stats">
             <span><b>{profile.elo}</b> ELO</span>
             <span className="profilecard__w">{profile.wins} {t('winsShort')}</span>
             <span className="profilecard__l">{Math.max(0, profile.games - profile.wins)} {t('lossesShort')}</span>
           </div>
-        </div>
+          <span className="profilecard__edit" aria-hidden="true">✏️</span>
+        </button>
       )}
 
       {/* Rivals & recent opponents (C4): who you've faced in 1v1 + YOUR local

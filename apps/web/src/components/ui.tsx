@@ -7,7 +7,8 @@ import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
 import { FRAMES, frameClass } from '../lib/avatarFrames';
-import { DIVISIONS, PREMIUM_SKINS, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
+import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
+import { DIVISIONS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
 import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
@@ -323,6 +324,84 @@ export function ProfileSheet() {
           </>
         )}
         <button className="btn btn--ghost" style={{ width: '100%', marginTop: 12 }} onClick={close}>{t('cancel')}</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Editable profile (E-social): set your display name (server-sanitized), pick a
+ * country flag, and jump to the cosmetics for a frame. Opens from the identity
+ * card; saving pushes to the server, which echoes back the effective name.
+ */
+export function ProfileEditor({ onSave }: { onSave(name: string, flag: string): void }) {
+  const { profileEditOpen, profile, avatarFrame } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'PROFILE_EDIT', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(profileEditOpen, close);
+  const [name, setName] = useState(profile.name);
+  const [flag, setFlag] = useState(profile.flag);
+  useEffect(() => {
+    if (profileEditOpen) {
+      setName(profile.name);
+      setFlag(profile.flag);
+    }
+  }, [profileEditOpen, profile.name, profile.flag]);
+  if (!profileEditOpen) return null;
+  const trimmed = name.trim();
+  const valid = trimmed.length >= PROFILE_NAME_MIN && trimmed.length <= PROFILE_NAME_MAX;
+  const save = (): void => {
+    if (!valid) return;
+    onSave(trimmed, flag);
+    close();
+  };
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card profileeditor" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>{t('editProfile')}</h3>
+        <div className="pe__preview">
+          <span className={`pe__flag ${frameClass(avatarFrame)}`} aria-hidden="true">{flag}</span>
+          <b>{trimmed || '—'}</b>
+        </div>
+
+        <label className="pe__label" htmlFor="pe-name">{t('displayName')}</label>
+        <input
+          id="pe-name"
+          className="pe__input"
+          value={name}
+          maxLength={PROFILE_NAME_MAX}
+          autoComplete="off"
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('displayName')}
+        />
+        <small className="muted">{t('nameHint')}</small>
+
+        <label className="pe__label">{t('country')}</label>
+        <div className="pe__flags">
+          <button
+            className={`pe__flagbtn${flag === GLOBE_FLAG ? ' pe__flagbtn--on' : ''}`}
+            title={t('other')}
+            onClick={() => setFlag(GLOBE_FLAG)}
+          >
+            {GLOBE_FLAG}
+          </button>
+          {COUNTRIES.map((c) => (
+            <button
+              key={c.code}
+              className={`pe__flagbtn${flag === c.flag ? ' pe__flagbtn--on' : ''}`}
+              title={c.name}
+              onClick={() => setFlag(c.flag)}
+            >
+              {c.flag}
+            </button>
+          ))}
+        </div>
+
+        <button className="btn btn--ghost" onClick={() => { close(); dispatch({ type: 'DICE_MODAL', open: true }); }}>
+          {t('framesAndDice')}
+        </button>
+        <div style={{ height: 8 }} />
+        <button className="btn" disabled={!valid} onClick={save}>{t('save')}</button>
       </div>
     </div>
   );

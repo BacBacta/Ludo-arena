@@ -110,15 +110,26 @@ export class MemoryStore implements Store {
 
   async getOrCreatePlayer(
     id: string,
-    defaults: { wallet?: string; name: string; flag: string; frame?: string },
-  ): Promise<{ elo: number; gamesPlayed: number; wins: number }> {
+    defaults: {
+      wallet?: string;
+      name: string;
+      flag: string;
+      frame?: string;
+      customName?: string;
+      customFlag?: string;
+    },
+  ): Promise<{ elo: number; gamesPlayed: number; wins: number; name: string; flag: string }> {
     const existing = this.players.get(id);
     if (existing) {
       if (defaults.frame !== undefined) existing.frame = defaults.frame; // equip re-syncs on hello
-      return { elo: existing.elo, gamesPlayed: existing.gamesPlayed ?? 0, wins: existing.wins ?? 0 };
+      if (defaults.customName) existing.name = defaults.customName; // edited profile overwrites
+      if (defaults.customFlag) existing.flag = defaults.customFlag;
+      return { elo: existing.elo, gamesPlayed: existing.gamesPlayed ?? 0, wins: existing.wins ?? 0, name: existing.name, flag: existing.flag };
     }
-    this.players.set(id, {
+    const row = {
       ...defaults,
+      name: defaults.customName ?? defaults.name,
+      flag: defaults.customFlag ?? defaults.flag,
       frame: defaults.frame ?? 'none',
       elo: 1200,
       gamesPlayed: 0,
@@ -135,8 +146,9 @@ export class MemoryStore implements Store {
       ownedSkins: [],
       stakedTodayCents: 0,
       dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS,
-    });
-    return { elo: 1200, gamesPlayed: 0, wins: 0 };
+    };
+    this.players.set(id, row);
+    return { elo: 1200, gamesPlayed: 0, wins: 0, name: row.name, flag: row.flag };
   }
   async updateElo(id: string, elo: number): Promise<void> {
     const row = this.players.get(id);

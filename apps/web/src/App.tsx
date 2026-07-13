@@ -15,8 +15,9 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { DiceModal, FairnessModal, LegalModal, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
-import { sendLimits, buySkin, claimCosmetic, fetchProfile } from './lib/session';
+import { DiceModal, FairnessModal, LegalModal, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { sendLimits, buySkin, claimCosmetic, fetchProfile, pushIdentity } from './lib/session';
+import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet } from './lib/minipay';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWin } from './lib/sound';
@@ -376,6 +377,23 @@ export default function App() {
     [dispatch],
   );
 
+  /** Save an edited profile: cache locally + optimistic UI, then push to the
+   *  server (which sanitizes the name) and adopt whatever it echoes back. */
+  const onSaveProfile = useCallback(
+    (name: string, flag: string) => {
+      saveCustomIdentity(name, flag);
+      dispatch({ type: 'PROFILE', profile: { name, flag } });
+      void pushIdentity(SERVER_URL, name, flag, walletRef.current?.address).then((eff) => {
+        if (eff) {
+          dispatch({ type: 'PROFILE', profile: { name: eff.name, flag: eff.flag } });
+          saveCustomIdentity(eff.name, eff.flag);
+        }
+      });
+      dispatch({ type: 'TOAST', message: t('profileSaved') });
+    },
+    [dispatch],
+  );
+
   const roll = useCallback(() => sessionRef.current?.roll(), []);
   const move = useCallback((token: number) => sessionRef.current?.move(token), []);
   // True direct rematch: reuse the still-open session so the server can re-pair
@@ -538,6 +556,7 @@ export default function App() {
       />
       <FairnessModal />
       <ProfileSheet />
+      <ProfileEditor onSave={onSaveProfile} />
       <DiceModal onBuy={purchaseSkin} onBuyCusd={purchaseCosmeticCusd} />
       <SettingsModal onApply={applyLimits} />
       <RealityCheckModal

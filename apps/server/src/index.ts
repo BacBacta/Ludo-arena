@@ -17,6 +17,8 @@ import {
   leaguePointsForWin,
   MAX_DAILY_GAMES_VS_SAME,
   parseClientMsg,
+  PROFILE_NAME_MIN,
+  PROFILE_NAME_MAX,
   potCents,
   potCents4,
   TABLE_CODE_CHARS,
@@ -276,6 +278,35 @@ function deriveIdentity(idKey: string, country: string | undefined): { name: str
     name: NAMES[h % NAMES.length] ?? 'Player',
     flag: country ? countryFlag(country) : (FLAGS[h % FLAGS.length] ?? '🌍'),
   };
+}
+
+/** Basic substring blocklist for the custom-name filter. Not exhaustive — a
+ *  starting moderation floor for a free-text handle in a real-money game (the
+ *  broader anti-harassment stance stays: emotes/chat remain closed sets). */
+const NAME_BLOCKLIST = [
+  'fuck', 'shit', 'bitch', 'cunt', 'nigg', 'faggot', 'rape', 'nazi', 'hitler',
+  'admin', 'moderator', 'support', 'official', 'ludoarena',
+];
+
+/**
+ * Sanitize an edited display name. Returns a clean name, or undefined when the
+ * input is unusable → the caller falls back to the derived name (the connection
+ * is NEVER rejected over a cosmetic field). Strips control chars, collapses
+ * whitespace, bounds length, blocks URLs/handles (impersonation/spam) and a
+ * basic profanity list, and restricts to letters/digits/space + a few marks.
+ */
+function sanitizeName(raw: string | undefined): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  // eslint-disable-next-line no-control-regex
+  let s = raw.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim();
+  if (s.length < PROFILE_NAME_MIN) return undefined;
+  s = s.slice(0, PROFILE_NAME_MAX).trim();
+  if (s.length < PROFILE_NAME_MIN) return undefined;
+  if (/https?:|www\.|@|\.(com|net|org|io|xyz|gg|me)\b/i.test(s)) return undefined;
+  const lower = s.toLowerCase();
+  if (NAME_BLOCKLIST.some((w) => lower.includes(w))) return undefined;
+  if (!/^[\p{L}\p{N} _.'-]+$/u.test(s)) return undefined;
+  return s;
 }
 
 function toRecord(s: Session): SessionRecord {
@@ -596,12 +627,20 @@ wss.on('connection', (ws, req) => {
         resumedSession.ip = ip;
         resumedSession.miniPay = msg.miniPay === true;
         if (msg.frame !== undefined) resumedSession.frame = msg.frame;
+        // Profile edit on a resumed session: apply the sanitized custom identity
+        // (anon → session-only; wallet → persisted + re-read below).
+        const rCustomName = sanitizeName(msg.name);
+        const rCustomFlag = msg.flag;
+        if (rCustomName) resumedSession.name = rCustomName;
+        if (rCustomFlag) resumedSession.flag = rCustomFlag;
         await recordConsent(resumedSession, msg.consent);
         const rProof = issueWalletNonce(resumedSession);
         const rpid = playerId(resumedSession.wallet, resumedSession.id);
         const rStats = resumedSession.wallet
-          ? await store.getOrCreatePlayer(rpid, { wallet: resumedSession.wallet, name: resumedSession.name, flag: resumedSession.flag, frame: msg.frame })
-          : { gamesPlayed: 0, wins: 0 };
+          ? await store.getOrCreatePlayer(rpid, { wallet: resumedSession.wallet, name: resumedSession.name, flag: resumedSession.flag, frame: msg.frame, customName: rCustomName, customFlag: rCustomFlag })
+          : { gamesPlayed: 0, wins: 0, name: resumedSession.name, flag: resumedSession.flag };
+        resumedSession.name = rStats.name;
+        resumedSession.flag = rStats.flag;
         send(ws, {
           t: 'hello.ok',
           sessionToken: resumedSession.id,
@@ -630,12 +669,19 @@ wss.on('connection', (ws, req) => {
       // DERIVED from the stable key (wallet → same name/flag every session),
       // not randomised per connection.
       const idKey = playerId(wallet, id);
-      const { name, flag } = deriveIdentity(idKey, country);
-      // Wallet-linked players keep their ELO across sessions (Postgres).
+      // Identity is DERIVED from the stable key (same name/flag every session) —
+      // UNLESS the player edited their profile: a sanitized custom name and/or a
+      // valid custom flag override the derived default and are persisted.
+      const derived = deriveIdentity(idKey, country);
+      const customName = sanitizeName(msg.name);
+      const customFlag = msg.flag; // parse validated it is a flag emoji (or undefined)
+      // Wallet-linked players keep their ELO + custom identity across sessions.
       const stats = wallet
-        ? await store.getOrCreatePlayer(idKey, { wallet, name, flag, frame: msg.frame })
-        : { elo: 1200, gamesPlayed: 0, wins: 0 };
+        ? await store.getOrCreatePlayer(idKey, { wallet, name: derived.name, flag: derived.flag, frame: msg.frame, customName, customFlag })
+        : { elo: 1200, gamesPlayed: 0, wins: 0, name: customName ?? derived.name, flag: customFlag ?? derived.flag };
       const elo = stats.elo;
+      const name = stats.name;
+      const flag = stats.flag;
       session = makeSession(id, ws, {
         id,
         wallet,

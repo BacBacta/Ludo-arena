@@ -97,8 +97,17 @@ export interface Store {
   // Players & games (durable)
   getOrCreatePlayer(
     id: string,
-    defaults: { wallet?: string; name: string; flag: string; frame?: string },
-  ): Promise<{ elo: number; gamesPlayed: number; wins: number }>;
+    defaults: {
+      wallet?: string;
+      name: string; // derived fallback used only when creating a fresh row
+      flag: string;
+      frame?: string;
+      /** Custom display name/flag from an edited profile: overwrites the stored
+       *  value when present; when absent the stored value is kept (COALESCE). */
+      customName?: string;
+      customFlag?: string;
+    },
+  ): Promise<{ elo: number; gamesPlayed: number; wins: number; name: string; flag: string }>;
   updateElo(id: string, elo: number): Promise<void>;
   /** Increment a player's win count (profile W/L). Called for the winner. */
   recordWin(id: string): Promise<void>;

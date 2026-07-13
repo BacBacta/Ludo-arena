@@ -137,6 +137,21 @@ export function isAvatarFrame(id: string): id is AvatarFrame {
   return (AVATAR_FRAMES as readonly string[]).includes(id);
 }
 
+/** Editable-profile display-name bounds (shared by the client input + the server
+ *  sanitizer). Short enough to fit the identity chip; long enough for a handle. */
+export const PROFILE_NAME_MIN = 3;
+export const PROFILE_NAME_MAX = 16;
+
+/** A country flag emoji is either the neutral globe or exactly TWO Unicode
+ *  regional-indicator symbols (U+1F1E6–U+1F1FF). This lets the server validate a
+ *  custom flag without a 250-entry allowlist (any real country flag passes; a
+ *  crafted emoji / text does not). Shared so the client picker agrees. */
+export function isFlagEmoji(s: string): boolean {
+  if (s === '🌍') return true;
+  const cps = [...s].map((c) => c.codePointAt(0) ?? 0);
+  return cps.length === 2 && cps.every((cp) => cp >= 0x1f1e6 && cp <= 0x1f1ff);
+}
+
 /** Responsible gaming (E5.2): default/max daily stake cap per player, in cents.
  *  Raised from $2 to $5 so the top ($5) tier is playable within a day's cap while
  *  still bounding exposure; a player may always lower their own cap in Settings. */
@@ -236,6 +251,13 @@ export type ClientMsg =
       fingerprint?: string;
       /** Equipped avatar frame id (cosmetic, client-authoritative like skins). */
       frame?: string;
+      /** Custom display name (E-social: editable profile). Server SANITIZES it
+       *  (length, charset, profanity/URL filter); an invalid value falls back to
+       *  the derived name — the connection is never rejected over a cosmetic name. */
+      name?: string;
+      /** Custom country flag emoji (editable profile). Server validates it is a
+       *  real flag; otherwise the derived/geo flag is used. */
+      flag?: string;
       // 18+/ToS consent the client has recorded locally; the server persists it
       // (per wallet) and requires a match to the current TOS_VERSION for staked play.
       consent?: { tosVersion: string; age18: boolean };
@@ -480,6 +502,11 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       // Frame is a cosmetic id: drop an unknown value rather than reject the
       // whole hello (a client on a newer catalog must still connect).
       if (m.frame !== undefined && (typeof m.frame !== 'string' || !isAvatarFrame(m.frame))) m.frame = undefined;
+      // Custom name: loose bound here (≤64 raw); the server sanitizes/filters.
+      // Drop obviously-bad values instead of rejecting the connection.
+      if (m.name !== undefined && (typeof m.name !== 'string' || m.name.length > 64)) m.name = undefined;
+      // Custom flag: must be a real flag emoji, else drop → server derives.
+      if (m.flag !== undefined && (typeof m.flag !== 'string' || !isFlagEmoji(m.flag))) m.flag = undefined;
       return m;
     }
     case 'wallet.prove':

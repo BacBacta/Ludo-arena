@@ -187,6 +187,7 @@ export interface AppState {
   diceModalOpen: boolean;
   /** 4-player mode chooser (practice / free online / real money) open state. */
   table4Open: boolean;
+  profileEditOpen: boolean;
   /** First-session welcome (E6.4): open until the player has been onboarded. */
   onboardOpen: boolean;
   /** Age (18+) + Terms/Privacy consent, required once before staked play. */
@@ -269,6 +270,7 @@ export const initialState: AppState = {
   fairModalOpen: false,
   settingsOpen: false,
   table4Open: false,
+  profileEditOpen: false,
   soundOn: soundEnabled(),
   diceSkin: loadSkinId(),
   avatarFrame: loadFrameId(),
@@ -320,6 +322,7 @@ export type Action =
   | { type: 'EQUIP_FRAME'; id: string }
   | { type: 'DICE_MODAL'; open: boolean }
   | { type: 'TABLE4_MODAL'; open: boolean }
+  | { type: 'PROFILE_EDIT'; open: boolean }
   | { type: 'ONBOARD_DONE' }
   | { type: 'LEGAL_MODAL'; open: boolean }
   | { type: 'ACCEPT_LEGAL' }
@@ -468,6 +471,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, diceModalOpen: a.open };
     case 'TABLE4_MODAL':
       return { ...s, table4Open: a.open };
+    case 'PROFILE_EDIT':
+      return { ...s, profileEditOpen: a.open };
     case 'ONBOARD_DONE':
       markOnboarded();
       return { ...s, onboardOpen: false };

@@ -12,6 +12,7 @@ import type { GameState, Seat } from '@ludo/game-engine';
 import { deviceFingerprint } from './fingerprint';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
+import { loadCustomIdentity } from './profile';
 import { sha256Hex } from './fairnessVerify';
 import {
   WALK_STEP_MS,
@@ -259,6 +260,65 @@ export type JoinIntent =
   | { kind: 'join'; code: string };
 
 const TOKEN_KEY = 'ludo.sessionToken';
+
+/**
+ * One-shot profile save (edited name/flag). Resumes the player's session so the
+ * server persists it to their wallet row, then resolves with the SERVER-VALIDATED
+ * name/flag from hello.ok (the sanitizer may have changed the typed name), or null
+ * on timeout. The caller adopts whatever the server returns.
+ */
+export function pushIdentity(
+  serverUrl: string,
+  name: string,
+  flag: string,
+  walletAddress?: string,
+): Promise<{ name: string; flag: string } | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(serverUrl);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: { name: string; flag: string } | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 4000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    ws.onopen = () => {
+      // NO sessionToken: resuming would rebind (hijack) a live game socket onto
+      // this throwaway one. The wallet alone keys the persisted row, so the
+      // server saves the edited identity to the right player without a resume.
+      ws.send(JSON.stringify({ t: 'hello', entropy, wallet: walletAddress, miniPay: isMiniPay(), name, flag }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'hello.ok') {
+        clearTimeout(timer);
+        done(msg.name && msg.flag ? { name: msg.name, flag: msg.flag } : null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 
 /**
  * One-shot public-profile fetch (tap-on-avatar, E-social). Deliberately does
@@ -564,6 +624,7 @@ export class RemoteSession implements GameSession {
         consent: this.auth?.consent,
         miniPay: isMiniPay(), // trusted address → server accepts it without SIWE
         frame: loadFrameId(), // equipped avatar frame (cosmetic, broadcast to others)
+        ...loadCustomIdentity(), // edited display name / country flag
       });
       if (initial) {
         if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });
