@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { TOS_VERSION, type StakeCents } from '@ludo/shared';
+import { TOS_VERSION, cosmeticCents, type StakeCents } from '@ludo/shared';
 import {
   LocalBotSession,
   RemoteSession,
@@ -16,8 +16,8 @@ import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { DiceModal, FairnessModal, LegalModal, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
-import { sendLimits, buySkin } from './lib/session';
-import { connectWallet, lockStake, lockStake4, walletBalanceCents, type Wallet } from './lib/minipay';
+import { sendLimits, buySkin, claimCosmetic } from './lib/session';
+import { connectWallet, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet } from './lib/minipay';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWin } from './lib/sound';
 import { recordGameResult } from './lib/diceSkins';
@@ -358,6 +358,40 @@ export default function App() {
     [dispatch],
   );
 
+  // Buy a cosmetic with cUSD (rec 6): pay on-chain via the CosmeticsStore, then
+  // hand the tx to the server to unlock ownership. Dormant until the store is
+  // deployed (the cUSD button only shows when cosmeticsCusdAvailable).
+  const purchaseCosmeticCusd = useCallback(
+    async (id: string) => {
+      const priceCents = cosmeticCents(id);
+      if (priceCents <= 0) return;
+      try {
+        const wallet = walletRef.current ?? (await connectWallet());
+        if (!wallet) {
+          dispatch({ type: 'TOAST', message: t('offline') });
+          return;
+        }
+        walletRef.current = wallet;
+        dispatch({ type: 'STAKING', status: 'joining' });
+        const { buyTxHash } = await buyCosmetic(wallet, id, priceCents);
+        dispatch({ type: 'STAKING', status: 'idle' });
+        const res = await claimCosmetic(SERVER_URL, buyTxHash, id, wallet.address);
+        if (res) {
+          dispatch({ type: 'OWNED_SKINS', ownedIds: res.ownedIds, tickets: res.tickets });
+          dispatch({ type: 'SET_DICE_SKIN', id });
+          dispatch({ type: 'TOAST', message: t('skinUnlocked') });
+          void refreshBalance(wallet);
+        } else {
+          dispatch({ type: 'TOAST', message: t('offline') });
+        }
+      } catch {
+        dispatch({ type: 'STAKING', status: 'idle' });
+        dispatch({ type: 'TOAST', message: t('offline') });
+      }
+    },
+    [dispatch, refreshBalance],
+  );
+
   const applyLimits = useCallback(
     async (payload: { dailyLimitCents?: number; selfExcludeDays?: number }) => {
       const limits = await sendLimits(SERVER_URL, payload, walletRef.current?.address);
@@ -423,7 +457,7 @@ export default function App() {
         }}
       />
       <FairnessModal />
-      <DiceModal onBuy={purchaseSkin} />
+      <DiceModal onBuy={purchaseSkin} onBuyCusd={purchaseCosmeticCusd} />
       <SettingsModal onApply={applyLimits} />
       <RealityCheckModal
         minutesPlayed={Math.max(1, Math.round((Date.now() - sessionStart.current) / 60_000))}

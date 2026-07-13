@@ -59,7 +59,9 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS division INTEGER NOT NULL DEFAULT 1
 ALTER TABLE players ADD COLUMN IF NOT EXISTS weekly_points INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS players_league_idx ON players(division, weekly_points DESC);
 
--- Anti-tilt cashback (E4.5).
+-- Anti-tilt (E4.5): rewards are freeroll TICKETS, not cash. loss_streak drives
+-- the grant; lost_rake_cents/cashback_cents are legacy columns from the retired
+-- cents-cashback design, kept only to avoid a destructive migration — never paid.
 ALTER TABLE players ADD COLUMN IF NOT EXISTS loss_streak INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS lost_rake_cents INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS cashback_cents INTEGER NOT NULL DEFAULT 0;

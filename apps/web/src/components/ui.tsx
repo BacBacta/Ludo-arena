@@ -6,7 +6,8 @@ import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
-import { PREMIUM_SKINS } from '@ludo/shared';
+import { PREMIUM_SKINS, cosmeticCents } from '@ludo/shared';
+import { cosmeticsCusdAvailable } from '../lib/deployments';
 import { t } from '../lib/i18n';
 
 export function TopBar() {
@@ -72,7 +73,7 @@ export function Toast() {
   );
 }
 
-const LIMIT_OPTIONS = [25, 50, 100, 200];
+const LIMIT_OPTIONS = [100, 200, 500];
 const EXCLUDE_OPTIONS = [1, 7, 30];
 
 export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?: number; selfExcludeDays?: number }): void }) {
@@ -162,8 +163,9 @@ export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: n
   );
 }
 
-/** Dice-skin picker: progression rewards now, paid skins once payments land. */
-export function DiceModal({ onBuy }: { onBuy(skinId: string): void }) {
+/** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
+ *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
+export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {
   const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins } = useAppState();
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
@@ -180,23 +182,29 @@ export function DiceModal({ onBuy }: { onBuy(skinId: string): void }) {
         </p>
         <div className="skingrid">
           {DICE_SKINS.map((s) => {
-            const price = PREMIUM_SKINS[s.id]; // premium skins are unlocked by tickets
+            const price = PREMIUM_SKINS[s.id]; // premium skins are ticket-priced
             const owned = ownedSkins.includes(s.id);
             const unlocked = owned || (price === undefined && s.unlocked(ctx));
             const equipped = s.id === diceSkin;
-            const canBuy = price !== undefined && !owned;
+            const canBuyTickets = price !== undefined && !owned;
+            const ticketAffordable = canBuyTickets && tickets >= price;
+            // cUSD buy is a fallback path, live only once the store is deployed.
+            const cusd = cosmeticCents(s.id);
+            const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            // onClick precedence: equip → ticket-buy (if affordable) → cUSD-buy.
+            const onClick = unlocked
+              ? () => dispatch({ type: 'SET_DICE_SKIN', id: s.id })
+              : ticketAffordable
+                ? () => onBuy(s.id)
+                : cusdBuyable
+                  ? () => onBuyCusd(s.id)
+                  : undefined;
             return (
               <button
                 key={s.id}
                 className={`skin${equipped ? ' skin--on' : ''}${unlocked ? '' : ' skin--locked'}`}
-                disabled={canBuy && tickets < price}
-                onClick={
-                  unlocked
-                    ? () => dispatch({ type: 'SET_DICE_SKIN', id: s.id })
-                    : canBuy && tickets >= price
-                      ? () => onBuy(s.id)
-                      : undefined
-                }
+                disabled={!unlocked && !ticketAffordable && !cusdBuyable}
+                onClick={onClick}
               >
                 <DieFace value={6} skin={s} />
                 <b>{s.name}</b>
@@ -205,11 +213,13 @@ export function DiceModal({ onBuy }: { onBuy(skinId: string): void }) {
                     ? t('skinEquipped')
                     : unlocked
                       ? t('skinTap')
-                      : canBuy
-                        ? `${t('skinUnlock')} ${price} 🎟️`
-                        : t(s.hintKey ?? 'skinSoon')}
+                      : canBuyTickets
+                        ? `${t('skinUnlock')} ${price} 🎟️${cusdBuyable ? ` · ${fmtUsd(cusd)}` : ''}`
+                        : cusdBuyable
+                          ? `${fmtUsd(cusd)} cUSD`
+                          : t(s.hintKey ?? 'skinSoon')}
                 </small>
-                {!unlocked && <span className="skin__lock">{canBuy ? '🎟️' : '🔒'}</span>}
+                {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : '🔒'}</span>}
               </button>
             );
           })}

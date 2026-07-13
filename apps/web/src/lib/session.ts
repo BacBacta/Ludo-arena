@@ -366,6 +366,71 @@ export function buySkin(
     };
   });
 }
+
+/**
+ * One-shot: claim a cosmetic bought with cUSD on-chain (rec 6). Sends the buy tx
+ * hash + cosmetic id; the server verifies the tx credited THIS wallet before
+ * granting ownership. Resolves with the owned list + ticket total (or null).
+ */
+export function claimCosmetic(
+  serverUrl: string,
+  txHash: string,
+  id: string,
+  walletAddress?: string,
+): Promise<{ ownedIds: string[]; tickets: number } | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(serverUrl);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: { ownedIds: string[]; tickets: number } | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 20000); // chain read can be slow
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = sessionStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'cosmetic.claim', txHash, id }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'skin.owned') {
+        clearTimeout(timer);
+        done({ ownedIds: msg.ownedIds, tickets: msg.tickets });
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
 

@@ -22,7 +22,13 @@ contract LudoEscrow {
 
     address public immutable arbiter;   // server key that signs results
     address public immutable treasury;  // receives the rake
-    uint256 public immutable rakeBps;   // e.g. 900 = 9%
+    // Governable within a HARD ceiling (MAX_RAKE_BPS). Kept mutable so the
+    // operator can run a 0%-rake acquisition promo or trim the fee WITHOUT a
+    // redeploy + escrow migration — while the ceiling guarantees it can never be
+    // pushed above 10%. Off-chain display (shared RAKE_BPS) must be kept in step
+    // when this changes; both ship at 900 so they agree by default.
+    uint256 public rakeBps;             // e.g. 900 = 9%
+    address public owner;               // governance: setRakeBps / transferOwnership
 
     // ---------- State ----------
     enum Status { None, WaitingOpponent, Active, Settled, Refunded }
@@ -42,6 +48,8 @@ contract LudoEscrow {
     event Joined(bytes32 indexed gameId, address indexed player, address token, uint96 stake);
     event Settled(bytes32 indexed gameId, address indexed winner, uint256 payout, uint256 rake);
     event Refunded(bytes32 indexed gameId);
+    event RakeChanged(uint256 oldBps, uint256 newBps);
+    event OwnershipTransferred(address indexed from, address indexed to);
 
     error BadStatus();
     error BadStake();
@@ -51,6 +59,8 @@ contract LudoEscrow {
     error NotAPlayer();
     error TransferFailed();
     error NotArbiter();
+    error NotOwner();
+    error LengthMismatch();
 
     constructor(address _arbiter, address _treasury, uint256 _rakeBps) {
         require(_rakeBps <= MAX_RAKE_BPS, "rake > max");
@@ -58,6 +68,27 @@ contract LudoEscrow {
         arbiter = _arbiter;
         treasury = _treasury;
         rakeBps = _rakeBps;
+        owner = _treasury; // governance defaults to the rake beneficiary (→ multisig)
+    }
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    /// @notice Governance: adjust the rake within [0, MAX_RAKE_BPS]. Emits the
+    ///         old→new bps so every change is auditable on-chain.
+    function setRakeBps(uint256 newBps) external onlyOwner {
+        require(newBps <= MAX_RAKE_BPS, "rake > max");
+        emit RakeChanged(rakeBps, newBps);
+        rakeBps = newBps;
+    }
+
+    /// @notice Hand governance (rake control) to a new address — e.g. a multisig.
+    function transferOwnership(address to) external onlyOwner {
+        require(to != address(0), "zero addr");
+        emit OwnershipTransferred(owner, to);
+        owner = to;
     }
 
     /// @notice Joins (or creates) game `gameId` by locking one's stake.
@@ -88,6 +119,21 @@ contract LudoEscrow {
     /// @notice Settles the game. `sig` = the arbiter's ECDSA signature over
     ///         keccak256(abi.encode(DOMAIN, gameId, winner)).
     function settle(bytes32 gameId, address winner, bytes calldata sig) external {
+        _settle(gameId, winner, sig);
+    }
+
+    /// @notice Settle many games in one transaction, amortising the ~21k base tx
+    ///         cost across the batch — the concrete margin relief for low-stake
+    ///         pots where per-settlement gas rivals the rake. Index-aligned;
+    ///         atomic (any bad entry reverts the whole batch).
+    function settleBatch(bytes32[] calldata gameIds, address[] calldata winners, bytes[] calldata sigs) external {
+        if (gameIds.length != winners.length || gameIds.length != sigs.length) revert LengthMismatch();
+        for (uint256 i = 0; i < gameIds.length; i++) {
+            _settle(gameIds[i], winners[i], sigs[i]);
+        }
+    }
+
+    function _settle(bytes32 gameId, address winner, bytes calldata sig) internal {
         Game storage g = games[gameId];
         if (g.status != Status.Active) revert BadStatus();
         if (winner != g.playerA && winner != g.playerB) revert NotAPlayer();

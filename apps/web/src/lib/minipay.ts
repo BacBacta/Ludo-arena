@@ -14,7 +14,8 @@ import {
 } from 'viem';
 import { activeChain } from './chains';
 import { deploymentForChain } from './deployments';
-import { stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
+import { buyCosmeticCusd, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
+import type { Hex } from 'viem';
 
 declare global {
   interface Window {
@@ -117,6 +118,34 @@ export async function lockStake4(
     gameId,
     stakeCents,
     seatCount: 4,
+    feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
+    onStatus,
+  });
+}
+
+/**
+ * Buys a cosmetic with cUSD via the CosmeticsStore (rec 6): approve + buy(itemId),
+ * paid straight to the treasury. Throws if the store isn't deployed on the
+ * connected chain (cUSD cosmetics stay off until then). Returns the buy tx hash
+ * to hand to the server for the ownership claim.
+ */
+export async function buyCosmetic(
+  wallet: Wallet,
+  id: string,
+  priceCents: number,
+  onStatus?: (s: StakeStatus) => void,
+): Promise<{ buyTxHash: Hex; approveTx?: Hex }> {
+  const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
+  const dep = deploymentForChain(chainId);
+  if (!dep?.cosmeticsStore) throw new Error(`No CosmeticsStore deployment for chain ${chainId}`);
+  return buyCosmeticCusd({
+    walletClient: wallet.walletClient,
+    publicClient: wallet.publicClient,
+    account: wallet.address,
+    store: dep.cosmeticsStore,
+    token: dep.stablecoin,
+    id,
+    priceCents,
     feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
     onStatus,
   });

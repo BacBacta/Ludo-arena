@@ -12,6 +12,8 @@ export interface Deployment {
   escrow: Address;
   /** N-player escrow (LudoEscrowN) for staked 4-player games; absent until deployed. */
   escrowN?: Address;
+  /** CosmeticsStore (cUSD cosmetic purchases → treasury); absent until deployed. */
+  cosmeticsStore?: Address;
   stablecoin: Address;
   arbiter: Address;
   treasury: Address;
@@ -28,3 +30,12 @@ export function deploymentForChain(chainId: number): Deployment | null {
 /** True once LudoEscrowN is deployed somewhere → staked 4-player can be offered.
  *  Until then the 4-player table stays free (no wallet prompt, no "coming soon"). */
 export const staked4Available = Object.values(deployments).some((d) => !!d.escrowN);
+
+/** CosmeticsStore address for a chain, or null until it's deployed there. */
+export function cosmeticsStoreFor(chainId: number): Address | null {
+  return Object.values(deployments).find((d) => d.chainId === chainId)?.cosmeticsStore ?? null;
+}
+
+/** True once the CosmeticsStore is deployed → cosmetics can be bought with cUSD.
+ *  Until then the store shows ticket unlocks only and cUSD buttons stay "soon". */
+export const cosmeticsCusdAvailable = Object.values(deployments).some((d) => !!d.cosmeticsStore);

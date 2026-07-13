@@ -4,7 +4,7 @@ import { PersistentStore } from '../src/store/persistent.js';
 import { playerId, type SessionRecord, type Store } from '../src/store/types.js';
 import { Room, type Client } from '../src/room.js';
 import { createFairness } from '../src/fairness.js';
-import type { ServerMsg } from '@ludo/shared';
+import { ANTI_TILT, DEFAULT_DAILY_STAKE_LIMIT_CENTS, type ServerMsg } from '@ludo/shared';
 
 function makeClient(id: string): Client & { inbox: ServerMsg[] } {
   const inbox: ServerMsg[] = [];
@@ -228,6 +228,29 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
+    it('anti-tilt reward is non-cash: a spendable ticket, never a cUSD balance (rec 4)', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'A', flag: '🌍' });
+
+      // three straight staked losses grant exactly ANTI_TILT.rewardTickets…
+      await store.applyAntiTilt(id, false);
+      await store.applyAntiTilt(id, false);
+      const grant = await store.applyAntiTilt(id, false);
+      expect(grant.grantedTickets).toBe(ANTI_TILT.rewardTickets);
+      // …denominated in TICKETS only. The payload carries no cash/cents field, so
+      // the loss-forgiveness bonus can never become an unbacked cUSD liability —
+      // the invariant that keeps the model's payouts fully escrow-backed.
+      expect(Object.keys(grant).sort()).toEqual(['grantedTickets', 'totalTickets']);
+      // and the granted ticket is a REAL spendable balance (a funded sink), not a
+      // phantom: it spends down to zero and can't be over-spent.
+      expect(await store.spendTickets(id, ANTI_TILT.rewardTickets)).toBe(0);
+      expect(await store.spendTickets(id, 1)).toBeNull();
+
+      await store.close();
+    });
+
     it('grants and atomically spends freeroll tickets', async () => {
       const store = make();
       await store.init();
@@ -270,7 +293,7 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       const d1 = '2026-08-10';
       const d2 = '2026-08-11';
 
-      expect(await store.getLimits(id, d1)).toMatchObject({ dailyLimitCents: 200, stakedTodayCents: 0, selfExcludedUntil: null });
+      expect(await store.getLimits(id, d1)).toMatchObject({ dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS, stakedTodayCents: 0, selfExcludedUntil: null });
 
       await store.addDailyStake(id, d1, 100);
       await store.addDailyStake(id, d1, 50);

@@ -30,7 +30,8 @@ export function Lobby({
     return null;
   }
 
-  const lobbyStakes = ALLOWED_STAKES_CENTS.filter((s) => s <= 100);
+  // All rationalised tiers fit the picker now (0 / 25¢ / $1 / $5).
+  const lobbyStakes = ALLOWED_STAKES_CENTS;
 
   function play() {
     const blocked = stakeBlockedMsg();

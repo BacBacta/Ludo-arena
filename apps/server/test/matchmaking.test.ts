@@ -78,7 +78,7 @@ describe('Matchmaker.join', () => {
   it('keeps stakes separate', () => {
     const mm = new Matchmaker<string>();
     mm.join(25, entry('a', 1200), T0);
-    expect(mm.join(50, entry('b', 1200), T0)).toBeNull();
+    expect(mm.join(100, entry('b', 1200), T0)).toBeNull();
   });
 
   it('never mixes wallet-backed and demo players in a STAKED queue', () => {
@@ -153,9 +153,9 @@ describe('Matchmaker.sweep', () => {
   it('leaveAll removes a session from every queue', () => {
     const mm = new Matchmaker<string>();
     mm.join(25, entry('a', 1200), T0);
-    mm.join(50, entry('a', 1200), T0);
+    mm.join(100, entry('a', 1200), T0);
     mm.leaveAll('a');
     expect(mm.position(25, 'a')).toBe(0);
-    expect(mm.position(50, 'a')).toBe(0);
+    expect(mm.position(100, 'a')).toBe(0);
   });
 });

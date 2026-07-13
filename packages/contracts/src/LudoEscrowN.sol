@@ -23,7 +23,10 @@ contract LudoEscrowN {
 
     address public immutable arbiter; // server key that signs results
     address public immutable treasury; // receives the rake
-    uint256 public immutable rakeBps; // e.g. 900 = 9%
+    // Governable within a HARD ceiling (MAX_RAKE_BPS): promos / fee trims without
+    // a redeploy, but never above 10%. Keep off-chain RAKE_BPS in step; both 900.
+    uint256 public rakeBps; // e.g. 900 = 9%
+    address public owner; // governance: setRakeBps / transferOwnership
 
     // ---------- State ----------
     enum Status {
@@ -51,6 +54,8 @@ contract LudoEscrowN {
     event Joined(bytes32 indexed gameId, address indexed player, address token, uint96 stake, uint8 joined, uint8 seatCount);
     event Settled(bytes32 indexed gameId, address indexed winner, uint256 payout, uint256 rake);
     event Refunded(bytes32 indexed gameId);
+    event RakeChanged(uint256 oldBps, uint256 newBps);
+    event OwnershipTransferred(address indexed from, address indexed to);
 
     error BadStatus();
     error BadStake();
@@ -61,6 +66,8 @@ contract LudoEscrowN {
     error NotAPlayer();
     error TransferFailed();
     error NotArbiter();
+    error NotOwner();
+    error LengthMismatch();
 
     constructor(address _arbiter, address _treasury, uint256 _rakeBps) {
         require(_rakeBps <= MAX_RAKE_BPS, "rake > max");
@@ -68,6 +75,26 @@ contract LudoEscrowN {
         arbiter = _arbiter;
         treasury = _treasury;
         rakeBps = _rakeBps;
+        owner = _treasury; // governance defaults to the rake beneficiary (→ multisig)
+    }
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    /// @notice Governance: adjust the rake within [0, MAX_RAKE_BPS], audit-logged.
+    function setRakeBps(uint256 newBps) external onlyOwner {
+        require(newBps <= MAX_RAKE_BPS, "rake > max");
+        emit RakeChanged(rakeBps, newBps);
+        rakeBps = newBps;
+    }
+
+    /// @notice Hand governance (rake control) to a new address — e.g. a multisig.
+    function transferOwnership(address to) external onlyOwner {
+        require(to != address(0), "zero addr");
+        emit OwnershipTransferred(owner, to);
+        owner = to;
     }
 
     /// @notice Join (or create) game `gameId` by locking one seat's stake. The
@@ -105,6 +132,19 @@ contract LudoEscrowN {
     ///         keccak256(abi.encode(chainid, this, gameId, winner)). The winner
     ///         must be one of the depositors.
     function settle(bytes32 gameId, address winner, bytes calldata sig) external {
+        _settle(gameId, winner, sig);
+    }
+
+    /// @notice Settle many games in one transaction, amortising the base tx cost
+    ///         across the batch. Index-aligned; atomic (any bad entry reverts all).
+    function settleBatch(bytes32[] calldata gameIds, address[] calldata winners, bytes[] calldata sigs) external {
+        if (gameIds.length != winners.length || gameIds.length != sigs.length) revert LengthMismatch();
+        for (uint256 i = 0; i < gameIds.length; i++) {
+            _settle(gameIds[i], winners[i], sigs[i]);
+        }
+    }
+
+    function _settle(bytes32 gameId, address winner, bytes calldata sig) internal {
         Game storage g = games[gameId];
         if (g.status != Status.Active) revert BadStatus();
         if (!_isSeated[gameId][winner]) revert NotAPlayer();

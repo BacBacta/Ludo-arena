@@ -150,4 +150,91 @@ contract LudoEscrowTest is Test {
         vm.expectRevert(LudoEscrow.BadSignature.selector);
         esc.settle(gameId, alice, abi.encodePacked(r, highS, flippedV));
     }
+
+    // ---- governable rake (rec 3) ----
+
+    function testOwnerDefaultsToTreasury() public view {
+        assertEq(esc.owner(), treasury);
+    }
+
+    function testSetRakeBpsChangesPayout() public {
+        vm.prank(treasury); esc.setRakeBps(0); // 0%-rake acquisition promo
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        esc.settle(gameId, alice, _sign(gameId, alice));
+        // no rake: winner takes the full pot, treasury untouched
+        assertEq(cusd.balanceOf(alice), 10e18 - 1e18 + 2e18);
+        assertEq(cusd.balanceOf(treasury), 0);
+    }
+
+    function testSetRakeBpsOnlyOwner() public {
+        vm.prank(alice);
+        vm.expectRevert(LudoEscrow.NotOwner.selector);
+        esc.setRakeBps(100);
+    }
+
+    function testSetRakeBpsCapEnforced() public {
+        vm.prank(treasury);
+        vm.expectRevert(bytes("rake > max"));
+        esc.setRakeBps(1001); // > MAX_RAKE_BPS (1000)
+    }
+
+    function testTransferOwnership() public {
+        vm.prank(treasury); esc.transferOwnership(alice);
+        assertEq(esc.owner(), alice);
+        // old owner can no longer govern
+        vm.prank(treasury);
+        vm.expectRevert(LudoEscrow.NotOwner.selector);
+        esc.setRakeBps(100);
+        // new owner can
+        vm.prank(alice); esc.setRakeBps(100);
+        assertEq(esc.rakeBps(), 100);
+    }
+
+    // ---- batch settlement (rec 5) ----
+
+    function testSettleBatchSettlesAll() public {
+        bytes32 g1 = keccak256("b1");
+        bytes32 g2 = keccak256("b2");
+        vm.prank(alice); esc.join(g1, address(cusd), 1e18);
+        vm.prank(bob); esc.join(g1, address(cusd), 1e18);
+        vm.prank(alice); esc.join(g2, address(cusd), 1e18);
+        vm.prank(bob); esc.join(g2, address(cusd), 1e18);
+
+        bytes32[] memory ids = new bytes32[](2);
+        address[] memory winners = new address[](2);
+        bytes[] memory sigs = new bytes[](2);
+        ids[0] = g1; winners[0] = alice; sigs[0] = _sign(g1, alice);
+        ids[1] = g2; winners[1] = bob; sigs[1] = _sign(g2, bob);
+        esc.settleBatch(ids, winners, sigs);
+
+        // rake taken on both pots (0.18e18 each); each player won one of the two
+        assertEq(cusd.balanceOf(treasury), 0.36e18);
+        assertEq(cusd.balanceOf(alice), 10e18 - 2e18 + 1.82e18);
+        assertEq(cusd.balanceOf(bob), 10e18 - 2e18 + 1.82e18);
+    }
+
+    function testSettleBatchLengthMismatchReverts() public {
+        bytes32[] memory ids = new bytes32[](2);
+        address[] memory winners = new address[](1);
+        bytes[] memory sigs = new bytes[](2);
+        vm.expectRevert(LudoEscrow.LengthMismatch.selector);
+        esc.settleBatch(ids, winners, sigs);
+    }
+
+    function testSettleBatchAtomicOnBadEntry() public {
+        bytes32 g1 = keccak256("b1");
+        vm.prank(alice); esc.join(g1, address(cusd), 1e18);
+        vm.prank(bob); esc.join(g1, address(cusd), 1e18);
+        // second entry references an un-Active game → whole batch reverts, g1 unpaid
+        bytes32[] memory ids = new bytes32[](2);
+        address[] memory winners = new address[](2);
+        bytes[] memory sigs = new bytes[](2);
+        ids[0] = g1; winners[0] = alice; sigs[0] = _sign(g1, alice);
+        ids[1] = keccak256("ghost"); winners[1] = alice; sigs[1] = _sign(keccak256("ghost"), alice);
+        vm.expectRevert(LudoEscrow.BadStatus.selector);
+        esc.settleBatch(ids, winners, sigs);
+        // g1 remains Active and unpaid (atomic all-or-nothing)
+        assertEq(cusd.balanceOf(treasury), 0);
+    }
 }

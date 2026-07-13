@@ -17,6 +17,8 @@ import {
   createWalletClient,
   defineChain,
   http,
+  keccak256,
+  toBytes,
   type Abi,
   type Address,
   type Chain,
@@ -123,7 +125,7 @@ const rakeBps = BigInt(env('RAKE_BPS') ?? '900');
 console.log(`[deploy] network=${networkName} chainId=${preset.chain.id} rpc=${rpc}`);
 console.log(`[deploy] deployer=${account.address} arbiter=${arbiter} treasury=${treasury} rakeBps=${rakeBps}`);
 
-const { LudoEscrow, LudoEscrowN, TestUSD } = compileAll();
+const { LudoEscrow, LudoEscrowN, CosmeticsStore, TestUSD } = compileAll();
 
 async function deployContract(label: string, abi: Abi, bytecode: Hex, args: unknown[]): Promise<{ address: Address; txHash: Hex }> {
   const txHash = await walletClient.deployContract({ abi, bytecode, args });
@@ -155,6 +157,37 @@ const escrowN = await deployContract('LudoEscrowN', LudoEscrowN.abi, LudoEscrowN
   treasury,
   rakeBps,
 ]);
+
+// Cosmetics store (rec 6): cUSD purchases of dice skins / board themes paid to the
+// treasury — non-rake revenue. Same stablecoin; owner (catalogue/prices) = deployer.
+const cosmetics = await deployContract('CosmeticsStore', CosmeticsStore.abi, CosmeticsStore.bytecode, [
+  treasury,
+  stablecoin,
+]);
+
+// Seed the initial cosmetics catalogue (mirrors shared PREMIUM_COSMETICS) so the
+// store is purchasable the moment it's deployed. itemId = keccak256(bytes(id));
+// price = cents → base units at the stablecoin's decimals (TestUSD/cUSD are 18).
+const COSMETIC_SEED: Array<{ id: string; cents: number }> = [
+  { id: 'obsidian', cents: 100 },
+  { id: 'aurora', cents: 200 },
+];
+const STORE_SEED_ABI = [
+  { type: 'function', name: 'setPrices', stateMutability: 'nonpayable', inputs: [{ name: 'itemIds', type: 'bytes32[]' }, { name: 'prices', type: 'uint256[]' }], outputs: [] },
+] as const;
+const seedTx = await walletClient.writeContract({
+  account,
+  chain: preset.chain,
+  address: cosmetics.address,
+  abi: STORE_SEED_ABI,
+  functionName: 'setPrices',
+  args: [
+    COSMETIC_SEED.map((c) => keccak256(toBytes(c.id))),
+    COSMETIC_SEED.map((c) => BigInt(c.cents) * 10n ** 16n),
+  ],
+});
+await publicClient.waitForTransactionReceipt({ hash: seedTx });
+console.log(`[deploy] cosmetics catalogue seeded (${COSMETIC_SEED.length} items, tx ${seedTx})`);
 
 // read back the immutables: fail loudly if the chain state disagrees.
 // Retried: load-balanced public RPCs may serve the read from a node that
@@ -196,6 +229,8 @@ deployments[networkName] = {
   escrowTx: escrow.txHash,
   escrowN: escrowN.address,
   escrowNTx: escrowN.txHash,
+  cosmeticsStore: cosmetics.address,
+  cosmeticsStoreTx: cosmetics.txHash,
   stablecoin,
   ...(stablecoinTx ? { stablecoinIsTestUSD: true, stablecoinTx } : {}),
   arbiter,

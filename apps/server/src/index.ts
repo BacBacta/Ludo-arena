@@ -7,7 +7,7 @@
  */
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { getAddress, isAddress, recoverMessageAddress } from 'viem';
+import { getAddress, isAddress, recoverMessageAddress, type Address, type Hex } from 'viem';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
   FREEROLL,
@@ -47,6 +47,7 @@ import { createFairness, createFairness4, createSeedCommit, finalizeFairness, ra
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, JOIN_TIMEOUT_N_S } from './settlement4.js';
+import { createCosmeticsVerifier } from './cosmetics.js';
 import { type Fairness4 } from './fairness.js';
 import { createStore, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
@@ -197,6 +198,9 @@ function postOpsAlert(message: string): void {
 
 // On-chain settlement (E3.3). null when no ARBITER_PRIVATE_KEY is configured.
 const arbiter = createArbiter();
+// cUSD cosmetic-purchase verifier (rec 6). null until the CosmeticsStore is
+// deployed → cosmetic.claim stays off (ticket unlocks still work regardless).
+const cosmeticsVerifier = createCosmeticsVerifier();
 // N-player settlement for staked 4-player games (LudoEscrowN). null until the
 // N-player escrow is deployed + configured → staked 4-player stays deferred.
 const arbiterN = createArbiterN();
@@ -227,6 +231,7 @@ const settlementQueue = arbiter
   : null;
 if (arbiter) console.log(`[ludo-server] settlement enabled — arbiter ${arbiter.address} on chain ${arbiter.chainId}`);
 if (arbiterN) console.log(`[ludo-server] staked 4-player enabled — LudoEscrowN arbiter ${arbiterN.address} on chain ${arbiterN.chainId}`);
+if (cosmeticsVerifier) console.log(`[ludo-server] cUSD cosmetics enabled — CosmeticsStore ${cosmeticsVerifier.address} on chain ${cosmeticsVerifier.chainId}`);
 // Compliance nudge: real settlement is on but no jurisdictions are geo-blocked and
 // the country header is only trustworthy behind a trusted edge (Cloudflare/Vercel).
 if (arbiter && BLOCKED_COUNTRIES.size === 0) {
@@ -897,6 +902,40 @@ wss.on('connection', (ws, req) => {
         }
         const ownedIds = await store.ownSkin(spid, msg.skinId);
         session.send({ t: 'skin.owned', ownedIds, tickets: spent });
+        break;
+      }
+
+      case 'cosmetic.claim': {
+        // Grant a cosmetic bought with cUSD on-chain, after verifying the tx.
+        if (!cosmeticsVerifier) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'cUSD cosmetic purchases are not available yet.' });
+          break;
+        }
+        // The grant always credits the on-chain BUYER's wallet-pid, and we verify
+        // this session's wallet actually paid (buyer == session.wallet). So no
+        // SIWE proof is needed: a claim can only ever credit the address that
+        // truly paid — you can't grant yourself someone else's purchase.
+        if (!session.wallet) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to claim a purchase.' });
+          break;
+        }
+        const cpid = playerId(session.wallet, session.id);
+        const already = await store.getOwnedSkins(cpid);
+        if (already.includes(msg.id)) {
+          const held = (await store.getChallenge(cpid, utcToday())).tickets;
+          session.send({ t: 'skin.owned', ownedIds: already, tickets: held });
+          break;
+        }
+        const ok = await cosmeticsVerifier
+          .verifyPurchase(msg.txHash as Hex, session.wallet as Address, msg.id)
+          .catch(() => false);
+        if (!ok) {
+          session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Could not verify that cUSD purchase.' });
+          break;
+        }
+        const owned = await store.ownSkin(cpid, msg.id);
+        const held = (await store.getChallenge(cpid, utcToday())).tickets;
+        session.send({ t: 'skin.owned', ownedIds: owned, tickets: held });
         break;
       }
 

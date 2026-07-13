@@ -4,8 +4,12 @@
  */
 import type { Game4, GameState, Seat } from '@ludo/game-engine';
 
-/** Allowed stakes, in dollar cents (0 = practice). */
-export const ALLOWED_STAKES_CENTS = [0, 10, 25, 50, 100, 200] as const;
+/** Allowed stakes, in dollar cents (0 = practice). Rationalised to 3 real tiers
+ *  (25¢ / $1 / $5) to concentrate matchmaking liquidity instead of splintering it
+ *  across six levels. The 10¢/50¢/$2 rungs were dropped: 10¢ floored to only ~5%
+ *  effective rake (gas ate the margin), and fewer rungs = fatter queues per rung,
+ *  which matters most for the 4-seat staked table that needs four real stakers. */
+export const ALLOWED_STAKES_CENTS = [0, 25, 100, 500] as const;
 export type StakeCents = (typeof ALLOWED_STAKES_CENTS)[number];
 
 /** House share, in basis points (900 = 9%). */
@@ -49,15 +53,49 @@ export const FREEROLL4 = { seats: 4, entryTickets: 1, winnerTickets: 3, botFillM
  *  and is cancelled + refunded if it doesn't fill within `stakedFillMs`. */
 export const TABLE4 = { seats: 4, botFillMs: 12_000, stakedFillMs: 60_000 } as const;
 
-/** Premium dice skins unlockable by SPENDING freeroll tickets (a cosmetic sink
- *  that gives tickets a second use; the cUSD purchase rail lands with mainnet).
- *  Maps skin id → ticket price. Server-authoritative: the server spends the
- *  tickets and records ownership so a re-buy can't double-charge. */
-export const PREMIUM_SKINS: Record<string, number> = { obsidian: 5, aurora: 10 };
+/** Premium cosmetics catalog (rec 6 — revenue that doesn't touch the rake). Each
+ *  item is acquirable two independent ways:
+ *   • SPENDING freeroll tickets — a soft-currency sink, live today (skin.buy);
+ *   • BUYING with cUSD — real treasury revenue, settled on-chain through the
+ *     CosmeticsStore contract. That rail stays DORMANT until the store is
+ *     deployed (same deferred pattern as the staked 4-player table), so `cents`
+ *     is advisory until `cosmeticsStoreAvailable` flips true on the client.
+ *  `kind` groups the store UI (dice faces vs board themes). Ownership is one flat
+ *  server-authoritative set keyed by id, shared by both rails and both kinds. */
+export type CosmeticKind = 'dice' | 'board';
+export interface CosmeticItem {
+  id: string;
+  kind: CosmeticKind;
+  tickets: number; // freeroll-ticket price (0 = not ticket-purchasable)
+  cents: number; // cUSD price in cents (0 = not cUSD-purchasable)
+}
+// Dice cosmetics ship first (full skin infra + rendering already exist). Board
+// themes are a planned `kind: 'board'` extension — deferred until the board can
+// be re-themed without touching gameplay-critical token/cell colours.
+export const PREMIUM_COSMETICS: readonly CosmeticItem[] = [
+  { id: 'obsidian', kind: 'dice', tickets: 5, cents: 100 },
+  { id: 'aurora', kind: 'dice', tickets: 10, cents: 200 },
+] as const;
 
-/** Responsible gaming (E5.2): default/max daily stake cap per player, in cents. */
-export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 200;
-export const MAX_DAILY_STAKE_LIMIT_CENTS = 200;
+/** Ticket price map, derived for backward compatibility (server spend + skin.buy
+ *  validation + the dice picker all key off this). id → ticket price. */
+export const PREMIUM_SKINS: Record<string, number> = Object.fromEntries(
+  PREMIUM_COSMETICS.filter((c) => c.tickets > 0).map((c) => [c.id, c.tickets]),
+);
+
+export function cosmeticById(id: string): CosmeticItem | undefined {
+  return PREMIUM_COSMETICS.find((c) => c.id === id);
+}
+/** cUSD price (cents) for a cosmetic, or 0 if it isn't cUSD-purchasable. */
+export function cosmeticCents(id: string): number {
+  return cosmeticById(id)?.cents ?? 0;
+}
+
+/** Responsible gaming (E5.2): default/max daily stake cap per player, in cents.
+ *  Raised from $2 to $5 so the top ($5) tier is playable within a day's cap while
+ *  still bounding exposure; a player may always lower their own cap in Settings. */
+export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 500;
+export const MAX_DAILY_STAKE_LIMIT_CENTS = 500;
 
 /** Current Terms-of-Service / consent version. Bumped whenever the legal terms
  *  change so a stale acceptance no longer satisfies the staked-play gate; the
@@ -176,6 +214,10 @@ export type ClientMsg =
   | { t: 'game.rematch' }
   // Unlock a premium dice skin by spending its ticket price (PREMIUM_SKINS).
   | { t: 'skin.buy'; skinId: string }
+  // Claim a cosmetic bought with cUSD on-chain (CosmeticsStore): the server
+  // verifies the tx emitted Purchased(buyer=provenWallet, itemId=keccak(id))
+  // before granting ownership. Dormant until the store is deployed (rec 6).
+  | { t: 'cosmetic.claim'; txHash: string; id: string }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -356,6 +398,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof m.entropy === 'string' && m.entropy.length >= 16 && m.entropy.length <= 128 ? m : null;
     case 'skin.buy':
       return typeof m.skinId === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.skinId) ? m : null;
+    case 'cosmetic.claim':
+      return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) && typeof m.id === 'string' && cosmeticById(m.id) !== undefined ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

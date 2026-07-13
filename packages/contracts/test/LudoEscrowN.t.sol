@@ -245,4 +245,69 @@ contract LudoEscrowNTest is Test {
         assertEq(cusd.balanceOf(address(esc)), 0);
         assertEq(cusd.balanceOf(dave), 10e18);
     }
+
+    // ---- governable rake (rec 3) ----
+
+    function testOwnerDefaultsToTreasury() public view {
+        assertEq(esc.owner(), treasury);
+    }
+
+    function testSetRakeBpsZeroPromo() public {
+        vm.prank(treasury); esc.setRakeBps(0);
+        _joinFour();
+        esc.settle(gameId, carol, _sign(gameId, carol));
+        // full 4e18 pot to the winner, no rake
+        assertEq(cusd.balanceOf(carol), 10e18 - 1e18 + 4e18);
+        assertEq(cusd.balanceOf(treasury), 0);
+    }
+
+    function testSetRakeBpsOnlyOwner() public {
+        vm.prank(alice);
+        vm.expectRevert(LudoEscrowN.NotOwner.selector);
+        esc.setRakeBps(100);
+    }
+
+    function testSetRakeBpsCapEnforced() public {
+        vm.prank(treasury);
+        vm.expectRevert(bytes("rake > max"));
+        esc.setRakeBps(1001);
+    }
+
+    function testTransferOwnership() public {
+        vm.prank(treasury); esc.transferOwnership(alice);
+        assertEq(esc.owner(), alice);
+        vm.prank(alice); esc.setRakeBps(100);
+        assertEq(esc.rakeBps(), 100);
+    }
+
+    // ---- batch settlement (rec 5) ----
+
+    function testSettleBatchSettlesAll() public {
+        bytes32 ga = keccak256("ba");
+        bytes32 gb = keccak256("bb");
+        vm.prank(alice); esc.join(ga, address(cusd), STAKE, 2);
+        vm.prank(bob); esc.join(ga, address(cusd), STAKE, 2);
+        vm.prank(carol); esc.join(gb, address(cusd), STAKE, 2);
+        vm.prank(dave); esc.join(gb, address(cusd), STAKE, 2);
+
+        bytes32[] memory ids = new bytes32[](2);
+        address[] memory winners = new address[](2);
+        bytes[] memory sigs = new bytes[](2);
+        ids[0] = ga; winners[0] = alice; sigs[0] = _sign(ga, alice);
+        ids[1] = gb; winners[1] = carol; sigs[1] = _sign(gb, carol);
+        esc.settleBatch(ids, winners, sigs);
+
+        // each 2-seat pot 2e18, rake 0.18e18, payout 1.82e18
+        assertEq(cusd.balanceOf(alice), 10e18 - 1e18 + 1.82e18);
+        assertEq(cusd.balanceOf(carol), 10e18 - 1e18 + 1.82e18);
+        assertEq(cusd.balanceOf(treasury), 0.36e18);
+    }
+
+    function testSettleBatchLengthMismatchReverts() public {
+        bytes32[] memory ids = new bytes32[](2);
+        address[] memory winners = new address[](2);
+        bytes[] memory sigs = new bytes[](1);
+        vm.expectRevert(LudoEscrowN.LengthMismatch.selector);
+        esc.settleBatch(ids, winners, sigs);
+    }
 }

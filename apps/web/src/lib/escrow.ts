@@ -4,7 +4,7 @@
  * transport in the app, an http+key client in the verify script). Under
  * MiniPay, pass `feeCurrency` to pay gas in cUSD with a legacy tx.
  */
-import { pad, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
+import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
 
 export const ERC20_ABI = [
   { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
@@ -34,6 +34,17 @@ export const ESCROW_N_ABI = [
   { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }, { name: 'seatCount', type: 'uint8' }], outputs: [] },
   { type: 'function', name: 'seatsOf', stateMutability: 'view', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [{ name: '', type: 'address[]' }] },
 ] as const;
+
+/** CosmeticsStore — buy(itemId) pulls the cUSD price straight to the treasury. */
+export const COSMETICS_STORE_ABI = [
+  { type: 'function', name: 'buy', stateMutability: 'nonpayable', inputs: [{ name: 'itemId', type: 'bytes32' }], outputs: [] },
+  { type: 'function', name: 'priceOf', stateMutability: 'view', inputs: [{ name: '', type: 'bytes32' }], outputs: [{ type: 'uint256' }] },
+] as const;
+
+/** keccak256(bytes(id)) — the CosmeticsStore itemId for a cosmetic id (matches server). */
+export function cosmeticItemId(id: string): Hex {
+  return keccak256(toBytes(id));
+}
 
 /**
  * The server gameId is 16 random bytes (32 hex chars); the contract keys on
@@ -160,6 +171,51 @@ export async function stakeInEscrowN(params: StakeParams & { seatCount: number }
 
   onStatus?.('locked');
   return { gameId32, stake, approveTx, joinTx };
+}
+
+export interface BuyCosmeticParams {
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+  account: Address;
+  store: Address;
+  token: Address;
+  id: string;
+  priceCents: number;
+  feeCurrency?: Address;
+  onStatus?: (status: StakeStatus) => void;
+}
+
+/**
+ * Buy a cosmetic with cUSD (rec 6): approve (only if the allowance is short) then
+ * buy(itemId), which pulls the price straight to the treasury. Returns the buy tx
+ * hash — hand it to the server via `cosmetic.claim` to unlock ownership.
+ */
+export async function buyCosmeticCusd(params: BuyCosmeticParams): Promise<{ buyTxHash: Hex; approveTx?: Hex }> {
+  const { walletClient, publicClient, account, store, token, id, priceCents, feeCurrency, onStatus } = params;
+  const chain = walletClient.chain ?? null;
+  const signer = walletClient.account ?? account;
+  const extra = feeCurrency ? { feeCurrency } : {};
+
+  const decimals = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
+  const price = stakeUnits(priceCents, decimals);
+  const itemId = cosmeticItemId(id);
+
+  const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, store] });
+  let approveTx: Hex | undefined;
+  if (allowance < price) {
+    onStatus?.('approving');
+    approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [store, price], ...extra });
+    const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
+    if (r.status !== 'success') throw new Error('approve reverted');
+  }
+
+  onStatus?.('joining');
+  const buyTxHash = await walletClient.writeContract({ account: signer, chain, address: store, abi: COSMETICS_STORE_ABI, functionName: 'buy', args: [itemId], ...extra });
+  const r = await publicClient.waitForTransactionReceipt({ hash: buyTxHash });
+  if (r.status !== 'success') throw new Error('cosmetic buy reverted');
+
+  onStatus?.('locked');
+  return { buyTxHash, approveTx };
 }
 
 /** Wallet token balance in USD cents (for the header display). */
