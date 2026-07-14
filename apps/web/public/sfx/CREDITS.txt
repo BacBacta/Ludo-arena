@@ -9,3 +9,11 @@ coin.ogg    = chips-handle-1         (Casino Audio)
 tap.ogg     = click_001              (Interface Sounds)
 select.ogg  = select_001             (Interface Sounds)
 confirm.ogg = confirmation_001       (Interface Sounds)
+
+--- Emote sounds (batch 2) ---
+Source: Mixkit (https://mixkit.co) — Mixkit Free License: free for commercial
+and non-commercial use in apps/games, no attribution required.
+emotes/clap.mp3 = applause · laugh.mp3 = laughter · fire.mp3 = fire ·
+party.mp3 = party popper · mind.mp3 = explosion · whoa.mp3 = surprise ·
+sad.mp3 = sad · muscle.mp3 = punch/effort · charm.mp3 = magic · up.mp3 = bell ·
+cool.mp3 = whoosh. Chosen in the sound lab.

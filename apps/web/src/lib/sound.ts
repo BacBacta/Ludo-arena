@@ -53,7 +53,8 @@ function audio(): AudioContext | null {
   }
 }
 
-/** Chosen sample per event (auditioned in the lab). */
+/** Chosen sample per event (auditioned in the lab). Board/UI = Kenney CC0 (OGG);
+ *  emotes = Mixkit Free License (MP3), each a LITERAL sound for its emoji. */
 const FILES: Record<string, string> = {
   dice: 'dice.ogg', // real dice throw
   pawn: 'pawn.ogg', // soft wooden step
@@ -62,6 +63,34 @@ const FILES: Record<string, string> = {
   tap: 'tap.ogg', // UI click
   select: 'select.ogg', // stake selection
   confirm: 'confirm.ogg', // confirm / start / small win
+  e_clap: 'emotes/clap.mp3',
+  e_laugh: 'emotes/laugh.mp3',
+  e_fire: 'emotes/fire.mp3',
+  e_party: 'emotes/party.mp3',
+  e_mind: 'emotes/mind.mp3',
+  e_whoa: 'emotes/whoa.mp3',
+  e_sad: 'emotes/sad.mp3',
+  e_muscle: 'emotes/muscle.mp3',
+  e_charm: 'emotes/charm.mp3',
+  e_up: 'emotes/up.mp3',
+  e_cool: 'emotes/cool.mp3',
+};
+
+/** Emoji → sample + per-emote level (I can't ear-tune, so levels are moderate;
+ *  the master compressor guards peaks). 🎲 reuses the board dice. */
+const EMOTE_MAP: Record<string, { name: string; gain: number }> = {
+  '👏': { name: 'e_clap', gain: 0.6 },
+  '😂': { name: 'e_laugh', gain: 0.75 },
+  '🔥': { name: 'e_fire', gain: 0.6 },
+  '🎉': { name: 'e_party', gain: 0.65 },
+  '🤯': { name: 'e_mind', gain: 0.55 },
+  '😮': { name: 'e_whoa', gain: 0.8 },
+  '😢': { name: 'e_sad', gain: 0.8 },
+  '💪': { name: 'e_muscle', gain: 0.75 },
+  '🍀': { name: 'e_charm', gain: 0.75 },
+  '👍': { name: 'e_up', gain: 0.75 },
+  '😎': { name: 'e_cool', gain: 0.7 },
+  '🎲': { name: 'dice', gain: 0.8 },
 };
 
 const buffers: Record<string, AudioBuffer> = {};
@@ -90,10 +119,13 @@ function load(name: string): Promise<void> {
   return loading[name]!;
 }
 
-/** Warm the cache so the first dice roll / tap has no fetch latency. */
+/** Small, always-needed board/UI sounds preloaded on the first gesture so the
+ *  first dice roll / tap has no fetch latency. Emotes (heavier, MP3) load lazily
+ *  on first use — never fetched just for opening the app. */
+const CORE = ['dice', 'pawn', 'capture', 'coin', 'tap', 'select', 'confirm'];
 export function preloadSounds(): void {
   if (!soundEnabled()) return;
-  for (const name of Object.keys(FILES)) void load(name);
+  for (const name of CORE) void load(name);
 }
 
 interface PlayOpts {
@@ -101,6 +133,7 @@ interface PlayOpts {
   rate?: number; // playbackRate (pitch/speed) — humanises repeated hits
   pan?: number;
   delay?: number; // seconds
+  maxDur?: number; // cap a long clip (e.g. applause) with a soft fade-out
 }
 
 function playSample(name: string, o: PlayOpts = {}): void {
@@ -113,13 +146,10 @@ function playSample(name: string, o: PlayOpts = {}): void {
     const src = ac.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = o.rate ?? 1;
-    let node: AudioNode = src;
-    if (o.gain !== undefined && o.gain !== 1) {
-      const g = ac.createGain();
-      g.gain.value = o.gain;
-      src.connect(g);
-      node = g;
-    }
+    const g = ac.createGain();
+    g.gain.value = o.gain ?? 1;
+    src.connect(g);
+    let node: AudioNode = g;
     if (o.pan) {
       const p = ac.createStereoPanner();
       p.pan.value = o.pan;
@@ -127,7 +157,14 @@ function playSample(name: string, o: PlayOpts = {}): void {
       node = p;
     }
     node.connect(master!);
-    src.start(ac.currentTime + (o.delay ?? 0));
+    const t = ac.currentTime + (o.delay ?? 0);
+    src.start(t);
+    // keep in-game reactions snappy: fade + stop a long sample early
+    if (o.maxDur && buf.duration > o.maxDur) {
+      g.gain.setValueAtTime(o.gain ?? 1, t + o.maxDur - 0.18);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + o.maxDur);
+      src.stop(t + o.maxDur + 0.03);
+    }
   };
   if (buffers[name]) start();
   else void load(name).then(start); // first use: load then play (tiny delay once)
@@ -198,8 +235,11 @@ export function playWelcome(): void {
   playSample('confirm', { gain: 0.7 });
 }
 
-/** Emote sounds are sourced in batch 2 (real applause / laughter / etc.).
- *  Until then, silent — the floating emoji still animates. */
-export function playEmote(_id: string): void {
-  /* batch 2 */
+/** Real per-emoji sounds (Mixkit) — clap = applause, laugh = laughter, etc.
+ *  Long clips are capped ~2.6 s so a reaction stays snappy. Unmapped ids
+ *  (quick-chats) stay silent; the floating emoji still animates. */
+export function playEmote(id: string): void {
+  const m = EMOTE_MAP[id];
+  if (!m) return;
+  playSample(m.name, { gain: m.gain, maxDur: 2.6 });
 }
