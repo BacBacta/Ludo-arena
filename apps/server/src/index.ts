@@ -175,6 +175,9 @@ interface PendingReveal {
   lockPolling?: boolean;
 }
 const pendingReveals = new Map<string, PendingReveal>();
+// Grace period for a FREE game to receive both entropy reveals before we start it
+// anyway (so a non-revealing client can't hang the match on "Opponent found!").
+const REVEAL_TIMEOUT_MS = 6_000;
 
 // C3 — don't start a staked game until BOTH stakes are locked on-chain (status
 // Active), or a blitz game could finish before the joins mine and pay the winner
@@ -1510,6 +1513,21 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
     // both reveal their entropy (finalizeGame). Client auto-reveals on match.found.
     a.send(matchFoundMsg(gameId, 0, b, stake, pot, commit));
     b.send(matchFoundMsg(gameId, 1, a, stake, pot, commit));
+    // Robustness: a FREE game must never hang on "Opponent found!" if one side
+    // fails to reveal its entropy (flaky mobile data, a stale cached client, or a
+    // WhatsApp/in-app browser). After a short grace, start anyway with whatever
+    // entropy arrived — the server's secret seed still dominates, so a non-staked
+    // game stays fair enough. Staked games keep waiting (fairness is non-negotiable
+    // for money) and are torn down by the stake-lock timeout instead.
+    if (stake === 0) {
+      setTimeout(() => {
+        const p = pendingReveals.get(gameId);
+        if (p && (p.entropies[0] === null || p.entropies[1] === null)) {
+          console.warn(`[fairness] free game ${gameId}: entropy reveal timed out (a=${p.entropies[0] !== null}, b=${p.entropies[1] !== null}) — starting with available entropy`);
+          finalizeGame(p);
+        }
+      }, REVEAL_TIMEOUT_MS);
+    }
     return;
   }
   // legacy: raw entropy already known → announce + start immediately
