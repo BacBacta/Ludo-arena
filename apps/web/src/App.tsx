@@ -97,6 +97,7 @@ export default function App() {
         return false;
       }
       walletRef.current = wallet;
+      dispatch({ type: 'SET_WALLET_ADDRESS', address: wallet.address }); // dev cosmetic unlock
       void refreshBalance(wallet);
       return true;
     },

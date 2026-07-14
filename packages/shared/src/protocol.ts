@@ -118,6 +118,10 @@ export interface CosmeticItem {
 export const PREMIUM_COSMETICS: readonly CosmeticItem[] = [
   { id: 'obsidian', kind: 'dice', tickets: 5, cents: 100 },
   { id: 'aurora', kind: 'dice', tickets: 10, cents: 200 },
+  // Ultra-premium 3D-rendered dice (WebGL PBR materials + a dedicated roll sound).
+  { id: 'crystal', kind: 'dice', tickets: 10, cents: 200 },
+  { id: 'ember', kind: 'dice', tickets: 8, cents: 150 },
+  { id: 'gold', kind: 'dice', tickets: 15, cents: 300 },
 ] as const;
 
 /** Ticket price map, derived for backward compatibility (server spend + skin.buy
@@ -142,7 +146,11 @@ export function cosmeticCents(id: string): number {
  * unlock rules live client-side (avatarFrames.ts). Frames are cosmetic-only and
  * client-equipped (sent in hello): the server just validates the id is real and
  * echoes it, exactly like the dice-skin trust model (no money → no proof). */
-export const AVATAR_FRAMES = ['none', 'bronze', 'silver', 'gold', 'champion', 'neon'] as const;
+export const AVATAR_FRAMES = [
+  'none', 'bronze', 'silver', 'gold', 'champion', 'neon',
+  // Ultra-premium illustrated + animated frames (SVG overlays, client-rendered).
+  'laurel', 'flame', 'frost', 'circuit', 'royal', 'nebula', 'ruby', 'jade',
+] as const;
 export type AvatarFrame = (typeof AVATAR_FRAMES)[number];
 export function isAvatarFrame(id: string): id is AvatarFrame {
   return (AVATAR_FRAMES as readonly string[]).includes(id);

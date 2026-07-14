@@ -8,6 +8,7 @@
  */
 import { AVATAR_FRAMES, type AvatarFrame } from '@ludo/shared';
 import type { TKey } from './i18n';
+import { isPremiumFrame } from '../components/PremiumFrame';
 
 export interface FrameUnlockCtx {
   games: number;
@@ -31,14 +32,25 @@ export const FRAMES: FrameDef[] = [
   { id: 'gold', nameKey: 'frameGold', hintKey: 'frameGoldHint', unlocked: (c) => c.wins >= 25 },
   { id: 'neon', nameKey: 'frameNeon', hintKey: 'frameNeonHint', unlocked: (c) => c.streakDays >= 7 },
   { id: 'champion', nameKey: 'frameChampion', hintKey: 'frameChampionHint', unlocked: (c) => c.division <= 1 },
+  // Ultra-premium illustrated + animated frames (SVG overlays) — progression rewards.
+  { id: 'laurel', nameKey: 'frameLaurel', hintKey: 'frameLaurelHint', unlocked: (c) => c.wins >= 15 },
+  { id: 'ruby', nameKey: 'frameRuby', hintKey: 'frameRubyHint', unlocked: (c) => c.wins >= 30 },
+  { id: 'royal', nameKey: 'frameRoyal', hintKey: 'frameRoyalHint', unlocked: (c) => c.wins >= 50 },
+  { id: 'flame', nameKey: 'frameFlame', hintKey: 'frameFlameHint', unlocked: (c) => c.streakDays >= 5 },
+  { id: 'jade', nameKey: 'frameJade', hintKey: 'frameJadeHint', unlocked: (c) => c.streakDays >= 12 },
+  { id: 'frost', nameKey: 'frameFrost', hintKey: 'frameFrostHint', unlocked: (c) => c.games >= 40 },
+  { id: 'nebula', nameKey: 'frameNebula', hintKey: 'frameNebulaHint', unlocked: (c) => c.games >= 80 },
+  { id: 'circuit', nameKey: 'frameCircuit', hintKey: 'frameCircuitHint', unlocked: (c) => c.division <= 0 },
 ];
 
 export function frameById(id: string): FrameDef {
   return FRAMES.find((f) => f.id === id) ?? FRAMES[0]!;
 }
 
-/** CSS class for a frame id (safe for any avatar wrapper). 'none' → no ring. */
+/** CSS class for a frame id (safe for any avatar wrapper). 'none' → no ring.
+ *  Premium frames render as an SVG overlay (<PremiumFrame>), NOT a CSS ring. */
 export function frameClass(id: string | undefined): string {
+  if (isPremiumFrame(id)) return '';
   const fid = id && (AVATAR_FRAMES as readonly string[]).includes(id) ? id : 'none';
   return fid === 'none' ? '' : `avframe avframe--${fid}`;
 }
@@ -47,6 +59,7 @@ export function frameClass(id: string | undefined): string {
  *  own their sizing/shape (the in-game corner cards), so the ring is purely
  *  additive and can't disturb the countdown ring or seat scaling. */
 export function frameRing(id: string | undefined): string {
+  if (isPremiumFrame(id)) return '';
   const fid = id && (AVATAR_FRAMES as readonly string[]).includes(id) ? id : 'none';
   return fid === 'none' ? '' : `avframe--${fid}`;
 }

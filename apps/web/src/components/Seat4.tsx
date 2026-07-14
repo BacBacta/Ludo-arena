@@ -7,6 +7,7 @@ import { Die3D } from './Die3D';
 import type { DiceSkin } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
+import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
 
 /** Ludo Club uses one WHITE die with black pips for everyone; the active player
  *  is identified by the die's POSITION at their corner, not by colour. */
@@ -24,8 +25,10 @@ export const WHITE_DIE: DiceSkin = {
  *  A chosen 3D avatar takes precedence over the flag. */
 export function SeatAvatar({ name, flag, frame, avatar, active }: { name: string; flag?: string; frame?: string; avatar?: string; active: boolean }) {
   const src = avatarSrc(avatar);
-  return (
-    <div className={`seatav${active ? ' seatav--active' : ''} ${frameRing(frame)}`} aria-label={name}>
+  const premium = isPremiumFrame(frame);
+  // A premium frame turns the tile circular so the ornamental ring fits snugly.
+  const tile = (
+    <div className={`seatav${active ? ' seatav--active' : ''}${premium ? ' seatav--circ' : ''} ${frameRing(frame)}`} aria-label={name}>
       {src ? (
         <img className="seatav__img" src={src} alt="" />
       ) : flag ? (
@@ -37,6 +40,15 @@ export function SeatAvatar({ name, flag, frame, avatar, active }: { name: string
         </svg>
       )}
     </div>
+  );
+  // The frame overlay lives OUTSIDE the tile (which clips its content) so the
+  // ornamental ring is never cut off by the tile's overflow.
+  if (!premium) return tile;
+  return (
+    <span className="seatav-framed">
+      {tile}
+      <PremiumFrame frame={frame} />
+    </span>
   );
 }
 

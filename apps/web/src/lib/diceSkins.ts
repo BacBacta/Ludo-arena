@@ -16,6 +16,10 @@ export interface UnlockCtx extends PlayerStats {
   division: number;
 }
 
+/** Ultra-premium dice are rendered in real 3D (WebGL/PBR) with a dedicated roll
+ *  sound; `material` drives both the WebGL shader and the richer static preview. */
+export type DieMaterial = 'metal' | 'glass' | 'gem' | 'irid' | 'cyber' | 'molten';
+
 export interface DiceSkin {
   id: string;
   name: string;
@@ -24,6 +28,10 @@ export interface DiceSkin {
   pip: string;
   stroke: string;
   glow?: string;
+  /** Premium 3D material (undefined = flat CSS die, the default). */
+  material?: DieMaterial;
+  /** Dedicated roll sound key → public/sfx/dice/<sound>.mp3 (undefined = default). */
+  sound?: string;
   hintKey?: TKey; // unlock hint (undefined = free)
   unlocked(ctx: UnlockCtx): boolean;
   soon?: boolean; // future paid skin
@@ -80,6 +88,7 @@ export const DICE_SKINS: DiceSkin[] = [
     unlocked: (c) => c.wins >= 3,
   },
   {
+    // Free progression skin, upgraded to a real 3D 'cyber' material + sound.
     id: 'neon',
     name: 'Neon',
     body1: '#59f7d2',
@@ -87,29 +96,71 @@ export const DICE_SKINS: DiceSkin[] = [
     pip: '#083328',
     stroke: '#03614a',
     glow: 'rgba(89,247,210,.55)',
+    material: 'cyber',
+    sound: 'neon',
     hintKey: 'skinHintLeague',
     unlocked: (c) => c.division >= 2,
   },
+  // ---- Ultra-premium 3D dice (PREMIUM_COSMETICS): real WebGL PBR materials +
+  //      a dedicated roll sound. unlocked() stays false — ownership drives the UI.
   {
-    // Premium (PREMIUM_SKINS): unlocked by spending freeroll tickets, tracked
-    // server-side. unlocked() stays false — ownership drives the UI, not stats.
     id: 'obsidian',
     name: 'Obsidian',
-    body1: '#2b2b33',
-    body2: '#0c0c10',
-    pip: '#ff4d6d',
+    body1: '#3a3a44',
+    body2: '#0a0a0e',
+    pip: '#ff2d55',
     stroke: '#000000',
-    glow: 'rgba(255,77,109,.4)',
+    glow: 'rgba(255,45,85,.5)',
+    material: 'glass',
+    sound: 'obsidian',
     unlocked: () => false,
   },
   {
     id: 'aurora',
     name: 'Aurora',
-    body1: '#7ef0ff',
+    body1: '#c9b8ff',
     body2: '#6a5be0',
     pip: '#0b1030',
-    stroke: '#2a2170',
-    glow: 'rgba(126,240,255,.5)',
+    stroke: '#3a2f8a',
+    glow: 'rgba(150,140,255,.55)',
+    material: 'irid',
+    sound: 'aurora',
+    unlocked: () => false,
+  },
+  {
+    id: 'crystal',
+    name: 'Diamond',
+    body1: '#f2ffff',
+    body2: '#5fa8d8',
+    pip: '#1b3a5a',
+    stroke: '#8fc6e6',
+    glow: 'rgba(120,220,255,.55)',
+    material: 'gem',
+    sound: 'crystal',
+    unlocked: () => false,
+  },
+  {
+    id: 'ember',
+    name: 'Ember',
+    body1: '#ffe1a0',
+    body2: '#8a1418',
+    pip: '#fff2d8',
+    stroke: '#5a0a0a',
+    glow: 'rgba(255,90,40,.55)',
+    material: 'molten',
+    sound: 'ember',
+    unlocked: () => false,
+  },
+  {
+    id: 'gold',
+    name: 'Gold',
+    body1: '#fff2b0',
+    body2: '#a9760a',
+    pip: '#4a3400',
+    stroke: '#7a5300',
+    glow: 'rgba(245,179,1,.55)',
+    material: 'metal',
+    sound: 'gold',
     unlocked: () => false,
   },
 ];

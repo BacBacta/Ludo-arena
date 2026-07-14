@@ -6,6 +6,7 @@ import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
 import { frameClass } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
+import { PremiumFrame } from '../components/PremiumFrame';
 import { t } from '../lib/i18n';
 
 /** MiniPay top-up deeplink — the required alternative to an "insufficient" error. */
@@ -159,6 +160,7 @@ export function Lobby({
           <div className="profilecard__id">
             <span className={`profilecard__flag ${frameClass(avatarFrame)}`}>
               {avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : profile.flag}
+              <PremiumFrame frame={avatarFrame} />
             </span>
             <div className="profilecard__meta">
               <b>{profile.name}</b>

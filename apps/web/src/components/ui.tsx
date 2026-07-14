@@ -8,6 +8,8 @@ import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
 import { FRAMES, frameClass } from '../lib/avatarFrames';
 import { avatarSrc, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
+import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
+import { devUnlockCosmetics } from '../lib/devUnlock';
 import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
 import { DIVISIONS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
@@ -184,13 +186,15 @@ export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: n
 /** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
  *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
 export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {
-  const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins, avatarFrame } = useAppState();
+  const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins, avatarFrame, walletAddress } = useAppState();
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(diceModalOpen, close);
   if (!diceModalOpen) return null;
   const stats = loadStats();
   const ctx = { ...stats, streakDays: streak.days, tickets, division: league.division };
+  // Dev/QA wallet: every cosmetic unlocked so the owner can test them all.
+  const devAll = devUnlockCosmetics(walletAddress);
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
@@ -201,7 +205,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
         <div className="skingrid">
           {DICE_SKINS.map((s) => {
             const price = PREMIUM_SKINS[s.id]; // premium skins are ticket-priced
-            const owned = ownedSkins.includes(s.id);
+            const owned = devAll || ownedSkins.includes(s.id);
             const unlocked = owned || (price === undefined && s.unlocked(ctx));
             const equipped = s.id === diceSkin;
             const canBuyTickets = price !== undefined && !owned;
@@ -247,7 +251,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
         <h3 style={{ marginTop: 16 }}>{t('framesTitle')}</h3>
         <div className="framegrid">
           {FRAMES.map((f) => {
-            const unlocked = f.unlocked(ctx);
+            const unlocked = devAll || f.unlocked(ctx);
             const equipped = f.id === avatarFrame;
             return (
               <button
@@ -256,7 +260,9 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                 disabled={!unlocked}
                 onClick={unlocked ? () => dispatch({ type: 'EQUIP_FRAME', id: f.id }) : undefined}
               >
-                <span className={`frametile__ring ${frameClass(f.id)}`} aria-hidden="true" />
+                <span className={`frametile__ring ${frameClass(f.id)}`} aria-hidden="true">
+                  {isPremiumFrame(f.id) && <PremiumFrame frame={f.id} />}
+                </span>
                 <b>{t(f.nameKey)}</b>
                 <small>{equipped ? t('skinEquipped') : unlocked ? t('skinTap') : t(f.hintKey ?? 'skinSoon')}</small>
                 {!unlocked && <span className="skin__lock">🔒</span>}
@@ -307,6 +313,7 @@ export function ProfileSheet() {
             <div className="profilesheet__head">
               <span className={`profilesheet__flag ${frameClass(p.frame)}`} aria-hidden="true">
                 {avatarSrc(p.avatar) ? <img className="profilesheet__img" src={avatarSrc(p.avatar)!} alt="" /> : p.flag}
+                <PremiumFrame frame={p.frame} />
               </span>
               <div>
                 <b className="profilesheet__name">{p.name}</b>
@@ -368,6 +375,7 @@ export function ProfileEditor({ onSave }: { onSave(name: string, flag: string, a
         <div className="pe__preview">
           <span className={`pe__flag ${frameClass(avatarFrame)}`} aria-hidden="true">
             {previewSrc ? <img className="pe__previmg" src={previewSrc} alt="" /> : flag}
+            <PremiumFrame frame={avatarFrame} />
           </span>
           <b>{trimmed || '—'}</b>
         </div>

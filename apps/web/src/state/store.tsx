@@ -141,6 +141,8 @@ export interface AppState {
   balanceCents: number;
   /** True once the balance comes from a connected wallet (no simulated debits). */
   walletBacked: boolean;
+  /** Connected wallet address (for dev cosmetic unlock); null until connected. */
+  walletAddress: string | null;
   stakeCents: StakeCents;
   challenge: ChallengeState;
   streak: StreakState;
@@ -244,6 +246,7 @@ export const initialState: AppState = {
   // simulated demo money); the header shows a connect CTA until SET_BALANCE.
   balanceCents: 0,
   walletBacked: false,
+  walletAddress: null,
   // Default to Free: a cold, wallet-less visitor's first PLAY should be the free
   // practice game the onboarding promises — not a locked 25¢ tile that does nothing.
   stakeCents: 0,
@@ -320,6 +323,7 @@ export type Action =
   | { type: 'LIMITS_UPDATE'; limits: LimitsState }
   | { type: 'GEO'; stakingBlocked: boolean }
   | { type: 'SET_BALANCE'; cents: number }
+  | { type: 'SET_WALLET_ADDRESS'; address: string | null }
   | { type: 'GO_LOBBY' }
   | { type: 'TOAST'; message: string }
   | { type: 'CLEAR_TOAST' }
@@ -461,6 +465,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, staking: a.status };
     case 'SET_BALANCE':
       return { ...s, balanceCents: a.cents, walletBacked: true };
+    case 'SET_WALLET_ADDRESS':
+      return { ...s, walletAddress: a.address };
     case 'GO_LOBBY':
       return { ...s, screen: 'lobby', emotes: {}, gifts: {}, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
     case 'TOAST':

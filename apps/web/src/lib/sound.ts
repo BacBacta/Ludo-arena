@@ -82,6 +82,18 @@ const FILES: Record<string, string> = {
   g_boba: 'gifts/bubbletea.mp3',
   g_beer: 'gifts/beer.mp3',
   g_cake: 'gifts/cake.mp3',
+  // Per-material premium dice roll sounds (chosen in the cosmetics lab).
+  dice_gold: 'dice/gold.mp3',
+  dice_obsidian: 'dice/obsidian.mp3',
+  dice_crystal: 'dice/crystal.mp3',
+  dice_aurora: 'dice/aurora.mp3',
+  dice_neon: 'dice/neon.mp3',
+  dice_ember: 'dice/ember.mp3',
+};
+
+/** Per-premium-die roll level (I can't ear-tune; the master compressor guards). */
+const DICE_SOUND_GAIN: Record<string, number> = {
+  gold: 0.9, obsidian: 0.85, crystal: 0.85, aurora: 0.8, neon: 0.85, ember: 0.8,
 };
 
 /** Emoji → sample + per-emote level (I can't ear-tune, so levels are moderate;
@@ -194,9 +206,14 @@ function playSample(name: string, o: PlayOpts = {}): void {
 
 /* ------------------------------------------------- public API (unchanged names) */
 
-export function playDice(): void {
-  // Was too thin: a fuller, louder throw + a soft low wooden "landing" thud for
-  // weight (the die settling on the board). Fires for EVERY seat's roll.
+export function playDice(soundKey?: string): void {
+  // Premium dice carry their own material roll sound (☕ gold=coins, crystal=chime,
+  // ember=impact…), capped so it stays snappy. Only my own equipped skin passes one.
+  if (soundKey && DICE_SOUND_GAIN[soundKey]) {
+    playSample(`dice_${soundKey}`, { gain: DICE_SOUND_GAIN[soundKey], maxDur: 2.6 });
+    return;
+  }
+  // Default: a fuller, louder throw + a soft low wooden "landing" thud for weight.
   const r = 0.9 + Math.random() * 0.07;
   playSample('dice', { gain: 1.6, rate: r });
   playSample('pawn', { gain: 0.4, rate: 0.8, delay: 0.05 });

@@ -6,8 +6,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
-import { Die3D } from '../components/Die3D';
-import { SeatAvatar, SeatDie, WHITE_DIE } from '../components/Seat4';
+import { Die } from '../components/DiePremium';
+import { SeatAvatar, SeatDie } from '../components/Seat4';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFloat, type GiftTarget } from '../components/Emote';
 import { IconMenu } from '../components/icons';
 import type { Player4Info } from '@ludo/shared';
@@ -16,7 +16,8 @@ import { Remote4, type Match4Info, type Over4Info } from '../lib/remote4';
 import type { WalletAuth } from '../lib/session';
 import type { StakeStatus } from '../lib/escrow';
 import { playCapture, playDice, playWin } from '../lib/sound';
-import { fmtUsd, useAppDispatch } from '../state/store';
+import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
+import { skinById } from '../lib/diceSkins';
 import { t } from '../lib/i18n';
 
 type Status = 'connecting' | 'waiting' | 'playing' | 'over';
@@ -48,6 +49,7 @@ export function Game4OnlineScreen({
   onViewProfile(pid: string): void;
 }) {
   const dispatch = useAppDispatch();
+  const mySkin = skinById(useAppState().diceSkin); // my equipped die (shown on my rolls)
   const remoteRef = useRef<Remote4 | null>(null);
 
   const [status, setStatus] = useState<Status>('connecting');
@@ -173,7 +175,7 @@ export function Game4OnlineScreen({
   function doRoll(): void {
     if (!canRoll) return;
     setRolling(true);
-    playDice(); // own roll: play immediately (no server round-trip lag)
+    playDice(mySkin.sound); // own roll: my die's own sound, immediately (no RTT lag)
     remoteRef.current?.roll();
   }
   function doMove(token: number): void {
@@ -233,7 +235,7 @@ export function Game4OnlineScreen({
 
     const inner = myTurnHere ? (
       <button className="ludodie ludodie--tap" disabled={!canRoll} onClick={doRoll} aria-label="your die">
-        <Die3D value={dieHere ? dieVal : 6} rollKey={dieHere ? dieKey : 0} skin={WHITE_DIE} />
+        <Die value={dieHere ? dieVal : 6} rollKey={dieHere ? dieKey : 0} skin={mySkin} />
       </button>
     ) : dieHere ? (
       <SeatDie value={dieVal} rollKey={dieKey} />

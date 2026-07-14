@@ -4,11 +4,13 @@ import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { Board } from '../components/Board';
 import { DieFace } from '../components/Die';
 import { Die3D } from '../components/Die3D';
+import { Die } from '../components/DiePremium';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFloat } from '../components/Emote';
 import { skinById } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
+import { PremiumFrame } from '../components/PremiumFrame';
 import { playDice } from '../lib/sound';
 import { t } from '../lib/i18n';
 
@@ -91,6 +93,7 @@ function AvatarCard({
       <div className="avcard__face" style={{ background: src ? 'transparent' : color }}>
         {src ? <img className="avcard__img" src={src} alt="" /> : flag ? <span className="avcard__flag">{flag}</span> : initial}
       </div>
+      <PremiumFrame frame={frame} />
     </div>
   );
 }
@@ -215,12 +218,12 @@ export function GameScreen({
                 className="dicebtn"
                 disabled={!canRoll}
                 onClick={() => {
-                  playDice(); // immediate feedback; the server result lands ~RTT later
+                  playDice(skin.sound); // my equipped die's own material sound (premium)
                   onRoll();
                 }}
                 aria-label={`${t('you')} die`}
               >
-                <Die3D value={myDieVal} rollKey={myRollIndex} skin={skin} />
+                <Die value={myDieVal} rollKey={myRollIndex} skin={skin} />
               </button>
             )}
           </div>

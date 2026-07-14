@@ -5,8 +5,9 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
-import { Die3D } from '../components/Die3D';
-import { SeatAvatar, SeatDie, WHITE_DIE } from '../components/Seat4';
+import { Die } from '../components/DiePremium';
+import { SeatAvatar, SeatDie } from '../components/Seat4';
+import { skinById } from '../lib/diceSkins';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFloat, type GiftTarget } from '../components/Emote';
 import { IconMenu } from '../components/icons';
 import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
@@ -26,9 +27,10 @@ const PLAYERS = [
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
 
 export function Game4Screen({ onLeave }: { onLeave(): void }) {
-  const { balanceCents, profile, avatarFrame, avatar } = useAppState();
+  const { balanceCents, profile, avatarFrame, avatar, diceSkin } = useAppState();
   const dispatch = useAppDispatch();
   const mySeat = 0;
+  const mySkin = skinById(diceSkin); // my equipped die reflects my cosmetic (my rolls)
   // Premium corner avatars carry a country flag: bots have fixed flags; my seat
   // uses my real identity flag, falling back to the generic globe.
   const seatFlag = (seat: number): string =>
@@ -72,7 +74,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
     if (g.phase !== 'awaiting-roll' || g.turn !== seat) return; // guard stale/dup calls
     const value = die6();
     setRoll({ seat, value, key: Date.now() });
-    playDice(); // every seat's roll — bots included (offline: no RTT, this is the only cue)
+    playDice(seat === mySeat ? mySkin.sound : undefined); // my roll = my die's own sound
     const legal = legalMoves4(g, seat, value);
     if (legal.length === 0) {
       // No move: SHOW the roll on this seat for a beat, THEN pass the turn — so it
@@ -202,7 +204,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
                 onClick={() => canRoll && doRoll(gameRef.current, mySeat)}
                 aria-label="your die"
               >
-                <Die3D value={dieValue} rollKey={rollKey} skin={WHITE_DIE} />
+                <Die value={dieValue} rollKey={rollKey} skin={mySkin} />
               </button>
             )}
           </div>
