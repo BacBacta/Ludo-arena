@@ -43,6 +43,7 @@ export function EmoteBar({ onEmote, dir = 'up' }: { onEmote(id: string): void; d
   const send = (id: string): void => {
     if (cooling) return;
     playTap();
+    if (typeof navigator !== 'undefined') navigator.vibrate?.(20); // playful haptic (works when muted)
     onEmote(id);
     setOpen(false);
     setCooling(true);
