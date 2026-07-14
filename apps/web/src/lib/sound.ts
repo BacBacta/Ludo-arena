@@ -235,6 +235,43 @@ export function playWelcome(): void {
   playSample('confirm', { gain: 0.7 });
 }
 
+/* ------------------------------------------------------------- landing music */
+
+let musicEl: HTMLAudioElement | null = null;
+let musicWanted = false;
+
+function ensureMusicEl(): HTMLAudioElement | null {
+  if (typeof Audio === 'undefined') return null;
+  if (!musicEl) {
+    musicEl = new Audio(url('landing.mp3')); // streamed (range requests), lazy
+    musicEl.loop = true;
+    musicEl.preload = 'none';
+    musicEl.volume = 0.3; // low bed under the SFX
+  }
+  return musicEl;
+}
+
+/** Start the festive landing loop. Browsers block audio before a user gesture,
+ *  so a blocked start auto-retries on the next pointerdown. Idempotent. */
+export function startMusic(): void {
+  if (!soundEnabled()) return;
+  const el = ensureMusicEl();
+  if (!el) return;
+  musicWanted = true;
+  void el.play().catch(() => {
+    const retry = (): void => {
+      if (musicWanted && soundEnabled()) void el.play().catch(() => {});
+    };
+    window.addEventListener('pointerdown', retry, { once: true });
+  });
+}
+
+/** Stop the landing loop (leaving the lobby, or sound turned off). */
+export function stopMusic(): void {
+  musicWanted = false;
+  if (musicEl) musicEl.pause();
+}
+
 /** Real per-emoji sounds (Mixkit) — clap = applause, laugh = laughter, etc.
  *  Long clips are capped ~2.6 s so a reaction stays snappy. Unmapped ids
  *  (quick-chats) stay silent; the floating emoji still animates. */

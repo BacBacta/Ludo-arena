@@ -7,7 +7,7 @@
  * same-origin GETs use cache-first, populating the cache on first fetch. WS and
  * cross-origin (RPC/wallet) requests are never intercepted.
  */
-const CACHE = 'ludo-v10';
+const CACHE = 'ludo-v11';
 const SHELL = ['/', '/index.html', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -23,6 +23,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
+  // Range requests (streamed <audio>, e.g. the landing music) return 206
+  // partials that must NOT be cached or served as full responses — let the
+  // browser handle them directly.
+  if (req.headers.has('range')) return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // let RPC/wallet/WS pass through
 

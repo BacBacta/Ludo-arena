@@ -20,7 +20,7 @@ import { sendLimits, buySkin, claimCosmetic, fetchProfile, pushIdentity } from '
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet } from './lib/minipay';
 import type { StakeStatus } from './lib/escrow';
-import { playCapture, playDice, playWelcome, playWin } from './lib/sound';
+import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
 import { recordGameResult } from './lib/diceSkins';
 import { t } from './lib/i18n';
 
@@ -50,6 +50,14 @@ export default function App() {
     window.addEventListener('pointerdown', fire, { once: true });
     return () => window.removeEventListener('pointerdown', fire);
   }, []);
+
+  // Festive landing music: a low background loop on the lobby only; stops in a
+  // game and when sound is muted. (Autoplay is gated until the first gesture —
+  // startMusic retries on the next pointerdown.)
+  useEffect(() => {
+    if (state.screen === 'lobby' && state.soundOn) startMusic();
+    else stopMusic();
+  }, [state.screen, state.soundOn]);
 
   useEffect(() => {
     saveRetention({
