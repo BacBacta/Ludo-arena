@@ -1,0 +1,11 @@
+Sound effects — Kenney.nl (Casino Audio, Impact Sounds, Interface Sounds packs)
+Licence: CC0 1.0 Universal (public domain). Free for commercial use, no
+attribution required. https://kenney.nl  —  https://creativecommons.org/publicdomain/zero/1.0/
+
+dice.ogg    = die-throw-3            (Casino Audio)
+pawn.ogg    = footstep_wood_000      (Impact Sounds)
+capture.ogg = impactPunch_medium_000 (Impact Sounds)
+coin.ogg    = chips-handle-1         (Casino Audio)
+tap.ogg     = click_001              (Interface Sounds)
+select.ogg  = select_001             (Interface Sounds)
+confirm.ogg = confirmation_001       (Interface Sounds)
