@@ -32,6 +32,15 @@ export function isQuickChat(id: string): id is QuickChat {
   return (QUICK_CHATS as readonly string[]).includes(id);
 }
 
+/** Directed gifts (E-social): a small item you send to ONE chosen opponent in
+ *  the current game (vs an emote, which broadcasts your own reaction). Free +
+ *  server-throttled per sender. A fixed, friendly, curated set — no free text. */
+export const GIFTS = ['☕', '🌹', '🍫', '🎁', '🍕', '🧋', '🍺', '🎂'] as const;
+export type Gift = (typeof GIFTS)[number];
+export function isGift(id: string): id is Gift {
+  return (GIFTS as readonly string[]).includes(id);
+}
+
 /**
  * Public player profile (E-social): what ANY player may see about another by
  * tapping their avatar. Keyed by `pid` — an opaque server-derived hash, NEVER a
@@ -293,6 +302,8 @@ export type ClientMsg =
   // Send a quick emote or quick-chat to the current game (1v1 or 4p); id must
   // be in EMOTES or QUICK_CHATS (closed sets — no free text, ever).
   | { t: 'emote'; id: string }
+  // Send a directed GIFT to one opponent seat in the current game (1v1 or 4p).
+  | { t: 'gift'; to: number; id: string }
   // Fetch another player's public profile by their opaque pid (tap-on-avatar).
   | { t: 'profile.get'; pid: string }
   // Claim a cosmetic bought with cUSD on-chain (CosmeticsStore): the server
@@ -389,6 +400,8 @@ export type ServerMsg =
   | { t: 'game.turn'; seat: Seat; deadlineTs: number }
   // A player sent a quick emote (broadcast to the room; seat 0-3 for 1v1/4p).
   | { t: 'game.emote'; seat: number; id: string }
+  // A gift `from` a seat was sent `to` another seat (id in GIFTS).
+  | { t: 'game.gift'; from: number; to: number; id: string }
   // The turn clock expired and the server played automatically for a slow or
   // absent player; after `max` consecutive auto-plays the seat forfeits. Sent so
   // clients can EXPLAIN the pacing instead of looking silently stuck (UX).
@@ -519,6 +532,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) && typeof m.id === 'string' && cosmeticById(m.id) !== undefined ? m : null;
     case 'emote':
       return typeof m.id === 'string' && ((EMOTES as readonly string[]).includes(m.id) || isQuickChat(m.id)) ? m : null;
+    case 'gift':
+      return typeof m.id === 'string' && isGift(m.id) && typeof m.to === 'number' && m.to >= 0 && m.to <= 3 ? m : null;
     case 'profile.get':
       // opaque pid: short hex hash — reject anything else (never a wallet)
       return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) ? m : null;

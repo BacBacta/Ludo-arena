@@ -967,6 +967,12 @@ wss.on('connection', (ws, req) => {
         else if (session.room && session.seat !== null) session.room.emote(session.seat, msg.id);
         break;
 
+      case 'gift':
+        // Directed gift to a chosen opponent seat; the room throttles per seat.
+        if (session.room4 && session.seat4 !== null) session.room4.gift(session.seat4, msg.to, msg.id);
+        else if (session.room && session.seat !== null) session.room.gift(session.seat, msg.to, msg.id);
+        break;
+
       case 'profile.get': {
         // Public profile by opaque pid (tap-on-avatar). Throttled per session:
         // it is the only client-triggered DB lookup outside the game loop.

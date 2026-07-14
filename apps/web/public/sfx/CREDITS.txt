@@ -18,6 +18,14 @@ party.mp3 = party popper · mind.mp3 = explosion · whoa.mp3 = surprise ·
 sad.mp3 = sad · muscle.mp3 = punch/effort · charm.mp3 = magic · up.mp3 = bell ·
 cool.mp3 = whoosh. Chosen in the sound lab.
 
+--- Gift sounds (batch 3) ---
+Source: Mixkit (https://mixkit.co) — Mixkit Free License (commercial use, no
+attribution). Each is a LITERAL sound for its gift, chosen in the gift lab:
+gifts/coffee.mp3    = hot-drink sip (#153)      gifts/rose.mp3   = fairy sparkle (#871)
+gifts/chocolate.mp3 = crispy bite (#122)        gifts/gift.mp3   = reveal tones (#2988)
+gifts/pizza.mp3     = tasty eating (#114)        gifts/bubbletea.mp3 = soft slurp (#3207)
+gifts/beer.mp3      = clinking glasses (#2836)  gifts/cake.mp3   = birthday cheer (#974)
+
 --- Landing music ---
 landing.mp3 = Mixkit music #1072 (festive / upbeat), Mixkit Free License
 (commercial use, no attribution). Streamed + looped as a low background bed on

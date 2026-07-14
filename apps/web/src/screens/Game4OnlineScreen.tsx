@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
 import { Die3D } from '../components/Die3D';
 import { SeatAvatar, SeatDie, WHITE_DIE } from '../components/Seat4';
-import { EmoteBar, EmoteFloat } from '../components/Emote';
+import { EmoteBar, EmoteFloat, GiftBar, GiftFloat, type GiftTarget } from '../components/Emote';
 import { IconMenu } from '../components/icons';
 import type { Player4Info } from '@ludo/shared';
 import type { Game4 } from '@ludo/game-engine';
@@ -64,6 +64,8 @@ export function Game4OnlineScreen({
 
   const mySeatRef = useRef(mySeat);
   mySeatRef.current = mySeat;
+  const playersRef = useRef<Player4Info[]>(players);
+  playersRef.current = players;
   const winFired = useRef(false);
   const overRef = useRef<Over4Info | null>(null);
 
@@ -126,6 +128,10 @@ export function Game4OnlineScreen({
           setRolling(false);
         },
         onEmote: (seat, id) => dispatch({ type: 'EMOTE', seat, id }),
+        onGift: (from, to, id) => {
+          dispatch({ type: 'GIFT', from, to, id }); // GiftFloat plays the chime
+          if (to === mySeatRef.current && from !== to) onToast(`${playersRef.current[from]?.name ?? ''} ${t('giftFrom')} ${id}`);
+        },
         onOver: (info) => {
           overRef.current = info;
           setOver(info);
@@ -235,6 +241,7 @@ export function Game4OnlineScreen({
     const av = (
       <span className="emoteanchor">
         <EmoteFloat seat={seat} />
+        <GiftFloat seat={seat} />
         {players[seat]?.pid && !players[seat]?.bot ? (
           <button className="avtap" aria-label={`${name} profile`} onClick={() => onViewProfile(players[seat]!.pid!)}>
             <SeatAvatar name={name} flag={flag} frame={frame} active={active} />
@@ -246,6 +253,12 @@ export function Game4OnlineScreen({
     );
     return <div className="avrow__side">{CORNER[seat] === 'left' ? <>{av}{inner}</> : <>{inner}{av}</>}</div>;
   }
+
+  // Gift recipients: every seated opponent (humans + bots — all are "in the
+  // game"). The 🎁 bar lets you pick who receives it.
+  const giftTargets: GiftTarget[] = players
+    .map((p, seat) => ({ seat, name: p.name, flag: p.flag }))
+    .filter((r) => r.seat !== mySeat);
 
   return (
     <div className="screen screen--game">
@@ -259,6 +272,7 @@ export function Game4OnlineScreen({
             <span className="coinchip__c" /> {fmtUsd(potCents)}
           </div>
           <EmoteBar onEmote={(id) => remoteRef.current?.emote(id)} dir="down" />
+          <GiftBar recipients={giftTargets} onGift={(to, id) => remoteRef.current?.gift(to, id)} dir="down" />
           <button className="chromebtn" aria-label="leave" onClick={onLeave}>
             ✕
           </button>

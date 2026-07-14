@@ -5,7 +5,7 @@ import { Board } from '../components/Board';
 import { DieFace } from '../components/Die';
 import { Die3D } from '../components/Die3D';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
-import { EmoteBar, EmoteFloat } from '../components/Emote';
+import { EmoteBar, EmoteFloat, GiftBar, GiftFloat } from '../components/Emote';
 import { skinById } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
 import { playDice } from '../lib/sound';
@@ -95,12 +95,14 @@ export function GameScreen({
   onMove,
   onLeave,
   onEmote,
+  onGift,
   onViewProfile,
 }: {
   onRoll(): void;
   onMove(token: number): void;
   onLeave(): void;
   onEmote(id: string): void;
+  onGift(to: number, id: string): void;
   /** Tap the opponent's avatar → their public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
@@ -163,6 +165,7 @@ export function GameScreen({
           </div>
           <div className="cornerstack">
             <EmoteFloat seat={1 - mySeat} />
+            <GiftFloat seat={1 - mySeat} />
             {!myTurn && (
               <div className="huddie" aria-label={`${match.opponent.name} die`}>
                 <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKIN} />
@@ -199,6 +202,7 @@ export function GameScreen({
         <div className="gamecorner gamecorner--bottom">
           <div className="cornerstack">
             <EmoteFloat seat={mySeat} />
+            <GiftFloat seat={mySeat} />
             <AvatarCard initial={(profile.name || t('you')).slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {myTurn && !handoff && (
               <button
@@ -250,6 +254,10 @@ export function GameScreen({
             </span>
           </button>
           <EmoteBar onEmote={onEmote} />
+          <GiftBar
+            recipients={[{ seat: 1 - mySeat, name: match.opponent.name, flag: match.opponent.flag }]}
+            onGift={onGift}
+          />
           <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
             <IconMenu />
           </button>

@@ -19,6 +19,7 @@ import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
 import { loadSkinId, saveSkinId } from '../lib/diceSkins';
 import { loadFrameId, saveFrameId } from '../lib/avatarFrames';
+import { t } from '../lib/i18n';
 
 const CACHE_KEY = 'ludo.retention';
 
@@ -161,6 +162,7 @@ export interface AppState {
   lastDice: { value: number; index: number; seat: Seat } | null;
   /** Latest emote per seat; `n` bumps each time so the float re-animates. */
   emotes: Record<number, { id: string; n: number }>;
+  gifts: Record<number, { id: string; n: number }>;
   /** All rolls this game, for client-side fairness verification (E5.1). */
   diceHistory: Array<{ index: number; value: number; seat: Seat }>;
   turnDeadlineTs: number | null;
@@ -256,6 +258,7 @@ export const initialState: AppState = {
   game: null,
   lastDice: null,
   emotes: {},
+  gifts: {},
   diceHistory: [],
   turnDeadlineTs: null,
   activeTurn: 0,
@@ -290,6 +293,7 @@ export type Action =
   | { type: 'GAME_STATE'; game: GameState }
   | { type: 'DICE'; value: number; index: number; seat: Seat }
   | { type: 'EMOTE'; seat: number; id: string }
+  | { type: 'GIFT'; from: number; to: number; id: string }
   | { type: 'CLEAR_EMOTES' }
   | { type: 'MOVED'; game: GameState; capture: boolean }
   | { type: 'TURN'; seat: Seat; deadlineTs: number }
@@ -333,9 +337,9 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SELECT_STAKE':
       return { ...s, stakeCents: a.stake };
     case 'START_PRACTICE4':
-      return { ...s, screen: 'game', practice4: true, online4: false, match: null, game: null, result: null, lastDice: null, emotes: {} };
+      return { ...s, screen: 'game', practice4: true, online4: false, match: null, game: null, result: null, lastDice: null, emotes: {}, gifts: {} };
     case 'START_ONLINE4':
-      return { ...s, screen: 'game', online4: true, online4Stake: a.stakeCents, practice4: false, match: null, game: null, result: null, lastDice: null, emotes: {} };
+      return { ...s, screen: 'game', online4: true, online4Stake: a.stakeCents, practice4: false, match: null, game: null, result: null, lastDice: null, emotes: {}, gifts: {} };
     case 'START_MATCHMAKING':
       return {
         ...s,
@@ -359,7 +363,7 @@ export function reducer(s: AppState, a: Action): AppState {
       return {
         ...s,
         match: a.match,
-        privateCode: null, emotes: {}, // friend joined; the game is starting
+        privateCode: null, emotes: {}, gifts: {}, // friend joined; the game is starting
         // Balance only ever changes via SET_BALANCE (refreshed from the wallet):
         // staked play requires a wallet, so there is no simulated debit anymore.
       };
@@ -373,8 +377,14 @@ export function reducer(s: AppState, a: Action): AppState {
       };
     case 'EMOTE':
       return { ...s, emotes: { ...s.emotes, [a.seat]: { id: a.id, n: (s.emotes[a.seat]?.n ?? 0) + 1 } } };
+    case 'GIFT': {
+      // the gift floats over the RECIPIENT seat; toast the recipient in 1v1
+      const gifts = { ...s.gifts, [a.to]: { id: a.id, n: (s.gifts[a.to]?.n ?? 0) + 1 } };
+      const toast = s.match && a.to === s.match.seat && a.from !== a.to ? `${s.match.opponent.name} ${t('giftFrom')} ${a.id}` : s.toast;
+      return { ...s, gifts, toast };
+    }
     case 'CLEAR_EMOTES':
-      return { ...s, emotes: {} };
+      return { ...s, emotes: {}, gifts: {} };
     case 'MOVED':
       // Challenge progress is server-authoritative (CHALLENGE_UPDATE), not derived here.
       return { ...s, game: a.game };
@@ -447,7 +457,7 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_BALANCE':
       return { ...s, balanceCents: a.cents, walletBacked: true };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', emotes: {}, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
+      return { ...s, screen: 'lobby', emotes: {}, gifts: {}, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
     case 'TOAST':
       return { ...s, toast: a.message };
     case 'CLEAR_TOAST':

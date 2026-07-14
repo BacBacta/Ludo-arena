@@ -1162,6 +1162,56 @@ small.muted { font-size: 12px; }
 @keyframes emoteSpin { 0% { transform: rotate(-360deg) scale(0.4); } 100% { transform: rotate(0) scale(1); } }
 @keyframes emoteBounce { 0%, 100% { transform: translateY(0) rotate(0); } 40% { transform: translateY(-9px) rotate(18deg); } 70% { transform: translateY(2px) rotate(-8deg); } }
 @media (prefers-reduced-motion: reduce) { .emotefloat, .emotein { animation-duration: 0.01ms !important; } .emotefloat { opacity: 0; } .emotebar__sheet { animation: none; } }
+
+/* ---- in-game gifts (directed treats: coffee, rose, cake…) ---- */
+.giftbar { position: relative; display: inline-flex; }
+.giftbar__toggle {
+  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  font-size: 20px; line-height: 1; color: var(--txt); background: rgba(245, 179, 1, 0.16);
+  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
+}
+.giftbar__toggle:active { transform: scale(0.92); }
+.giftbar__sheet {
+  position: absolute; z-index: 20; width: 236px; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--surface);
+  border-radius: 18px; box-shadow: 0 12px 30px rgba(23, 43, 99, 0.5); animation: emoteRow 0.14s ease-out;
+}
+/* anchored to the button's right edge so the sheet never overhangs the board */
+.emotebar--up .giftbar__sheet { bottom: 100%; margin-bottom: 8px; right: 0; transform-origin: bottom right; }
+.emotebar--down .giftbar__sheet { top: 100%; margin-top: 8px; right: 0; transform-origin: top right; }
+/* recipient picker: a horizontal chip row (only rendered with >1 opponent) */
+.giftbar__to { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.giftbar__toc {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 5px; cursor: pointer;
+  border: 1.5px solid transparent; background: var(--card-2); color: var(--txt);
+  border-radius: 999px; padding: 5px 10px 5px 7px; font-size: 12px; font-weight: 700;
+}
+.giftbar__toc.is-sel { border-color: var(--accent-2); background: rgba(245, 179, 1, 0.16); }
+.giftbar__toflag { font-size: 15px; line-height: 1; }
+.giftbar__toname { max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.giftbar__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.giftbar__g {
+  border: none; background: none; font-size: 26px; line-height: 1; cursor: pointer;
+  padding: 7px 0; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+}
+.giftbar__g:active { transform: scale(0.82); background: var(--card-2); }
+
+/* a gift dropping FROM ABOVE onto an avatar (distinct from emotes rising up) */
+.giftfloat {
+  position: absolute; left: 50%; top: -10px; transform: translateX(-50%);
+  font-size: 40px; pointer-events: none; z-index: 6; will-change: transform, opacity;
+  filter: drop-shadow(0 3px 6px rgba(8, 16, 44, 0.45)); animation: giftFloat 2.1s ease-out forwards;
+}
+.giftin { display: inline-block; animation: giftWobble 0.5s ease-in-out 2; }
+@keyframes giftFloat {
+  0% { opacity: 0; transform: translate(-50%, -46px) scale(0.5); }
+  18% { opacity: 1; transform: translate(-50%, -6px) scale(1.4); }
+  30% { transform: translate(-50%, -14px) scale(1); }
+  74% { opacity: 1; transform: translate(-50%, -12px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -30px) scale(0.85); }
+}
+@keyframes giftWobble { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-10deg); } 75% { transform: rotate(10deg); } }
+@media (prefers-reduced-motion: reduce) { .giftfloat, .giftin { animation-duration: 0.01ms !important; } .giftfloat { opacity: 0; } .giftbar__sheet { animation: none; } }
 .hash {
   font-family: ui-monospace, monospace;
   font-size: 10px;

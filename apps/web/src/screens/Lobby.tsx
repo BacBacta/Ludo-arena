@@ -3,7 +3,7 @@ import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store
 import { TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
 import { isMiniPay } from '../lib/minipay';
-import { playStart, playTap } from '../lib/sound';
+import { playTap } from '../lib/sound';
 import { frameClass } from '../lib/avatarFrames';
 import { t } from '../lib/i18n';
 
@@ -136,7 +136,7 @@ export function Lobby({
         )}
       </div>
 
-      <button className="btn btn--hero" onClick={() => { playStart(); play(); }}>
+      <button className="btn btn--hero" onClick={play}>
         {t('play')}
         <small>
           {stakeCents === 0

@@ -54,6 +54,7 @@ export class Room4 {
   private clock: ReturnType<typeof setTimeout> | null = null;
   private autoStreak: number[] = [0, 0, 0, 0];
   private lastEmoteAt: number[] = [0, 0, 0, 0]; // per-seat emote throttle
+  private lastGiftAt: number[] = [0, 0, 0, 0]; // per-seat gift throttle
   private deadlineTs = 0;
   private over = false;
   onResult?: (r: Room4Result) => void;
@@ -134,6 +135,16 @@ export class Room4 {
     if (now - (this.lastEmoteAt[seat] ?? 0) < 1200) return;
     this.lastEmoteAt[seat] = now;
     this.broadcast({ t: 'game.emote', seat, id });
+  }
+
+  /** Directed gift to a chosen opponent seat (0-3, not self). */
+  gift(from: number, to: number, id: string): void {
+    if (this.over || from < 0 || from > 3 || this.seats[from]?.bot) return;
+    if (to < 0 || to > 3 || to === from) return;
+    const now = Date.now();
+    if (now - (this.lastGiftAt[from] ?? 0) < 1500) return;
+    this.lastGiftAt[from] = now;
+    this.broadcast({ t: 'game.gift', from, to, id });
   }
 
   /** A human dropped (socket closed): a bot drives the seat and the client is

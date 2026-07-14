@@ -72,6 +72,8 @@ export interface SessionEvents {
   onAutoPlayed(seat: Seat, count: number, max: number): void;
   /** A player (this one or the opponent) sent a quick emote. */
   onEmote(seat: number, id: string): void;
+  /** A gift was sent from one seat to another (id in GIFTS). */
+  onGift(from: number, to: number, id: string): void;
   onOver(result: GameResult): void;
   onInfo(message: string): void;
   /** On-chain settlement confirmed (E3.3): the payout tx is mined. */
@@ -109,6 +111,8 @@ export interface GameSession {
   move(token: number): void;
   /** Send a quick emote to the opponent (id must be in EMOTES). */
   emote(id: string): void;
+  /** Send a directed gift to an opponent seat (id in GIFTS). */
+  gift(to: number, id: string): void;
   /** Deliberately forfeit the current match (the opponent wins). */
   resign(): void;
   /** Ask for a rematch on THIS live session (true direct rematch — the server
@@ -159,6 +163,11 @@ export class LocalBotSession implements GameSession {
   emote(id: string): void {
     // no socket to broadcast to — echo the player's own emote locally (seat 0)
     if (!this.disposed) this.ev.onEmote(0, id);
+  }
+
+  gift(to: number, id: string): void {
+    // practice: echo the gift locally over the target seat (the bot at seat 1)
+    if (!this.disposed) this.ev.onGift(0, to, id);
   }
 
   resign(): void {
@@ -752,6 +761,9 @@ export class RemoteSession implements GameSession {
       case 'game.emote':
         this.ev.onEmote(msg.seat, msg.id);
         break;
+      case 'game.gift':
+        this.ev.onGift(msg.from, msg.to, msg.id);
+        break;
       case 'game.over':
         this.inGame = false;
         this.ev.onOver(msg);
@@ -799,6 +811,10 @@ export class RemoteSession implements GameSession {
 
   emote(id: string): void {
     this.send({ t: 'emote', id });
+  }
+
+  gift(to: number, id: string): void {
+    this.send({ t: 'gift', to, id });
   }
 
   resign(): void {

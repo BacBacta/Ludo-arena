@@ -177,6 +177,7 @@ export default function App() {
         dispatch({ type: 'TOAST', message: `${t(key)} · ${count}/${max}` });
       },
       onEmote: (seat, id) => dispatch({ type: 'EMOTE', seat, id }),
+      onGift: (from, to, id) => dispatch({ type: 'GIFT', from, to, id }), // GiftFloat plays the chime
       onOver: (result) => {
         const won = result.winner === (matchSeatRef.current ?? 0);
         if (won) playWin();
@@ -549,7 +550,7 @@ export default function App() {
         />
       )}
       {state.screen === 'game' && !state.practice4 && !state.online4 && (
-        <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} onEmote={(id) => sessionRef.current?.emote(id)} onViewProfile={onViewProfile} />
+        <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} onEmote={(id) => sessionRef.current?.emote(id)} onGift={(to, id) => sessionRef.current?.gift(to, id)} onViewProfile={onViewProfile} />
       )}
       {state.screen === 'end' && <EndScreen onRematch={rematch} />}
       <LegalModal

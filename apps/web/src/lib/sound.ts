@@ -74,6 +74,14 @@ const FILES: Record<string, string> = {
   e_charm: 'emotes/charm.mp3',
   e_up: 'emotes/up.mp3',
   e_cool: 'emotes/cool.mp3',
+  g_coffee: 'gifts/coffee.mp3',
+  g_rose: 'gifts/rose.mp3',
+  g_choc: 'gifts/chocolate.mp3',
+  g_gift: 'gifts/gift.mp3',
+  g_pizza: 'gifts/pizza.mp3',
+  g_boba: 'gifts/bubbletea.mp3',
+  g_beer: 'gifts/beer.mp3',
+  g_cake: 'gifts/cake.mp3',
 };
 
 /** Emoji → sample + per-emote level (I can't ear-tune, so levels are moderate;
@@ -91,6 +99,20 @@ const EMOTE_MAP: Record<string, { name: string; gain: number }> = {
   '👍': { name: 'e_up', gain: 0.75 },
   '😎': { name: 'e_cool', gain: 0.7 },
   '🎲': { name: 'dice', gain: 0.8 },
+};
+
+/** Gift emoji → its dedicated sample + level, each a LITERAL sound for the item
+ *  (☕ = a hot sip, 🍺 = clinking glasses, 🎂 = a birthday cheer…). Chosen in the
+ *  gift lab. Long clips (🍫 🍕 🎂) are capped in playGift so a reaction stays snappy. */
+const GIFT_MAP: Record<string, { name: string; gain: number }> = {
+  '☕': { name: 'g_coffee', gain: 0.85 },
+  '🌹': { name: 'g_rose', gain: 0.75 },
+  '🍫': { name: 'g_choc', gain: 0.8 },
+  '🎁': { name: 'g_gift', gain: 0.7 },
+  '🍕': { name: 'g_pizza', gain: 0.8 },
+  '🧋': { name: 'g_boba', gain: 0.9 },
+  '🍺': { name: 'g_beer', gain: 0.85 },
+  '🎂': { name: 'g_cake', gain: 0.7 },
 };
 
 const buffers: Record<string, AudioBuffer> = {};
@@ -173,7 +195,11 @@ function playSample(name: string, o: PlayOpts = {}): void {
 /* ------------------------------------------------- public API (unchanged names) */
 
 export function playDice(): void {
-  playSample('dice', { rate: 0.97 + Math.random() * 0.06 });
+  // Was too thin: a fuller, louder throw + a soft low wooden "landing" thud for
+  // weight (the die settling on the board). Fires for EVERY seat's roll.
+  const r = 0.9 + Math.random() * 0.07;
+  playSample('dice', { gain: 1.6, rate: r });
+  playSample('pawn', { gain: 0.4, rate: 0.8, delay: 0.05 });
 }
 
 let lastHop = 0;
@@ -270,6 +296,18 @@ export function startMusic(): void {
 export function stopMusic(): void {
   musicWanted = false;
   if (musicEl) musicEl.pause();
+}
+
+/** A gift was sent/received — plays that gift's dedicated, literal sound (☕ sip,
+ *  🍺 clink, 🎂 birthday cheer…), capped ~2.6 s so it stays snappy. Unknown ids
+ *  fall back to the soft confirm chime. */
+export function playGift(id?: string): void {
+  const m = id ? GIFT_MAP[id] : undefined;
+  if (!m) {
+    playSample('confirm', { gain: 0.5 });
+    return;
+  }
+  playSample(m.name, { gain: m.gain, maxDur: 2.6 });
 }
 
 /** Real per-emoji sounds (Mixkit) — clap = applause, laugh = laughter, etc.

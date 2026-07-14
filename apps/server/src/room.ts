@@ -52,6 +52,7 @@ export class Room {
   private clock: ReturnType<typeof setTimeout> | null = null;
   private autoMoveStreak: [number, number] = [0, 0];
   private lastEmoteAt: [number, number] = [0, 0]; // per-seat emote throttle
+  private lastGiftAt: [number, number] = [0, 0]; // per-seat gift throttle
   private deadlineTs = 0;
   private over = false;
   /** Ticket-gated freeroll game (entry already paid; winner gets the ticket prize). */
@@ -156,6 +157,15 @@ export class Room {
     if (now - this.lastEmoteAt[seat] < 1200) return;
     this.lastEmoteAt[seat] = now;
     this.broadcast({ t: 'game.emote', seat, id });
+  }
+
+  /** Directed gift to the opponent seat (1v1: `to` must be the other seat). */
+  gift(from: Seat, to: number, id: string): void {
+    if (this.over || (to !== 0 && to !== 1) || to === from) return;
+    const now = Date.now();
+    if (now - this.lastGiftAt[from] < 1500) return;
+    this.lastGiftAt[from] = now;
+    this.broadcast({ t: 'game.gift', from, to, id });
   }
 
   getState(): GameState {

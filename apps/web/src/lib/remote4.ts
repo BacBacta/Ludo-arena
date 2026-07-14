@@ -43,6 +43,7 @@ export interface Remote4Events {
   onTurn(seat: number, deadlineTs: number): void;
   /** A seat sent a quick emote (broadcast to the table). */
   onEmote(seat: number, id: string): void;
+  onGift(from: number, to: number, id: string): void;
   onOver(info: Over4Info): void;
   /** Staked payout confirmed on-chain (game.settled4). */
   onSettled(txHash: string): void;
@@ -171,6 +172,9 @@ export class Remote4 {
       case 'game.emote':
         this.ev.onEmote(msg.seat, msg.id);
         break;
+      case 'game.gift':
+        this.ev.onGift(msg.from, msg.to, msg.id);
+        break;
       case 'game.over4':
         this.inGame = false;
         this.ev.onOver({ winner: msg.winner, payoutCents: msg.payoutCents, rakeCents: msg.rakeCents, fairnessReveal: msg.fairnessReveal });
@@ -211,6 +215,10 @@ export class Remote4 {
 
   emote(id: string): void {
     this.send({ t: 'emote', id });
+  }
+
+  gift(to: number, id: string): void {
+    this.send({ t: 'gift', to, id });
   }
 
   resign(): void {
