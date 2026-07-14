@@ -6,6 +6,7 @@
 import { Die3D } from './Die3D';
 import type { DiceSkin } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
+import { avatarSrc } from '../lib/avatars';
 
 /** Ludo Club uses one WHITE die with black pips for everyone; the active player
  *  is identified by the die's POSITION at their corner, not by colour. */
@@ -19,11 +20,15 @@ export const WHITE_DIE: DiceSkin = {
   stroke: '#c7cdd9',
 };
 
-/** Grey placeholder avatar tile at a board corner; the active seat lifts slightly. */
-export function SeatAvatar({ name, flag, frame, active }: { name: string; flag?: string; frame?: string; active: boolean }) {
+/** Grey placeholder avatar tile at a board corner; the active seat lifts slightly.
+ *  A chosen 3D avatar takes precedence over the flag. */
+export function SeatAvatar({ name, flag, frame, avatar, active }: { name: string; flag?: string; frame?: string; avatar?: string; active: boolean }) {
+  const src = avatarSrc(avatar);
   return (
     <div className={`seatav${active ? ' seatav--active' : ''} ${frameRing(frame)}`} aria-label={name}>
-      {flag ? (
+      {src ? (
+        <img className="seatav__img" src={src} alt="" />
+      ) : flag ? (
         <span className="seatav__flag">{flag}</span>
       ) : (
         <svg viewBox="0 0 24 24" aria-hidden="true">

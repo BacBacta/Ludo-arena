@@ -56,6 +56,8 @@ export interface PublicProfile {
   division: number; // index into DIVISIONS
   /** Equipped avatar frame id (AVATAR_FRAMES); absent = 'none'. */
   frame?: string;
+  /** Chosen profile avatar id (AVATARS); absent/'none' = show the flag. */
+  avatar?: string;
   /** Head-to-head vs the REQUESTER (their wins/losses against this player);
    *  present only when both identities are known to the server. */
   h2h?: { wins: number; losses: number };
@@ -144,6 +146,29 @@ export const AVATAR_FRAMES = ['none', 'bronze', 'silver', 'gold', 'champion', 'n
 export type AvatarFrame = (typeof AVATAR_FRAMES)[number];
 export function isAvatarFrame(id: string): id is AvatarFrame {
   return (AVATAR_FRAMES as readonly string[]).includes(id);
+}
+
+/**
+ * Profile avatars (E-social): a premium 3D character picture the player may set
+ * as their identity INSTEAD of a bare flag — diverse by gender + skin tone, plus
+ * a few character variants. Like frames, the id is the shared allowlist while the
+ * images live client-side (apps/web/public/avatars, `av_<id>.png`); the server
+ * just validates + echoes + persists the id (client-authoritative, no proof —
+ * same trust model as frames/skins). `'none'` = fall back to the flag.
+ */
+export const AVATARS = [
+  'none',
+  // Person · Man · Woman, each across 6 skin tones (default + light→dark)
+  'person_default', 'person_light', 'person_medium-light', 'person_medium', 'person_medium-dark', 'person_dark',
+  'man_default', 'man_light', 'man_medium-light', 'man_medium', 'man_medium-dark', 'man_dark',
+  'woman_default', 'woman_light', 'woman_medium-light', 'woman_medium', 'woman_medium-dark', 'woman_dark',
+  // character variants (varied tones for diversity)
+  'artist_dark', 'astronaut_medium-dark', 'student_medium', 'person_with_crown_light',
+  'older_person_medium-dark', 'ninja_medium-light', 'health_worker_medium',
+] as const;
+export type Avatar = (typeof AVATARS)[number];
+export function isAvatar(id: string): id is Avatar {
+  return (AVATARS as readonly string[]).includes(id);
 }
 
 /** Editable-profile display-name bounds (shared by the client input + the server
@@ -260,6 +285,8 @@ export type ClientMsg =
       fingerprint?: string;
       /** Equipped avatar frame id (cosmetic, client-authoritative like skins). */
       frame?: string;
+      /** Chosen profile avatar id (AVATARS); client-authoritative like the frame. */
+      avatar?: string;
       /** Custom display name (E-social: editable profile). Server SANITIZES it
        *  (length, charset, profanity/URL filter); an invalid value falls back to
        *  the derived name — the connection is never rejected over a cosmetic name. */
@@ -329,6 +356,8 @@ export interface OpponentInfo {
   pid?: string;
   /** Equipped avatar frame id (AVATAR_FRAMES); absent = 'none'. */
   frame?: string;
+  /** Chosen profile avatar id (AVATARS); absent/'none' = show the flag. */
+  avatar?: string;
 }
 
 export type GameOverReason = 'finish' | 'timeout-forfeit' | 'resign';
@@ -359,6 +388,8 @@ export type ServerMsg =
       pid?: string;
       /** My own equipped avatar frame (echoed so a fresh client re-syncs it). */
       frame?: string;
+      /** My own chosen profile avatar (echoed so a fresh client re-syncs it). */
+      avatar?: string;
       resumed?: ResumedGame;
       challenge?: ChallengeState;
       streak?: StreakState;
@@ -476,6 +507,8 @@ export interface Player4Info {
   pid?: string;
   /** Equipped avatar frame id (AVATAR_FRAMES); absent = 'none'. */
   frame?: string;
+  /** Chosen profile avatar id (AVATARS); absent/'none' = show the flag. */
+  avatar?: string;
 }
 
 export type ErrorCode =
@@ -515,6 +548,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       // Frame is a cosmetic id: drop an unknown value rather than reject the
       // whole hello (a client on a newer catalog must still connect).
       if (m.frame !== undefined && (typeof m.frame !== 'string' || !isAvatarFrame(m.frame))) m.frame = undefined;
+      // Avatar id: same cosmetic trust — drop an unknown value, never reject.
+      if (m.avatar !== undefined && (typeof m.avatar !== 'string' || !isAvatar(m.avatar))) m.avatar = undefined;
       // Custom name: loose bound here (≤64 raw); the server sanitizes/filters.
       // Drop obviously-bad values instead of rejecting the connection.
       if (m.name !== undefined && (typeof m.name !== 'string' || m.name.length > 64)) m.name = undefined;

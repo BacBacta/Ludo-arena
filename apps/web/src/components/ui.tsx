@@ -7,6 +7,7 @@ import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
 import { FRAMES, frameClass } from '../lib/avatarFrames';
+import { avatarSrc, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
 import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
 import { DIVISIONS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
@@ -304,7 +305,9 @@ export function ProfileSheet() {
         ) : (
           <>
             <div className="profilesheet__head">
-              <span className={`profilesheet__flag ${frameClass(p.frame)}`} aria-hidden="true">{p.flag}</span>
+              <span className={`profilesheet__flag ${frameClass(p.frame)}`} aria-hidden="true">
+                {avatarSrc(p.avatar) ? <img className="profilesheet__img" src={avatarSrc(p.avatar)!} alt="" /> : p.flag}
+              </span>
               <div>
                 <b className="profilesheet__name">{p.name}</b>
                 <small className="muted">{DIVISIONS[p.division] ?? ''} {t('league')}</small>
@@ -334,25 +337,28 @@ export function ProfileSheet() {
  * country flag, and jump to the cosmetics for a frame. Opens from the identity
  * card; saving pushes to the server, which echoes back the effective name.
  */
-export function ProfileEditor({ onSave }: { onSave(name: string, flag: string): void }) {
-  const { profileEditOpen, profile, avatarFrame } = useAppState();
+export function ProfileEditor({ onSave }: { onSave(name: string, flag: string, avatar: string): void }) {
+  const { profileEditOpen, profile, avatarFrame, avatar: storeAvatar } = useAppState();
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'PROFILE_EDIT', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(profileEditOpen, close);
   const [name, setName] = useState(profile.name);
   const [flag, setFlag] = useState(profile.flag);
+  const [avatar, setAvatar] = useState(storeAvatar);
   useEffect(() => {
     if (profileEditOpen) {
       setName(profile.name);
       setFlag(profile.flag);
+      setAvatar(storeAvatar);
     }
-  }, [profileEditOpen, profile.name, profile.flag]);
+  }, [profileEditOpen, profile.name, profile.flag, storeAvatar]);
   if (!profileEditOpen) return null;
   const trimmed = name.trim();
   const valid = trimmed.length >= PROFILE_NAME_MIN && trimmed.length <= PROFILE_NAME_MAX;
+  const previewSrc = avatarSrc(avatar);
   const save = (): void => {
     if (!valid) return;
-    onSave(trimmed, flag);
+    onSave(trimmed, flag, avatar);
     close();
   };
   return (
@@ -360,7 +366,9 @@ export function ProfileEditor({ onSave }: { onSave(name: string, flag: string): 
       <div className="modal__card profileeditor" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h3>{t('editProfile')}</h3>
         <div className="pe__preview">
-          <span className={`pe__flag ${frameClass(avatarFrame)}`} aria-hidden="true">{flag}</span>
+          <span className={`pe__flag ${frameClass(avatarFrame)}`} aria-hidden="true">
+            {previewSrc ? <img className="pe__previmg" src={previewSrc} alt="" /> : flag}
+          </span>
           <b>{trimmed || '—'}</b>
         </div>
 
@@ -375,6 +383,28 @@ export function ProfileEditor({ onSave }: { onSave(name: string, flag: string): 
           placeholder={t('displayName')}
         />
         <small className="muted">{t('nameHint')}</small>
+
+        <label className="pe__label">{t('avatar')}</label>
+        <div className="pe__avatars">
+          <button
+            className={`pe__avbtn pe__avbtn--none${avatar === 'none' ? ' pe__avbtn--on' : ''}`}
+            title={t('avatarNone')}
+            onClick={() => setAvatar('none')}
+          >
+            <span aria-hidden="true">{flag}</span>
+          </button>
+          {[...AVATAR_FACES, ...AVATAR_CHARACTERS].map((id) => (
+            <button
+              key={id}
+              className={`pe__avbtn${avatar === id ? ' pe__avbtn--on' : ''}`}
+              onClick={() => setAvatar(id)}
+              aria-label={id}
+            >
+              <img src={avatarSrc(id)!} alt="" loading="lazy" />
+            </button>
+          ))}
+        </div>
+        <small className="muted">{t('avatarHint')}</small>
 
         <label className="pe__label">{t('country')}</label>
         <div className="pe__flags">

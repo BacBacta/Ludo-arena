@@ -5,6 +5,7 @@ import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../com
 import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
 import { frameClass } from '../lib/avatarFrames';
+import { avatarSrc } from '../lib/avatars';
 import { t } from '../lib/i18n';
 
 /** MiniPay top-up deeplink — the required alternative to an "insufficient" error. */
@@ -31,7 +32,7 @@ export function Lobby({
   /** Tap a league row → open that player's public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, recentOpponents } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
@@ -156,7 +157,9 @@ export function Lobby({
           aria-label={t('editProfile')}
         >
           <div className="profilecard__id">
-            <span className={`profilecard__flag ${frameClass(avatarFrame)}`}>{profile.flag}</span>
+            <span className={`profilecard__flag ${frameClass(avatarFrame)}`}>
+              {avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : profile.flag}
+            </span>
             <div className="profilecard__meta">
               <b>{profile.name}</b>
               <span className="profilecard__div">{DIVISIONS[league.division] ?? ''}</span>

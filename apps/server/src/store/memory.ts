@@ -34,6 +34,7 @@ interface PlayerRow {
   gamesPlayed: number;
   wins: number;
   frame: string;
+  avatar: string;
   challengeDate?: string;
   captures: number;
   done: boolean;
@@ -115,6 +116,7 @@ export class MemoryStore implements Store {
       name: string;
       flag: string;
       frame?: string;
+      avatar?: string;
       customName?: string;
       customFlag?: string;
     },
@@ -122,6 +124,7 @@ export class MemoryStore implements Store {
     const existing = this.players.get(id);
     if (existing) {
       if (defaults.frame !== undefined) existing.frame = defaults.frame; // equip re-syncs on hello
+      if (defaults.avatar !== undefined) existing.avatar = defaults.avatar;
       if (defaults.customName) existing.name = defaults.customName; // edited profile overwrites
       if (defaults.customFlag) existing.flag = defaults.customFlag;
       return { elo: existing.elo, gamesPlayed: existing.gamesPlayed ?? 0, wins: existing.wins ?? 0, name: existing.name, flag: existing.flag };
@@ -131,6 +134,7 @@ export class MemoryStore implements Store {
       name: defaults.customName ?? defaults.name,
       flag: defaults.customFlag ?? defaults.flag,
       frame: defaults.frame ?? 'none',
+      avatar: defaults.avatar ?? 'none',
       elo: 1200,
       gamesPlayed: 0,
       wins: 0,
@@ -373,10 +377,11 @@ export class MemoryStore implements Store {
     wins: number;
     division: number;
     frame: string;
+    avatar: string;
   } | null> {
     for (const [id, p] of this.players) {
       if (pidFor(id) === pid) {
-        return { id, name: p.name, flag: p.flag, elo: p.elo, gamesPlayed: p.gamesPlayed, wins: p.wins, division: p.division, frame: p.frame || 'none' };
+        return { id, name: p.name, flag: p.flag, elo: p.elo, gamesPlayed: p.gamesPlayed, wins: p.wins, division: p.division, frame: p.frame || 'none', avatar: p.avatar || 'none' };
       }
     }
     return null;

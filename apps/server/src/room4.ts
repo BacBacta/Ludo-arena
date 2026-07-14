@@ -17,6 +17,7 @@ export interface Client4 {
   name: string;
   flag: string;
   frame?: string;
+  avatar?: string;
 }
 
 export interface Seat4 {
@@ -28,6 +29,8 @@ export interface Seat4 {
   pid?: string;
   /** Equipped avatar frame (cosmetic); absent for bots. */
   frame?: string;
+  /** Chosen profile avatar id; absent for bots. */
+  avatar?: string;
 }
 
 export interface Room4Result {
@@ -79,7 +82,7 @@ export class Room4 {
   }
 
   players(): Player4Info[] {
-    return this.seats.map((s) => ({ name: s.name, flag: s.flag, bot: s.bot, pid: s.pid, frame: s.frame }));
+    return this.seats.map((s) => ({ name: s.name, flag: s.flag, bot: s.bot, pid: s.pid, frame: s.frame, avatar: s.avatar }));
   }
 
   seatOf(clientId: string): number {

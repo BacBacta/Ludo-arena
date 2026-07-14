@@ -398,10 +398,11 @@ export default function App() {
   /** Save an edited profile: cache locally + optimistic UI, then push to the
    *  server (which sanitizes the name) and adopt whatever it echoes back. */
   const onSaveProfile = useCallback(
-    (name: string, flag: string) => {
+    (name: string, flag: string, avatar: string) => {
       saveCustomIdentity(name, flag);
       dispatch({ type: 'PROFILE', profile: { name, flag } });
-      void pushIdentity(SERVER_URL, name, flag, walletRef.current?.address).then((eff) => {
+      dispatch({ type: 'EQUIP_AVATAR', id: avatar }); // 3D avatar or 'none' (→ flag)
+      void pushIdentity(SERVER_URL, name, flag, walletRef.current?.address, avatar).then((eff) => {
         if (eff) {
           dispatch({ type: 'PROFILE', profile: { name: eff.name, flag: eff.flag } });
           saveCustomIdentity(eff.name, eff.flag);

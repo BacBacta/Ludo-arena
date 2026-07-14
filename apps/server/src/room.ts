@@ -26,6 +26,8 @@ export interface Client {
   flag: string;
   /** Equipped avatar frame (cosmetic); shown on the opponent's in-game corner. */
   frame?: string;
+  /** Chosen profile avatar id; shown on the opponent's in-game corner. */
+  avatar?: string;
 }
 
 export interface RoomResult {

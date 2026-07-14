@@ -26,7 +26,7 @@ const PLAYERS = [
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
 
 export function Game4Screen({ onLeave }: { onLeave(): void }) {
-  const { balanceCents, profile, avatarFrame } = useAppState();
+  const { balanceCents, profile, avatarFrame, avatar } = useAppState();
   const dispatch = useAppDispatch();
   const mySeat = 0;
   // Premium corner avatars carry a country flag: bots have fixed flags; my seat
@@ -34,6 +34,8 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const seatFlag = (seat: number): string =>
     (seat === mySeat ? profile.flag : '') || PLAYERS[seat]?.flag || '🌍';
   const seatFrame = (seat: number): string | undefined => (seat === mySeat ? avatarFrame : undefined);
+  // Only my seat can have a chosen 3D avatar; bots stay as flags.
+  const seatAvatar = (seat: number): string | undefined => (seat === mySeat ? avatar : undefined);
 
   /** Send my emote (echoes over my own corner — practice has no network peer). */
   const sendEmote = (id: string): void => void dispatch({ type: 'EMOTE', seat: mySeat, id });
@@ -173,12 +175,12 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         {/* top corner avatars: Ana (left) / Young (right); die appears beside the active one */}
         <div className="avrow">
           <div className="avrow__side">
-            <span className="emoteanchor"><EmoteFloat seat={1} /><GiftFloat seat={1} /><SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} active={activeSeat === 1} /></span>
+            <span className="emoteanchor"><EmoteFloat seat={1} /><GiftFloat seat={1} /><SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} avatar={seatAvatar(1)} active={activeSeat === 1} /></span>
             {activeSeat === 1 && <SeatDie value={dieValue} rollKey={rollKey} />}
           </div>
           <div className="avrow__side">
             {activeSeat === 2 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <span className="emoteanchor"><EmoteFloat seat={2} /><GiftFloat seat={2} /><SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} active={activeSeat === 2} /></span>
+            <span className="emoteanchor"><EmoteFloat seat={2} /><GiftFloat seat={2} /><SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} avatar={seatAvatar(2)} active={activeSeat === 2} /></span>
           </div>
         </div>
 
@@ -192,7 +194,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         {/* bottom corner avatars: YOU (left) / Dragan (right) */}
         <div className="avrow">
           <div className="avrow__side">
-            <span className="emoteanchor"><EmoteFloat seat={0} /><GiftFloat seat={0} /><SeatAvatar name="YOU" flag={seatFlag(0)} frame={seatFrame(0)} active={myTurn} /></span>
+            <span className="emoteanchor"><EmoteFloat seat={0} /><GiftFloat seat={0} /><SeatAvatar name="YOU" flag={seatFlag(0)} frame={seatFrame(0)} avatar={seatAvatar(0)} active={myTurn} /></span>
             {myTurn && (
               <button
                 className="ludodie ludodie--tap"
@@ -206,7 +208,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           </div>
           <div className="avrow__side">
             {activeSeat === 3 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <span className="emoteanchor"><EmoteFloat seat={3} /><GiftFloat seat={3} /><SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} active={activeSeat === 3} /></span>
+            <span className="emoteanchor"><EmoteFloat seat={3} /><GiftFloat seat={3} /><SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} avatar={seatAvatar(3)} active={activeSeat === 3} /></span>
           </div>
         </div>
       </div>

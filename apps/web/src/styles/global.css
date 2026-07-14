@@ -505,6 +505,28 @@ small.muted { font-size: 12px; }
 .pe__flagbtn--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245, 179, 1, 0.35); }
 .pe__flagbtn:active { transform: scale(0.9); }
 
+/* profile avatars (premium 3D) — picker + all the places an avatar renders */
+.pe__previmg { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; display: block; }
+.pe__avatars {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+  max-height: 210px; overflow-y: auto; padding: 4px; margin-bottom: 4px;
+  background: var(--card-2); border-radius: 12px;
+}
+.pe__avbtn {
+  border: 2px solid transparent; background: #ffffff; border-radius: 12px;
+  padding: 3px; cursor: pointer; box-shadow: 0 1px 3px rgba(23, 43, 99, 0.12);
+  aspect-ratio: 1; display: grid; place-items: center;
+}
+.pe__avbtn img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pe__avbtn--none { font-size: 22px; line-height: 1; }
+.pe__avbtn--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245, 179, 1, 0.35); }
+.pe__avbtn:active { transform: scale(0.9); }
+/* avatar image filling each render target (all circular) */
+.seatav__img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.avcard__img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.profilecard__img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; display: block; }
+.profilesheet__img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: block; }
+
 /* rivals & recent opponents (C4): a horizontal strip of faced players */
 .rivalrow { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .rivalrow::-webkit-scrollbar { display: none; }

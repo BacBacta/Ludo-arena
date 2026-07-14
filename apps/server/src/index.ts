@@ -84,6 +84,8 @@ interface Session extends Client {
   lastProfileGetAt?: number;
   /** Equipped avatar frame (cosmetic, client-authoritative like dice skins). */
   frame?: string;
+  /** Chosen profile avatar id (cosmetic, client-authoritative like the frame). */
+  avatar?: string;
   /** Last opponent + stake, for a true direct rematch (BACKLOG E4). */
   lastOpponentId?: string;
   lastStake?: StakeCents;
@@ -627,6 +629,7 @@ wss.on('connection', (ws, req) => {
         resumedSession.ip = ip;
         resumedSession.miniPay = msg.miniPay === true;
         if (msg.frame !== undefined) resumedSession.frame = msg.frame;
+        if (msg.avatar !== undefined) resumedSession.avatar = msg.avatar;
         // Profile edit on a resumed session: apply the sanitized custom identity
         // (anon → session-only; wallet → persisted + re-read below).
         const rCustomName = sanitizeName(msg.name);
@@ -637,7 +640,7 @@ wss.on('connection', (ws, req) => {
         const rProof = issueWalletNonce(resumedSession);
         const rpid = playerId(resumedSession.wallet, resumedSession.id);
         const rStats = resumedSession.wallet
-          ? await store.getOrCreatePlayer(rpid, { wallet: resumedSession.wallet, name: resumedSession.name, flag: resumedSession.flag, frame: msg.frame, customName: rCustomName, customFlag: rCustomFlag })
+          ? await store.getOrCreatePlayer(rpid, { wallet: resumedSession.wallet, name: resumedSession.name, flag: resumedSession.flag, frame: msg.frame, avatar: msg.avatar, customName: rCustomName, customFlag: rCustomFlag })
           : { gamesPlayed: 0, wins: 0, name: resumedSession.name, flag: resumedSession.flag };
         resumedSession.name = rStats.name;
         resumedSession.flag = rStats.flag;
@@ -651,6 +654,7 @@ wss.on('connection', (ws, req) => {
           wins: rStats.wins,
           pid: resumedSession.wallet ? pidFor(rpid) : undefined,
           frame: resumedSession.frame,
+          avatar: resumedSession.avatar,
           resumed: resumedGame(resumedSession),
           challenge: await store.getChallenge(rpid, utcToday()),
           streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
@@ -677,7 +681,7 @@ wss.on('connection', (ws, req) => {
       const customFlag = msg.flag; // parse validated it is a flag emoji (or undefined)
       // Wallet-linked players keep their ELO + custom identity across sessions.
       const stats = wallet
-        ? await store.getOrCreatePlayer(idKey, { wallet, name: derived.name, flag: derived.flag, frame: msg.frame, customName, customFlag })
+        ? await store.getOrCreatePlayer(idKey, { wallet, name: derived.name, flag: derived.flag, frame: msg.frame, avatar: msg.avatar, customName, customFlag })
         : { elo: 1200, gamesPlayed: 0, wins: 0, name: customName ?? derived.name, flag: customFlag ?? derived.flag };
       const elo = stats.elo;
       const name = stats.name;
@@ -697,6 +701,7 @@ wss.on('connection', (ws, req) => {
       session.ip = ip;
       session.miniPay = msg.miniPay === true; // trusted address, no SIWE (before issueWalletNonce)
       session.frame = msg.frame; // cosmetic; validated to AVATAR_FRAMES in parse
+      session.avatar = msg.avatar; // cosmetic; validated to AVATARS in parse
       sessions.set(id, session);
       persistSession(session);
       const pid = playerId(msg.wallet, id);
@@ -718,6 +723,7 @@ wss.on('connection', (ws, req) => {
         wins: stats.wins,
         pid: wallet ? pidFor(idKey) : undefined,
         frame: session.frame,
+        avatar: session.avatar,
         challenge,
         streak,
         league,
@@ -997,7 +1003,7 @@ wss.on('connection', (ws, req) => {
         }
         session.send({
           t: 'profile.info',
-          profile: { pid: msg.pid, name: prof.name, flag: prof.flag, elo: prof.elo, games: prof.gamesPlayed, wins: prof.wins, division: prof.division, frame: prof.frame, h2h },
+          profile: { pid: msg.pid, name: prof.name, flag: prof.flag, elo: prof.elo, games: prof.gamesPlayed, wins: prof.wins, division: prof.division, frame: prof.frame, avatar: prof.avatar, h2h },
         });
         break;
       }
@@ -1206,7 +1212,7 @@ function resumedGame(s: Session): ResumedGame | undefined {
     state: s.room.getState(),
     stakeCents: s.room.stakeCents,
     potCents: potCents(s.room.stakeCents),
-    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame },
+    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar },
     fairnessCommit: s.room.fairness.commit,
   };
 }
@@ -1440,7 +1446,7 @@ function matchFoundMsg(gameId: string, seat: Seat, opp: Session, stake: StakeCen
     t: 'match.found',
     gameId,
     seat,
-    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame },
+    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar },
     stakeCents: stake,
     potCents: pot,
     fairnessCommit: commit,
@@ -1575,7 +1581,7 @@ function startRoom4(humans: Session[]): void {
   for (let i = 0; i < TABLE4.seats; i++) {
     const h = humans[i];
     if (h) {
-      seats.push({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame });
+      seats.push({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
       const bot = BOT4_NAMES[i % BOT4_NAMES.length]!;
@@ -1656,7 +1662,7 @@ function startStakedRoom4(humans: Session[], stake: number): void {
   const rake = stake * 4 - pot;
   const seatSeeds = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
   const fairness = createFairness4(seatSeeds);
-  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame }));
+  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
   pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, fairness });
   // count each seat's stake toward the daily limit (E5.2)
   void Promise.all(humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), stake))).catch((e) => console.error('[4p] dailyStake', e));
@@ -1698,7 +1704,7 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
 /** All 4 stakes Active → create + start the Room4, settling the winner on win. */
 function startStaked4Room(p: PendingStaked4): void {
   pendingStaked4.delete(p.gameId);
-  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame }));
+  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
   const room = new Room4(p.gameId, seats, p.fairness, 0, 0, p.pot, p.rake);
   room.onResult = (r) => {
     recordRoom4Stats(p.humans, r.winnerSeat, r.seats);

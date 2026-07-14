@@ -227,6 +227,7 @@ export function Game4OnlineScreen({
     const name = seat === mySeat ? t('you') : players[seat]?.name ?? '';
     const flag = players[seat]?.flag;
     const frame = players[seat]?.frame;
+    const avatar = players[seat]?.avatar; // server echoes each seat's chosen avatar (incl. mine)
     const myTurnHere = seat === mySeat && activeTurn === mySeat && status === 'playing';
     const dieHere = shown?.seat === seat;
 
@@ -244,10 +245,10 @@ export function Game4OnlineScreen({
         <GiftFloat seat={seat} />
         {players[seat]?.pid && !players[seat]?.bot ? (
           <button className="avtap" aria-label={`${name} profile`} onClick={() => onViewProfile(players[seat]!.pid!)}>
-            <SeatAvatar name={name} flag={flag} frame={frame} active={active} />
+            <SeatAvatar name={name} flag={flag} frame={frame} avatar={avatar} active={active} />
           </button>
         ) : (
-          <SeatAvatar name={name} flag={flag} frame={frame} active={active} />
+          <SeatAvatar name={name} flag={flag} frame={frame} avatar={avatar} active={active} />
         )}
       </span>
     );

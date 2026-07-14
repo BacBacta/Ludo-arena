@@ -102,6 +102,7 @@ export interface Store {
       name: string; // derived fallback used only when creating a fresh row
       flag: string;
       frame?: string;
+      avatar?: string;
       /** Custom display name/flag from an edited profile: overwrites the stored
        *  value when present; when absent the stored value is kept (COALESCE). */
       customName?: string;
@@ -173,6 +174,7 @@ export interface Store {
     wins: number;
     division: number;
     frame: string;
+    avatar: string;
   } | null>;
   /** 1v1 head-to-head from recorded games (4p games are not GameRecords). */
   headToHead(a: string, b: string): Promise<{ aWins: number; bWins: number }>;

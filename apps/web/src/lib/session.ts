@@ -12,6 +12,7 @@ import type { GameState, Seat } from '@ludo/game-engine';
 import { deviceFingerprint } from './fingerprint';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
+import { loadAvatarId } from './avatars';
 import { loadCustomIdentity } from './profile';
 import { sha256Hex } from './fairnessVerify';
 import {
@@ -281,6 +282,7 @@ export function pushIdentity(
   name: string,
   flag: string,
   walletAddress?: string,
+  avatar?: string,
 ): Promise<{ name: string; flag: string } | null> {
   return new Promise((resolve) => {
     let ws: WebSocket;
@@ -308,7 +310,7 @@ export function pushIdentity(
       // NO sessionToken: resuming would rebind (hijack) a live game socket onto
       // this throwaway one. The wallet alone keys the persisted row, so the
       // server saves the edited identity to the right player without a resume.
-      ws.send(JSON.stringify({ t: 'hello', entropy, wallet: walletAddress, miniPay: isMiniPay(), name, flag }));
+      ws.send(JSON.stringify({ t: 'hello', entropy, wallet: walletAddress, miniPay: isMiniPay(), name, flag, avatar }));
     };
     ws.onmessage = (e) => {
       let msg: ServerMsg;
@@ -633,6 +635,7 @@ export class RemoteSession implements GameSession {
         consent: this.auth?.consent,
         miniPay: isMiniPay(), // trusted address → server accepts it without SIWE
         frame: loadFrameId(), // equipped avatar frame (cosmetic, broadcast to others)
+        avatar: loadAvatarId(), // chosen 3D profile avatar (broadcast to others)
         ...loadCustomIdentity(), // edited display name / country flag
       });
       if (initial) {

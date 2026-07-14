@@ -13,6 +13,7 @@ import { walletProofMessage, type Player4Info, type ServerMsg } from '@ludo/shar
 import { deviceFingerprint } from './fingerprint';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
+import { loadAvatarId } from './avatars';
 import { loadCustomIdentity } from './profile';
 import { sha256Hex } from './fairnessVerify';
 import type { WalletAuth } from './session';
@@ -104,6 +105,7 @@ export class Remote4 {
         consent: this.auth?.consent,
         miniPay: isMiniPay(), // trusted address → server accepts it without SIWE
         frame: loadFrameId(), // equipped avatar frame (cosmetic, broadcast to others)
+        avatar: loadAvatarId(), // chosen 3D profile avatar (broadcast to others)
         ...loadCustomIdentity(), // edited display name / country flag
       });
       this.send({ t: 'queue.join4', stakeCents: this.stakeCents });

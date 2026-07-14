@@ -1,0 +1,17 @@
+Profile avatars (av_*.png)
+==========================
+Source: Microsoft Fluent Emoji — https://github.com/microsoft/fluentui-emoji
+Licence: MIT (commercial use permitted, no attribution required; this notice is
+kept as good practice).
+
+  Copyright (c) Microsoft Corporation.
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software... (full MIT text at the repo above).
+
+Set: Person / Man / Woman across 6 skin tones (Default + Light→Dark) plus the
+character variants Artist, Astronaut, Student, Person-with-crown, Older person,
+Ninja, Health worker — the "3D" render variant. File id = av_<id>.png where <id>
+is the shared AVATARS allowlist (packages/shared/src/protocol.ts).

@@ -70,6 +70,8 @@ CREATE INDEX IF NOT EXISTS players_pid_idx ON players (pid);
 -- Equipped avatar frame (E-social C3): cosmetic ring shown on the player's
 -- public profile. Client-authoritative (sent in hello, same trust as skins).
 ALTER TABLE players ADD COLUMN IF NOT EXISTS equipped_frame TEXT NOT NULL DEFAULT 'none';
+-- Profile avatar (E-social): premium 3D identity picture, or 'none' → show flag.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS equipped_avatar TEXT NOT NULL DEFAULT 'none';
 
 -- Anti-tilt (E4.5): rewards are freeroll TICKETS, not cash. loss_streak drives
 -- the grant; lost_rake_cents/cashback_cents are legacy columns from the retired
@@ -223,6 +225,7 @@ export class PersistentStore implements Store {
       name: string;
       flag: string;
       frame?: string;
+      avatar?: string;
       customName?: string;
       customFlag?: string;
     },
@@ -232,14 +235,15 @@ export class PersistentStore implements Store {
       // on a frame-less hello. name/flag: an edited profile ($7/$8) overwrites the
       // stored identity; a hello without edits keeps it (COALESCE), so a returning
       // player never loses their custom name/flag to the derived fallback.
-      `INSERT INTO players (id, wallet, name, flag, pid, equipped_frame)
-       VALUES ($1, $2, COALESCE($7, $3), COALESCE($8, $4), $5, COALESCE($6, 'none'))
+      `INSERT INTO players (id, wallet, name, flag, pid, equipped_frame, equipped_avatar)
+       VALUES ($1, $2, COALESCE($7, $3), COALESCE($8, $4), $5, COALESCE($6, 'none'), COALESCE($9, 'none'))
        ON CONFLICT (id) DO UPDATE SET updated_at = now(), pid = EXCLUDED.pid,
          equipped_frame = COALESCE($6, players.equipped_frame),
+         equipped_avatar = COALESCE($9, players.equipped_avatar),
          name = COALESCE($7, players.name),
          flag = COALESCE($8, players.flag)
        RETURNING elo, games_played, wins, name, flag`,
-      [id, defaults.wallet ?? null, defaults.name, defaults.flag, pidFor(id), defaults.frame ?? null, defaults.customName ?? null, defaults.customFlag ?? null],
+      [id, defaults.wallet ?? null, defaults.name, defaults.flag, pidFor(id), defaults.frame ?? null, defaults.customName ?? null, defaults.customFlag ?? null, defaults.avatar ?? null],
     );
     const r = res.rows[0];
     return {
@@ -617,6 +621,7 @@ export class PersistentStore implements Store {
     wins: number;
     division: number;
     frame: string;
+    avatar: string;
   } | null> {
     const res = await this.pool.query<{
       id: string;
@@ -627,14 +632,15 @@ export class PersistentStore implements Store {
       wins: number;
       division: number;
       equipped_frame: string;
+      equipped_avatar: string;
     }>(
-      `SELECT id, name, flag, elo, games_played, wins, division, equipped_frame FROM players
+      `SELECT id, name, flag, elo, games_played, wins, division, equipped_frame, equipped_avatar FROM players
        WHERE pid = $1 LIMIT 1`,
       [pid],
     );
     const r = res.rows[0];
     if (!r) return null;
-    return { id: r.id, name: r.name, flag: r.flag, elo: r.elo, gamesPlayed: r.games_played, wins: r.wins, division: r.division, frame: r.equipped_frame || 'none' };
+    return { id: r.id, name: r.name, flag: r.flag, elo: r.elo, gamesPlayed: r.games_played, wins: r.wins, division: r.division, frame: r.equipped_frame || 'none', avatar: r.equipped_avatar || 'none' };
   }
 
   async headToHead(a: string, b: string): Promise<{ aWins: number; bWins: number }> {
