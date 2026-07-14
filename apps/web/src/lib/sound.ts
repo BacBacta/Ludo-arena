@@ -1,6 +1,19 @@
 /**
- * Subtle sound effects (E6.2), synthesised with Web Audio — zero asset bytes.
- * Opt-out is persisted; playback is a no-op when disabled or unsupported.
+ * Ludo Arena sound engine — fully procedural (zero asset bytes), designed as a
+ * coherent sonic identity rather than a pile of beeps:
+ *
+ *   · one MASTER CHAIN (soft tape-style saturation → air shelf → compressor)
+ *   · one SPACE — a generated-impulse-response convolution room, so every sound
+ *     sits in the same believable acoustic (the previous comb network rang
+ *     metallic); pre-delay keeps transients dry and readable
+ *   · a small set of expert voices: 2-op FM (bells/knocks/glass), Karplus-Strong
+ *     plucked strings, Peltola-style granular hand-claps, and a formant vocal
+ *     synth (laughter/whoa/sigh) — each emote is a LITERAL translation of its
+ *     emoji, not a generic blip
+ *   · sonic-branding discipline: a ≤1.2 s audio logo on the first user gesture,
+ *     micro-interactions ≤120 ms, per-layer peaks bounded, everything opt-out.
+ *
+ * iOS-Safari-safe nodes only. Opt-out persisted; no-op when unsupported.
  */
 const SOUND_KEY = 'ludo.sound';
 
@@ -39,69 +52,89 @@ function play(build: (ac: AudioContext, now: number) => void): void {
   build(ac, ac.currentTime);
 }
 
-/* --------------------------------------------------------------------------
- * Premium dice roll — fully procedural (zero assets). Physical model:
- *   1) shake   : filtered noise ticks, stereo-scattered, accelerando→settle
- *   2) bounce  : 3 impacts, intervals shorten + energy decays (real physics),
- *                each = a noise transient + the die's resonant body modes
- *   3) settle  : low woody thud + short body resonance
- * Everything runs through a shared compressor bus and a generated-IR room
- * reverb for polish. iOS-Safari-safe nodes only.
- * ------------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ master */
 
 let master: GainNode | null = null;
 let reverbSend: GainNode | null = null;
 
-/**
- * Lazily build (once) the master bus + a shared feedback-delay room reverb.
- * A short lowpassed comb network (deterministic, cheap, ~0.4s tail) gives a
- * subtle premium "table in a room" space — predictable across browsers, unlike
- * a normalize-dependent convolver. Returns the dry out + the reverb send.
- */
+/** Soft-saturation transfer curve (gentle tanh — glue, never distortion). */
+function satCurve(): Float32Array<ArrayBuffer> {
+  const n = 1024;
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    c[i] = Math.tanh(1.4 * x) / Math.tanh(1.4);
+  }
+  return c;
+}
+
+/** Generated stereo impulse response: 0.9 s exponential-decay noise whose tail
+ *  progressively darkens (one-pole lowpass with a closing cutoff) — a small,
+ *  warm room. Deterministic enough, zero assets, no normalize() surprises. */
+function roomIR(ac: AudioContext): AudioBuffer {
+  const dur = 0.9;
+  const n = Math.floor(ac.sampleRate * dur);
+  const buf = ac.createBuffer(2, n, ac.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const decay = Math.exp(-6.2 * t);
+      const a = 0.55 - 0.42 * t; // closing lowpass: bright head, dark tail
+      lp += a * ((Math.random() * 2 - 1) - lp);
+      d[i] = lp * decay * 0.55;
+    }
+  }
+  return buf;
+}
+
+/** Master bus: sum → soft saturator → air shelf → compressor → out, plus a
+ *  convolution-room send with 12 ms pre-delay. Built once per context. */
 function bus(ac: AudioContext): { out: GainNode; send: GainNode } {
   if (!master || !reverbSend) {
     master = ac.createGain();
-    master.gain.value = 0.5; // headroom: never clip or startle
+    master.gain.value = 0.55; // headroom: never clip or startle
+
+    const shaper = ac.createWaveShaper();
+    shaper.curve = satCurve();
+    shaper.oversample = '2x';
+
+    const air = ac.createBiquadFilter();
+    air.type = 'highshelf';
+    air.frequency.value = 7600;
+    air.gain.value = 2.5;
+
     const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -16;
-    comp.knee.value = 20;
+    comp.threshold.value = -14;
+    comp.knee.value = 18;
     comp.ratio.value = 3;
     comp.attack.value = 0.003;
-    comp.release.value = 0.25;
-    master.connect(comp);
+    comp.release.value = 0.22;
+
+    master.connect(shaper);
+    shaper.connect(air);
+    air.connect(comp);
     comp.connect(ac.destination);
 
     reverbSend = ac.createGain();
     reverbSend.gain.value = 1;
-    // three stereo-spread lowpassed feedback combs
-    const combs: Array<[number, number]> = [
-      [0.0191, -0.5],
-      [0.0273, 0.35],
-      [0.0356, 0.5],
-    ];
-    for (const [dt, pan] of combs) {
-      const dl = ac.createDelay(0.1);
-      dl.delayTime.value = dt;
-      const fb = ac.createGain();
-      fb.gain.value = 0.6;
-      const lp = ac.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 3200;
-      const wet = ac.createGain();
-      wet.gain.value = 0.32;
-      const p = ac.createStereoPanner();
-      p.pan.value = pan;
-      reverbSend.connect(dl);
-      dl.connect(lp);
-      lp.connect(fb);
-      fb.connect(dl); // feedback loop
-      lp.connect(wet);
-      wet.connect(p);
-      p.connect(master);
-    }
+    const pre = ac.createDelay(0.05);
+    pre.delayTime.value = 0.012; // transients stay dry + readable
+    const conv = ac.createConvolver();
+    conv.normalize = false;
+    conv.buffer = roomIR(ac);
+    const wet = ac.createGain();
+    wet.gain.value = 0.4;
+    reverbSend.connect(pre);
+    pre.connect(conv);
+    conv.connect(wet);
+    wet.connect(master);
   }
   return { out: master, send: reverbSend };
 }
+
+/* --------------------------------------------------------------- primitives */
 
 interface Hit {
   freq: number;
@@ -142,7 +175,7 @@ function tick(ac: AudioContext, out: GainNode, send: GainNode, t0: number, h: Hi
   src.stop(t0 + h.dur + 0.02);
 }
 
-/** Fast-decaying resonant partial — a material body mode of the die or board. */
+/** Fast-decaying resonant partial — a simple tonal body mode. */
 function mode(
   ac: AudioContext,
   out: GainNode,
@@ -173,203 +206,7 @@ function mode(
   o.stop(t0 + dur + 0.02);
 }
 
-/** Sustained bandpass-noise rattle bed (glues the loose grains into a shake). */
-function rattleBed(ac: AudioContext, out: GainNode, send: GainNode, t0: number, dur: number, peak: number): void {
-  const n = Math.max(1, Math.floor(ac.sampleRate * dur));
-  const buf = ac.createBuffer(1, n, ac.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) {
-    const t = i / n;
-    const env = Math.sin(Math.PI * t); // rise then fall
-    const wobble = 0.6 + 0.4 * Math.sin(t * 62); // granular tremolo
-    d[i] = (Math.random() * 2 - 1) * env * wobble;
-  }
-  const src = ac.createBufferSource();
-  src.buffer = buf;
-  const bp = ac.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.value = 2100;
-  bp.Q.value = 0.8;
-  const g = ac.createGain();
-  g.gain.value = peak;
-  src.connect(bp);
-  bp.connect(g);
-  g.connect(out);
-  const s = ac.createGain();
-  s.gain.value = 0.3;
-  g.connect(s);
-  s.connect(send);
-  src.start(t0);
-  src.stop(t0 + dur + 0.02);
-}
-
-/** A die/board impact: sharp filtered transient + two decaying body modes. */
-function impact(
-  ac: AudioContext,
-  out: GainNode,
-  send: GainNode,
-  t0: number,
-  level: number,
-  pan: number,
-  bodyLow: number,
-  bodyHi: number,
-): void {
-  tick(ac, out, send, t0, { freq: 2600, q: 1.1, dur: 0.03, peak: 0.6 * level, pan, sendAmt: 0.75 });
-  mode(ac, out, send, t0, bodyHi, 0.09, 0.26 * level, 'triangle', 0.55);
-  mode(ac, out, send, t0, bodyLow, 0.13, 0.3 * level, 'sine', 0.7);
-}
-
-/** Dice roll: premium rattle → physically-decaying bounce → woody settle. */
-export function playDice(): void {
-  play((ac, now) => {
-    const { out, send } = bus(ac);
-
-    // 1) shake — a sustained rattle bed with dense filtered grains scattered over it
-    rattleBed(ac, out, send, now, 0.26, 0.13);
-    const grains = 12;
-    for (let i = 0; i < grains; i++) {
-      const prog = i / (grains - 1);
-      const dt = prog * 0.24 + Math.random() * 0.012;
-      tick(ac, out, send, now + dt, {
-        freq: 1600 + Math.random() * 1600,
-        q: 1.6,
-        dur: 0.022,
-        peak: 0.16 * (0.7 + 0.3 * Math.sin(Math.PI * prog)),
-        pan: (Math.random() * 2 - 1) * 0.7,
-      });
-    }
-
-    // 2) bounce — the first board contact is loudest; intervals shorten, energy decays
-    const bounces = [0.29, 0.4, 0.48];
-    const levels = [1, 0.58, 0.32];
-    const pans = [-0.28, 0.18, 0];
-    bounces.forEach((dt, i) => {
-      impact(ac, out, send, now + dt, levels[i]!, pans[i]!, 182 - i * 16, 1500 + i * 130);
-    });
-
-    // 3) settle — a restrained low woody thud (kept under the first impact) + a click,
-    //    the reverb tail carries the premium space after everything decays
-    mode(ac, out, send, now + 0.5, 116, 0.2, 0.24, 'sine', 0.6);
-    tick(ac, out, send, now + 0.5, { freq: 820, q: 2.2, dur: 0.05, peak: 0.13, pan: 0, sendAmt: 0.8 });
-  });
-}
-
-/** Pawn hop: a soft wooden tap per cell — quiet, plays on every step. */
-let lastHop = 0;
-export function playHop(): void {
-  play((ac, now) => {
-    // throttle: never stack hops closer than 60ms (fast re-renders)
-    if (now - lastHop < 0.06) return;
-    lastHop = now;
-    const { out, send } = bus(ac);
-    tick(ac, out, send, now, { freq: 1750, q: 2.2, dur: 0.028, peak: 0.14, pan: 0, sendAmt: 0.3 });
-    mode(ac, out, send, now, 260, 0.06, 0.1, 'sine', 0.25);
-  });
-}
-
-/**
- * Capture: a satisfying "thwack" that routes through the SAME premium bus +
- * reverb as the dice (the old two-tone bypassed both → cheap 80s blip). A hard
- * noise transient + a resonant body + a quick pitched-down whoosh "removal".
- */
-export function playCapture(): void {
-  play((ac, now) => {
-    const { out, send } = bus(ac);
-    // impact: sharp hit + two body modes (reuses the die's material primitives)
-    impact(ac, out, send, now, 1.1, 0, 150, 900);
-    // a short downward "swipe" as the captured token is knocked home
-    const o = ac.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(560, now);
-    o.frequency.exponentialRampToValueAtTime(150, now + 0.16);
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.14, now + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-    const lp = ac.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 1400;
-    o.connect(lp);
-    lp.connect(g);
-    g.connect(out);
-    const s = ac.createGain();
-    s.gain.value = 0.4;
-    g.connect(s);
-    s.connect(send);
-    o.start(now);
-    o.stop(now + 0.2);
-  });
-}
-
-/**
- * Win: a warm consonant fanfare (root–3rd–5th–octave) with a bass root and a
- * reverb tail — routed through the bus so it sits in the same premium space as
- * the rest, not the old dry sine arpeggio.
- */
-export function playWin(): void {
-  play((ac, now) => {
-    const { out, send } = bus(ac);
-    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
-    notes.forEach((f, i) => {
-      mode(ac, out, send, now + i * 0.11, f, 0.5, 0.16, 'triangle', 0.6);
-      mode(ac, out, send, now + i * 0.11, f * 2, 0.3, 0.05, 'sine', 0.4); // shimmer
-    });
-    mode(ac, out, send, now, 130.81, 0.7, 0.22, 'sine', 0.5); // C3 bass root
-    // sparkle tail
-    tick(ac, out, send, now + 0.34, { freq: 5200, q: 1.4, dur: 0.06, peak: 0.1, pan: 0.2, sendAmt: 1 });
-  });
-}
-
-/** Loss: a soft, brief descending cue of commiseration (never harsh). */
-export function playLose(): void {
-  play((ac, now) => {
-    const { out, send } = bus(ac);
-    mode(ac, out, send, now, 330, 0.4, 0.12, 'sine', 0.5);
-    mode(ac, out, send, now + 0.14, 247, 0.5, 0.12, 'sine', 0.5); // minor drop
-  });
-}
-
-/**
- * Payout count-up (the #1 money moment, previously silent): a rising cascade of
- * coin ticks pitched up over `steps`, ending on a bright chime. Call once as the
- * end-screen number counts up.
- */
-export function playPayout(steps = 10): void {
-  play((ac, now) => {
-    const { out, send } = bus(ac);
-    const n = Math.max(3, Math.min(16, steps));
-    for (let i = 0; i < n; i++) {
-      const t0 = now + i * 0.05;
-      const freq = 1400 + (i / n) * 1600; // climbs as the total rises
-      tick(ac, out, send, t0, { freq, q: 2.4, dur: 0.03, peak: 0.11, pan: (Math.random() * 2 - 1) * 0.4, sendAmt: 0.5 });
-      mode(ac, out, send, t0, freq * 0.5, 0.05, 0.06, 'sine', 0.3);
-    }
-    // landing chime
-    const end = now + n * 0.05;
-    mode(ac, out, send, end, 1046.5, 0.5, 0.16, 'triangle', 0.7);
-    mode(ac, out, send, end, 1567.98, 0.5, 0.09, 'sine', 0.7);
-  });
-}
-
-/** Soft UI tap for CTAs/selection — tiny, pitch-jittered to avoid fatigue. */
-export function playTap(kind: 'tap' | 'select' = 'tap'): void {
-  play((ac, now) => {
-    const { out, send } = bus(ac);
-    const base = kind === 'select' ? 880 : 660;
-    const freq = base * (1 + (Math.random() * 2 - 1) * 0.04); // ±~1 semitone jitter
-    mode(ac, out, send, now, freq, 0.07, kind === 'select' ? 0.12 : 0.08, 'triangle', 0.25);
-    tick(ac, out, send, now, { freq: 3200, q: 2, dur: 0.02, peak: 0.05, pan: 0, sendAmt: 0.2 });
-  });
-}
-
-/* --------------------------------------------------------------------------
- * Premium expressive layer (E-social): pitch-glide + swept-noise helpers, a
- * match-start sting, and a UNIQUE layered signature per emote. Everything runs
- * through the same compressor bus + room reverb as the dice, so the whole app
- * speaks with one acoustic voice.
- * ------------------------------------------------------------------------ */
-
-/** Pitch-glide oscillator with an attack/decay envelope — risers, horns, sighs. */
+/** Pitch-glide oscillator with an attack/decay envelope — risers, sighs, drips. */
 function gliss(
   ac: AudioContext,
   out: GainNode,
@@ -448,129 +285,546 @@ function whoosh(
   src.stop(t0 + dur + 0.02);
 }
 
+/** 2-operator FM voice — the premium tonal primitive. Low index + slow decay =
+ *  bell/glass; high index + fast decay = wooden knock; ratio sets inharmonicity. */
+function fmHit(
+  ac: AudioContext,
+  out: GainNode,
+  send: GainNode,
+  t0: number,
+  o: {
+    carrier: number;
+    ratio: number; // modulator = carrier * ratio (non-integer → inharmonic)
+    index: number; // modulation depth, in units of carrier freq
+    iDecay: number; // how fast the brightness dies (s)
+    dur: number;
+    peak: number;
+    sendAmt?: number;
+    pan?: number;
+    attack?: number;
+  },
+): void {
+  const car = ac.createOscillator();
+  car.type = 'sine';
+  car.frequency.value = o.carrier;
+  const mod = ac.createOscillator();
+  mod.type = 'sine';
+  mod.frequency.value = o.carrier * o.ratio;
+  const mg = ac.createGain();
+  mg.gain.setValueAtTime(o.index * o.carrier, t0);
+  mg.gain.exponentialRampToValueAtTime(0.001, t0 + Math.max(0.005, o.iDecay));
+  mod.connect(mg);
+  mg.connect(car.frequency);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(o.peak, t0 + (o.attack ?? 0.003));
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
+  const p = ac.createStereoPanner();
+  p.pan.value = o.pan ?? 0;
+  car.connect(g);
+  g.connect(p);
+  p.connect(out);
+  if (o.sendAmt) {
+    const sg = ac.createGain();
+    sg.gain.value = o.sendAmt;
+    p.connect(sg);
+    sg.connect(send);
+  }
+  car.start(t0);
+  mod.start(t0);
+  car.stop(t0 + o.dur + 0.03);
+  mod.stop(t0 + o.dur + 0.03);
+}
+
+/** Wooden knock: FM strike (bright attack dying instantly into the body pitch)
+ *  + a noise transient + a low seat. The dice/pawn material voice. */
+function knock(ac: AudioContext, out: GainNode, send: GainNode, t0: number, level: number, pan: number, body = 210): void {
+  fmHit(ac, out, send, t0, { carrier: body, ratio: 3.83, index: 6, iDecay: 0.012, dur: 0.11, peak: 0.2 * level, sendAmt: 0.55, pan });
+  tick(ac, out, send, t0, { freq: 2400, q: 1.1, dur: 0.02, peak: 0.28 * level, pan, sendAmt: 0.6 });
+  mode(ac, out, send, t0, body * 0.55, 0.12, 0.14 * level, 'sine', 0.5);
+}
+
+/** One Peltola-style hand clap: a short enveloped noise burst exciting two
+ *  parallel resonators (the palm air-cavity ~1 kHz + a brighter skin partial). */
+function clap1(ac: AudioContext, out: GainNode, send: GainNode, t0: number, f: number, peak: number, pan: number): void {
+  const dur = 0.028;
+  const n = Math.max(1, Math.floor(ac.sampleRate * dur));
+  const buf = ac.createBuffer(1, n, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-9 * (i / n));
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const bp1 = ac.createBiquadFilter();
+  bp1.type = 'bandpass';
+  bp1.frequency.value = f;
+  bp1.Q.value = 2.1;
+  const bp2 = ac.createBiquadFilter();
+  bp2.type = 'bandpass';
+  bp2.frequency.value = f * 2.3;
+  bp2.Q.value = 1.4;
+  const g1 = ac.createGain();
+  g1.gain.value = peak;
+  const g2 = ac.createGain();
+  g2.gain.value = peak * 0.45;
+  const p = ac.createStereoPanner();
+  p.pan.value = pan;
+  src.connect(bp1);
+  src.connect(bp2);
+  bp1.connect(g1);
+  bp2.connect(g2);
+  g1.connect(p);
+  g2.connect(p);
+  p.connect(out);
+  const sg = ac.createGain();
+  sg.gain.value = 0.7;
+  p.connect(sg);
+  sg.connect(send);
+  src.start(t0);
+  src.stop(t0 + dur + 0.02);
+}
+
+/** Applause: two alternating "clappers" with humanised timing, level and
+ *  cavity pitch — reads as real clapping, not rhythm-machine claps. */
+function applause(ac: AudioContext, out: GainNode, send: GainNode, t0: number, claps: number, span: number): void {
+  for (let i = 0; i < claps; i++) {
+    const clapper = i % 2;
+    const at = (i / claps) * span + (Math.random() - 0.5) * 0.024;
+    const f = (clapper ? 1050 : 1400) * (0.94 + Math.random() * 0.14);
+    const lvl = 0.12 * (0.75 + Math.random() * 0.45) * (i === claps - 1 ? 0.7 : 1);
+    clap1(ac, out, send, t0 + Math.max(0, at), f, lvl, clapper ? -0.32 : 0.32);
+  }
+}
+
+/** Karplus-Strong plucked string, rendered OFFLINE into a buffer. (A live
+ *  DelayNode feedback loop is forced to ≥128 samples of latency by Web Audio,
+ *  which detunes any string above ~350 Hz — so we simulate the ring buffer in
+ *  JS: exact pitch, natural decay, zero graph cleanup.) The 🍀 harp voice. */
+function pluck(ac: AudioContext, out: GainNode, send: GainNode, t0: number, freq: number, dur: number, peak: number, sendAmt = 0.8): void {
+  const sr = ac.sampleRate;
+  const n = Math.floor(sr * dur);
+  const period = Math.max(2, Math.round(sr / freq));
+  const ring = new Float32Array(period);
+  for (let i = 0; i < period; i++) ring[i] = Math.random() * 2 - 1; // the pluck
+  const buf = ac.createBuffer(1, n, sr);
+  const d = buf.getChannelData(0);
+  let idx = 0;
+  for (let i = 0; i < n; i++) {
+    const cur = ring[idx]!;
+    const nxt = ring[(idx + 1) % period]!;
+    ring[idx] = 0.5 * (cur + nxt) * 0.995; // lowpass + damping = string decay
+    d[i] = cur * (1 - i / n); // linear fade guards the tail
+    idx = (idx + 1) % period;
+  }
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const g = ac.createGain();
+  g.gain.value = peak;
+  src.connect(g);
+  g.connect(out);
+  const sg = ac.createGain();
+  sg.gain.value = sendAmt;
+  g.connect(sg);
+  sg.connect(send);
+  src.start(t0);
+  src.stop(t0 + dur + 0.02);
+}
+
+/** Formant vocal synth: a glottal-rich sawtooth (with vibrato + breath noise)
+ *  through parallel formant resonators, gated by syllable envelopes. This is
+ *  what makes 😂/😮/😢 sound like a VOICE and not an oscillator. */
+function voice(
+  ac: AudioContext,
+  out: GainNode,
+  send: GainNode,
+  t0: number,
+  o: {
+    f0: Array<[number, number]>; // [timeOffset, hz] — linear pitch contour
+    formants: Array<[number, number, number]>; // [hz, Q, gain]
+    syll: Array<{ at: number; dur: number; amp: number }>;
+    breath?: number;
+    vib?: { rate: number; depth: number };
+    sendAmt?: number;
+    pan?: number;
+  },
+): void {
+  const total = Math.max(...o.syll.map((s) => s.at + s.dur)) + 0.08;
+  const src = ac.createOscillator();
+  src.type = 'sawtooth';
+  const first = o.f0[0];
+  src.frequency.setValueAtTime(first ? first[1] : 220, t0);
+  for (const [at, hz] of o.f0.slice(1)) src.frequency.linearRampToValueAtTime(hz, t0 + at);
+  let lfo: OscillatorNode | null = null;
+  if (o.vib) {
+    lfo = ac.createOscillator();
+    lfo.frequency.value = o.vib.rate;
+    const lg = ac.createGain();
+    lg.gain.value = o.vib.depth;
+    lfo.connect(lg);
+    lg.connect(src.frequency);
+    lfo.start(t0);
+    lfo.stop(t0 + total);
+  }
+  const input = ac.createGain();
+  input.gain.value = 1;
+  src.connect(input);
+  if (o.breath) {
+    const n = Math.floor(ac.sampleRate * total);
+    const nb = ac.createBuffer(1, n, ac.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i = 0; i < n; i++) nd[i] = (Math.random() * 2 - 1) * o.breath!;
+    const ns = ac.createBufferSource();
+    ns.buffer = nb;
+    ns.connect(input);
+    ns.start(t0);
+    ns.stop(t0 + total);
+  }
+  const env = ac.createGain();
+  env.gain.setValueAtTime(0.0001, t0);
+  for (const s of o.syll) {
+    env.gain.setValueAtTime(0.0001, t0 + s.at);
+    env.gain.exponentialRampToValueAtTime(s.amp, t0 + s.at + 0.018);
+    env.gain.exponentialRampToValueAtTime(0.0001, t0 + s.at + s.dur);
+  }
+  for (const [hz, q, g] of o.formants) {
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = hz;
+    bp.Q.value = q;
+    const fg = ac.createGain();
+    fg.gain.value = g;
+    input.connect(bp);
+    bp.connect(fg);
+    fg.connect(env);
+  }
+  const p = ac.createStereoPanner();
+  p.pan.value = o.pan ?? 0;
+  env.connect(p);
+  p.connect(out);
+  const sg = ac.createGain();
+  sg.gain.value = o.sendAmt ?? 0.5;
+  p.connect(sg);
+  sg.connect(send);
+  src.start(t0);
+  src.stop(t0 + total);
+}
+
+/** Scattered glass micro-hits — confetti, fairy dust, debris. */
+function shimmer(ac: AudioContext, out: GainNode, send: GainNode, t0: number, count: number, from: number, span: number): void {
+  for (let i = 0; i < count; i++) {
+    const at = from + Math.random() * span;
+    fmHit(ac, out, send, t0 + at, {
+      carrier: 2200 + Math.random() * 2800,
+      ratio: 5.07,
+      index: 1.4,
+      iDecay: 0.015,
+      dur: 0.12,
+      peak: 0.028 + Math.random() * 0.022,
+      sendAmt: 1,
+      pan: Math.random() * 1.2 - 0.6,
+    });
+  }
+}
+
+/** Deep detonation: a sub drop + saturated low noise — the 🤯 payload. */
+function boom(ac: AudioContext, out: GainNode, send: GainNode, t0: number, level: number): void {
+  gliss(ac, out, send, t0, 88, 38, 0.4, 0.2 * level, 'sine', 0.4, 0, 0.006);
+  whoosh(ac, out, send, t0, 700, 120, 0.3, 0.16 * level, 0.7, 0.8);
+  tick(ac, out, send, t0, { freq: 1400, q: 0.8, dur: 0.05, peak: 0.18 * level, pan: 0, sendAmt: 0.8 });
+}
+
+/* ------------------------------------------------------------ public sounds */
+
+/** Set when the audio logo fires so PLAY doesn't stack a second sting on it. */
+let lastLogoAt = 0;
+
 /**
- * Match-start sting (the landing PLAY): a warm low root, a rising major
- * arpeggio into the reverb, an air whoosh underneath and a sparkle on top —
- * short (~0.6 s), optimistic, premium. Fired on the tap, so it doubles as the
- * user gesture that unlocks the AudioContext.
+ * Audio logo (app open): browsers block sound before the first user gesture, so
+ * this fires on the FIRST pointerdown of the session — sub bloom, a three-note
+ * FM-bell motif (the "Lu-do!" signature), air, shimmer. ~1.1 s, calm, ownable.
  */
+export function playWelcome(): void {
+  play((ac, now) => {
+    lastLogoAt = Date.now();
+    const { out, send } = bus(ac);
+    gliss(ac, out, send, now, 52, 66, 0.55, 0.11, 'sine', 0.4, 0, 0.12); // sub bloom
+    mode(ac, out, send, now, 130.81, 0.9, 0.06, 'sine', 0.6); // C3 root bed
+    whoosh(ac, out, send, now, 300, 2600, 0.5, 0.04, 1.1, 0.9); // air lift
+    const motif: Array<[number, number, number]> = [
+      [523.25, 0, 0.8], // C5
+      [783.99, 0.16, 0.8], // G5
+      [1046.5, 0.32, 1.1], // C6 — lands and rings
+    ];
+    for (const [f, at, dur] of motif) {
+      fmHit(ac, out, send, now + at, { carrier: f, ratio: 3.51, index: 2.1, iDecay: 0.28, dur, peak: 0.12, sendAmt: 0.85, attack: 0.004 });
+    }
+    shimmer(ac, out, send, now, 5, 0.45, 0.4);
+  });
+}
+
+/** Match-start sting (the PLAY tap). Skips itself if the audio logo just fired
+ *  on the same gesture — one statement at a time. */
 export function playStart(): void {
+  if (Date.now() - lastLogoAt < 900) return;
   play((ac, now) => {
     const { out, send } = bus(ac);
-    mode(ac, out, send, now, 130.81, 0.55, 0.16, 'sine', 0.5); // C3 warm root
-    whoosh(ac, out, send, now, 400, 2400, 0.4, 0.05, 1.1, 0.8); // air lift
-    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-      mode(ac, out, send, now + 0.05 + i * 0.07, f, 0.3, 0.11, 'triangle', 0.65);
-      mode(ac, out, send, now + 0.05 + i * 0.07, f * 2, 0.16, 0.035, 'sine', 0.5); // shimmer double
-    });
-    tick(ac, out, send, now + 0.36, { freq: 5600, q: 1.3, dur: 0.06, peak: 0.08, pan: 0.15, sendAmt: 1 });
+    whoosh(ac, out, send, now, 400, 2400, 0.32, 0.04, 1.1, 0.8);
+    [523.25, 659.25, 783.99].forEach((f, i) =>
+      fmHit(ac, out, send, now + i * 0.06, { carrier: f, ratio: 3.51, index: 1.9, iDecay: 0.2, dur: 0.45, peak: 0.1, sendAmt: 0.7 }),
+    );
+    mode(ac, out, send, now, 130.81, 0.4, 0.08, 'sine', 0.5);
   });
 }
 
 /**
- * Per-emote signature (E-social): each emote is a small, layered sound-design
- * moment — glides, swept noise, body impacts and shimmer — so every reaction is
- * recognisable with your eyes closed. All ≤700 ms, all on the premium bus.
+ * Dice roll — "two ivory dice on felt": a brief granular shake, two physically
+ * decaying FM-knock bounces, and a felt settle. Tight (~0.55 s), weighty,
+ * stereo-detailed; restraint IS the premium trait.
+ */
+export function playDice(): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    // shake: sparse knock-grains, not a wash of noise
+    for (let i = 0; i < 6; i++) {
+      const at = i * 0.034 + Math.random() * 0.01;
+      fmHit(ac, out, send, now + at, {
+        carrier: 620 + Math.random() * 420,
+        ratio: 2.9,
+        index: 3.2,
+        iDecay: 0.008,
+        dur: 0.04,
+        peak: 0.05 + 0.012 * i,
+        pan: (i % 2 ? 1 : -1) * (0.25 + Math.random() * 0.3),
+        sendAmt: 0.3,
+      });
+    }
+    // bounce: energy dies physically — level, spacing and body all decay
+    knock(ac, out, send, now + 0.24, 0.95, -0.18, 212);
+    knock(ac, out, send, now + 0.36, 0.6, 0.14, 188);
+    knock(ac, out, send, now + 0.44, 0.34, -0.04, 232);
+    // settle on the felt
+    mode(ac, out, send, now + 0.5, 94, 0.13, 0.11, 'sine', 0.5);
+    tick(ac, out, send, now + 0.5, { freq: 760, q: 0.7, dur: 0.045, peak: 0.06, pan: 0, sendAmt: 0.5 });
+  });
+}
+
+let lastHop = 0;
+let hopFlip = false;
+
+/** Pawn step — a soft felt tap, pitch-humanised and micro-panned so a 6-cell
+ *  walk reads as footsteps, not a repeated sample. Never fatiguing. */
+export function playHop(): void {
+  play((ac, now) => {
+    if (now - lastHop < 0.06) return; // fast re-renders never stack
+    lastHop = now;
+    hopFlip = !hopFlip;
+    const vary = 0.96 + Math.random() * 0.08;
+    fmHit(ac, out(ac), sendOf(ac), now, {
+      carrier: 1900 * vary,
+      ratio: 2.02,
+      index: 1.6,
+      iDecay: 0.007,
+      dur: 0.045,
+      peak: 0.07,
+      pan: hopFlip ? 0.12 : -0.12,
+      sendAmt: 0.25,
+    });
+    mode(ac, out(ac), sendOf(ac), now, 310 * vary, 0.05, 0.05, 'sine', 0.2);
+  });
+}
+// tiny accessors so hop stays terse
+function out(ac: AudioContext): GainNode {
+  return bus(ac).out;
+}
+function sendOf(ac: AudioContext): GainNode {
+  return bus(ac).send;
+}
+
+/**
+ * Capture — strike & banish: a deep wooden strike, a dark downward whoosh and a
+ * sub drop as the token is knocked home. Punchy, classy, ~0.45 s.
+ */
+export function playCapture(): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    knock(ac, out, send, now, 1.25, 0, 132);
+    whoosh(ac, out, send, now + 0.03, 2200, 280, 0.28, 0.12, 1.2, 0.7);
+    whoosh(ac, out, send, now + 0.08, 480, 130, 0.24, 0.09, 0.8, 0.8); // dark poof
+    gliss(ac, out, send, now + 0.02, 92, 46, 0.3, 0.12, 'sine', 0.4, 0, 0.01); // sub
+  });
+}
+
+/** Win: an FM-bell fanfare over a warm root, with a shimmer tail. */
+export function playWin(): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    notes.forEach((f, i) => {
+      fmHit(ac, out, send, now + i * 0.11, { carrier: f, ratio: 3.51, index: 2.1, iDecay: 0.3, dur: 0.7, peak: 0.13, sendAmt: 0.85 });
+    });
+    mode(ac, out, send, now, 130.81, 0.8, 0.14, 'sine', 0.6); // C3 root
+    shimmer(ac, out, send, now, 6, 0.35, 0.45);
+  });
+}
+
+/** Loss: a soft, brief descending cue of commiseration (never harsh). */
+export function playLose(): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    mode(ac, out, send, now, 330, 0.4, 0.1, 'sine', 0.6);
+    mode(ac, out, send, now + 0.14, 247, 0.5, 0.09, 'sine', 0.7); // minor drop
+  });
+}
+
+/**
+ * Payout count-up: glass FM coins climbing with the number, landing on a chime.
+ * Call once as the end-screen amount counts up.
+ */
+export function playPayout(steps = 10): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    const n = Math.max(3, Math.min(16, steps));
+    for (let i = 0; i < n; i++) {
+      const t0 = now + i * 0.05;
+      fmHit(ac, out, send, t0, {
+        carrier: 1500 + (i / n) * 1700,
+        ratio: 5.07,
+        index: 1.3,
+        iDecay: 0.012,
+        dur: 0.07,
+        peak: 0.06,
+        pan: (Math.random() * 2 - 1) * 0.35,
+        sendAmt: 0.5,
+      });
+    }
+    const end = now + n * 0.05;
+    fmHit(ac, out, send, end, { carrier: 1046.5, ratio: 3.51, index: 1.8, iDecay: 0.25, dur: 0.55, peak: 0.12, sendAmt: 0.9 });
+  });
+}
+
+/** UI tap: a single glassy FM micro-tick — 50 ms, quiet, pitch-jittered. */
+export function playTap(kind: 'tap' | 'select' = 'tap'): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    const base = kind === 'select' ? 1650 : 1300;
+    fmHit(ac, out, send, now, {
+      carrier: base * (1 + (Math.random() * 2 - 1) * 0.03),
+      ratio: 5.07,
+      index: 1.1,
+      iDecay: 0.01,
+      dur: 0.05,
+      peak: kind === 'select' ? 0.07 : 0.05,
+      sendAmt: 0.25,
+    });
+  });
+}
+
+/**
+ * Emote signatures — each emoji translated LITERALLY into sound:
+ * 👏 is real (granular) applause, 😂 is a synthesized chuckle, 😎 is a finger
+ * snap, 🎉 is a party-popper with confetti, 🍀 is a plucked charm harp…
+ * All ≤700 ms, all in the same room as everything else.
  */
 export function playEmote(id: string): void {
   play((ac, now) => {
     const { out, send } = bus(ac);
     switch (id) {
-      case '👍': { // approval stamp: woody double-hit landing on a confident fifth
-        impact(ac, out, send, now, 0.5, -0.1, 180, 540);
-        mode(ac, out, send, now + 0.09, 392, 0.14, 0.12, 'triangle', 0.4);
-        mode(ac, out, send, now + 0.18, 588, 0.22, 0.13, 'triangle', 0.6);
-        tick(ac, out, send, now + 0.3, { freq: 4800, q: 1.4, dur: 0.05, peak: 0.06, pan: 0.2, sendAmt: 0.9 });
+      case '👍': { // affirmative: a solid wood "thock" resolving up a fifth
+        knock(ac, out, send, now, 0.7, -0.05, 225);
+        fmHit(ac, out, send, now + 0.1, { carrier: 659.25, ratio: 3.51, index: 1.8, iDecay: 0.22, dur: 0.4, peak: 0.1, sendAmt: 0.75 });
         break;
       }
-      case '😂': { // giggle: bouncing staccato that climbs, ends on a hiccup
-        const gig = [1318.5, 1046.5, 1396.9, 1174.7, 1568, 1318.5];
-        gig.forEach((f, i) =>
-          mode(ac, out, send, now + i * 0.065, f, 0.05, 0.085, 'square', 0.3),
-        );
-        gliss(ac, out, send, now + 0.42, 900, 1500, 0.09, 0.07, 'sine', 0.5, 0.25); // hiccup
-        break;
-      }
-      case '🔥': { // ignite: a real whoosh + crackle + sub swell
-        whoosh(ac, out, send, now, 300, 3200, 0.32, 0.14, 1.2, 0.7);
-        gliss(ac, out, send, now, 55, 95, 0.3, 0.1, 'sine', 0.3, 0, 0.08); // sub bloom
-        [0.1, 0.17, 0.25].forEach((dt, i) =>
-          tick(ac, out, send, now + dt, { freq: 3000 + i * 900, q: 1.6, dur: 0.025, peak: 0.08, pan: (i % 2) * 0.5 - 0.25, sendAmt: 0.6 }),
-        );
-        break;
-      }
-      case '😎': { // cool: a lazy, tape-warm Maj7 stab — twice, softer the second time
-        const chord = [196, 246.9, 311.1, 370];
-        chord.forEach((f, i) => mode(ac, out, send, now + i * 0.015, f, 0.3, 0.075, 'triangle', 0.55));
-        tick(ac, out, send, now, { freq: 1800, q: 0.9, dur: 0.03, peak: 0.05, pan: -0.2, sendAmt: 0.4 }); // brush
-        chord.forEach((f, i) => mode(ac, out, send, now + 0.22 + i * 0.015, f * 1.002, 0.34, 0.05, 'triangle', 0.7));
-        break;
-      }
-      case '🎉': { // party: horn gliss + cork pop + sparkle rain
-        gliss(ac, out, send, now, 294, 587, 0.18, 0.11, 'sawtooth', 0.5, -0.15);
-        tick(ac, out, send, now + 0.16, { freq: 2200, q: 1, dur: 0.035, peak: 0.14, pan: 0.1, sendAmt: 0.6 }); // pop
-        [1046.5, 1318.5, 1568, 2093].forEach((f, i) =>
-          mode(ac, out, send, now + 0.2 + i * 0.05, f, 0.22, 0.07, 'sine', 0.9),
-        );
-        break;
-      }
-      case '👏': { // applause: humanised bandpass claps, alternating pan
-        [0, 0.09, 0.19, 0.31].forEach((dt, i) =>
-          tick(ac, out, send, now + dt, {
-            freq: 1500 + (i % 2) * 350 + i * 60,
-            q: 0.85,
-            dur: 0.045,
-            peak: i === 3 ? 0.09 : 0.13,
-            pan: (i % 2) * 0.7 - 0.35,
-            sendAmt: 0.7,
-          }),
-        );
-        break;
-      }
-      case '🤯': { // mind blown: riser → detonation → falling debris
-        gliss(ac, out, send, now, 140, 1400, 0.26, 0.09, 'sawtooth', 0.4, 0, 0.05);
-        impact(ac, out, send, now + 0.27, 1.2, 0, 65, 240);
-        whoosh(ac, out, send, now + 0.27, 3000, 500, 0.28, 0.1, 1, 0.9);
-        tick(ac, out, send, now + 0.4, { freq: 5200, q: 1.2, dur: 0.06, peak: 0.06, pan: -0.3, sendAmt: 1 });
-        tick(ac, out, send, now + 0.5, { freq: 4200, q: 1.2, dur: 0.06, peak: 0.05, pan: 0.3, sendAmt: 1 });
-        break;
-      }
-      case '😮': { // whoa: two detuned voices rising together over a breath
-        gliss(ac, out, send, now, 330, 660, 0.3, 0.08, 'sine', 0.6, -0.08, 0.06);
-        gliss(ac, out, send, now, 334, 668, 0.3, 0.07, 'sine', 0.6, 0.08, 0.06);
-        whoosh(ac, out, send, now, 700, 1600, 0.26, 0.03, 1.4, 0.8); // breath
-        break;
-      }
-      case '😢': { // sad: two overlapping falling sighs + a tear-drop plink
-        gliss(ac, out, send, now, 440, 330, 0.34, 0.08, 'sine', 0.7, -0.05, 0.05);
-        gliss(ac, out, send, now + 0.08, 415, 311, 0.34, 0.06, 'sine', 0.7, 0.05, 0.05);
-        gliss(ac, out, send, now + 0.42, 1900, 600, 0.07, 0.07, 'sine', 0.9, 0.15); // drop
-        break;
-      }
-      case '💪': { // power: two deep body punches under a rising power-fifth
-        impact(ac, out, send, now, 0.9, -0.2, 80, 220);
-        impact(ac, out, send, now + 0.14, 1.1, 0.2, 72, 205);
-        gliss(ac, out, send, now + 0.05, 110, 123.5, 0.22, 0.06, 'sawtooth', 0.35);
-        gliss(ac, out, send, now + 0.05, 165, 185, 0.22, 0.05, 'sawtooth', 0.35);
-        break;
-      }
-      case '🍀': { // charm: a music-box arpeggio with octave shimmer + fairy dust
-        [784, 988, 1175, 1568].forEach((f, i) => {
-          mode(ac, out, send, now + i * 0.075, f, 0.26, 0.085, 'sine', 0.85);
-          mode(ac, out, send, now + i * 0.075, f * 2, 0.14, 0.03, 'sine', 0.9);
+      case '😂': { // an actual chuckle: 4 falling "ha" syllables, /a/ formants
+        voice(ac, out, send, now, {
+          f0: [[0, 300], [0.55, 228]],
+          formants: [[820, 9, 1], [1210, 11, 0.45], [2700, 12, 0.2]],
+          syll: [
+            { at: 0, dur: 0.09, amp: 0.1 },
+            { at: 0.13, dur: 0.09, amp: 0.09 },
+            { at: 0.26, dur: 0.09, amp: 0.075 },
+            { at: 0.4, dur: 0.1, amp: 0.055 },
+          ],
+          breath: 0.05,
+          sendAmt: 0.45,
         });
-        tick(ac, out, send, now + 0.34, { freq: 6200, q: 1.2, dur: 0.06, peak: 0.06, pan: 0.2, sendAmt: 1 });
         break;
       }
-      case '🎲': { // dice: two premium body clacks + a woody table settle
-        impact(ac, out, send, now, 0.8, -0.15, 150, 900);
-        impact(ac, out, send, now + 0.1, 0.6, 0.2, 132, 760);
-        mode(ac, out, send, now + 0.18, 220, 0.12, 0.08, 'sine', 0.5);
+      case '🔥': { // ignition: strike, swept flame, low roar, irregular crackle
+        tick(ac, out, send, now, { freq: 3200, q: 1.2, dur: 0.03, peak: 0.1, pan: 0, sendAmt: 0.5 });
+        whoosh(ac, out, send, now, 260, 3100, 0.3, 0.13, 1.2, 0.7);
+        whoosh(ac, out, send, now + 0.05, 230, 120, 0.34, 0.09, 0.7, 0.5); // roar under
+        [0.09, 0.14, 0.22, 0.29].forEach((dt, i) =>
+          tick(ac, out, send, now + dt, { freq: 2600 + Math.random() * 1600, q: 1.6, dur: 0.02, peak: 0.05 + Math.random() * 0.03, pan: (i % 2) * 0.6 - 0.3, sendAmt: 0.6 }),
+        );
         break;
       }
-      default: // quick-chat bubble: a soft, rounded double pop
-        mode(ac, out, send, now, 587, 0.08, 0.09, 'triangle', 0.35);
-        mode(ac, out, send, now + 0.09, 784, 0.1, 0.08, 'triangle', 0.45);
+      case '😎': { // cool: a literal finger SNAP over a lazy warm chord swell
+        clap1(ac, out, send, now, 2300, 0.16, 0.08); // the snap
+        [196, 246.9, 311.1].forEach((f) => gliss(ac, out, send, now + 0.08, f, f, 0.45, 0.045, 'triangle', 0.7, 0, 0.09));
+        break;
+      }
+      case '🎉': { // party-popper: POP → confetti shimmer → falling streamer
+        tick(ac, out, send, now, { freq: 1500, q: 0.7, dur: 0.05, peak: 0.22, pan: 0, sendAmt: 0.5 });
+        fmHit(ac, out, send, now, { carrier: 92, ratio: 1.4, index: 2.4, iDecay: 0.03, dur: 0.12, peak: 0.12, sendAmt: 0.3 }); // air thump
+        shimmer(ac, out, send, now, 9, 0.07, 0.5); // confetti
+        gliss(ac, out, send, now + 0.1, 2700, 1150, 0.32, 0.032, 'sine', 0.8, 0.25); // streamer
+        break;
+      }
+      case '👏': { // real applause — Peltola claps, two hands, humanised
+        applause(ac, out, send, now, 9, 0.58);
+        break;
+      }
+      case '🤯': { // riser → deep detonation → debris + faint shell-shock ring
+        gliss(ac, out, send, now, 130, 1300, 0.28, 0.07, 'sawtooth', 0.4, 0, 0.05);
+        whoosh(ac, out, send, now, 500, 3400, 0.28, 0.05, 1.1, 0.7);
+        boom(ac, out, send, now + 0.29, 1);
+        shimmer(ac, out, send, now, 4, 0.42, 0.3); // debris
+        mode(ac, out, send, now + 0.34, 3400, 0.5, 0.022, 'sine', 1); // ring
+        break;
+      }
+      case '😮': { // a vocal "whoa" — one rising, breathy /o→a/ syllable
+        voice(ac, out, send, now, {
+          f0: [[0, 205], [0.22, 330], [0.45, 285]],
+          formants: [[520, 8, 1], [920, 9, 0.55], [2400, 12, 0.14]],
+          syll: [{ at: 0, dur: 0.46, amp: 0.1 }],
+          breath: 0.06,
+          vib: { rate: 5, depth: 5 },
+          sendAmt: 0.55,
+        });
+        break;
+      }
+      case '😢': { // a falling "aww" with real vibrato + a tear-drop plink
+        voice(ac, out, send, now, {
+          f0: [[0, 310], [0.5, 212]],
+          formants: [[700, 8, 1], [1060, 9, 0.5], [2500, 12, 0.1]],
+          syll: [{ at: 0, dur: 0.5, amp: 0.09 }],
+          breath: 0.05,
+          vib: { rate: 5.5, depth: 11 },
+          sendAmt: 0.65,
+        });
+        gliss(ac, out, send, now + 0.54, 2100, 850, 0.07, 0.06, 'sine', 0.9, 0.15); // plink
+        break;
+      }
+      case '💪': { // muscle: cloth whumph + two deep body punches + strain
+        whoosh(ac, out, send, now, 900, 240, 0.15, 0.11, 0.9, 0.4);
+        fmHit(ac, out, send, now + 0.02, { carrier: 66, ratio: 1.4, index: 2.6, iDecay: 0.04, dur: 0.18, peak: 0.18, sendAmt: 0.3, pan: -0.1 });
+        fmHit(ac, out, send, now + 0.17, { carrier: 60, ratio: 1.4, index: 2.6, iDecay: 0.04, dur: 0.2, peak: 0.2, sendAmt: 0.35, pan: 0.1 });
+        gliss(ac, out, send, now + 0.05, 82, 97, 0.26, 0.04, 'sawtooth', 0.3); // strain
+        break;
+      }
+      case '🍀': { // charm: a plucked harp gliss (real strings) + fairy dust
+        [783.99, 987.77, 1174.7, 1568].forEach((f, i) => pluck(ac, out, send, now + i * 0.085, f, 0.55, 0.09));
+        shimmer(ac, out, send, now, 4, 0.38, 0.32);
+        break;
+      }
+      case '🎲': { // a miniature premium dice throw
+        knock(ac, out, send, now, 0.85, -0.15, 208);
+        knock(ac, out, send, now + 0.1, 0.55, 0.15, 186);
+        mode(ac, out, send, now + 0.17, 96, 0.11, 0.08, 'sine', 0.5);
+        break;
+      }
+      default: // quick-chat: a rounded message-bubble pop
+        gliss(ac, out, send, now, 380, 720, 0.07, 0.1, 'sine', 0.4, 0, 0.008);
+        fmHit(ac, out, send, now + 0.05, { carrier: 1800, ratio: 5.07, index: 1, iDecay: 0.01, dur: 0.05, peak: 0.035, sendAmt: 0.6 });
     }
   });
 }

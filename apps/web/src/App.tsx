@@ -20,7 +20,7 @@ import { sendLimits, buySkin, claimCosmetic, fetchProfile, pushIdentity } from '
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet } from './lib/minipay';
 import type { StakeStatus } from './lib/escrow';
-import { playCapture, playDice, playWin } from './lib/sound';
+import { playCapture, playDice, playWelcome, playWin } from './lib/sound';
 import { recordGameResult } from './lib/diceSkins';
 import { t } from './lib/i18n';
 
@@ -42,6 +42,15 @@ export default function App() {
   const sixRunRef = useRef<{ seat: number; run: number }>({ seat: -1, run: 0 });
 
   // Persist the latest retention state so the lobby shows it before reconnecting.
+  // Audio logo "on app open": browsers gate audio behind the first user
+  // gesture, so the sonic logo fires on the session's FIRST pointerdown —
+  // the closest the web platform allows to an opening sound.
+  useEffect(() => {
+    const fire = (): void => playWelcome();
+    window.addEventListener('pointerdown', fire, { once: true });
+    return () => window.removeEventListener('pointerdown', fire);
+  }, []);
+
   useEffect(() => {
     saveRetention({
       challenge: state.challenge,
