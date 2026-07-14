@@ -46,7 +46,9 @@ const SETTLE_ABI = [
       { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' },
       { name: 'playerA', type: 'address' }, { name: 'playerB', type: 'address' },
       { name: 'createdAt', type: 'uint40' }, { name: 'status', type: 'uint8' },
-      { name: 'rakeBps', type: 'uint16' },
+      // NB: the hardened contract appends rakeBps (7th field); we don't read it and a
+      // 6-output ABI decodes fine against BOTH the current (6-field) and future
+      // (7-field) getter, so this stays contract-version-agnostic.
     ],
   },
 ] as const;

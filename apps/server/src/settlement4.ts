@@ -45,7 +45,8 @@ const ESCROW_N_ABI = [
       { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' },
       { name: 'seatCount', type: 'uint8' }, { name: 'joined', type: 'uint8' },
       { name: 'createdAt', type: 'uint40' }, { name: 'status', type: 'uint8' },
-      { name: 'rakeBps', type: 'uint16' },
+      // rakeBps (7th field on the hardened contract) intentionally omitted — unused,
+      // and a 6-output ABI decodes fine against both the 6- and 7-field getters.
     ],
   },
 ] as const;

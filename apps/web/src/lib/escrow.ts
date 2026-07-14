@@ -25,7 +25,8 @@ export const ESCROW_ABI = [
       { name: 'playerB', type: 'address' },
       { name: 'createdAt', type: 'uint40' },
       { name: 'status', type: 'uint8' },
-      { name: 'rakeBps', type: 'uint16' },
+      // rakeBps (7th field on the hardened contract) omitted on purpose — unused here,
+      // and a 6-output ABI decodes fine against both the 6- and 7-field getters.
     ],
   },
 ] as const;
