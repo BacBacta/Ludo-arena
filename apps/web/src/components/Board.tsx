@@ -53,15 +53,6 @@ function quadSlots(qx: number, qy: number): Array<[number, number]> {
   ];
 }
 
-/** Tint a safe star to the seat that owns its arm: left arm = blue, right = green. */
-function starTint(cx: number, cy: number): readonly [string, string, string] | null {
-  if (cy >= 6 && cy <= 8) {
-    if (cx <= 5) return BLUE; // left horizontal arm (blue home-run)
-    if (cx >= 9) return GREEN; // right horizontal arm (green home-run)
-  }
-  return null;
-}
-
 export interface PlayerBanner {
   seat: Seat;
   name: string;
@@ -206,11 +197,11 @@ function Quadrant({
   const slots = quadSlots(x, y);
   return (
     <g opacity={inactive ? 0.42 : 1}>
-      {/* flat solid quadrant (Ludo-Club matte) — no gradient, reads as a true colour */}
-      <rect x={x} y={y} width={6} height={6} rx={0.5} fill={colors[1]} />
+      {/* flat solid quadrant, square edges — reads as one continuous surface (matches 4p) */}
+      <rect x={x} y={y} width={6} height={6} fill={colors[1]} />
       {/* big white home square, lifted with a soft cast shadow */}
-      {!inactive && <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.55} fill="rgba(16,24,48,.18)" />}
-      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.55} fill="#ffffff" opacity={inactive ? 0.85 : 1} />
+      {!inactive && <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.45} fill="rgba(16,24,48,.18)" />}
+      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.45} fill="#ffffff" opacity={inactive ? 0.85 : 1} />
       {/* Only the TWO lower resting discs — the tokens rest there (2-token blitz),
           so empty upper discs no longer read as missing pieces. */}
       {!inactive &&
@@ -306,8 +297,14 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         aria-label="Ludo board"
         shapeRendering="geometricPrecision"
       >
+        <defs>
+          <clipPath id="boardclip">
+            <rect x={0} y={0} width={15} height={15} rx={0.35} />
+          </clipPath>
+        </defs>
+        <g clipPath="url(#boardclip)">
         {/* flat white plate (edge-to-edge; the wrapper gives the soft shadow) */}
-        <rect x={0} y={0} width={15} height={15} rx={0.4} fill="#ffffff" />
+        <rect x={0} y={0} width={15} height={15} fill="#ffffff" />
 
         {/* quadrants: red / green / blue / yellow (classic) */}
         <Quadrant x={0} y={0} colors={RED} inactive />
@@ -315,73 +312,55 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         <Quadrant x={0} y={9} colors={BLUE} />
         <Quadrant x={9} y={9} colors={YELLOW} inactive />
 
-        {/* track: flat white cells with a thin grey grid (Ludo-Club) */}
+        {/* track cells: continuous grid, shared hairline borders (matches the 4-player board) */}
         {TRACK.map(([x, y], i) => (
-          <rect
-            key={i}
-            x={x + 0.015}
-            y={y + 0.015}
-            width={0.97}
-            height={0.97}
-            rx={0.06}
-            fill="#ffffff"
-            stroke="#d4dbe8"
-            strokeWidth={0.03}
-          />
+          <rect key={i} x={x} y={y} width={1} height={1} fill="#ffffff" stroke="#a6b0c0" strokeWidth={0.05} />
         ))}
 
-        {/* safe stars: colour-tinted near each corner, soft grey elsewhere */}
+        {/* safe cells: grey-filled cell carrying a white star (matches the 4-player board) */}
         {[...SAFE_CELLS].map((i) => {
           const cell = TRACK[i];
           if (!cell) return null;
           const cx = cell[0] + 0.5;
           const cy = cell[1] + 0.5;
-          const tint = starTint(cell[0], cell[1]);
           return (
-            <polygon
-              key={`s${i}`}
-              points={starPoints(cx, cy, 0.36)}
-              fill={tint ? tint[0] : '#eef1f7'}
-              stroke={tint ? tint[2] : '#b7c1d2'}
-              strokeWidth={0.05}
-              strokeLinejoin="round"
-              opacity={tint ? 0.9 : 1}
-            />
+            <g key={`s${i}`}>
+              <rect x={cell[0]} y={cell[1]} width={1} height={1} fill="#c9d1de" stroke="#a6b0c0" strokeWidth={0.05} />
+              <polygon points={starPoints(cx, cy, 0.36)} fill="#ffffff" strokeLinejoin="round" />
+            </g>
           );
         })}
 
-        {/* home columns: solid seat colour, flat */}
+        {/* home columns: solid seat colour, flat square (matches the 4-player board) */}
         {HOME_COLUMNS.map((col, seat) =>
           col.map(([x, y], i) => (
             <rect
               key={`h${seat}-${i}`}
-              x={x + 0.02}
-              y={y + 0.02}
-              width={0.96}
-              height={0.96}
-              rx={0.12}
+              x={x}
+              y={y}
+              width={1}
+              height={1}
               fill={SEAT_COLOR[seat]![1]}
               stroke={SEAT_COLOR[seat]![2]}
-              strokeWidth={0.04}
+              strokeWidth={0.035}
             />
           )),
         )}
 
-        {/* start cells: solid seat colour + white chevron */}
+        {/* start cells: solid seat colour, flat square */}
         {SEAT_START.map((idx, seat) => {
           const cell = TRACK[idx];
           if (!cell) return null;
           return (
             <rect
               key={`d${seat}`}
-              x={cell[0] + 0.02}
-              y={cell[1] + 0.02}
-              width={0.96}
-              height={0.96}
-              rx={0.12}
+              x={cell[0]}
+              y={cell[1]}
+              width={1}
+              height={1}
               fill={SEAT_COLOR[seat as Seat]![1]}
               stroke={SEAT_COLOR[seat as Seat]![2]}
-              strokeWidth={0.04}
+              strokeWidth={0.035}
             />
           );
         })}
@@ -392,11 +371,11 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         {edgeChevron(7.5, 0.5, 90, RED[1], 'er')}
         {edgeChevron(7.5, 14.5, 270, YELLOW[1], 'ey')}
 
-        {/* centre: plain four-triangle pinwheel (Ludo-Club has no medallion) */}
-        <polygon points="6,6 9,6 7.5,7.5" fill={RED[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
-        <polygon points="9,6 9,9 7.5,7.5" fill={GREEN[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
-        <polygon points="6,9 9,9 7.5,7.5" fill={YELLOW[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
-        <polygon points="6,6 6,9 7.5,7.5" fill={BLUE[1]} stroke="#ffffff" strokeWidth={0.07} strokeLinejoin="round" />
+        {/* centre: plain four-triangle pinwheel (matches the 4-player board) */}
+        <polygon points="6,6 9,6 7.5,7.5" fill={RED[1]} />
+        <polygon points="9,6 9,9 7.5,7.5" fill={GREEN[1]} />
+        <polygon points="6,9 9,9 7.5,7.5" fill={YELLOW[1]} />
+        <polygon points="6,6 6,9 7.5,7.5" fill={BLUE[1]} />
 
         {/* pieces */}
         {positions.map((row, seat) =>
@@ -470,6 +449,7 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
             })}
           </g>
         ))}
+        </g>
       </svg>
 
       {/* name banners over each seat's quadrant (crisp HTML text + flag) */}
