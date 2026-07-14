@@ -19,7 +19,8 @@ import {
   type Hex,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CHAINS, gameIdToBytes32 } from './settlement.js';
+import { CHAINS, gameIdToBytes32, serializeByKey } from './settlement.js';
+import type { Store, SettlementJob } from './store/index.js';
 
 /** Mirrors LudoEscrowN.Status (note: index 1 is Filling, not WaitingOpponent). */
 export enum GameStatusN {
@@ -110,17 +111,25 @@ export class ArbiterN {
   }
 
   private async submit(functionName: 'settle' | 'refundUnfilled' | 'voidGame', args: readonly unknown[]): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      account: this.account,
-      chain: this.chain,
-      address: this.escrow,
-      abi: ESCROW_N_ABI,
-      functionName,
-      args,
-    } as never);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== 'success') throw new Error(`${functionName} reverted (tx ${hash})`);
-    return hash;
+    // Same EOA as the 1v1 arbiter → serialize on the account to avoid nonce races.
+    return serializeByKey(this.account.address, async () => {
+      const hash = await this.walletClient.writeContract({
+        account: this.account,
+        chain: this.chain,
+        address: this.escrow,
+        abi: ESCROW_N_ABI,
+        functionName,
+        args,
+      } as never);
+      const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== 'success') throw new Error(`${functionName} reverted (tx ${hash})`);
+      return hash;
+    });
+  }
+
+  /** Arbiter's native (gas) balance in wei (same EOA as the 1v1 arbiter). */
+  async nativeBalance(): Promise<bigint> {
+    return this.publicClient.getBalance({ address: this.account.address });
   }
 
   async submitSettle(gameId: string, winner: Address): Promise<Hex> {
@@ -165,4 +174,155 @@ export function createArbiterN(env: NodeJS.ProcessEnv = process.env): ArbiterN |
 
   const pk = (raw.startsWith('0x') ? raw : `0x${raw}`) as Hex;
   return new ArbiterN(pk, chain, escrow, env.SETTLEMENT_RPC?.trim() || undefined);
+}
+
+const MAX_ATTEMPTS_4 = 6;
+
+/** The queue only needs these from the N-player arbiter (stubbable in tests). */
+export interface ArbiterNLike {
+  readonly chainId: number;
+  gameStatus(gameId: string): Promise<GameN>;
+  seatsOf(gameId: string): Promise<Address[]>;
+  submitSettle(gameId: string, winner: Address): Promise<Hex>;
+  submitRefundUnfilled(gameId: string): Promise<Hex>;
+}
+
+export interface Settlement4Deps {
+  store: Store;
+  arbiter: ArbiterNLike;
+  /** Notify the seats once the payout tx is mined. */
+  onSettled: (gameId: string, txHash: string) => void;
+  /** Notify once an unfilled table has been refunded to every depositor. */
+  onRefunded: (gameId: string, txHash: string) => void;
+  /** Money-critical alert (payout failed / stuck escrow) for an ops pager. */
+  onAlert?: (message: string) => void;
+  /** Wall-clock seconds; injectable for tests. */
+  now?: () => number;
+}
+
+/**
+ * Durable settlement for 4-player staked games (LudoEscrowN) — the N-player
+ * mirror of {@link SettlementQueue}. Jobs are persisted (variant '4p') and
+ * resumed at boot, so a crash between game-over and payout never loses a 4p
+ * payout (the pre-existing in-memory setTimeout path did). A settle job carries
+ * the winner wallet; a refund-unfilled job carries winnerWallet '' and is
+ * processed once the table is still Filling past the join window.
+ */
+export class SettlementQueue4 {
+  private timers = new Set<ReturnType<typeof setTimeout>>();
+
+  constructor(private readonly deps: Settlement4Deps) {}
+
+  /** Enqueue a winner payout for a completed 4p game (durable, non-blocking). */
+  async enqueue(gameId: string, winnerWallet: string): Promise<void> {
+    return this.add(gameId, winnerWallet);
+  }
+
+  /** Enqueue a full refund for a table that never filled (winner unknown). */
+  async enqueueRefundUnfilled(gameId: string): Promise<void> {
+    return this.add(gameId, '');
+  }
+
+  private async add(gameId: string, winnerWallet: string): Promise<void> {
+    const job: SettlementJob = {
+      gameId,
+      winnerWallet,
+      chainId: this.deps.arbiter.chainId,
+      status: 'pending',
+      attempts: 0,
+      variant: '4p',
+    };
+    await this.deps.store.enqueueSettlement(job);
+    void this.process(job);
+  }
+
+  /** Re-process 4p jobs left pending by a previous run (call at boot). */
+  async resumePending(): Promise<void> {
+    const pending = await this.deps.store.listPendingSettlements();
+    const mine = pending.filter((j) => j.variant === '4p' && j.chainId === this.deps.arbiter.chainId);
+    for (const job of mine) void this.process(job);
+    if (mine.length > 0) console.log(`[settlement4] resuming ${mine.length} pending job(s)`);
+  }
+
+  /** Cancel pending retries (shutdown). */
+  stop(): void {
+    for (const timer of this.timers) clearTimeout(timer);
+    this.timers.clear();
+  }
+
+  private nowS(): number {
+    return this.deps.now?.() ?? Math.floor(Date.now() / 1000);
+  }
+
+  private reschedule(job: SettlementJob, delayMs: number): void {
+    const timer = setTimeout(() => {
+      this.timers.delete(timer);
+      void this.process(job);
+    }, delayMs);
+    this.timers.add(timer);
+  }
+
+  private async process(job: SettlementJob): Promise<void> {
+    const attempts = job.attempts + 1;
+    try {
+      const { status, createdAt } = await this.deps.arbiter.gameStatus(job.gameId);
+
+      if (status === GameStatusN.Active) {
+        // Reconcile the winner against the actual on-chain seats; settle() reverts
+        // NotAPlayer otherwise, burning retries until the pot is stuck in Active.
+        const seats = await this.deps.arbiter.seatsOf(job.gameId);
+        const winner = job.winnerWallet.toLowerCase();
+        if (!seats.some((s) => s.toLowerCase() === winner)) {
+          await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
+          const msg = `[settlement4][ALERT] winner ${job.winnerWallet} is not an on-chain seat (${seats.join(', ')}) for 4p game ${job.gameId}. NOT settling; manual review — funds locked in Active escrow.`;
+          console.error(msg);
+          this.deps.onAlert?.(msg);
+          return;
+        }
+        const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
+        await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
+        this.deps.onSettled(job.gameId, txHash);
+        console.log(`[settlement4] ${job.gameId} settled in tx ${txHash}`);
+        return;
+      }
+
+      if (status === GameStatusN.Filling) {
+        // Table never filled: refund every depositor once JOIN_TIMEOUT elapses.
+        const readyAt = createdAt + JOIN_TIMEOUT_N_S;
+        const waitS = readyAt - this.nowS();
+        if (waitS > 0) {
+          console.log(`[settlement4] ${job.gameId} awaiting refund window (${waitS}s)`);
+          this.reschedule(job, (waitS + 3) * 1_000);
+          return;
+        }
+        const txHash = await this.deps.arbiter.submitRefundUnfilled(job.gameId);
+        await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
+        this.deps.onRefunded(job.gameId, txHash);
+        console.log(`[settlement4] ${job.gameId} refundUnfilled in tx ${txHash}`);
+        return;
+      }
+
+      // Already resolved on-chain (Settled/Refunded), or nobody staked (None).
+      const terminal = status === GameStatusN.Settled ? 'settled' : status === GameStatusN.Refunded ? 'refunded' : 'failed';
+      await this.deps.store.markSettlement(job.gameId, terminal, attempts);
+      if (terminal === 'failed') console.warn(`[settlement4] ${job.gameId} not stakeable (status ${status}); skipping`);
+      return;
+    } catch (e) {
+      console.error(`[settlement4] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);
+      if (attempts >= MAX_ATTEMPTS_4) {
+        await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
+        const msg = `[settlement4][ALERT] PAYOUT FAILED after ${attempts} attempts — 4p game ${job.gameId}, winner ${job.winnerWallet || '(refund)'}, chain ${job.chainId}. Funds may be locked in LudoEscrowN; manual settle/refund required.`;
+        console.error(msg);
+        this.deps.onAlert?.(msg);
+        return;
+      }
+      await this.deps.store.markSettlement(job.gameId, 'pending', attempts);
+      const backoff = Math.min(1_000 * 2 ** (attempts - 1), 30_000);
+      const timer = setTimeout(() => {
+        this.timers.delete(timer);
+        void this.process({ ...job, attempts });
+      }, backoff);
+      this.timers.add(timer);
+    }
+  }
 }

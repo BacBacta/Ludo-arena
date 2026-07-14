@@ -48,7 +48,7 @@ import { Room, type Client } from './room.js';
 import { createFairness, createFairness4, createSeedCommit, finalizeFairness, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
-import { createArbiterN, GameStatusN, JOIN_TIMEOUT_N_S } from './settlement4.js';
+import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
 import { type Fairness4 } from './fairness.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
@@ -237,6 +237,31 @@ const settlementQueue = arbiter
           sessions.get(id)?.send({ t: 'game.refunded', gameId, txHash });
         }
         settlementNotify.delete(gameId);
+      },
+    })
+  : null;
+// gameId → seats to notify + winner seat, for the durable 4p queue's callbacks.
+const settlement4Notify = new Map<string, { sessionIds: string[]; winnerSeat: number }>();
+const settlementQueue4 = arbiterN
+  ? new SettlementQueue4({
+      store,
+      arbiter: arbiterN,
+      onAlert: postOpsAlert,
+      onSettled: (gameId, txHash) => {
+        const info = settlement4Notify.get(gameId);
+        if (!info) return;
+        for (const id of info.sessionIds) {
+          sessions.get(id)?.send({ t: 'game.settled4', gameId, txHash, winner: info.winnerSeat });
+        }
+        settlement4Notify.delete(gameId);
+      },
+      onRefunded: (gameId, txHash) => {
+        const info = settlement4Notify.get(gameId);
+        if (!info) return;
+        for (const id of info.sessionIds) {
+          sessions.get(id)?.send({ t: 'game.refunded4', gameId, txHash });
+        }
+        settlement4Notify.delete(gameId);
       },
     })
   : null;
@@ -468,8 +493,36 @@ for (const snap of await store.loadRooms()) {
   room.resume();
   console.log(`[ludo-server] restored game ${snap.gameId} (stake ${snap.stakeCents}c)`);
 }
-// Finish any settlements interrupted by the previous run.
+// Finish any settlements interrupted by the previous run (1v1 and 4p).
 await settlementQueue?.resumePending();
+await settlementQueue4?.resumePending();
+
+// Arbiter gas-balance monitor: a broke arbiter silently stalls EVERY payout
+// (retries exhaust, funds sit in escrow). Alert ops once when the native balance
+// dips below the floor (default 0.05 CELO), and re-arm after it recovers.
+const gasArbiter = arbiter ?? arbiterN;
+if (gasArbiter) {
+  const floorWei = process.env.ARBITER_MIN_BALANCE_WEI?.trim()
+    ? BigInt(process.env.ARBITER_MIN_BALANCE_WEI.trim())
+    : 50_000_000_000_000_000n; // 0.05 CELO
+  let lowBalanceAlerted = false;
+  const checkGas = async (): Promise<void> => {
+    try {
+      const bal = await gasArbiter.nativeBalance();
+      if (bal < floorWei && !lowBalanceAlerted) {
+        lowBalanceAlerted = true;
+        postOpsAlert(`[arbiter][ALERT] LOW GAS — arbiter ${gasArbiter.address} balance ${bal} wei < floor ${floorWei} wei on chain ${gasArbiter.chainId}. Top up or payouts will stall.`);
+      } else if (bal >= floorWei && lowBalanceAlerted) {
+        lowBalanceAlerted = false; // recovered — re-arm the alert
+        console.log(`[arbiter] gas balance recovered (${bal} wei)`);
+      }
+    } catch (e) {
+      console.error('[arbiter] gas balance check failed', e instanceof Error ? e.message : e);
+    }
+  };
+  void checkGas();
+  setInterval(() => void checkGas(), 5 * 60_000);
+}
 
 // Weekly league rollover (E4.3): runs when the ISO week changes (Mon 00:00 UTC).
 // Checked at boot and hourly so a restart never misses the boundary.
@@ -1720,47 +1773,26 @@ function startStaked4Room(p: PendingStaked4): void {
   room.start();
 }
 
-/** Winner decided → arbiter signs + submits settle() on LudoEscrowN. */
+/** Winner decided → durably settle the payout on LudoEscrowN. The job is
+ *  persisted and resumed at boot, so a crash before the tx mines never loses it. */
 function settleStaked4(p: PendingStaked4, winnerSeat: number): void {
   const winner = p.humans[winnerSeat];
-  if (!winner?.wallet || !arbiterN) return;
-  submitSettle4(p.gameId, getAddress(winner.wallet), winnerSeat, p.humans, 0);
+  if (!winner?.wallet || !settlementQueue4) return;
+  settlement4Notify.set(p.gameId, { sessionIds: p.humans.map((h) => h.id), winnerSeat });
+  settlementQueue4
+    .enqueue(p.gameId, getAddress(winner.wallet))
+    .catch((e) => console.error('[settlement4] enqueue', e));
 }
 
-const MAX_SETTLE4_ATTEMPTS = 6;
-function submitSettle4(gameId: string, winner: `0x${string}`, winnerSeat: number, humans: Session[], attempt: number): void {
-  if (!arbiterN) return;
-  void arbiterN
-    .submitSettle(gameId, winner)
-    .then((txHash) => {
-      for (const h of humans) h.send({ t: 'game.settled4', gameId, txHash, winner: winnerSeat });
-      console.log(`[4p settle] ${gameId} settled in ${txHash}`);
-    })
-    .catch((e) => {
-      console.error(`[4p settle] ${gameId} attempt ${attempt + 1} failed:`, e instanceof Error ? e.message : e);
-      if (attempt + 1 >= MAX_SETTLE4_ATTEMPTS) {
-        postOpsAlert(`[settlement4][ALERT] PAYOUT FAILED after ${attempt + 1} attempts — 4p game ${gameId}, winner ${winner}. Funds locked in LudoEscrowN; manual settle/refund required.`);
-        return;
-      }
-      setTimeout(() => submitSettle4(gameId, winner, winnerSeat, humans, attempt + 1), Math.min(2_000 * 2 ** attempt, 30_000));
-    });
-}
-
-/** Refund every depositor of a table that never filled (after JOIN_TIMEOUT). */
+/** Refund every depositor of a table that never filled. Durable: the queue waits
+ *  out the on-chain JOIN_TIMEOUT before submitting refundUnfilled, and survives a
+ *  restart mid-wait (the pre-existing in-memory setTimeout did not). */
 function scheduleRefundUnfilled4(gameId: string, humans: Session[]): void {
-  if (!arbiterN) return;
-  setTimeout(
-    () => {
-      void arbiterN!
-        .submitRefundUnfilled(gameId)
-        .then((txHash) => {
-          for (const h of humans) h.send({ t: 'game.refunded4', gameId, txHash });
-          console.log(`[4p refund] ${gameId} refundUnfilled ${txHash}`);
-        })
-        .catch((e) => console.error(`[4p refund] ${gameId} failed:`, e instanceof Error ? e.message : e));
-    },
-    (JOIN_TIMEOUT_N_S + 5) * 1_000,
-  );
+  if (!settlementQueue4) return;
+  settlement4Notify.set(gameId, { sessionIds: humans.map((h) => h.id), winnerSeat: -1 });
+  settlementQueue4
+    .enqueueRefundUnfilled(gameId)
+    .catch((e) => console.error('[settlement4] enqueue refund', e));
 }
 
 // ELO windows widen while players wait: re-check the queues every second.

@@ -132,6 +132,10 @@ CREATE TABLE IF NOT EXISTS settlements (
 );
 
 CREATE INDEX IF NOT EXISTS settlements_pending_idx ON settlements(status) WHERE status = 'pending';
+-- 4p durability: tag each job with its escrow variant so the 2p and 4p durable
+-- queues each resume only their own pending jobs. Added via ALTER so existing
+-- databases migrate; legacy rows default to the 1v1 '2p' path.
+ALTER TABLE settlements ADD COLUMN IF NOT EXISTS variant TEXT NOT NULL DEFAULT '2p';
 `;
 
 export class PersistentStore implements Store {
@@ -296,10 +300,10 @@ export class PersistentStore implements Store {
 
   async enqueueSettlement(job: SettlementJob): Promise<void> {
     await this.pool.query(
-      `INSERT INTO settlements (game_id, winner_wallet, chain_id, status, attempts, tx_hash)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO settlements (game_id, winner_wallet, chain_id, status, attempts, tx_hash, variant)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (game_id) DO NOTHING`,
-      [job.gameId, job.winnerWallet, job.chainId, job.status, job.attempts, job.txHash ?? null],
+      [job.gameId, job.winnerWallet, job.chainId, job.status, job.attempts, job.txHash ?? null, job.variant ?? '2p'],
     );
   }
 
@@ -311,7 +315,8 @@ export class PersistentStore implements Store {
       status: SettlementJob['status'];
       attempts: number;
       tx_hash: string | null;
-    }>(`SELECT game_id, winner_wallet, chain_id, status, attempts, tx_hash FROM settlements WHERE status = 'pending'`);
+      variant: '2p' | '4p';
+    }>(`SELECT game_id, winner_wallet, chain_id, status, attempts, tx_hash, variant FROM settlements WHERE status = 'pending'`);
     return res.rows.map((r) => ({
       gameId: r.game_id,
       winnerWallet: r.winner_wallet,
@@ -319,6 +324,7 @@ export class PersistentStore implements Store {
       status: r.status,
       attempts: r.attempts,
       txHash: r.tx_hash ?? undefined,
+      variant: r.variant,
     }));
   }
 

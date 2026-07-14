@@ -75,6 +75,23 @@ interface Deployment {
   escrow: Address;
 }
 
+/**
+ * Per-key FIFO serialization. Both arbiters (2p + 4p) submit from the SAME EOA,
+ * so concurrent writeContract calls would fetch the same nonce and collide (one
+ * tx replaces/reverts the other). Chaining every submission for a given account
+ * address through one promise makes them strictly one-at-a-time. Shared here so
+ * settlement.ts and settlement4.ts serialize against the same key.
+ */
+const submitChains = new Map<string, Promise<unknown>>();
+export function serializeByKey<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = submitChains.get(key) ?? Promise.resolve();
+  // Run fn after prev settles either way — a prior failure must not block the chain.
+  const next = prev.then(fn, fn);
+  // Store a non-rejecting tail so one failed tx doesn't poison the next waiter.
+  submitChains.set(key, next.then(() => {}, () => {}));
+  return next;
+}
+
 export class Arbiter {
   readonly chainId: number;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
@@ -133,17 +150,26 @@ export class Arbiter {
   }
 
   private async submit(functionName: 'settle' | 'refundExpired', args: readonly unknown[]): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      account: this.account,
-      chain: this.chain,
-      address: this.escrow,
-      abi: SETTLE_ABI,
-      functionName,
-      args,
-    } as never);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== 'success') throw new Error(`${functionName} reverted (tx ${hash})`);
-    return hash;
+    // Serialize on the arbiter EOA so 2p + 4p submissions never race on the nonce.
+    return serializeByKey(this.account.address, async () => {
+      const hash = await this.walletClient.writeContract({
+        account: this.account,
+        chain: this.chain,
+        address: this.escrow,
+        abi: SETTLE_ABI,
+        functionName,
+        args,
+      } as never);
+      const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== 'success') throw new Error(`${functionName} reverted (tx ${hash})`);
+      return hash;
+    });
+  }
+
+  /** Arbiter's native (gas) balance in wei — a monitor alerts when it runs low,
+   *  since a broke arbiter silently stalls every payout until retries exhaust. */
+  async nativeBalance(): Promise<bigint> {
+    return this.publicClient.getBalance({ address: this.account.address });
   }
 
   async submitSettle(gameId: string, winner: Address): Promise<Hex> {
@@ -221,6 +247,7 @@ export class SettlementQueue {
       chainId: this.deps.arbiter.chainId,
       status: 'pending',
       attempts: 0,
+      variant: '2p',
     };
     await this.deps.store.enqueueSettlement(job);
     void this.process(job);
@@ -229,10 +256,10 @@ export class SettlementQueue {
   /** Re-process jobs left pending by a previous run (call at boot). */
   async resumePending(): Promise<void> {
     const pending = await this.deps.store.listPendingSettlements();
-    for (const job of pending) {
-      if (job.chainId === this.deps.arbiter.chainId) void this.process(job);
-    }
-    if (pending.length > 0) console.log(`[settlement] resuming ${pending.length} pending job(s)`);
+    // Only this chain's 1v1 jobs; 4p jobs (variant '4p') belong to SettlementQueue4.
+    const mine = pending.filter((job) => (job.variant ?? '2p') === '2p' && job.chainId === this.deps.arbiter.chainId);
+    for (const job of mine) void this.process(job);
+    if (mine.length > 0) console.log(`[settlement] resuming ${mine.length} pending job(s)`);
   }
 
   /** Cancel pending retries (shutdown). */

@@ -62,11 +62,15 @@ export interface GameRecord {
 /** Durable on-chain settlement job (E3.3): survives restarts, retried until mined. */
 export interface SettlementJob {
   gameId: string;
+  /** Winner's wallet for a settle job; '' for a 4p refund-unfilled job (no winner). */
   winnerWallet: string;
   chainId: number;
   status: 'pending' | 'settled' | 'failed' | 'refunded';
   attempts: number;
   txHash?: string;
+  /** Which escrow this job settles. Absent (legacy rows) means the 1v1 '2p' path.
+   *  Lets the 2p and 4p durable queues resume only their own jobs. */
+  variant?: '2p' | '4p';
 }
 
 export interface Store {
