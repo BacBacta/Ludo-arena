@@ -1032,8 +1032,8 @@ small.muted { font-size: 12px; }
 }
 .emotebar--up .emotebar__sheet { bottom: 100%; margin-bottom: 8px; }
 .emotebar--down .emotebar__sheet { top: 100%; margin-top: 8px; }
-.emotebar__row { display: flex; gap: 2px; justify-content: center; }
-.emotebar__row--chat { flex-wrap: wrap; max-width: 240px; gap: 5px; }
+.emotebar__row { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; max-width: 252px; }
+.emotebar__row--chat { max-width: 240px; gap: 5px; }
 .emotebar__e { border: none; background: none; font-size: 24px; line-height: 1; cursor: pointer; padding: 3px; border-radius: 8px; }
 .emotebar__e:active { transform: scale(0.85); }
 .emotebar__qc {

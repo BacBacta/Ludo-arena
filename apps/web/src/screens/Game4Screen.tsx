@@ -7,8 +7,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
 import { Die3D } from '../components/Die3D';
 import { SeatAvatar, SeatDie, WHITE_DIE } from '../components/Seat4';
+import { EmoteBar, EmoteFloat } from '../components/Emote';
 import { IconMenu } from '../components/icons';
 import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
+import { EMOTES } from '@ludo/shared';
 import { BOT_MOVE_MS, BOT_ROLL_MS, DIE_SETTLE_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
@@ -32,6 +34,18 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   const seatFlag = (seat: number): string =>
     (seat === mySeat ? profile.flag : '') || PLAYERS[seat]?.flag || '🌍';
   const seatFrame = (seat: number): string | undefined => (seat === mySeat ? avatarFrame : undefined);
+
+  /** Send my emote (echoes over my own corner — practice has no network peer). */
+  const sendEmote = (id: string): void => void dispatch({ type: 'EMOTE', seat: mySeat, id });
+  /** Bots feel alive: a small chance to react with a playful emote after a turn. */
+  function maybeBotEmote(seat: number, capture: boolean): void {
+    if (seat === mySeat) return;
+    const chance = capture ? 0.7 : 0.12; // celebrate captures, otherwise rarely
+    if (Math.random() > chance) return;
+    const pool = capture ? ['🔥', '😎', '💪', '😂'] : EMOTES;
+    const id = pool[Math.floor(Math.random() * pool.length)] ?? '👍';
+    setTimeout(() => dispatch({ type: 'EMOTE', seat, id }), 350);
+  }
 
   const [game, setGame] = useState<Game4>(newGame4);
   const gameRef = useRef(game);
@@ -75,6 +89,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
     const steps = oldRel >= 0 ? Math.max(1, newRel - oldRel) : 1;
     animRef.current = steps * WALK_STEP_MS + WALK_TWEEN_MS;
     if (res.events.capture) playCapture();
+    maybeBotEmote(seat, res.events.capture);
     setGame(res.state);
   }
 
@@ -126,6 +141,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
     clearTimeout(passTimer.current);
     setPassing(false);
     setRoll(null);
+    dispatch({ type: 'CLEAR_EMOTES' });
     setGame(newGame4());
   }
 
@@ -140,6 +156,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
             <span className="coinchip__c" />
             {fmtUsd(balanceCents)}
           </div>
+          <EmoteBar onEmote={sendEmote} dir="down" />
           <button className="chromebtn" aria-label="leave" onClick={onLeave}>
             ✕
           </button>
@@ -148,12 +165,12 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         {/* top corner avatars: Ana (left) / Young (right); die appears beside the active one */}
         <div className="avrow">
           <div className="avrow__side">
-            <SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} active={activeSeat === 1} />
+            <span className="emoteanchor"><EmoteFloat seat={1} /><SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} active={activeSeat === 1} /></span>
             {activeSeat === 1 && <SeatDie value={dieValue} rollKey={rollKey} />}
           </div>
           <div className="avrow__side">
             {activeSeat === 2 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} active={activeSeat === 2} />
+            <span className="emoteanchor"><EmoteFloat seat={2} /><SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} active={activeSeat === 2} /></span>
           </div>
         </div>
 
@@ -167,7 +184,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         {/* bottom corner avatars: YOU (left) / Dragan (right) */}
         <div className="avrow">
           <div className="avrow__side">
-            <SeatAvatar name="YOU" flag={seatFlag(0)} frame={seatFrame(0)} active={myTurn} />
+            <span className="emoteanchor"><EmoteFloat seat={0} /><SeatAvatar name="YOU" flag={seatFlag(0)} frame={seatFrame(0)} active={myTurn} /></span>
             {myTurn && (
               <button
                 className="ludodie ludodie--tap"
@@ -181,7 +198,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           </div>
           <div className="avrow__side">
             {activeSeat === 3 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} active={activeSeat === 3} />
+            <span className="emoteanchor"><EmoteFloat seat={3} /><SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} active={activeSeat === 3} /></span>
           </div>
         </div>
       </div>

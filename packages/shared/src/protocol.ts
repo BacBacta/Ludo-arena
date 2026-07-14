@@ -18,7 +18,7 @@ export const RAKE_BPS = 900;
 /** In-game quick emotes: a FIXED, curated, positive/neutral set (no free text →
  *  no moderation surface, no harassment vector in a real-money game). Server
  *  rate-limits per seat. Ids are the emoji themselves. */
-export const EMOTES = ['👍', '😂', '😮', '😢', '🔥', '💪', '🍀', '🎲'] as const;
+export const EMOTES = ['👍', '😂', '🔥', '😎', '🎉', '👏', '🤯', '😮', '😢', '💪', '🍀', '🎲'] as const;
 export type Emote = (typeof EMOTES)[number];
 
 /** Quick-chat presets: closed, localized-client-side ids (same zero-free-text

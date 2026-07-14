@@ -417,6 +417,36 @@ export function playEmote(id: string): void {
         tick(ac, out, send, now, { freq: 1900, q: 2.4, dur: 0.03, peak: 0.12, pan: -0.2, sendAmt: 0.4 });
         tick(ac, out, send, now + 0.09, { freq: 1500, q: 2.4, dur: 0.035, peak: 0.1, pan: 0.2, sendAmt: 0.4 });
         break;
+      case '🎉': // party: a bright rising sparkle burst
+        [523, 659, 784, 1047].forEach((f, i) => mode(ac, out, send, now + i * 0.05, f, 0.14, 0.09, 'triangle', 0.6));
+        tick(ac, out, send, now + 0.22, { freq: 6000, q: 1.3, dur: 0.06, peak: 0.09, pan: 0, sendAmt: 1 });
+        break;
+      case '😎': // cool: a smooth low two-note "yeah"
+        mode(ac, out, send, now, 392, 0.16, 0.12, 'sine', 0.4);
+        mode(ac, out, send, now + 0.12, 330, 0.22, 0.11, 'sine', 0.5);
+        break;
+      case '👏': // clap: three quick noise transients
+        [0, 0.11, 0.22].forEach((dt, i) =>
+          tick(ac, out, send, now + dt, { freq: 2000 - i * 200, q: 1.2, dur: 0.03, peak: 0.13, pan: (i % 2) * 0.4 - 0.2, sendAmt: 0.4 }),
+        );
+        break;
+      case '🤯': // mind-blown: rising sweep into a burst
+        {
+          const o = ac.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.setValueAtTime(200, now);
+          o.frequency.exponentialRampToValueAtTime(1200, now + 0.18);
+          const g = ac.createGain();
+          g.gain.setValueAtTime(0.0001, now);
+          g.gain.exponentialRampToValueAtTime(0.1, now + 0.03);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+          o.connect(g);
+          g.connect(out);
+          o.start(now);
+          o.stop(now + 0.22);
+          tick(ac, out, send, now + 0.2, { freq: 4800, q: 1.1, dur: 0.08, peak: 0.11, pan: 0, sendAmt: 1 });
+        }
+        break;
       default: // quick-chat bubble: soft double pop
         mode(ac, out, send, now, 550, 0.07, 0.09, 'triangle', 0.3);
         mode(ac, out, send, now + 0.08, 720, 0.09, 0.08, 'triangle', 0.35);

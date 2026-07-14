@@ -28,6 +28,10 @@ const EMOTE_ANIM: Record<string, string> = {
   '💪': 'pump',
   '🍀': 'spin',
   '🎲': 'bounce',
+  '😎': 'pop',
+  '🎉': 'bounce',
+  '👏': 'pump',
+  '🤯': 'gasp',
 };
 
 /** The expression sender: a 😊 toggle that opens the emoji row + quick-chat
