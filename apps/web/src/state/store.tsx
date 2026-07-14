@@ -459,8 +459,21 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'RECONNECTING':
       return { ...s, reconnecting: true };
     case 'RESUME':
-      // reconnection resync: no balance change (the stake was already locked)
-      return { ...s, screen: 'game', match: a.match, game: a.game, reconnecting: false };
+      // reconnection resync: no balance change (the stake was already locked).
+      // Re-derive activeTurn from the authoritative resumed state and clear the
+      // stale die — otherwise the turn indicator + roll gate (myTurn/canRoll/
+      // handoff all key off activeTurn) stay frozen at the pre-drop turn, so the
+      // reconnecting player can't roll and the server auto-plays them ("away").
+      return {
+        ...s,
+        screen: 'game',
+        match: a.match,
+        game: a.game,
+        activeTurn: a.game.turn,
+        turnDeadlineTs: null,
+        lastDice: null,
+        reconnecting: false,
+      };
     case 'STAKING':
       return { ...s, staking: a.status };
     case 'SET_BALANCE':
