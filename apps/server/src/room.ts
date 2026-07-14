@@ -239,6 +239,11 @@ export class Room {
   private announceTurn(): void {
     if (this.over) return;
     this.deadlineTs = Date.now() + BLITZ.moveClockMs;
+    // Broadcast the authoritative state alongside the turn. A no-legal-move roll
+    // passes the turn WITHOUT a game.moved, so without this the client's game.turn
+    // stays stale and its `handoff` guard hides the next player's roll button
+    // (the game visibly stalls after the first non-6 roll).
+    this.broadcast({ t: 'game.state', state: this.state });
     this.broadcast({ t: 'game.turn', seat: this.state.turn, deadlineTs: this.deadlineTs });
     this.armClock();
   }

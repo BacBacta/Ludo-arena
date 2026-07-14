@@ -219,6 +219,10 @@ export class Room4 {
     if (this.over) return;
     const seat = this.state.turn;
     this.deadlineTs = Date.now() + BLITZ.moveClockMs;
+    // Send the authoritative state with the turn: a no-legal-move roll passes the
+    // turn without a game.moved4, so clients would otherwise keep a stale turn and
+    // hide the next player's roll control (game stalls). Same fix as the 1v1 room.
+    this.broadcast({ t: 'game.state4', state: this.state });
     this.broadcast({ t: 'game.turn4', seat, deadlineTs: this.deadlineTs });
     if (this.seats[seat]?.bot) this.scheduleBot();
     else this.armClock();
