@@ -110,6 +110,7 @@ export function legalMoves4(g: Game4, seat: number, die: number): number[] {
 
 export function applyRoll4(g: Game4, die: number): Game4 {
   if (g.phase !== 'awaiting-roll') throw new Error('BAD_STATE');
+  if (die < 1 || die > 6 || !Number.isInteger(die)) throw new Error(`invalid die: ${die}`);
   const streak = die === 6 ? (g.sixStreak ?? 0) + 1 : 0;
   const next: Game4 = {
     ...g,

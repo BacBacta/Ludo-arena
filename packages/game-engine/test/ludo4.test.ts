@@ -28,6 +28,17 @@ describe('4-player engine', () => {
     expect(legalMoves4(g, 0, 3)).toEqual([]);
   });
 
+  it('rejects out-of-range dice (0, 7, negative, non-integer) — must be 1..6', () => {
+    const g = newGame4();
+    for (const bad of [0, 7, -1, 2.5, Number.NaN]) {
+      expect(() => applyRoll4(g, bad)).toThrow(/invalid die/);
+    }
+    // the valid faces are accepted
+    for (const ok of [1, 2, 3, 4, 5, 6]) {
+      expect(() => applyRoll4(g, ok)).not.toThrow();
+    }
+  });
+
   it('rotates the turn 0→1→2→3→0 on a no-move roll (all base, roll ≠ 6)', () => {
     // force a state where seat 0 has no legal move
     let g = newGame4();

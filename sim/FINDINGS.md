@@ -13,7 +13,7 @@ npm run sim:contracts  # suite Foundry (happy-path + adversarial + fuzz)
 
 | # | Sévérité | Lacune | Détail |
 |---|---|---|---|
-| E1 | **Moyen** (défense en profondeur) | `applyRoll4` ne valide pas le dé | Le moteur 4p accepte `die = 0, 7, -1, 2.5` sans lever, alors que le moteur 2p (`applyRoll`) rejette `die<1 \|\| die>6 \|\| non entier`. Un dé hors [1,6] peut produire des états incohérents (recul, arrivée non-exacte). Le serveur doit valider le dé en amont ; le moteur « pur » devrait aussi être robuste. **Correctif : ajouter la même garde qu'en 2p.** |
+| E1 | ✅ **CORRIGÉ** | `applyRoll4` ne validait pas le dé | Le moteur 4p acceptait `die = 0, 7, -1, 2.5` sans lever, alors que le moteur 2p (`applyRoll`) rejette `die<1 \|\| die>6 \|\| non entier`. **Corrigé** : même garde ajoutée à `applyRoll4` (`ludo4.ts`) — `if (die < 1 \|\| die > 6 \|\| !Number.isInteger(die)) throw`. Couvert par un test (`ludo4.test.ts`) qui asserte le rejet de 0/7/-1/2.5/NaN et l'acceptation de 1..6. |
 
 > Tout le reste tient : 30 000 parties, tous invariants + tous inputs adversariaux OK. (La « multi-capture » 4p — un pion isolé capturé par siège adverse — est **légale**, ce n'était pas un bug.)
 
