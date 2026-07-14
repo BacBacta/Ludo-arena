@@ -3,7 +3,7 @@ import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store
 import { TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
 import { isMiniPay } from '../lib/minipay';
-import { playTap } from '../lib/sound';
+import { playStart, playTap } from '../lib/sound';
 import { frameClass } from '../lib/avatarFrames';
 import { t } from '../lib/i18n';
 
@@ -103,9 +103,10 @@ export function Lobby({
 
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
-      {/* stake picker + CTA first: the primary action stays above the fold */}
+      {/* HERO — one idea per band: promise → stake → the single dominant CTA.
+          A first-time user reads: what it is, what it costs, where to tap. */}
       <div className="hero">
-        <div className="hero__kicker">{t('chooseStake')}</div>
+        <div className="hero__tagline">{t('tagline')}</div>
         <div className="gstakes">
           {lobbyStakes.map((s) => {
             // Staked tiers are visibly locked until a real wallet backs the
@@ -135,7 +136,7 @@ export function Lobby({
         )}
       </div>
 
-      <button className="btn btn--hero" onClick={() => { playTap(); play(); }}>
+      <button className="btn btn--hero" onClick={() => { playStart(); play(); }}>
         {t('play')}
         <small>
           {stakeCents === 0
@@ -144,7 +145,7 @@ export function Lobby({
         </small>
       </button>
 
-      <div style={{ height: 14 }} />
+      <div style={{ height: 18 }} />
 
       {/* Stable identity card: same name + country flag every session (wallet-keyed),
           with ELO + W/L. The player's public identity — never a raw 0x address. */}
@@ -201,126 +202,107 @@ export function Lobby({
         </div>
       )}
 
-      {/* day-zero aware: at 0 days the card sells the action, not the zero */}
-      <div className="streak">
-        <div className="streak__fire">
-          <IconFlame />
-        </div>
-        <div>
-          <b>{streak.days > 0 ? `${t('dailyStreak')} ${streak.days} ${t('days')}` : t('streakStart')}</b>
-          <small>{t('streakHint')}</small>
-        </div>
-        {tickets > 0 && (
-          <div className="ticketcount">
-            <IconTicket /> {tickets}
-          </div>
-        )}
-      </div>
-
-      <div className="minis">
-        <div
-          className={`mini mini--action${tickets < 1 ? ' mini--dim' : ''}`}
+      {/* GAME MODES — one scannable list, one row per mode (was a cramped
+          3-column grid whose copy wrapped badly on small screens). */}
+      <div className="seclabel">{t('gameModes')}</div>
+      <div className="card modelist">
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
+          <span className="mrow__ic mrow__ic--gold"><IconUsers /></span>
+          <span className="mrow__txt">
+            <b>{t('fourPlayer')}</b>
+            <small>{`${t('t4Practice')} · ${t('t4FreeOnline')} · ${t('t4Real')}`}</small>
+          </span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+        <button className="mrow" onClick={() => { playTap(); createTable(); }}>
+          <span className="mrow__ic mrow__ic--me"><IconUsers /></span>
+          <span className="mrow__txt">
+            <b>{t('privateTable')}</b>
+            <small>{t('privateTableDesc')}</small>
+          </span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+        <button
+          className={`mrow${tickets < 1 ? ' mrow--dim' : ''}`}
           onClick={() => {
+            playTap();
             if (tickets < 1) dispatch({ type: 'TOAST', message: t('freerollNeedTicket') });
             else onFreeroll();
           }}
         >
-          <b>
-            <IconTrophy className="icon--gold" /> {t('freeroll')}
-            <span className="mini__badge">🎟️ {tickets}</span>
-          </b>
-          {t('freerollDesc')}
-        </div>
-        <div className="mini mini--action" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
-          <b>
-            <IconUsers className="icon--gold" /> {t('fourPlayer')}
-            <span className="mini__badge">▸</span>
-          </b>
-          {/* names the three modes so the choice is explicit, not inherited */}
-          {`${t('t4Practice')} · ${t('t4FreeOnline')} · ${t('t4Real')}`}
-        </div>
-        <div className="mini mini--action" onClick={createTable}>
-          <b>
-            <IconUsers className="icon--me" /> {t('privateTable')}
-          </b>
-          {t('privateTableDesc')}
-        </div>
-      </div>
-
-      {/* One-glance rules of the money game: what you pay, what you can win,
-          what the house takes, and what tickets are. Kills the #1 confusion. */}
-      <div className="card howcard">
-        <h3>💡 {t('howTitle')}</h3>
-        <ol className="howlist">
-          <li>{t('howStep1')}</li>
-          <li>{t('howStep2')}</li>
-          <li>{t('howStep3')}</li>
-        </ol>
-        <small className="muted">{t('howTickets')}</small>
-      </div>
-
-      <div className="card">
-        <h3>
-          <span className="chip-ic">
-            <IconTrophy />
+          <span className="mrow__ic mrow__ic--gold"><IconTrophy /></span>
+          <span className="mrow__txt">
+            <b>{t('freeroll')}</b>
+            <small>{t('freerollDesc')}</small>
           </span>
-          {DIVISIONS[league.division] ?? '—'} {t('league')}
-          {inLeague && (
-            <span className="h3val">
-              {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
-            </span>
+          <span className="mrow__badge">🎟️ {tickets}</span>
+        </button>
+      </div>
+
+      {/* TODAY — streak, daily challenge and tickets merged into ONE compact
+          card (they were three separate full-width cards of equal weight). */}
+      <div className="seclabel">{t('today')}</div>
+      <div className="card daily">
+        <div className="dstat">
+          <span className="dstat__ic dstat__ic--fire"><IconFlame /></span>
+          <b>{streak.days}</b>
+          <small>{t('streakLabel')}</small>
+        </div>
+        <div className="dstat">
+          <span className="dstat__ic dstat__ic--target"><IconTarget /></span>
+          <b>{challenge.progress}/{challenge.target}</b>
+          <small>{t('challengeLabel')}</small>
+        </div>
+        <div className="dstat">
+          <span className="dstat__ic dstat__ic--ticket"><IconTicket /></span>
+          <b>{tickets}</b>
+          <small>{t('ticketsLabel')}</small>
+        </div>
+      </div>
+      <small className="daily__hint muted">
+        {challenge.completed ? t('challengeDone') : `${t('challengeDesc')} ${t('challengeReward')}`}
+      </small>
+
+      {/* League: full card only when there is something to show; otherwise a
+          single-line teaser (the empty ghost rows read as broken to new users). */}
+      {league.top.length > 0 || inLeague ? (
+        <div className="card">
+          <h3>
+            <span className="chip-ic"><IconTrophy /></span>
+            {DIVISIONS[league.division] ?? '—'} {t('league')}
+            {inLeague && (
+              <span className="h3val">
+                {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
+              </span>
+            )}
+          </h3>
+          {league.top.length > 0 && (
+            <ol className="board">
+              {league.top.map((e, i) => (
+                <li key={i} className={e.pid ? 'board__row--tap' : undefined} onClick={() => e.pid && onViewProfile(e.pid)}>
+                  <span>
+                    {i + 1}. {e.flag} {e.name}
+                  </span>
+                  <b>{e.points}</b>
+                </li>
+              ))}
+            </ol>
           )}
-        </h3>
-        {league.top.length > 0 ? (
-          <ol className="board">
-            {league.top.map((e, i) => (
-              <li key={i} className={e.pid ? 'board__row--tap' : undefined} onClick={() => e.pid && onViewProfile(e.pid)}>
-                <span>
-                  {i + 1}. {e.flag} {e.name}
-                </span>
-                <b>{e.points}</b>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <ol className="board board--ghost">
-            {[1, 2, 3].map((n) => (
-              <li key={n}>
-                <span>{n}. ·····</span>
-                <b>—</b>
-              </li>
-            ))}
-          </ol>
-        )}
-        <small className="muted">{inLeague ? t('leagueHint') : t('leagueEmpty')}</small>
-      </div>
-
-      <div style={{ height: 14 }} />
-
-      <div className="card" style={{ marginBottom: 0 }}>
-        <h3>
-          <span className="chip-ic chip-ic--opp">
-            <IconTarget />
-          </span>
-          {t('dailyChallenge')}
-          <span className="h3val" style={{ color: 'var(--muted)' }}>
-            {challenge.progress}/{challenge.target}
-          </span>
-        </h3>
-        <div style={{ fontSize: 13 }} className="muted">
-          {challenge.completed ? (
-            <b style={{ color: 'var(--accent)' }}>{t('challengeDone')}</b>
-          ) : (
-            <>
-              {t('challengeDesc')} <b style={{ color: 'var(--accent)' }}>{t('challengeReward')}</b>
-            </>
-          )}
+          <small className="muted">{inLeague ? t('leagueHint') : t('leagueEmpty')}</small>
         </div>
-        <div className="progress">
-          {Array.from({ length: challenge.target }, (_, i) => (
-            <span key={i} className={i < Math.min(challenge.progress, challenge.target) ? 'on' : ''} />
-          ))}
+      ) : (
+        <div className="card leaguateaser">
+          <span className="chip-ic"><IconTrophy /></span>
+          <span className="leaguateaser__txt">{t('leagueEmpty')}</span>
         </div>
+      )}
+
+      {/* How it works: three tiny numbered steps in ONE row (was a tall card
+          with a paragraph of ticket lore — moved to the freeroll row + modal). */}
+      <div className="howstrip">
+        <span><i>1</i>{t('howStep1')}</span>
+        <span><i>2</i>{t('howStep2')}</span>
+        <span><i>3</i>{t('howStep3')}</span>
       </div>
 
       <div className="fairnote">

@@ -362,94 +362,215 @@ export function playTap(kind: 'tap' | 'select' = 'tap'): void {
   });
 }
 
+/* --------------------------------------------------------------------------
+ * Premium expressive layer (E-social): pitch-glide + swept-noise helpers, a
+ * match-start sting, and a UNIQUE layered signature per emote. Everything runs
+ * through the same compressor bus + room reverb as the dice, so the whole app
+ * speaks with one acoustic voice.
+ * ------------------------------------------------------------------------ */
+
+/** Pitch-glide oscillator with an attack/decay envelope — risers, horns, sighs. */
+function gliss(
+  ac: AudioContext,
+  out: GainNode,
+  send: GainNode,
+  t0: number,
+  f0: number,
+  f1: number,
+  dur: number,
+  peak: number,
+  type: OscillatorType,
+  sendAmt = 0,
+  pan = 0,
+  attack = 0.02,
+): void {
+  const o = ac.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(Math.max(20, f0), t0);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  const p = ac.createStereoPanner();
+  p.pan.value = pan;
+  o.connect(g);
+  g.connect(p);
+  p.connect(out);
+  if (sendAmt) {
+    const sg = ac.createGain();
+    sg.gain.value = sendAmt;
+    p.connect(sg);
+    sg.connect(send);
+  }
+  o.start(t0);
+  o.stop(t0 + dur + 0.03);
+}
+
+/** Band-SWEPT noise — a moving whoosh (tick() is a fixed-band transient). */
+function whoosh(
+  ac: AudioContext,
+  out: GainNode,
+  send: GainNode,
+  t0: number,
+  f0: number,
+  f1: number,
+  dur: number,
+  peak: number,
+  q = 1.4,
+  sendAmt = 0.5,
+): void {
+  const n = Math.max(1, Math.floor(ac.sampleRate * dur));
+  const buf = ac.createBuffer(1, n, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(Math.max(40, f0), t0);
+  bp.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t0 + dur);
+  bp.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + dur * 0.35);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  src.connect(bp);
+  bp.connect(g);
+  g.connect(out);
+  if (sendAmt) {
+    const sg = ac.createGain();
+    sg.gain.value = sendAmt;
+    g.connect(sg);
+    sg.connect(send);
+  }
+  src.start(t0);
+  src.stop(t0 + dur + 0.02);
+}
+
 /**
- * Per-emote signature (E-social): each emote has its own short, charming cue —
- * same premium bus/reverb as everything else, ≤400 ms, never harsh. Quick-chat
- * presets (non-emoji ids) get a soft speech-bubble double pop.
+ * Match-start sting (the landing PLAY): a warm low root, a rising major
+ * arpeggio into the reverb, an air whoosh underneath and a sparkle on top —
+ * short (~0.6 s), optimistic, premium. Fired on the tap, so it doubles as the
+ * user gesture that unlocks the AudioContext.
+ */
+export function playStart(): void {
+  play((ac, now) => {
+    const { out, send } = bus(ac);
+    mode(ac, out, send, now, 130.81, 0.55, 0.16, 'sine', 0.5); // C3 warm root
+    whoosh(ac, out, send, now, 400, 2400, 0.4, 0.05, 1.1, 0.8); // air lift
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      mode(ac, out, send, now + 0.05 + i * 0.07, f, 0.3, 0.11, 'triangle', 0.65);
+      mode(ac, out, send, now + 0.05 + i * 0.07, f * 2, 0.16, 0.035, 'sine', 0.5); // shimmer double
+    });
+    tick(ac, out, send, now + 0.36, { freq: 5600, q: 1.3, dur: 0.06, peak: 0.08, pan: 0.15, sendAmt: 1 });
+  });
+}
+
+/**
+ * Per-emote signature (E-social): each emote is a small, layered sound-design
+ * moment — glides, swept noise, body impacts and shimmer — so every reaction is
+ * recognisable with your eyes closed. All ≤700 ms, all on the premium bus.
  */
 export function playEmote(id: string): void {
   play((ac, now) => {
     const { out, send } = bus(ac);
     switch (id) {
-      case '👍': // approving pop
-        mode(ac, out, send, now, 660, 0.09, 0.12, 'triangle', 0.3);
-        mode(ac, out, send, now + 0.07, 880, 0.12, 0.1, 'triangle', 0.4);
-        break;
-      case '😂': { // giggle: two quick staccato pairs
-        const g = [1318.5, 1046.5, 1318.5, 1046.5];
-        g.forEach((f, i) => mode(ac, out, send, now + i * 0.07, f, 0.05, 0.09, 'square', 0.25));
+      case '👍': { // approval stamp: woody double-hit landing on a confident fifth
+        impact(ac, out, send, now, 0.5, -0.1, 180, 540);
+        mode(ac, out, send, now + 0.09, 392, 0.14, 0.12, 'triangle', 0.4);
+        mode(ac, out, send, now + 0.18, 588, 0.22, 0.13, 'triangle', 0.6);
+        tick(ac, out, send, now + 0.3, { freq: 4800, q: 1.4, dur: 0.05, peak: 0.06, pan: 0.2, sendAmt: 0.9 });
         break;
       }
-      case '😮': { // surprise: rising sweep
-        const o = ac.createOscillator();
-        o.type = 'sine';
-        o.frequency.setValueAtTime(320, now);
-        o.frequency.exponentialRampToValueAtTime(950, now + 0.22);
-        const g = ac.createGain();
-        g.gain.setValueAtTime(0.0001, now);
-        g.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
-        o.connect(g);
-        g.connect(out);
-        o.start(now);
-        o.stop(now + 0.28);
+      case '😂': { // giggle: bouncing staccato that climbs, ends on a hiccup
+        const gig = [1318.5, 1046.5, 1396.9, 1174.7, 1568, 1318.5];
+        gig.forEach((f, i) =>
+          mode(ac, out, send, now + i * 0.065, f, 0.05, 0.085, 'square', 0.3),
+        );
+        gliss(ac, out, send, now + 0.42, 900, 1500, 0.09, 0.07, 'sine', 0.5, 0.25); // hiccup
         break;
       }
-      case '😢': // soft minor droop
-        mode(ac, out, send, now, 494, 0.22, 0.09, 'sine', 0.5);
-        mode(ac, out, send, now + 0.16, 392, 0.3, 0.08, 'sine', 0.6);
-        break;
-      case '🔥': // blaze: accelerating crackle + low body
-        [0, 0.05, 0.09, 0.12].forEach((dt, i) =>
-          tick(ac, out, send, now + dt, { freq: 2400 + i * 700, q: 1.6, dur: 0.03, peak: 0.09, pan: (i % 2) * 0.5 - 0.25, sendAmt: 0.5 }),
-        );
-        mode(ac, out, send, now, 165, 0.28, 0.1, 'sawtooth', 0.4);
-        break;
-      case '💪': // flex: two low punches
-        mode(ac, out, send, now, 180, 0.12, 0.16, 'triangle', 0.3);
-        mode(ac, out, send, now + 0.12, 220, 0.16, 0.14, 'triangle', 0.35);
-        break;
-      case '🍀': // luck: sparkle arpeggio up
-        [784, 988, 1175].forEach((f, i) => mode(ac, out, send, now + i * 0.08, f, 0.18, 0.09, 'sine', 0.6));
-        tick(ac, out, send, now + 0.26, { freq: 5200, q: 1.4, dur: 0.05, peak: 0.07, pan: 0.2, sendAmt: 1 });
-        break;
-      case '🎲': // mini dice: two clacks
-        tick(ac, out, send, now, { freq: 1900, q: 2.4, dur: 0.03, peak: 0.12, pan: -0.2, sendAmt: 0.4 });
-        tick(ac, out, send, now + 0.09, { freq: 1500, q: 2.4, dur: 0.035, peak: 0.1, pan: 0.2, sendAmt: 0.4 });
-        break;
-      case '🎉': // party: a bright rising sparkle burst
-        [523, 659, 784, 1047].forEach((f, i) => mode(ac, out, send, now + i * 0.05, f, 0.14, 0.09, 'triangle', 0.6));
-        tick(ac, out, send, now + 0.22, { freq: 6000, q: 1.3, dur: 0.06, peak: 0.09, pan: 0, sendAmt: 1 });
-        break;
-      case '😎': // cool: a smooth low two-note "yeah"
-        mode(ac, out, send, now, 392, 0.16, 0.12, 'sine', 0.4);
-        mode(ac, out, send, now + 0.12, 330, 0.22, 0.11, 'sine', 0.5);
-        break;
-      case '👏': // clap: three quick noise transients
-        [0, 0.11, 0.22].forEach((dt, i) =>
-          tick(ac, out, send, now + dt, { freq: 2000 - i * 200, q: 1.2, dur: 0.03, peak: 0.13, pan: (i % 2) * 0.4 - 0.2, sendAmt: 0.4 }),
+      case '🔥': { // ignite: a real whoosh + crackle + sub swell
+        whoosh(ac, out, send, now, 300, 3200, 0.32, 0.14, 1.2, 0.7);
+        gliss(ac, out, send, now, 55, 95, 0.3, 0.1, 'sine', 0.3, 0, 0.08); // sub bloom
+        [0.1, 0.17, 0.25].forEach((dt, i) =>
+          tick(ac, out, send, now + dt, { freq: 3000 + i * 900, q: 1.6, dur: 0.025, peak: 0.08, pan: (i % 2) * 0.5 - 0.25, sendAmt: 0.6 }),
         );
         break;
-      case '🤯': // mind-blown: rising sweep into a burst
-        {
-          const o = ac.createOscillator();
-          o.type = 'sawtooth';
-          o.frequency.setValueAtTime(200, now);
-          o.frequency.exponentialRampToValueAtTime(1200, now + 0.18);
-          const g = ac.createGain();
-          g.gain.setValueAtTime(0.0001, now);
-          g.gain.exponentialRampToValueAtTime(0.1, now + 0.03);
-          g.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
-          o.connect(g);
-          g.connect(out);
-          o.start(now);
-          o.stop(now + 0.22);
-          tick(ac, out, send, now + 0.2, { freq: 4800, q: 1.1, dur: 0.08, peak: 0.11, pan: 0, sendAmt: 1 });
-        }
+      }
+      case '😎': { // cool: a lazy, tape-warm Maj7 stab — twice, softer the second time
+        const chord = [196, 246.9, 311.1, 370];
+        chord.forEach((f, i) => mode(ac, out, send, now + i * 0.015, f, 0.3, 0.075, 'triangle', 0.55));
+        tick(ac, out, send, now, { freq: 1800, q: 0.9, dur: 0.03, peak: 0.05, pan: -0.2, sendAmt: 0.4 }); // brush
+        chord.forEach((f, i) => mode(ac, out, send, now + 0.22 + i * 0.015, f * 1.002, 0.34, 0.05, 'triangle', 0.7));
         break;
-      default: // quick-chat bubble: soft double pop
-        mode(ac, out, send, now, 550, 0.07, 0.09, 'triangle', 0.3);
-        mode(ac, out, send, now + 0.08, 720, 0.09, 0.08, 'triangle', 0.35);
+      }
+      case '🎉': { // party: horn gliss + cork pop + sparkle rain
+        gliss(ac, out, send, now, 294, 587, 0.18, 0.11, 'sawtooth', 0.5, -0.15);
+        tick(ac, out, send, now + 0.16, { freq: 2200, q: 1, dur: 0.035, peak: 0.14, pan: 0.1, sendAmt: 0.6 }); // pop
+        [1046.5, 1318.5, 1568, 2093].forEach((f, i) =>
+          mode(ac, out, send, now + 0.2 + i * 0.05, f, 0.22, 0.07, 'sine', 0.9),
+        );
+        break;
+      }
+      case '👏': { // applause: humanised bandpass claps, alternating pan
+        [0, 0.09, 0.19, 0.31].forEach((dt, i) =>
+          tick(ac, out, send, now + dt, {
+            freq: 1500 + (i % 2) * 350 + i * 60,
+            q: 0.85,
+            dur: 0.045,
+            peak: i === 3 ? 0.09 : 0.13,
+            pan: (i % 2) * 0.7 - 0.35,
+            sendAmt: 0.7,
+          }),
+        );
+        break;
+      }
+      case '🤯': { // mind blown: riser → detonation → falling debris
+        gliss(ac, out, send, now, 140, 1400, 0.26, 0.09, 'sawtooth', 0.4, 0, 0.05);
+        impact(ac, out, send, now + 0.27, 1.2, 0, 65, 240);
+        whoosh(ac, out, send, now + 0.27, 3000, 500, 0.28, 0.1, 1, 0.9);
+        tick(ac, out, send, now + 0.4, { freq: 5200, q: 1.2, dur: 0.06, peak: 0.06, pan: -0.3, sendAmt: 1 });
+        tick(ac, out, send, now + 0.5, { freq: 4200, q: 1.2, dur: 0.06, peak: 0.05, pan: 0.3, sendAmt: 1 });
+        break;
+      }
+      case '😮': { // whoa: two detuned voices rising together over a breath
+        gliss(ac, out, send, now, 330, 660, 0.3, 0.08, 'sine', 0.6, -0.08, 0.06);
+        gliss(ac, out, send, now, 334, 668, 0.3, 0.07, 'sine', 0.6, 0.08, 0.06);
+        whoosh(ac, out, send, now, 700, 1600, 0.26, 0.03, 1.4, 0.8); // breath
+        break;
+      }
+      case '😢': { // sad: two overlapping falling sighs + a tear-drop plink
+        gliss(ac, out, send, now, 440, 330, 0.34, 0.08, 'sine', 0.7, -0.05, 0.05);
+        gliss(ac, out, send, now + 0.08, 415, 311, 0.34, 0.06, 'sine', 0.7, 0.05, 0.05);
+        gliss(ac, out, send, now + 0.42, 1900, 600, 0.07, 0.07, 'sine', 0.9, 0.15); // drop
+        break;
+      }
+      case '💪': { // power: two deep body punches under a rising power-fifth
+        impact(ac, out, send, now, 0.9, -0.2, 80, 220);
+        impact(ac, out, send, now + 0.14, 1.1, 0.2, 72, 205);
+        gliss(ac, out, send, now + 0.05, 110, 123.5, 0.22, 0.06, 'sawtooth', 0.35);
+        gliss(ac, out, send, now + 0.05, 165, 185, 0.22, 0.05, 'sawtooth', 0.35);
+        break;
+      }
+      case '🍀': { // charm: a music-box arpeggio with octave shimmer + fairy dust
+        [784, 988, 1175, 1568].forEach((f, i) => {
+          mode(ac, out, send, now + i * 0.075, f, 0.26, 0.085, 'sine', 0.85);
+          mode(ac, out, send, now + i * 0.075, f * 2, 0.14, 0.03, 'sine', 0.9);
+        });
+        tick(ac, out, send, now + 0.34, { freq: 6200, q: 1.2, dur: 0.06, peak: 0.06, pan: 0.2, sendAmt: 1 });
+        break;
+      }
+      case '🎲': { // dice: two premium body clacks + a woody table settle
+        impact(ac, out, send, now, 0.8, -0.15, 150, 900);
+        impact(ac, out, send, now + 0.1, 0.6, 0.2, 132, 760);
+        mode(ac, out, send, now + 0.18, 220, 0.12, 0.08, 'sine', 0.5);
+        break;
+      }
+      default: // quick-chat bubble: a soft, rounded double pop
+        mode(ac, out, send, now, 587, 0.08, 0.09, 'triangle', 0.35);
+        mode(ac, out, send, now + 0.09, 784, 0.1, 0.08, 'triangle', 0.45);
     }
   });
 }

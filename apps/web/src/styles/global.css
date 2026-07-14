@@ -193,16 +193,89 @@ a.btn {
 
 /* casino-chip stake picker */
 .hero { margin-bottom: 14px; }
-.hero__kicker {
+/* hero tagline: the one-line promise a first-time user reads before anything */
+.hero__tagline {
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: #ffffff;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.92);
   text-shadow: 0 2px 0 rgba(23, 43, 99, 0.3);
   text-align: center;
   margin: 4px 0 12px;
+}
+
+/* scannable section label — gives the page a visible information hierarchy */
+.seclabel {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  text-shadow: 0 1px 0 rgba(23, 43, 99, 0.3);
+  margin: 4px 2px 8px;
+}
+
+/* game modes: one clean row per mode (icon · title/sub · chevron/badge) */
+.modelist { padding: 4px 6px; }
+.mrow {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: none; border: none; cursor: pointer; text-align: left;
+  font: inherit; color: var(--txt); padding: 12px 10px; border-radius: 12px;
+}
+.mrow + .mrow { border-top: 1px solid var(--line); border-radius: 0 0 12px 12px; }
+.mrow:active { background: var(--card-2); }
+.mrow--dim { opacity: 0.55; }
+.mrow__ic {
+  width: 38px; height: 38px; border-radius: 12px; flex: 0 0 38px;
+  display: flex; align-items: center; justify-content: center;
+}
+.mrow__ic .icon { width: 19px; height: 19px; }
+.mrow__ic--gold { background: rgba(245, 179, 1, 0.14); color: var(--accent); }
+.mrow__ic--me { background: rgba(46, 158, 107, 0.14); color: var(--me); }
+.mrow__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mrow__txt b { font-family: var(--font-display); font-size: 15px; }
+.mrow__txt small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrow__chev { font-size: 22px; color: var(--muted); line-height: 1; padding-bottom: 3px; }
+.mrow__badge {
+  font-size: 12px; font-weight: 700; color: var(--txt);
+  background: rgba(245, 179, 1, 0.16); border-radius: 999px; padding: 4px 10px; white-space: nowrap;
+}
+
+/* today: streak + challenge + tickets as three equal stat tiles in one card */
+.daily { display: flex; gap: 8px; padding: 12px; margin-bottom: 6px; }
+.dstat {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: var(--card-2); border-radius: 14px; padding: 10px 4px;
+}
+.dstat b { font-family: var(--font-display); font-size: 18px; font-variant-numeric: tabular-nums; }
+.dstat small { font-size: 10px; color: var(--muted); letter-spacing: 0.4px; text-transform: uppercase; }
+.dstat__ic { width: 26px; height: 26px; border-radius: 9px; display: flex; align-items: center; justify-content: center; }
+.dstat__ic .icon { width: 15px; height: 15px; }
+.dstat__ic--fire { background: rgba(232, 131, 58, 0.15); color: var(--opp); }
+.dstat__ic--target { background: rgba(224, 85, 85, 0.13); color: var(--danger); }
+.dstat__ic--ticket { background: rgba(245, 179, 1, 0.15); color: var(--accent); }
+.daily__hint { display: block; text-align: center; font-size: 11.5px; color: rgba(255, 255, 255, 0.75); margin: 0 4px 14px; }
+
+/* league teaser: a single quiet line while the ladder is still empty */
+.leaguateaser { display: flex; align-items: center; gap: 10px; padding: 13px 16px; }
+.leaguateaser__txt { font-size: 12.5px; color: var(--muted); }
+
+/* how-it-works: three numbered micro-steps in one strip (replaces the tall card) */
+.howstrip {
+  display: flex; gap: 6px; margin: 2px 0 4px;
+}
+.howstrip span {
+  flex: 1; display: flex; align-items: center; gap: 7px;
+  background: rgba(255, 255, 255, 0.09); border-radius: 12px; padding: 8px 9px;
+  font-size: 10.5px; line-height: 1.25; color: rgba(255, 255, 255, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.howstrip i {
+  font-style: normal; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); color: #5d4300; font-weight: 800; font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
 }
 /* candy stake tiles: white 3D chips, selected turns gold and lifts */
 .gstakes { display: flex; gap: 7px; justify-content: center; }
