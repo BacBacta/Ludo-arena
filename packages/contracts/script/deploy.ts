@@ -169,6 +169,42 @@ const escrowN = await deployContract('LudoEscrowN', LudoEscrowN.abi, LudoEscrowN
   rakeBps,
 ]);
 
+// Allowlist the stablecoin on BOTH escrows so staked games can actually be joined.
+// The hardened escrows reject any non-allowlisted token (keeps fee-on-transfer /
+// exotic ERC20 griefers out) — WITHOUT this, every join() reverts TokenNotAllowed.
+// setTokenAllowed is onlyOwner (owner defaults to treasury). If the deployer is not
+// the owner we cannot send it here — warn loudly with the exact call the owner must make.
+{
+  const owner = (await publicClient.readContract({
+    address: escrow.address,
+    abi: LudoEscrow.abi,
+    functionName: 'owner',
+  })) as Address;
+  if (owner.toLowerCase() === account.address.toLowerCase()) {
+    for (const [name, addr, abi] of [
+      ['LudoEscrow', escrow.address, LudoEscrow.abi],
+      ['LudoEscrowN', escrowN.address, LudoEscrowN.abi],
+    ] as const) {
+      const tx = await walletClient.writeContract({
+        account,
+        chain: preset.chain,
+        address: addr,
+        abi,
+        functionName: 'setTokenAllowed',
+        args: [stablecoin as Address, true],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: tx });
+      console.log(`[deploy] ${name}: allowlisted stablecoin ${stablecoin} (tx ${tx})`);
+    }
+  } else {
+    console.warn(
+      `[deploy] ⚠ escrow owner (${owner}) != deployer (${account.address}); the owner MUST call ` +
+        `setTokenAllowed(${stablecoin}, true) on both ${escrow.address} and ${escrowN.address} ` +
+        `before any staked game can be joined.`,
+    );
+  }
+}
+
 // Cosmetics store (rec 6): cUSD purchases of dice skins / board themes paid to the
 // treasury — non-rake revenue. Same stablecoin; owner (catalogue/prices) = deployer.
 const cosmetics = await deployContract('CosmeticsStore', CosmeticsStore.abi, CosmeticsStore.bytecode, [

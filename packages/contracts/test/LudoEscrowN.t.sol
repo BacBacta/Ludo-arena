@@ -49,6 +49,7 @@ contract LudoEscrowNTest is Test {
         arbiter = vm.addr(arbiterPk);
         esc = new LudoEscrowN(arbiter, treasury, 900);
         cusd = new MockERC20();
+        vm.prank(treasury); esc.setTokenAllowed(address(cusd), true); // owner allowlists the stablecoin
         address[4] memory ps = [alice, bob, carol, dave];
         for (uint256 i = 0; i < ps.length; i++) {
             cusd.mint(ps[i], 10e18);
@@ -73,7 +74,7 @@ contract LudoEscrowNTest is Test {
 
     function testFourPlayerFullFlow() public {
         _joinFour();
-        (,,, uint8 joined,, LudoEscrowN.Status status) = esc.games(gameId);
+        (,,, uint8 joined,, LudoEscrowN.Status status,) = esc.games(gameId);
         assertEq(joined, 4);
         assertEq(uint256(status), uint256(LudoEscrowN.Status.Active));
 

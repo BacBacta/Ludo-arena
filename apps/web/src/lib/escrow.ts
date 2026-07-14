@@ -25,6 +25,7 @@ export const ESCROW_ABI = [
       { name: 'playerB', type: 'address' },
       { name: 'createdAt', type: 'uint40' },
       { name: 'status', type: 'uint8' },
+      { name: 'rakeBps', type: 'uint16' },
     ],
   },
 ] as const;

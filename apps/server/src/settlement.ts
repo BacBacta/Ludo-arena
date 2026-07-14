@@ -46,6 +46,7 @@ const SETTLE_ABI = [
       { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' },
       { name: 'playerA', type: 'address' }, { name: 'playerB', type: 'address' },
       { name: 'createdAt', type: 'uint40' }, { name: 'status', type: 'uint8' },
+      { name: 'rakeBps', type: 'uint16' },
     ],
   },
 ] as const;

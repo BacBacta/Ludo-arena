@@ -40,9 +40,13 @@ contract LudoEscrow {
         address playerB;
         uint40 createdAt;
         Status status;
+        uint16 rakeBps;     // rake SNAPSHOT at creation — settle can't be re-priced mid-game
     }
 
     mapping(bytes32 => Game) public games;
+    /// @notice Only allowlisted stablecoins may be staked. Keeps out fee-on-transfer
+    ///         / rebasing / hostile tokens that would break `pot == stake*2`.
+    mapping(address => bool) public allowedToken;
 
     // ---------- Events ----------
     event Joined(bytes32 indexed gameId, address indexed player, address token, uint96 stake);
@@ -50,6 +54,7 @@ contract LudoEscrow {
     event Refunded(bytes32 indexed gameId);
     event RakeChanged(uint256 oldBps, uint256 newBps);
     event OwnershipTransferred(address indexed from, address indexed to);
+    event TokenAllowed(address indexed token, bool allowed);
 
     error BadStatus();
     error BadStake();
@@ -61,6 +66,7 @@ contract LudoEscrow {
     error NotArbiter();
     error NotOwner();
     error LengthMismatch();
+    error TokenNotAllowed();
 
     constructor(address _arbiter, address _treasury, uint256 _rakeBps) {
         require(_rakeBps <= MAX_RAKE_BPS, "rake > max");
@@ -91,6 +97,24 @@ contract LudoEscrow {
         owner = to;
     }
 
+    /// @notice Allowlist (or remove) a stablecoin that may be staked. Only vetted
+    ///         bool-or-void ERC20s with 1:1 transfers (cUSD/USDC/USDT) should be added.
+    function setTokenAllowed(address token, bool allowed) external onlyOwner {
+        allowedToken[token] = allowed;
+        emit TokenAllowed(token, allowed);
+    }
+
+    /// @dev SafeERC20: tolerates non-bool-returning tokens (canonical USDT) —
+    ///      succeeds on empty returndata or an explicit `true`, reverts otherwise.
+    function _safeTransfer(address token, address to, uint256 value) internal {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, value));
+        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed();
+    }
+    function _safeTransferFrom(address token, address from, address to, uint256 value) internal {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value));
+        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed();
+    }
+
     /// @notice Joins (or creates) game `gameId` by locking one's stake.
     ///         The first call sets token + stake; the second must match.
     function join(bytes32 gameId, address token, uint96 stake) external {
@@ -98,11 +122,13 @@ contract LudoEscrow {
         Game storage g = games[gameId];
 
         if (g.status == Status.None) {
+            if (!allowedToken[token]) revert TokenNotAllowed();
             g.token = token;
             g.stake = stake;
             g.playerA = msg.sender;
             g.createdAt = uint40(block.timestamp);
             g.status = Status.WaitingOpponent;
+            g.rakeBps = uint16(rakeBps); // snapshot the fee at creation
         } else if (g.status == Status.WaitingOpponent) {
             if (msg.sender == g.playerA) revert AlreadyJoined();
             if (token != g.token || stake != g.stake) revert BadStake();
@@ -112,7 +138,7 @@ contract LudoEscrow {
             revert BadStatus();
         }
 
-        if (!IERC20(token).transferFrom(msg.sender, address(this), stake)) revert TransferFailed();
+        _safeTransferFrom(token, msg.sender, address(this), stake);
         emit Joined(gameId, msg.sender, token, stake);
     }
 
@@ -143,11 +169,11 @@ contract LudoEscrow {
 
         g.status = Status.Settled;
         uint256 pot = uint256(g.stake) * 2;
-        uint256 rake = (pot * rakeBps) / 10_000;
+        uint256 rake = (pot * g.rakeBps) / 10_000; // snapshotted at creation
         uint256 payout = pot - rake;
 
-        if (!IERC20(g.token).transfer(winner, payout)) revert TransferFailed();
-        if (rake > 0 && !IERC20(g.token).transfer(treasury, rake)) revert TransferFailed();
+        _safeTransfer(g.token, winner, payout);
+        if (rake > 0) _safeTransfer(g.token, treasury, rake);
         emit Settled(gameId, winner, payout, rake);
     }
 
@@ -157,7 +183,7 @@ contract LudoEscrow {
         if (g.status != Status.WaitingOpponent) revert BadStatus();
         if (block.timestamp < g.createdAt + JOIN_TIMEOUT) revert NotExpired();
         g.status = Status.Refunded;
-        if (!IERC20(g.token).transfer(g.playerA, g.stake)) revert TransferFailed();
+        _safeTransfer(g.token, g.playerA, g.stake);
         emit Refunded(gameId);
     }
 
@@ -184,8 +210,8 @@ contract LudoEscrow {
         Game storage g = games[gameId];
         if (g.status != Status.Active) revert BadStatus();
         g.status = Status.Refunded;
-        if (!IERC20(g.token).transfer(g.playerA, g.stake)) revert TransferFailed();
-        if (!IERC20(g.token).transfer(g.playerB, g.stake)) revert TransferFailed();
+        _safeTransfer(g.token, g.playerA, g.stake);
+        _safeTransfer(g.token, g.playerB, g.stake);
         emit Refunded(gameId);
     }
 

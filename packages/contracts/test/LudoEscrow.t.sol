@@ -41,6 +41,7 @@ contract LudoEscrowTest is Test {
         arbiter = vm.addr(arbiterPk);
         esc = new LudoEscrow(arbiter, treasury, 900);
         cusd = new MockERC20();
+        vm.prank(treasury); esc.setTokenAllowed(address(cusd), true); // owner allowlists the stablecoin
         cusd.mint(alice, 10e18);
         cusd.mint(bob, 10e18);
         vm.prank(alice); cusd.approve(address(esc), type(uint256).max);
