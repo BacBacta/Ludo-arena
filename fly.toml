@@ -16,7 +16,12 @@ primary_region = "ams"
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  # Single always-on machine: the game server keeps rooms / tables / matchmaking
+  # queues in memory, so ALL websocket connections must land on the SAME process.
+  # Never auto-stop (a cold start would exceed the client's 2.5s connect timeout →
+  # bot fallback) and never run more than one (a 2nd machine splits the state and
+  # breaks matchmaking). Scale is pinned to 1 via `flyctl scale count 1`.
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
