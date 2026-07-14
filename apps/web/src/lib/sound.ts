@@ -207,7 +207,9 @@ export function playHop(): void {
   const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
   if (now - lastHop < 60) return; // fast re-renders never stack
   lastHop = now;
-  playSample('pawn', { gain: 0.55, rate: 0.9 + Math.random() * 0.2 }); // soft, humanised
+  // Clearly audible wooden step per cell (was too faint at 0.55). Hops are 300 ms
+  // apart (WALK_STEP_MS), so a strong level reads as a satisfying tap, not a buzz.
+  playSample('pawn', { gain: 1.5, rate: 0.9 + Math.random() * 0.2 });
 }
 
 export function playCapture(): void {
