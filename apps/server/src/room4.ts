@@ -195,6 +195,10 @@ export class Room4 {
           this.doMove(token);
         }, BOT_MOVE_MS);
       } else {
+        // Human with MULTIPLE choices: ship the post-roll state (awaiting-move +
+        // legal list) or the client stays on a stale awaiting-roll and the roller
+        // freezes until the clock auto-plays. Same fix as the 1v1 room.
+        this.broadcast({ t: 'game.state4', state: this.state });
         this.armClock();
       }
     } else {

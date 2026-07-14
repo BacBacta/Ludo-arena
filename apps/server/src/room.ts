@@ -207,6 +207,11 @@ export class Room {
         // only one possible move: play it immediately (fluidity)
         this.applyAndBroadcast(seat, this.state.legal[0]!);
       } else {
+        // MULTIPLE choices: the roller must pick a token, so the client NEEDS the
+        // post-roll state (phase=awaiting-move + legal list). Without this the
+        // client stays on a stale awaiting-roll, nothing is tappable, and the
+        // 15s clock auto-plays — the roller looks frozen after their own roll.
+        this.broadcast({ t: 'game.state', state: this.state });
         this.armClock();
       }
     } else {
