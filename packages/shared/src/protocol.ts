@@ -331,7 +331,9 @@ export type ClientMsg =
   | { t: 'game.move'; token: number }
   // Forfeit the current match on purpose (the only deliberate exit from a game).
   | { t: 'game.resign' }
-  | { t: 'game.rematch' }
+  // Rematch carries a FRESH entropy commit so the next game gets its own
+  // commit-reveal (the server binds a new seed without knowing the raw value).
+  | { t: 'game.rematch'; entropyCommit?: string }
   // Unlock a premium dice skin by spending its ticket price (PREMIUM_SKINS).
   | { t: 'skin.buy'; skinId: string }
   // Send a quick emote or quick-chat to the current game (1v1 or 4p); id must

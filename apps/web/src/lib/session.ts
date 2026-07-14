@@ -588,9 +588,9 @@ export class RemoteSession implements GameSession {
   private inGame = false;
   private attempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly entropy: string;
-  private entropyCommit = ''; // sha256(entropy); sent in hello (anti-grinding)
-  private revealed = false; // have we revealed our entropy for this match yet?
+  private entropy = ''; // fresh 256-bit value per game (regenerated on rematch)
+  private entropyCommit = ''; // sha256(entropy); sent in hello / rematch (anti-grinding)
+  private revealedGameId = ''; // gameId we last revealed entropy for (once per game)
 
   constructor(
     private readonly ev: SessionEvents,
@@ -604,17 +604,20 @@ export class RemoteSession implements GameSession {
     /** Consent + wallet signer for staked play (18+/ToS + SIWE ownership proof). */
     private readonly auth?: WalletAuth,
   ) {
-    this.entropy = (() => {
-      const b = new Uint8Array(32);
-      crypto.getRandomValues(b);
-      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
-    })();
+    this.freshEntropy();
     // Commit to our entropy (hash) BEFORE connecting, so hello can carry the commit
     // and the server binds its seed without ever seeing our raw value first.
     void sha256Hex(this.entropy).then((c) => {
       this.entropyCommit = c;
       this.connect(true);
     });
+  }
+
+  /** Draw fresh 256-bit entropy for a new match (first game, or a rematch). */
+  private freshEntropy(): void {
+    const b = new Uint8Array(32);
+    crypto.getRandomValues(b);
+    this.entropy = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
   }
 
   private connect(initial: boolean): void {
@@ -739,9 +742,11 @@ export class RemoteSession implements GameSession {
       case 'match.found':
         this.inGame = true;
         // Anti-grinding reveal: the server has committed its seed (msg.fairnessCommit);
-        // now reveal our raw entropy so the dice can be finalized. Sent once.
-        if (!this.revealed) {
-          this.revealed = true;
+        // now reveal our raw entropy so the dice can be finalized. Keyed by gameId so
+        // a rematch (a NEW game on the same socket) re-reveals — otherwise the rematch
+        // game never finalizes and the dice stay blocked.
+        if (this.revealedGameId !== msg.gameId) {
+          this.revealedGameId = msg.gameId;
           this.send({ t: 'game.entropy', entropy: this.entropy });
         }
         this.ev.onMatchFound(msg);
@@ -829,7 +834,15 @@ export class RemoteSession implements GameSession {
     // Reuse the still-open socket: the server re-pairs the same opponent if they
     // also asked (respecting the anti-collusion cap), else re-queues us.
     if (this.disposed || !this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
-    this.send({ t: 'game.rematch' });
+    // Draw FRESH entropy + commit for the next game and send the commit with the
+    // request, so the server binds a brand-new seed WITHOUT ever knowing our raw
+    // value (same fairness as a first match). We reveal the raw value when the
+    // rematch's match.found arrives.
+    this.freshEntropy();
+    void sha256Hex(this.entropy).then((commit) => {
+      this.entropyCommit = commit;
+      this.send({ t: 'game.rematch', entropyCommit: commit });
+    });
     return true;
   }
 

@@ -90,6 +90,9 @@ interface Session extends Client {
   lastOpponentId?: string;
   lastStake?: StakeCents;
   rematchWanted?: boolean;
+  /** True when the last game came from a PRIVATE table — a rematch then waits for
+   *  the same friend instead of spilling into the public queue. */
+  lastGamePrivate?: boolean;
   /** Wallet ownership proof (SIWE): the nonce we issued + whether it's proven. */
   walletNonce?: string;
   walletProven?: boolean;
@@ -997,7 +1000,7 @@ wss.on('connection', (ws, req) => {
         }
         privateTables.delete(msg.code);
         session.stake = table.stake;
-        await startGame(table.stake, table.host, session);
+        await startGame(table.stake, table.host, session, false, true);
         break;
       }
 
@@ -1150,6 +1153,11 @@ wss.on('connection', (ws, req) => {
 
       case 'game.rematch': {
         if (session.room || session.pendingGameId) break;
+        // Fresh per-game entropy commit (fairness): rebind BEFORE pairing/seeding so
+        // the server commits its next seed without ever knowing this game's raw
+        // entropy — the client reveals it later on match.found. Without this, a
+        // rematch would reuse the already-revealed value and be grindable.
+        if (msg.entropyCommit) session.entropyCommit = msg.entropyCommit;
         const stake = session.lastStake ?? session.stake ?? 0;
         // True direct rematch: if the last opponent is still connected, idle, and
         // has ALSO asked to rematch us at the same stake, pair the two of them
@@ -1178,10 +1186,23 @@ wss.on('connection', (ws, req) => {
             opp.rematchWanted = false;
             session.stake = stake;
             opp.stake = stake;
-            await startGame(stake, session, opp);
+            await startGame(stake, session, opp, false, session.lastGamePrivate ?? false);
             break;
           }
           // cap hit / blocked → fall through to matchmaking a different opponent
+        }
+        // Private table: wait for the SAME friend only — never spill into the public
+        // queue (that could match a stranger before the friend clicks rematch). The
+        // friend's own rematch triggers the direct re-pair above.
+        if (session.lastGamePrivate) {
+          const blockedPriv = await stakeBlock(session, stake);
+          if (blockedPriv) {
+            session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedPriv });
+            break;
+          }
+          session.rematchWanted = true;
+          session.stake = stake;
+          break;
         }
         // No ready partner (or direct rematch refused): remember the wish and
         // re-queue for any opponent at this stake.
@@ -1440,7 +1461,11 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
   await startGame(0, a, b, true);
 }
 
-async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = false): Promise<void> {
+async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = false, fromTable = false): Promise<void> {
+  // Mark private-table origin so a later rematch re-pairs the same friend rather
+  // than re-queueing publicly (both seats share the origin).
+  a.lastGamePrivate = fromTable;
+  b.lastGamePrivate = fromTable;
   // Anti-grinding (audit HIGH-1): STAKED games REQUIRE the commit-reveal flow —
   // both clients must have sent an entropy COMMIT in hello so the server binds its
   // seed without ever seeing raw entropy first. A client that omits it (stale
