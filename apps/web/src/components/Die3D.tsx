@@ -55,9 +55,16 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
 
   useEffect(() => {
     const base = REST[value] ?? [0, 0];
+    // Settle on the value WITHOUT unwinding. The cube keeps every turn it has
+    // wound on, so the rest angle must be expressed in the same wound-up frame:
+    // dropping back to bare `base` is the identical orientation mod 360, but it
+    // is a huge transform delta, and .die3d transitions transform ALWAYS — so the
+    // die spun all its turns back off. That is what made the opponent's die
+    // tumble at the exact moment the OTHER player rolled: their roll sets this
+    // die's rollKey to 0, which lands here.
     const snap = (): void => {
       setRolling(false);
-      setRot([base[0], base[1]]);
+      setRot([base[0] + 360 * turns.current.x, base[1] + 360 * turns.current.y]);
     };
     const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     // no roll yet, reduced motion, or the very first mount → just show the value
