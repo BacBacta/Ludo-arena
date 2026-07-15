@@ -380,6 +380,9 @@ export interface ResumedGame {
   stakeCents: StakeCents;
   potCents: number;
   opponent: OpponentInfo;
+  /** My label for this game — see `match.found`'s `youName`. Re-sent on resume so
+   *  a reconnect keeps the same pair of labels on both screens. */
+  youName?: string;
   fairnessCommit: string;
 }
 
@@ -423,6 +426,14 @@ export type ServerMsg =
       gameId: string;
       seat: Seat;
       opponent: OpponentInfo;
+      /** MY display name for THIS game. Normally just my own name, but when both
+       *  players carry the same one (guest names come from a fixed pool) the
+       *  server disambiguates the pair — "Nia" / "Nia 2" — and both clients must
+       *  render the same labels. The client's own name is local, so without this
+       *  the two screens would disagree. Optional: older clients fall back to
+       *  their local profile name. `match.found4` needs no equivalent — it already
+       *  ships every seat's name in `players`. */
+      youName?: string;
       stakeCents: StakeCents;
       potCents: number;
       fairnessCommit: string;

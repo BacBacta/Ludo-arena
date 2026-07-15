@@ -176,6 +176,11 @@ export function GameScreen({
           ? `${match.opponent.name} ${t('oppRolling')}`
           : `${match.opponent.name} ${t('oppTurn')}`;
 
+  // My label for this game: the server's `youName` wins over the local profile —
+  // it is what the OPPONENT's screen shows for me, disambiguated if we both drew
+  // the same name. Falls back to the profile (older server / local bot).
+  const myLabel = match.youName || profile.name || t('you');
+
   // Drive the 3D dice straight from lastDice so the value is fresh on the same
   // render the roll index bumps (the derived myVal/oppVal lag by one commit).
   const myDieVal = lastDice && lastDice.seat === mySeat ? lastDice.value : myVal;
@@ -233,8 +238,10 @@ export function GameScreen({
           // player is seat 1 — so hardcoding "me" to seat 0 mislabelled every
           // seat-1 player's board: their own tokens carried the opponent's name
           // and they tapped the opponent's tokens, which did nothing ("frozen die").
+          // `youName` is the server's label for me (it disambiguates two players
+          // who drew the same name); the local profile is only a fallback.
           banners={[
-            { seat: mySeat, name: (profile.name || t('you')).toUpperCase(), flag: profile.flag || '🌍', active: myTurn },
+            { seat: mySeat, name: myLabel.toUpperCase(), flag: profile.flag || '🌍', active: myTurn },
             { seat: oppSeat, name: match.opponent.name, flag: match.opponent.flag, active: !myTurn },
           ]}
         />
@@ -244,7 +251,7 @@ export function GameScreen({
           <div className="cornerstack">
             <EmoteFloat seat={mySeat} />
             <GiftFloat seat={mySeat} />
-            <AvatarCard initial={(profile.name || t('you')).slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} avatar={avatar} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
+            <AvatarCard initial={myLabel.slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} avatar={avatar} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {((myTurn && !handoff) || myRolling) && (
               <button
                 className="dicebtn"

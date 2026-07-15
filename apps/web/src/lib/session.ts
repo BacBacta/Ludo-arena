@@ -48,6 +48,11 @@ export interface MatchInfo {
   gameId: string;
   seat: Seat;
   opponent: OpponentInfo;
+  /** My label for THIS game, from the server. Normally my own name, but when both
+   *  players carry the same one the server disambiguates the pair ("Nia"/"Nia 2")
+   *  and both screens must agree — my local profile name can't know about that.
+   *  Absent against an older server / the local bot → fall back to the profile. */
+  youName?: string;
   stakeCents: StakeCents;
   potCents: number;
   fairnessCommit: string;

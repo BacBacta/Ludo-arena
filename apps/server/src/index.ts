@@ -92,6 +92,11 @@ interface Session extends Client {
   /** Seat held in the last game (`seat` is nulled on room end) — a rematch
    *  re-pairs with the SAME seats so colours/corners never silently swap. */
   lastSeat?: Seat;
+  /** Label to show for THIS game (see duoNames): normally `name`, but
+   *  disambiguated when both players carry the same one. It must live on the
+   *  session, not just in match.found, so a RECONNECT re-sends the same labels.
+   *  Cleared when the room ends; the durable player row is never touched. */
+  displayName?: string;
   rematchWanted?: boolean;
   /** True when the last game came from a PRIVATE table — a rematch then waits for
    *  the same friend instead of spilling into the public queue. */
@@ -422,6 +427,7 @@ function wireRoom(room: Room): void {
       if (s && s.room === room) {
         s.room = null;
         s.seat = null;
+        s.displayName = undefined; // per-game label; the next pairing settles a fresh one
         persistSession(s);
       }
     }
@@ -1299,13 +1305,18 @@ wss.on('connection', (ws, req) => {
 function resumedGame(s: Session): ResumedGame | undefined {
   if (!s.room || s.seat === null || s.room.isOver()) return undefined;
   const opp = s.room.client(s.seat === 0 ? 1 : 0);
+  // Re-send the SAME labels the game started with (see duoNames): a reconnect that
+  // fell back to raw names would put the two screens back out of sync. The room's
+  // Client is the Session, so the per-game displayName is right here.
+  const oppSession = sessions.get(opp.id);
   return {
     gameId: s.room.gameId,
     seat: s.seat,
     state: s.room.getState(),
     stakeCents: s.room.stakeCents,
     potCents: potCents(s.room.stakeCents),
-    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar },
+    opponent: { name: oppSession ? label(oppSession) : opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar },
+    youName: label(s),
     fairnessCommit: s.room.fairness.commit,
   };
 }
@@ -1485,6 +1496,11 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
   // than re-queueing publicly (both seats share the origin).
   a.lastGamePrivate = fromTable;
   b.lastGamePrivate = fromTable;
+  // Settle both labels for this game up front, so match.found AND a later resume
+  // hand out the same pair. Never touches `name` — the durable row keeps it.
+  const [dnA, dnB] = duoNames(a, b);
+  a.displayName = dnA;
+  b.displayName = dnB;
   // Anti-grinding (audit HIGH-1): STAKED games REQUIRE the commit-reveal flow —
   // both clients must have sent an entropy COMMIT in hello so the server binds its
   // seed without ever seeing raw entropy first. A client that omits it (stale
@@ -1527,8 +1543,8 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
     b.pendingGameId = gameId;
     // Announce the match + the seed commit now; the Room + play start only after
     // both reveal their entropy (finalizeGame). Client auto-reveals on match.found.
-    a.send(matchFoundMsg(gameId, 0, b, stake, pot, commit));
-    b.send(matchFoundMsg(gameId, 1, a, stake, pot, commit));
+    a.send(matchFoundMsg(gameId, 0, a, b, stake, pot, commit));
+    b.send(matchFoundMsg(gameId, 1, b, a, stake, pot, commit));
     // Robustness: a FREE game must never hang on "Opponent found!" if one side
     // fails to reveal its entropy (flaky mobile data, a stale cached client, or a
     // WhatsApp/in-app browser). After a short grace, start anyway with whatever
@@ -1548,17 +1564,34 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
   }
   // legacy: raw entropy already known → announce + start immediately
   const fairness = createFairness(a.entropy, b.entropy);
-  a.send(matchFoundMsg(gameId, 0, b, stake, pot, fairness.commit));
-  b.send(matchFoundMsg(gameId, 1, a, stake, pot, fairness.commit));
+  a.send(matchFoundMsg(gameId, 0, a, b, stake, pot, fairness.commit));
+  b.send(matchFoundMsg(gameId, 1, b, a, stake, pot, fairness.commit));
   startRoom(gameId, stake, a, b, fairness, freeroll);
 }
 
-function matchFoundMsg(gameId: string, seat: Seat, opp: Session, stake: StakeCents, pot: number, commit: string): ServerMsg {
+/** Display names for a 1v1, disambiguated once so BOTH clients agree. Guest names
+ *  are drawn from a fixed pool, so ~3% of games pair two players under one name;
+ *  with no flag to tell them apart (a flag means "chosen in a profile") the two
+ *  banners read identically. Returns [seat 0's label, seat 1's label]. Display
+ *  only — each durable player row keeps its real name. */
+function duoNames(a: Session, b: Session): [string, string] {
+  if (a.name.toLowerCase() !== b.name.toLowerCase()) return [a.name, b.name];
+  return [a.name, uniqueAtTable(b.name, new Set([a.name.toLowerCase()]))];
+}
+
+/** The label to show for a player in-game: the per-game disambiguated one when
+ *  set, else their real name. */
+function label(s: Session): string {
+  return s.displayName ?? s.name;
+}
+
+function matchFoundMsg(gameId: string, seat: Seat, me: Session, opp: Session, stake: StakeCents, pot: number, commit: string): ServerMsg {
   return {
     t: 'match.found',
     gameId,
     seat,
-    opponent: { name: opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar },
+    opponent: { name: label(opp), elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar },
+    youName: label(me),
     stakeCents: stake,
     potCents: pot,
     fairnessCommit: commit,
