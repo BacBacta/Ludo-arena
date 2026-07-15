@@ -89,6 +89,9 @@ interface Session extends Client {
   /** Last opponent + stake, for a true direct rematch (BACKLOG E4). */
   lastOpponentId?: string;
   lastStake?: StakeCents;
+  /** Seat held in the last game (`seat` is nulled on room end) — a rematch
+   *  re-pairs with the SAME seats so colours/corners never silently swap. */
+  lastSeat?: Seat;
   rematchWanted?: boolean;
   /** True when the last game came from a PRIVATE table — a rematch then waits for
    *  the same friend instead of spilling into the public queue. */
@@ -1189,7 +1192,13 @@ wss.on('connection', (ws, req) => {
             opp.rematchWanted = false;
             session.stake = stake;
             opp.stake = stake;
-            await startGame(stake, session, opp, false, session.lastGamePrivate ?? false);
+            // Keep the SAME seats as the previous game. startGame's first arg is
+            // seat 0, and `session` here is whoever clicked rematch LAST — so the
+            // seats (colours, corners) silently swapped on about half of all
+            // rematches, which players read as "the board is inverted again".
+            const seatZero = opp.lastSeat === 0 ? opp : session;
+            const seatOne = seatZero === session ? opp : session;
+            await startGame(stake, seatZero, seatOne, false, session.lastGamePrivate ?? false);
             break;
           }
           // cap hit / blocked → fall through to matchmaking a different opponent
@@ -1565,6 +1574,8 @@ function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fa
   b.lastOpponentId = a.id;
   a.lastStake = stake;
   b.lastStake = stake;
+  a.lastSeat = 0;
+  b.lastSeat = 1;
   a.rematchWanted = false;
   b.rematchWanted = false;
   wireRoom(room);

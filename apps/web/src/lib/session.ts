@@ -13,7 +13,7 @@ import { deviceFingerprint } from './fingerprint';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
 import { loadAvatarId } from './avatars';
-import { loadCustomIdentity } from './profile';
+import { adoptServerIdentity, loadCustomIdentity } from './profile';
 import { sha256Hex } from './fairnessVerify';
 import {
   WALK_STEP_MS,
@@ -747,11 +747,20 @@ export class RemoteSession implements GameSession {
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
-        // Only apply the profile from a WALLET-backed session — a wallet-less
+        // Guests: pin the FIRST server-assigned identity (no-op once any name is
+        // saved). Without this the server derives a NEW name per connection, so
+        // friends saw a different name for the same player in every game.
+        adoptServerIdentity(msg.name, msg.flag);
+        // Only apply the FULL profile from a WALLET-backed session — a wallet-less
         // freeroll/free-table connection carries a throwaway anon identity + 0/0
         // that must not clobber the returning wallet player's cached profile.
         if (this.walletAddress) {
           this.ev.onProfile({ name: msg.name, flag: msg.flag, elo: msg.elo, games: msg.games, wins: msg.wins, pid: msg.pid });
+        } else {
+          // Surface ONLY the identity (never stats): the banner must show the
+          // name opponents see, not a localized "You" that matches nothing.
+          const id = loadCustomIdentity();
+          if (id.name) this.ev.onProfile({ name: id.name, flag: id.flag });
         }
         if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
         if (msg.resumed) {

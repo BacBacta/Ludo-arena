@@ -65,6 +65,16 @@ export function Game4OnlineScreen({
   const [staking, setStaking] = useState<StakeStatus | null>(null); // locking my stake on-chain
   const [settledTx, setSettledTx] = useState<string | null>(null); // payout confirmed on-chain
 
+  // Post-roll grace: keeps MY die button visible while its tumble finishes even
+  // though the server may pass the turn the instant the roll lands (auto-move).
+  const [myGrace, setMyGrace] = useState(false);
+  useEffect(() => {
+    if (!shown || shown.seat !== mySeat) return;
+    setMyGrace(true);
+    const id = setTimeout(() => setMyGrace(false), 800);
+    return () => clearTimeout(id);
+  }, [shown, mySeat]);
+
   const mySeatRef = useRef(mySeat);
   mySeatRef.current = mySeat;
   const playersRef = useRef<Player4Info[]>(players);
@@ -188,7 +198,10 @@ export function Game4OnlineScreen({
     () =>
       players.map((p, seat) => ({
         seat,
-        name: seat === mySeat ? t('you') : p.name,
+        // My own quadrant shows my REAL name (the one the server broadcast to
+        // everyone), so all screens display identical labels — a localized "You"
+        // matched nothing on the other players' screens and read as a mismatch.
+        name: seat === mySeat ? p.name || t('you') : p.name,
         flag: p.flag,
         active: seat === activeTurn,
       })),
@@ -227,20 +240,32 @@ export function Game4OnlineScreen({
    */
   function renderCorner(seat: number): JSX.Element {
     const active = activeTurn === seat;
-    const name = seat === mySeat ? t('you') : players[seat]?.name ?? '';
+    const name = seat === mySeat ? players[seat]?.name || t('you') : players[seat]?.name ?? '';
     const flag = players[seat]?.flag;
     const frame = players[seat]?.frame;
     const avatar = players[seat]?.avatar; // server echoes each seat's chosen avatar (incl. mine)
     const myTurnHere = seat === mySeat && activeTurn === mySeat && status === 'playing';
     const dieHere = shown?.seat === seat;
 
-    const inner = myTurnHere ? (
-      <button className="ludodie ludodie--tap" disabled={!canRoll} onClick={doRoll} aria-label="your die">
+    // Every corner's die stays MOUNTED and hides via CSS (huddie--idle pattern):
+    // a freshly-mounted Die3D can't transition, so swapping the element in at
+    // roll time played no tumble — the value just popped in. My own corner keeps
+    // the tap button through a post-roll grace window too, because an auto-move
+    // passes the turn the instant the roll lands and unmounting right then cut
+    // my tumble short (the roll seemed to happen at another corner).
+    const inner = seat === mySeat ? (
+      <button
+        className={`ludodie ludodie--tap${myTurnHere || myGrace ? '' : ' ludodie--idle'}`}
+        disabled={!canRoll}
+        onClick={doRoll}
+        aria-label="your die"
+        aria-hidden={!(myTurnHere || myGrace)}
+      >
         <Die value={dieHere ? dieVal : 6} rollKey={dieHere ? dieKey : 0} skin={mySkin} />
       </button>
-    ) : dieHere ? (
-      <SeatDie value={dieVal} rollKey={dieKey} />
-    ) : null;
+    ) : (
+      <SeatDie value={dieHere ? dieVal : 1} rollKey={dieHere ? dieKey : 0} idle={!dieHere} />
+    );
 
     const av = (
       <span className="emoteanchor">

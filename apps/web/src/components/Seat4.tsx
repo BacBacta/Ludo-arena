@@ -54,9 +54,12 @@ export function SeatAvatar({ name, flag, frame, avatar, active }: { name: string
 
 /** White 3D cube die shown beside a player's avatar; it somersaults on each new
  *  roll (rollKey) and lands on the value. */
-export function SeatDie({ value, rollKey }: { value: number; rollKey: number }) {
+export function SeatDie({ value, rollKey, idle = false }: { value: number; rollKey: number; idle?: boolean }) {
+  // `idle` hides via CSS instead of the caller unmounting: Die3D animates with a
+  // CSS transition, and a freshly-mounted element can't transition — swapping the
+  // die in at roll time skipped the tumble (the value just popped in).
   return (
-    <div className="ludodie">
+    <div className={`ludodie${idle ? ' ludodie--idle' : ''}`} aria-hidden={idle}>
       <Die3D value={value} rollKey={rollKey} skin={WHITE_DIE} />
     </div>
   );

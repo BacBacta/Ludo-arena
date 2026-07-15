@@ -142,6 +142,19 @@ export function GameScreen({
     else setOppVal(lastDice.value);
   }, [lastDice, mySeat]);
 
+  // Grace window that keeps my die button mounted while its tumble plays. A
+  // no-legal-move roll or a single-choice auto-move passes the turn the instant
+  // the roll lands, and unmounting the button right then cut the animation —
+  // the player tapped, their die vanished, and the only tumble they ever saw
+  // was the opponent's at the top ("my roll spins at the top").
+  const [myRolling, setMyRolling] = useState(false);
+  useEffect(() => {
+    if (myRollIndex === 0) return;
+    setMyRolling(true);
+    const id = setTimeout(() => setMyRolling(false), 800);
+    return () => clearTimeout(id);
+  }, [myRollIndex]);
+
   if (!game || !match) return null;
 
   // The HUD follows activeTurn (deferred until a move finishes animating), while
@@ -232,7 +245,7 @@ export function GameScreen({
             <EmoteFloat seat={mySeat} />
             <GiftFloat seat={mySeat} />
             <AvatarCard initial={(profile.name || t('you')).slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} avatar={avatar} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
-            {myTurn && !handoff && (
+            {((myTurn && !handoff) || myRolling) && (
               <button
                 className="dicebtn"
                 disabled={!canRoll}

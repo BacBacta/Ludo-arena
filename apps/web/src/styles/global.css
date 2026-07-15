@@ -921,6 +921,11 @@ small.muted { font-size: 12px; }
 }
 .boardwrap svg { width: 100%; height: 100%; display: block; }
 .token { cursor: pointer; }
+/* Movable tokens carry role=button + tabindex, so tapping one draws the UA's
+   native focus ring — a dark circle/box popping onto the board. Kill it for
+   pointer taps; keyboard players keep a visible gold cue via :focus-visible. */
+.token:focus { outline: none; }
+.token:focus-visible { outline: none; filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 8px var(--accent)); }
 .token--movable { filter: drop-shadow(0 0 3px var(--accent)); }
 
 /* Ludo-Club dice model: the active player's die sits at THEIR side — mine is
@@ -1495,6 +1500,14 @@ small.muted { font-size: 12px; }
   filter: drop-shadow(0 6px 12px rgba(15, 26, 68, 0.45));
 }
 .ludodie .die { width: 100%; height: 100%; display: block; }
+/* Hidden-but-mounted (same trick as .huddie--idle): the die element must exist
+   BEFORE its roll arrives or the Die3D tumble transition can't play. */
+.ludodie--idle {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  left: -9999px;
+}
 .ludodie--tap { cursor: pointer; }
 .ludodie--tap:not(:disabled) { animation: dietap 1.6s ease infinite; }
 @keyframes dietap {

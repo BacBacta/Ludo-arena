@@ -14,7 +14,7 @@ import { deviceFingerprint } from './fingerprint';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
 import { loadAvatarId } from './avatars';
-import { loadCustomIdentity } from './profile';
+import { adoptServerIdentity, loadCustomIdentity } from './profile';
 import { sha256Hex } from './fairnessVerify';
 import type { WalletAuth } from './session';
 
@@ -157,6 +157,9 @@ export class Remote4 {
         } catch {
           /* storage unavailable */
         }
+        // Guests: pin the first server-assigned name so it stays the same in
+        // every later game/mode (the server derives a NEW one per connection).
+        adoptServerIdentity(msg.name, msg.flag);
         // Wallet ownership proof (SIWE) for a staked table: sign the server's nonce.
         if (msg.walletNonce && this.stakeCents > 0 && this.auth?.signMessage) {
           void this.auth
