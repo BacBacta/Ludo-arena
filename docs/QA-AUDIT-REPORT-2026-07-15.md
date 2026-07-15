@@ -86,10 +86,37 @@ dépassaient 5–7 min sans conclure ni se coincer. L'oracle du harnais est donc
 « le jeu roule encore au cap » (anti-blocage), la complétion étant vérifiée par
 le run long (`M8_CAP_MS=1500000`). Aucun défaut de fin de partie 4p observé.
 
+## 4b. Happy-path staké on-chain (vérifié — ajout post-audit)
+Sur autorisation, exécuté sur **celo-sepolia** avec TestUSD, escrow déployé
+`0x5b2d…`, arbitre/trésor `0x947F…` (rake 900 bps). Deux wallets de test réels
+misent 25¢ chacun ; l'arbitre règle avec le **même schéma de signature EIP-191**
+que le serveur (`settlementDigest(chainid, escrow, gameId, winner)`). Sonde
+`e2e/staked/contract-settle.mjs`, **9/9**, prouvé on-chain :
+
+| Contrôle | Résultat |
+|---|---|
+| Les deux mises verrouillées, escrow détient le pot | 0,50 TestUSD |
+| `settle()` de l'arbitre miné (EIP-191 accepté par le bytecode déployé) | ✅ |
+| Escrow libère tout le pot | → 0 |
+| Gagnant net = retour − mise | **+0,205** |
+| Perdant net = − mise | **−0,25** |
+| Trésor net = rake | **+0,045** |
+| Conservation : retour 0,455 + rake 0,045 = pot 0,50 | ✅ |
+
+Notes : (1) le contrôle anti-collusion « même réseau » du serveur est **vérifié
+actif** — il a refusé d'apparier deux sockets de même IP, ce qui a imposé de
+tester le règlement au niveau contrat plutôt qu'à travers l'appariement ;
+(2) l'enum `Status` du bytecode déployé est décalé d'un cran vs la source
+actuelle — sans impact (les oracles portent sur les soldes réels, pas l'enum) ;
+(3) le serveur en mode durable (Redis+Postgres) émet bien `settlement enabled`.
+Restent non exercés à travers le serveur : l'émission de `game.settled` (le
+règlement passe par l'appariement, bloqué en local par l'anti-collusion) et le
+refund-all M9.
+
 ## 5. Hors périmètre / risques acceptés
-- Happy-path staké on-chain (M3/M6) : nécessite testnet + autorisation — les
-  frontières (consentement, wallet, SIWE, commit d'équité, durabilité) sont
-  toutes vérifiées refus-par-refus.
+- Happy-path staké on-chain (M3/M6) : **vérifié au niveau contrat** (voir §4b) ;
+  le chemin serveur→`game.settled` reste non joué (l'anti-collusion même-IP
+  empêche l'appariement local — le contrôle lui-même est vérifié actif).
 - Refund-all M9 à l'expiration du fill : inaccessible tant que M9 est grillé.
 - Multi-onglets : `sessionToken` vit en `sessionStorage` (par onglet) — deux
   onglets = deux sessions indépendantes ; le vol de session exigerait le token
