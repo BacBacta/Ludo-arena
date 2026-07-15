@@ -110,6 +110,10 @@ export interface SessionEvents {
   onResumed(match: MatchInfo, state: GameState): void;
   /** The in-progress game could not be resumed (gave up / session expired). */
   onGone(): void;
+  /** The last opponent clicked Rematch and is waiting — surface Accept/Decline. */
+  onRematchOffer(opponentName: string): void;
+  /** A rematch we were waiting on won't happen (opponent declined or left). */
+  onRematchCancelled(reason: 'declined' | 'left'): void;
 }
 
 export interface GameSession {
@@ -125,6 +129,9 @@ export interface GameSession {
    *  re-pairs the same opponent if they also asked, else re-queues). Returns
    *  true if handled here; false → the caller should start a fresh session. */
   rematch(): boolean;
+  /** Decline the opponent's rematch offer / leave the end screen, so a waiting
+   *  opponent is told instead of hanging on "searching…". */
+  declineRematch(): void;
   dispose(): void;
 }
 
@@ -187,6 +194,10 @@ export class LocalBotSession implements GameSession {
 
   rematch(): boolean {
     return false; // local bot: no live socket to reuse — the caller starts fresh
+  }
+
+  declineRematch(): void {
+    /* local bot: no opponent waiting on us */
   }
 
   dispose(): void {
@@ -836,6 +847,12 @@ export class RemoteSession implements GameSession {
       case 'limits.update':
         this.ev.onLimits(msg.limits);
         break;
+      case 'rematch.offer':
+        this.ev.onRematchOffer(msg.name);
+        break;
+      case 'rematch.cancelled':
+        this.ev.onRematchCancelled(msg.reason);
+        break;
       case 'error':
         this.ev.onInfo(msg.message);
         break;
@@ -883,6 +900,10 @@ export class RemoteSession implements GameSession {
       this.send({ t: 'game.rematch', entropyCommit: commit });
     });
     return true;
+  }
+
+  declineRematch(): void {
+    this.send({ t: 'rematch.decline' });
   }
 
   dispose(): void {

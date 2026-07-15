@@ -165,7 +165,9 @@ export interface AppState {
   lastDice: { value: number; index: number; seat: Seat } | null;
   /** Latest emote per seat; `n` bumps each time so the float re-animates. */
   emotes: Record<number, { id: string; n: number }>;
-  gifts: Record<number, { id: string; n: number }>;
+  /** Latest gift per SENDER seat (so it emanates from whoever sent it); `to` is
+   *  the recipient seat, used to fly the gift toward them. `n` bumps to re-animate. */
+  gifts: Record<number, { id: string; n: number; to: number }>;
   /** All rolls this game, for client-side fairness verification (E5.1). */
   diceHistory: Array<{ index: number; value: number; seat: Seat }>;
   turnDeadlineTs: number | null;
@@ -182,6 +184,9 @@ export interface AppState {
   staking: StakingState;
   /** Private-table code shown while waiting for a friend to join (E4.4). */
   privateCode: string | null;
+  /** Opponent's name when they've offered a rematch — the end screen surfaces
+   *  Accept/Decline. null = no pending offer. */
+  rematchOffer: string | null;
   toast: string | null;
   fairModalOpen: boolean;
   settingsOpen: boolean;
@@ -273,6 +278,7 @@ export const initialState: AppState = {
   refunded: false,
   botMode: false,
   reconnecting: false,
+  rematchOffer: null,
   staking: 'idle',
   privateCode: null,
   toast: null,
@@ -325,6 +331,8 @@ export type Action =
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'SET_WALLET_ADDRESS'; address: string | null }
   | { type: 'GO_LOBBY' }
+  | { type: 'REMATCH_OFFER'; name: string }
+  | { type: 'REMATCH_CLEAR' }
   | { type: 'TOAST'; message: string }
   | { type: 'CLEAR_TOAST' }
   | { type: 'FAIR_MODAL'; open: boolean }
@@ -372,7 +380,7 @@ export function reducer(s: AppState, a: Action): AppState {
       return {
         ...s,
         match: a.match,
-        privateCode: null, emotes: {}, gifts: {}, // friend joined; the game is starting
+        privateCode: null, emotes: {}, gifts: {}, rematchOffer: null, // friend joined; the game is starting
         // Balance only ever changes via SET_BALANCE (refreshed from the wallet):
         // staked play requires a wallet, so there is no simulated debit anymore.
       };
@@ -387,8 +395,11 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'EMOTE':
       return { ...s, emotes: { ...s.emotes, [a.seat]: { id: a.id, n: (s.emotes[a.seat]?.n ?? 0) + 1 } } };
     case 'GIFT': {
-      // the gift floats over the RECIPIENT seat; toast the recipient in 1v1
-      const gifts = { ...s.gifts, [a.to]: { id: a.id, n: (s.gifts[a.to]?.n ?? 0) + 1 } };
+      // The gift floats over the SENDER's seat (a.from), not the recipient's, so
+      // the person receiving it can SEE who it came from — it emanates from the
+      // sender's avatar. Anchoring it on the recipient (the old behaviour) meant
+      // a gift popped over your own corner with no clue who sent it.
+      const gifts = { ...s.gifts, [a.from]: { id: a.id, n: (s.gifts[a.from]?.n ?? 0) + 1, to: a.to } };
       const toast = s.match && a.to === s.match.seat && a.from !== a.to ? `${s.match.opponent.name} ${t('giftFrom')} ${a.id}` : s.toast;
       return { ...s, gifts, toast };
     }
@@ -481,7 +492,11 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_WALLET_ADDRESS':
       return { ...s, walletAddress: a.address };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', emotes: {}, gifts: {}, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null };
+      return { ...s, screen: 'lobby', emotes: {}, gifts: {}, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null, rematchOffer: null };
+    case 'REMATCH_OFFER':
+      return { ...s, rematchOffer: a.name };
+    case 'REMATCH_CLEAR':
+      return { ...s, rematchOffer: null };
     case 'TOAST':
       return { ...s, toast: a.message };
     case 'CLEAR_TOAST':

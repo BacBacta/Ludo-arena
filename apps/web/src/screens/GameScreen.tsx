@@ -214,7 +214,8 @@ export function GameScreen({
           </div>
           <div className="cornerstack">
             <EmoteFloat seat={1 - mySeat} />
-            <GiftFloat seat={1 - mySeat} />
+            {/* opponent's corner (top): a gift they SEND flies down toward you */}
+            <GiftFloat seat={1 - mySeat} dir="down" />
             {/* ALWAYS mounted. Die3D animates via a CSS transition, and a freshly
                 mounted element cannot transition — gating this on `!myTurn` meant
                 the opponent's die mounted at the very moment their roll landed
@@ -267,7 +268,8 @@ export function GameScreen({
         <div className="gamecorner gamecorner--bottom">
           <div className="cornerstack">
             <EmoteFloat seat={mySeat} />
-            <GiftFloat seat={mySeat} />
+            {/* my corner (bottom): a gift I SEND flies up toward the opponent */}
+            <GiftFloat seat={mySeat} dir="up" />
             <AvatarCard initial={myLabel.slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} avatar={avatar} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {((myTurn && !handoff) || myRolling) && (
               <button

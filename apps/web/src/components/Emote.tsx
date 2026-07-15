@@ -172,15 +172,18 @@ export function GiftBar({
 /** Floating gift over a seat's avatar. `gifts[seat].n` bumps on each received
  *  gift → re-keying the span replays the drop-in animation; the same bump plays
  *  the gift chime (mine and theirs, like the emote channel). */
-export function GiftFloat({ seat }: { seat: number }) {
+export function GiftFloat({ seat, dir = 'up' }: { seat: number; dir?: 'up' | 'down' }) {
   const { gifts } = useAppState();
   const g = gifts[seat];
   useEffect(() => {
     if (g) playGift(g.id);
   }, [g]);
   if (!g) return null;
+  // `dir` launches the gift TOWARD the recipient: from the top (opponent) corner
+  // it flies down toward you; from your corner it flies up toward them. The gift
+  // is anchored on the SENDER's corner, so this reads as "sent from X to Y".
   return (
-    <span key={g.n} className="giftfloat" aria-hidden="true">
+    <span key={g.n} className={`giftfloat giftfloat--${dir}`} aria-hidden="true">
       <span className="giftin">{g.id}</span>
     </span>
   );

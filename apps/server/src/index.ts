@@ -1227,6 +1227,7 @@ wss.on('connection', (ws, req) => {
           }
           session.rematchWanted = true;
           session.stake = stake;
+          offerRematchTo(opp, session); // let the friend accept/decline explicitly
           break;
         }
         // No ready partner (or direct rematch refused): remember the wish and
@@ -1238,6 +1239,7 @@ wss.on('connection', (ws, req) => {
         }
         session.rematchWanted = true;
         session.stake = stake;
+        offerRematchTo(opp, session); // notify the last opponent they can accept
         const pair = matchmaker.join(stake, {
           session,
           identity: playerId(session.wallet, session.id),
@@ -1255,6 +1257,15 @@ wss.on('connection', (ws, req) => {
         }
         break;
       }
+
+      case 'rematch.decline': {
+        // We're bowing out (Decline, or leaving the end screen). If the last
+        // opponent is waiting on us for a rematch, tell them so they stop.
+        const opp = session.lastOpponentId ? sessions.get(session.lastOpponentId) : undefined;
+        await cancelRematchWait(opp, session.id, 'declined');
+        session.rematchWanted = false; // we're not seeking one either
+        break;
+      }
     }
   }
 
@@ -1266,6 +1277,11 @@ wss.on('connection', (ws, req) => {
     if (!session) return;
     session.ws = null;
     session.alive = false;
+    // If the last opponent is waiting on us for a rematch, don't leave them
+    // hanging on "searching…" — tell them we left. (They can still get a fresh
+    // offer if we reconnect and click rematch again.)
+    const rematchWaiter = session.lastOpponentId ? sessions.get(session.lastOpponentId) : undefined;
+    void cancelRematchWait(rematchWaiter, session.id, 'left');
     matchmaker.leaveAll(session);
     freerollMatchmaker.leaveAll(session);
     leave4(session);
@@ -1583,6 +1599,25 @@ function duoNames(a: Session, b: Session): [string, string] {
  *  set, else their real name. */
 function label(s: Session): string {
   return s.displayName ?? s.name;
+}
+
+/** Tell `opp` that `from` wants a rematch, so their end screen shows an explicit
+ *  Accept/Decline offer instead of the rematch depending on both sides guessing
+ *  to click. Only when opp is still connected, idle, and our last opponent. */
+function offerRematchTo(opp: Session | undefined, from: Session): void {
+  if (opp && opp.alive && !opp.room && !opp.pendingGameId && opp.lastOpponentId === from.id && !opp.rematchWanted) {
+    opp.send({ t: 'rematch.offer', name: label(from) });
+  }
+}
+
+/** `waiter` is stuck on "searching…" for a rematch with `leaver`; tell them it
+ *  won't happen (declined or left) and pull them out of any queue. */
+async function cancelRematchWait(waiter: Session | undefined, leaverId: string, reason: 'declined' | 'left'): Promise<void> {
+  if (!waiter || !waiter.rematchWanted || waiter.lastOpponentId !== leaverId) return;
+  waiter.rematchWanted = false;
+  matchmaker.leaveAll(waiter);
+  await store.queueRemove(waiter.id);
+  waiter.send({ t: 'rematch.cancelled', reason });
 }
 
 function matchFoundMsg(gameId: string, seat: Seat, me: Session, opp: Session, stake: StakeCents, pot: number, commit: string): ServerMsg {

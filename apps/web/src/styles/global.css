@@ -1265,18 +1265,45 @@ small.muted { font-size: 12px; }
 .giftbar__g:active { transform: scale(0.82); background: var(--card-2); }
 
 /* a gift dropping FROM ABOVE onto an avatar (distinct from emotes rising up) */
+/* "X wants a rematch" banner on the end screen — a soft accent chip above the
+   Accept button so an incoming rematch is impossible to miss. */
+.rematchoffer {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(245, 179, 1, 0.14);
+  border: 1px solid rgba(245, 179, 1, 0.5);
+  color: var(--accent, #f5b301);
+  font-weight: 700;
+  font-size: 14px;
+  text-align: center;
+  animation: rematchPulse 1.6s ease-in-out infinite;
+}
+@keyframes rematchPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+@media (prefers-reduced-motion: reduce) { .rematchoffer { animation: none; } }
+
 .giftfloat {
   position: absolute; left: 50%; top: -10px; transform: translateX(-50%);
   font-size: 40px; pointer-events: none; z-index: 6; will-change: transform, opacity;
   filter: drop-shadow(0 3px 6px rgba(8, 16, 44, 0.45)); animation: giftFloat 2.1s ease-out forwards;
 }
+/* Launch the gift TOWARD the recipient (see GiftFloat `dir`): from your corner it
+   flies up toward the opponent; from the opponent's corner it flies down to you. */
+.giftfloat--down { top: auto; bottom: -10px; animation-name: giftFloatDown; }
 .giftin { display: inline-block; animation: giftWobble 0.5s ease-in-out 2; }
 @keyframes giftFloat {
   0% { opacity: 0; transform: translate(-50%, -46px) scale(0.5); }
   18% { opacity: 1; transform: translate(-50%, -6px) scale(1.4); }
   30% { transform: translate(-50%, -14px) scale(1); }
   74% { opacity: 1; transform: translate(-50%, -12px) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -30px) scale(0.85); }
+  100% { opacity: 0; transform: translate(-50%, 34px) scale(0.85); }
+}
+@keyframes giftFloatDown {
+  0% { opacity: 0; transform: translate(-50%, 46px) scale(0.5); }
+  18% { opacity: 1; transform: translate(-50%, 6px) scale(1.4); }
+  30% { transform: translate(-50%, 14px) scale(1); }
+  74% { opacity: 1; transform: translate(-50%, 12px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -34px) scale(0.85); }
 }
 @keyframes giftWobble { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-10deg); } 75% { transform: rotate(10deg); } }
 @media (prefers-reduced-motion: reduce) { .giftfloat, .giftin { animation-duration: 0.01ms !important; } .giftfloat { opacity: 0; } .giftbar__sheet { animation: none; } }

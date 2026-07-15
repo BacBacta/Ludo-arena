@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DIVISIONS } from '@ludo/shared';
-import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
+import { fmtUsd, useAppState } from '../state/store';
 import { activeChain } from '../lib/chains';
 import { playPayout, playLose } from '../lib/sound';
 import { t } from '../lib/i18n';
@@ -72,9 +72,8 @@ function EloReveal({ delta, rating }: { delta: number; rating: number }) {
   );
 }
 
-export function EndScreen({ onRematch }: { onRematch(): void }) {
-  const { result, match, settleTxHash, refunded, league, walletBacked, profile } = useAppState();
-  const dispatch = useAppDispatch();
+export function EndScreen({ onRematch, onDecline }: { onRematch(): void; onDecline(): void }) {
+  const { result, match, settleTxHash, refunded, league, walletBacked, profile, rematchOffer } = useAppState();
 
   const won = !!result && !!match && result.winner === match.seat;
   const staked = !!match && match.stakeCents > 0;
@@ -164,13 +163,20 @@ export function EndScreen({ onRematch }: { onRematch(): void }) {
           )
         )}
         <div style={{ width: '100%', maxWidth: 300 }}>
+          {/* If the opponent asked for a rematch, say so — the button becomes an
+              explicit ACCEPT, and Home doubles as Decline (tells them we left). */}
+          {rematchOffer && (
+            <div className="rematchoffer" role="status">
+              🔄 {rematchOffer} {t('wantsRematch')}
+            </div>
+          )}
           <button className="btn" onClick={onRematch}>
-            {t('rematch')}
+            {rematchOffer ? t('acceptRematch') : t('rematch')}
           </button>
           <div style={{ height: 10 }} />
           <div className="row">
-            <button className="btn btn--ghost" onClick={() => dispatch({ type: 'GO_LOBBY' })}>
-              {t('home')}
+            <button className="btn btn--ghost" onClick={onDecline}>
+              {rematchOffer ? t('declineRematch') : t('home')}
             </button>
             <button className="btn btn--ghost" style={{ textAlign: 'center' }} onClick={shareResult}>
               {t('challengeFriend')}

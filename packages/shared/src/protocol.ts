@@ -334,6 +334,9 @@ export type ClientMsg =
   // Rematch carries a FRESH entropy commit so the next game gets its own
   // commit-reveal (the server binds a new seed without knowing the raw value).
   | { t: 'game.rematch'; entropyCommit?: string }
+  // Decline a rematch the last opponent offered (or leave the end screen): the
+  // server tells them so they stop waiting instead of hanging on "searching…".
+  | { t: 'rematch.decline' }
   // Unlock a premium dice skin by spending its ticket price (PREMIUM_SKINS).
   | { t: 'skin.buy'; skinId: string }
   // Send a quick emote or quick-chat to the current game (1v1 or 4p); id must
@@ -419,6 +422,12 @@ export type ServerMsg =
       consentTosVersion?: string;
     }
   | { t: 'queue.ok'; position: number }
+  // Your last opponent clicked Rematch and is waiting; `name` is their display
+  // label. The end screen surfaces an Accept/Decline offer instead of the game
+  // silently depending on both sides happening to click.
+  | { t: 'rematch.offer'; name: string }
+  // A rematch you were waiting on won't happen: the opponent declined or left.
+  | { t: 'rematch.cancelled'; reason: 'declined' | 'left' }
   // Private table created (E4.4); share `code` with a friend to join.
   | { t: 'table.created'; code: string; stakeCents: StakeCents }
   | {
@@ -614,6 +623,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'game.roll':
     case 'game.resign':
     case 'game.rematch':
+    case 'rematch.decline':
     case 'ping':
       return m;
     default:

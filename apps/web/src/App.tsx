@@ -228,6 +228,14 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('connectionLost') });
         dispatch({ type: 'GO_LOBBY' });
       },
+      // The opponent clicked Rematch and is waiting → show Accept/Decline.
+      onRematchOffer: (name) => dispatch({ type: 'REMATCH_OFFER', name }),
+      // A rematch we were waiting on fell through → tell the player, return home.
+      onRematchCancelled: (reason) => {
+        dispatch({ type: 'REMATCH_CLEAR' });
+        dispatch({ type: 'TOAST', message: reason === 'declined' ? t('rematchDeclined') : t('rematchLeft') });
+        dispatch({ type: 'GO_LOBBY' });
+      },
     };
   }, [dispatch, stakeForMatch, refreshBalance]);
 
@@ -420,12 +428,21 @@ export default function App() {
   // the same opponent (it re-queues if they didn't ask / the cap is hit). Falls
   // back to a fresh session (local bot, or a dropped socket).
   const rematch = useCallback(() => {
+    dispatch({ type: 'REMATCH_CLEAR' }); // accepting clears any incoming offer
     if (sessionRef.current?.rematch()) {
       dispatch({ type: 'START_MATCHMAKING', botMode: false });
     } else {
       void startMatch(state.stakeCents);
     }
   }, [dispatch, startMatch, state.stakeCents]);
+
+  // Decline the opponent's offer, or just leave the end screen: tell a waiting
+  // opponent (via the live session) instead of leaving them on "searching…".
+  const declineRematch = useCallback(() => {
+    sessionRef.current?.declineRematch();
+    dispatch({ type: 'REMATCH_CLEAR' });
+    dispatch({ type: 'GO_LOBBY' });
+  }, [dispatch]);
 
   // Age (18+) + Terms/Privacy consent gate: required once before any staked action.
   const pendingStakeAction = useRef<(() => void) | null>(null);
@@ -554,7 +571,7 @@ export default function App() {
       {state.screen === 'game' && !state.practice4 && !state.online4 && (
         <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} onEmote={(id) => sessionRef.current?.emote(id)} onGift={(to, id) => sessionRef.current?.gift(to, id)} onViewProfile={onViewProfile} />
       )}
-      {state.screen === 'end' && <EndScreen onRematch={rematch} />}
+      {state.screen === 'end' && <EndScreen onRematch={rematch} onDecline={declineRematch} />}
       <LegalModal
         onAccept={() => {
           consentRef.current = true; // synchronous, so the pending staked action's hello carries consent
