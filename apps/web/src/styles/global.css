@@ -1821,7 +1821,8 @@ small.muted { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .g4over { animation: none; } }
 
 /* ---- matchmaking cancel + crash fallback ---- */
-.mm-cancel { margin-top: 18px; max-width: 220px; }
+.mm-bot { margin-top: 20px; max-width: 260px; background: rgba(255,255,255,.14); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); }
+.mm-cancel { margin-top: 10px; max-width: 220px; }
 .crash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .crash__card {
   width: 100%; max-width: 300px; background: #ffffff; border-radius: 22px;

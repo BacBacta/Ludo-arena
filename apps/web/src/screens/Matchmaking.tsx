@@ -2,7 +2,7 @@ import { useAppDispatch, useAppState } from '../state/store';
 import { IconUsers } from '../components/icons';
 import { t } from '../lib/i18n';
 
-export function Matchmaking({ onCancel }: { onCancel(): void }) {
+export function Matchmaking({ onCancel, onPlayBot }: { onCancel(): void; onPlayBot?(): void }) {
   const { match, privateCode, botMode } = useAppState();
   const dispatch = useAppDispatch();
 
@@ -70,9 +70,18 @@ export function Matchmaking({ onCancel }: { onCancel(): void }) {
           </>
         )}
         {!match && (
-          <button className="btn btn--ghost mm-cancel" onClick={onCancel}>
-            {t('cancel')}
-          </button>
+          <>
+            {/* Free 1v1: don't force a wait — an impatient player can drop the
+                queue and play a bot right away (a real human still pairs first). */}
+            {onPlayBot && !privateCode && !botMode && (
+              <button className="btn mm-bot" onClick={onPlayBot}>
+                {t('playBot')}
+              </button>
+            )}
+            <button className="btn btn--ghost mm-cancel" onClick={onCancel}>
+              {t('cancel')}
+            </button>
+          </>
         )}
       </div>
     </div>

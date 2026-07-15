@@ -27,9 +27,11 @@ import { t } from './lib/i18n';
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
 /** Responsible-gaming reality check cadence — remind an actively-staking player. */
 const REALITY_CHECK_MS = 20 * 60_000;
-/** Free 1v1: how long to seek a real human before falling back to a bot game, so
- *  the primary CTA always delivers a game even when nobody else is queuing. */
-const FREE_MATCH_TIMEOUT_MS = 8_000;
+/** Free 1v1: LAST-RESORT wait before auto-falling back to a bot. Kept long so the
+ *  player actually STAYS in the queue and can meet others who arrive — an 8s
+ *  fallback pulled everyone out before they could pair (→ "always the bot"). An
+ *  impatient player has an explicit "play a bot" button instead. */
+const FREE_MATCH_TIMEOUT_MS = 60_000;
 
 export default function App() {
   const state = useAppState();
@@ -41,6 +43,9 @@ export default function App() {
   const clearFreeFallback = useCallback(() => {
     if (freeFallback.current) { clearTimeout(freeFallback.current); freeFallback.current = null; }
   }, []);
+  // Whether the CURRENT search is a free 1v1 (→ offer a manual "play a bot" escape
+  // on the searching screen). A ref: set before the matchmaking render.
+  const freeSearchRef = useRef(false);
   const matchSeatRef = useRef<number>(0);
   // Gameplay pedagogy: a roll that ends the turn with NO move (no legal move, or
   // the three-sixes burn) looks like a silent bug — track the dice stream so the
@@ -272,12 +277,14 @@ export default function App() {
   const startMatch = useCallback(
     async (stake: StakeCents) => {
       clearFreeFallback();
+      freeSearchRef.current = stake === 0; // free 1v1 → the searching screen offers a bot escape
       sessionRef.current?.dispose();
       sessionRef.current = null;
 
-      // Free PLAY = a real ONLINE 1v1 (matchmaking, no wallet). If nobody is
-      // queuing within FREE_MATCH_TIMEOUT_MS — or the server is unreachable — fall
-      // back to a lively bot game, so the primary CTA always delivers a match.
+      // Free PLAY = a real ONLINE 1v1 (matchmaking, no wallet). Stay in the queue
+      // (up to FREE_MATCH_TIMEOUT_MS) so players who arrive apart still pair; a
+      // manual "play a bot" button handles impatience, and the server being
+      // unreachable still falls back to a bot immediately.
       if (stake === 0) {
         dispatch({ type: 'START_MATCHMAKING', botMode: false });
         const ev = makeEvents();
@@ -323,6 +330,14 @@ export default function App() {
     [dispatch, makeEvents, connectWalletCta, makeAuth, clearFreeFallback],
   );
 
+  // Manual escape from a free-1v1 search: leave the queue and play a bot now.
+  const playBotNow = useCallback(() => {
+    clearFreeFallback();
+    freeSearchRef.current = false;
+    sessionRef.current?.dispose();
+    sessionRef.current = new LocalBotSession(makeEvents(), 0);
+  }, [makeEvents, clearFreeFallback]);
+
   // Private tables (E4.4): open a remote session with a create/join intent.
   const openPrivate = useCallback(
     async (stake: StakeCents, intent: JoinIntent) => {
@@ -332,6 +347,7 @@ export default function App() {
       // ATTEMPT the connection — the server refuses staked joiners without one.
       if (stake > 0 && !(await connectWalletCta())) return;
       if (intent.kind === 'join') await connectWalletCta(true);
+      freeSearchRef.current = false;
       dispatch({ type: 'START_MATCHMAKING', botMode: false });
       const ev = makeEvents();
       sessionRef.current = new RemoteSession(
@@ -374,6 +390,7 @@ export default function App() {
   // ticket only makes sense against a real opponent).
   const startFreeroll = useCallback(() => {
     sessionRef.current?.dispose();
+    freeSearchRef.current = false;
     dispatch({ type: 'START_MATCHMAKING', botMode: false });
     const ev = makeEvents();
     sessionRef.current = new RemoteSession(
@@ -459,6 +476,7 @@ export default function App() {
   const rematch = useCallback(() => {
     dispatch({ type: 'REMATCH_CLEAR' }); // accepting clears any incoming offer
     if (sessionRef.current?.rematch()) {
+      freeSearchRef.current = false;
       dispatch({ type: 'START_MATCHMAKING', botMode: false });
     } else {
       void startMatch(state.stakeCents);
@@ -581,6 +599,7 @@ export default function App() {
             sessionRef.current = null;
             dispatch({ type: 'GO_LOBBY' });
           }}
+          onPlayBot={freeSearchRef.current ? playBotNow : undefined}
         />
       )}
       {state.screen === 'game' && state.practice4 && (
