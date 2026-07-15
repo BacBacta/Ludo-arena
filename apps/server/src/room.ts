@@ -44,6 +44,8 @@ export interface RoomResult {
   freeroll: boolean;
 }
 
+const DIE_SETTLE_MS = 900; // hold a forced move until the die stops tumbling (~700ms)
+
 export class Room {
   readonly gameId: string;
   readonly stakeCents: StakeCents;
@@ -204,8 +206,19 @@ export class Room {
 
     if (this.state.phase === 'awaiting-move') {
       if (this.state.legal.length === 1) {
-        // only one possible move: play it immediately (fluidity)
-        this.applyAndBroadcast(seat, this.state.legal[0]!);
+        // Only one possible move: the server plays it — but not before the die has
+        // SETTLED. Broadcasting the move in the same tick as the roll (which is
+        // what "play it immediately for fluidity" did) sent both frames together,
+        // so the pawn walked while the die was still mid-tumble and the player
+        // never saw the number that moved them. Reuses `clock` so suspend() and
+        // finish() cancel it like any other timer, and re-checks `over` on fire —
+        // same shape as room4, which has always paced this correctly.
+        const only = this.state.legal[0]!;
+        this.clearClock();
+        this.clock = setTimeout(() => {
+          if (this.over) return;
+          this.applyAndBroadcast(seat, only);
+        }, DIE_SETTLE_MS);
       } else {
         // MULTIPLE choices: the roller must pick a token, so the client NEEDS the
         // post-roll state (phase=awaiting-move + legal list). Without this the
