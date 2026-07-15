@@ -15,6 +15,15 @@ suites can't touch.
   sessions on one host (one IP) must be REFUSED for staked play (anti
   chip-dumping). This is why the money path is proven at the contract level —
   a single-host bench can't pair two staked players through matchmaking.
+- **`settle-queue.ts`** (run with `npx tsx`) — the SERVER's `game.settled`
+  emission (audit risk 1). Wires the real `SettlementQueue` + `createArbiter` +
+  `MemoryStore` on a real on-chain Active game, asserts `onSettled` fires with a
+  mined txHash and the winner is paid. Proven 5/5. Also confirmed the deployed
+  escrow's Status enum matches the server's (an earlier stale read looked like a
+  mismatch — it was forno lag).
+- **`refund-unfilled.mjs`** — the M9 refund-all safety net (audit risk 2): two of
+  four seats join a `LudoEscrowN` table, the join window lapses, `refundUnfilled()`
+  makes every depositor whole. Proven 7/7. (Includes a real ~120s wait.)
 - **`setup-wallets.mjs`** — funds two throwaway test wallets (gas from the
   deployer key + open-faucet TestUSD mint). Writes keys to the scratchpad ONLY.
 

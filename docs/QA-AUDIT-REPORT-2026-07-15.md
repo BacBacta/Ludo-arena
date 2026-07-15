@@ -104,19 +104,39 @@ que le serveur (`settlementDigest(chainid, escrow, gameId, winner)`). Sonde
 | Conservation : retour 0,455 + rake 0,045 = pot 0,50 | ✅ |
 
 Notes : (1) le contrôle anti-collusion « même réseau » du serveur est **vérifié
-actif** — il a refusé d'apparier deux sockets de même IP, ce qui a imposé de
-tester le règlement au niveau contrat plutôt qu'à travers l'appariement ;
-(2) l'enum `Status` du bytecode déployé est décalé d'un cran vs la source
-actuelle — sans impact (les oracles portent sur les soldes réels, pas l'enum) ;
-(3) le serveur en mode durable (Redis+Postgres) émet bien `settlement enabled`.
-Restent non exercés à travers le serveur : l'émission de `game.settled` (le
-règlement passe par l'appariement, bloqué en local par l'anti-collusion) et le
-refund-all M9.
+actif** — il a refusé d'apparier deux sockets de même IP (`wire-staked.mjs`) ;
+(2) le serveur en mode durable (Redis+Postgres) émet bien `settlement enabled`.
+
+### 4c. Émission serveur de `game.settled` (risque 1 — COUVERT)
+`e2e/staked/settle-queue.ts` câble le **vrai** `SettlementQueue` + `createArbiter`
++ `MemoryStore` du serveur (via tsx), exactement comme `index.ts` dans `onResult`,
+sur une partie `Active` réelle on-chain — sans appariement, donc l'anti-collusion
+n'intervient pas. **5/5** : le vrai arbitre soumet `settle()`, la file émet
+`game.settled` (callback `onSettled`) avec un txHash **réellement miné**, et le
+gagnant est payé **+0,205** par le chemin serveur.
+
+**Résolution d'un doute soulevé pendant l'audit** : une lecture précédente
+donnait le statut on-chain à `1` (semblait `Active=1` vs `GameStatus.Active=2`
+du serveur → risque de mauvaise classification → refund au lieu de payer). Le
+test attend un statut `Active` **stable** avant d'enfiler : il a lu `status=2`.
+C'était donc du **retard de lecture forno** (état après un seul join), **pas**
+un décalage d'enum. L'enum déployé correspond à la source ; **pas de bug**.
+
+### 4d. Refund-all du 4p staké (risque 2 — COUVERT au niveau contrat)
+`e2e/staked/refund-unfilled.mjs` : deux sièges sur quatre rejoignent une table
+`LudoEscrowN`, la fenêtre de join expire (120 s), et `refundUnfilled()`
+(permissionless) **rembourse chaque déposant intégralement**. **7/7**, net zéro
+des deux côtés, escrowN revenu à sa base. C'est l'invariant de sécurité des
+fonds du mode : personne ne reste bloqué si la table ne se remplit pas.
+L'orchestration serveur (`SettlementQueue4`) est déjà unit-testée ; le reste
+(dégriller M9 en prod) est une **décision de lancement**, pas un trou de test.
 
 ## 5. Hors périmètre / risques acceptés
-- Happy-path staké on-chain (M3/M6) : **vérifié au niveau contrat** (voir §4b) ;
-  le chemin serveur→`game.settled` reste non joué (l'anti-collusion même-IP
-  empêche l'appariement local — le contrôle lui-même est vérifié actif).
+- Happy-path staké on-chain (M3/M6) : **vérifié au niveau contrat** (§4b) **et
+  au niveau serveur** — l'émission de `game.settled` par la vraie file passe
+  bout-en-bout (§4c). L'anti-collusion même-IP est vérifié actif.
+- Refund-all M9 : **vérifié au niveau contrat** (§4d) ; le dégrillage serveur du
+  mode reste une décision de lancement.
 - Refund-all M9 à l'expiration du fill : inaccessible tant que M9 est grillé.
 - Multi-onglets : `sessionToken` vit en `sessionStorage` (par onglet) — deux
   onglets = deux sessions indépendantes ; le vol de session exigerait le token
