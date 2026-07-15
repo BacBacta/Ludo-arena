@@ -41,10 +41,10 @@ contract AdversarialNTest is Test {
         return abi.encodePacked(r, s, v);
     }
 
-    /// FINDING probe: one blacklisted seat DoSes the refund of ALL four seats.
-    /// `_refundAll` transfers to every depositor in a loop and reverts on the first
-    /// failure — so a single seat the token refuses to pay locks EVERYONE's stake.
-    function testRefundAll_OneBadSeatLocksEveryone() public {
+    /// C3 FIXED: one blacklisted seat must NOT block the refund of the others.
+    /// `_refundAll` now pays each seat via pay-or-credit — a transfer the token
+    /// refuses is credited for withdrawal instead of reverting the whole call.
+    function testRefundAll_OneBadSeatDoesNotBlockOthers() public {
         BlacklistToken tok = new BlacklistToken();
         vm.prank(treasury); esc.setTokenAllowed(address(tok), true);
         for (uint256 i = 0; i < 4; i++) {
@@ -55,16 +55,60 @@ contract AdversarialNTest is Test {
         for (uint256 i = 0; i < 4; i++) {
             vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4);
         }
-        // arbiter voids the game → should refund all four
         tok.setBlocked(players[2]); // seat #3 becomes unpayable (blacklist / griefing)
+
         vm.prank(arbiter);
-        // C3 STILL OPEN (needs claim-per-seat, deferred): the blacklisted transfer now
-        // reverts through SafeERC20 as TransferFailed — but the DoS is unchanged.
-        vm.expectRevert(LudoEscrowN.TransferFailed.selector);
-        esc.voidGame(gameId); // whole refund reverts → ALL 4 stakes stuck in the escrow
-        // confirm the funds are still trapped (nobody got refunded)
-        assertEq(tok.balanceOf(address(esc)), 4e18);
-        for (uint256 i = 0; i < 4; i++) assertEq(tok.balanceOf(players[i]), 9e18);
+        esc.voidGame(gameId); // MUST NOT revert — the other three are refunded now
+
+        // the three payable seats got their stake back immediately (push)
+        assertEq(tok.balanceOf(players[0]), 10e18);
+        assertEq(tok.balanceOf(players[1]), 10e18);
+        assertEq(tok.balanceOf(players[3]), 10e18);
+        // the blacklisted seat was NOT paid, but is CREDITED; its stake stays escrowed
+        assertEq(tok.balanceOf(players[2]), 9e18);
+        assertEq(esc.withdrawable(address(tok), players[2]), 1e18);
+        assertEq(tok.balanceOf(address(esc)), 1e18);
+
+        // once the recipient can receive again, it pulls its own credit
+        tok.setBlocked(address(0));
+        vm.prank(players[2]); esc.withdraw(address(tok));
+        assertEq(tok.balanceOf(players[2]), 10e18);
+        assertEq(esc.withdrawable(address(tok), players[2]), 0);
+        assertEq(tok.balanceOf(address(esc)), 0);
+    }
+
+    /// A blacklisted WINNER can't block settlement either — the payout is credited
+    /// and withdrawn later; the rake still reaches the treasury.
+    function testSettle_BlacklistedWinnerIsCredited() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(treasury); esc.setTokenAllowed(address(tok), true);
+        for (uint256 i = 0; i < 4; i++) {
+            tok.mint(players[i], 10e18);
+            vm.prank(players[i]); tok.approve(address(esc), type(uint256).max);
+            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4);
+        }
+        tok.setBlocked(players[0]); // the winner is unpayable at settle time
+        esc.settle(gameId, players[0], _sign(gameId, players[0]));
+
+        uint256 pot = 4e18;
+        uint256 rake = (pot * 900) / 10_000;
+        uint256 payout = pot - rake;
+        assertEq(esc.withdrawable(address(tok), players[0]), payout); // credited, not lost
+        assertEq(tok.balanceOf(treasury), rake); // rake still delivered
+        assertEq(tok.balanceOf(address(esc)), payout); // only the winner's payout stays
+
+        tok.setBlocked(address(0));
+        vm.prank(players[0]); esc.withdraw(address(tok));
+        assertEq(tok.balanceOf(players[0]), 9e18 + payout);
+        assertEq(tok.balanceOf(address(esc)), 0);
+    }
+
+    /// withdraw() with nothing owed reverts cleanly (no silent no-op).
+    function testWithdrawNothingReverts() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(players[0]);
+        vm.expectRevert(LudoEscrowN.NothingToWithdraw.selector);
+        esc.withdraw(address(tok));
     }
 
     /// Sanity: normal 4-player winner-take-all pays pot - rake to the single winner.
