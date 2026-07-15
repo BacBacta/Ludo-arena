@@ -1288,21 +1288,25 @@ small.muted { font-size: 12px; }
    are measured at launch (see GiftFlight), passed in as CSS vars. */
 .giftflight-layer { position: absolute; inset: 0; pointer-events: none; z-index: 30; overflow: visible; }
 .giftflight {
-  position: absolute; left: 0; top: 0; font-size: 34px; will-change: transform, opacity;
+  position: absolute; left: 0; top: 0; font-size: 38px; will-change: transform, opacity;
   filter: drop-shadow(0 4px 8px rgba(8, 16, 44, 0.5));
-  animation: giftFly 1.15s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: giftFly 2.6s cubic-bezier(0.45, 0, 0.25, 1) forwards;
 }
+/* Timed so the gift is clearly readable: a pop at the sender, a slow arc, then a
+   long HOLD on the recipient before it fades (travel ~10%→60%, hold 60%→90%). */
 @keyframes giftFly {
   0%   { opacity: 0; transform: translate(var(--fx), var(--fy)) translate(-50%, -50%) scale(0.4); }
-  14%  { opacity: 1; transform: translate(var(--fx), var(--fy)) translate(-50%, -50%) scale(1.35); }
-  50%  { opacity: 1; transform: translate(calc((var(--fx) + var(--tx)) / 2), calc((var(--fy) + var(--ty)) / 2 - 46px)) translate(-50%, -50%) scale(1.1) rotate(-8deg); }
-  86%  { opacity: 1; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(1.05); }
-  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(0.85); }
+  7%   { opacity: 1; transform: translate(var(--fx), var(--fy)) translate(-50%, -50%) scale(1.4); }
+  16%  { opacity: 1; transform: translate(var(--fx), var(--fy)) translate(-50%, -50%) scale(1.05); }
+  38%  { opacity: 1; transform: translate(calc((var(--fx) + var(--tx)) / 2), calc((var(--fy) + var(--ty)) / 2 - 52px)) translate(-50%, -50%) scale(1.12) rotate(-8deg); }
+  60%  { opacity: 1; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(1.25); }
+  90%  { opacity: 1; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(1.05); }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(0.9); }
 }
 @media (prefers-reduced-motion: reduce) {
   /* No arc: land on the recipient and fade, so the gift still registers. */
-  .giftflight { animation: giftLand 0.6s ease-out forwards; }
-  @keyframes giftLand { 0% { opacity: 0; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%); } }
+  .giftflight { animation: giftLand 1.8s ease-out forwards; }
+  @keyframes giftLand { 0% { opacity: 0; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(0.9); } 12% { opacity: 1; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(1.15); } 82% { opacity: 1; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(var(--tx), var(--ty)) translate(-50%, -50%) scale(0.9); } }
   .giftbar__sheet { animation: none; }
 }
 .hash {
