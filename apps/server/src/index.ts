@@ -294,7 +294,6 @@ const NAMES = [
   'Yaw', 'Adwoa', 'Kojo', 'Abena', 'Moussa', 'Aminata', 'Ibrahim', 'Khadija',
   'Tendai', 'Chipo', 'Farai', 'Rudo', 'Juma', 'Zuri', 'Baraka', 'Imani',
 ];
-const FLAGS = ['🇨🇲', '🇳🇬', '🇰🇪', '🇬🇭', '🇸🇳', '🇨🇮', '🇿🇦', '🇹🇿'];
 
 /** Deterministic 32-bit hash (FNV-1a) — stable across processes, unlike random. */
 function stableHash(s: string): number {
@@ -306,31 +305,22 @@ function stableHash(s: string): number {
   return h >>> 0;
 }
 
-/** ISO-3166 alpha-2 → flag emoji (regional indicators); 🌍 for anything else. */
-function countryFlag(iso: string): string {
-  const cc = iso.trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(cc)) return '🌍';
-  return String.fromCodePoint(...[...cc].map((c) => 127397 + c.charCodeAt(0)));
-}
+/** Neutral identity mark. A country flag is NEVER inferred — see deriveIdentity. */
+const GLOBE = '🌍';
 
-/** Stable identity: a player's display name + flag are DERIVED (not random) from
- *  their identity key, so a wallet-linked player is the same Kwame 🇨🇲 every
- *  session — the prerequisite for profiles, friends and leaderboards. The flag
- *  reflects the real country when the edge provides it. */
-function deriveIdentity(idKey: string, country: string | undefined): { name: string; flag: string } {
+/** Stable identity: a player's display NAME is derived (not random) from their
+ *  identity key, so a wallet-linked player is the same Kwame every session — the
+ *  prerequisite for profiles, friends and leaderboards.
+ *
+ *  The flag is deliberately NOT derived. A flag is a claim about who you are, so
+ *  it appears only when the player picks one in their profile (customFlag);
+ *  everyone else shows the neutral globe. Inferring it was wrong twice over: it
+ *  put a country on players who never chose one, and hashing name+flag from the
+ *  same value made them perfectly correlated (Amara was always 🇳🇬), leaving only
+ *  NAMES.length distinct guest identities — players met their own double. */
+function deriveIdentity(idKey: string): { name: string; flag: string } {
   const h = stableHash(idKey);
-  // Name and flag must come from INDEPENDENT bits of the hash. Deriving both from
-  // `h % len` made them perfectly correlated (Amara was always 🇳🇬), collapsing the
-  // identity space to NAMES.length — every Amara was an identical 🇳🇬 Amara.
-  // Re-hashing a SUFFIXED key does not fix it: FNV-1a streams, so H(k+"#flag")
-  // mod 8 is fully determined by H(k) mod 8 (mod a power of two, the multiply
-  // only carries low bits upward). Taking a HIGH slice of the same hash is
-  // genuinely independent of the low bits — measured 256/256 identities vs 32.
-  const hf = h >>> 16;
-  return {
-    name: NAMES[h % NAMES.length] ?? 'Player',
-    flag: country ? countryFlag(country) : (FLAGS[hf % FLAGS.length] ?? '🌍'),
-  };
+  return { name: NAMES[h % NAMES.length] ?? 'Player', flag: GLOBE };
 }
 
 /** Basic substring blocklist for the custom-name filter. Not exhaustive — a
@@ -755,7 +745,7 @@ wss.on('connection', (ws, req) => {
       // Identity is DERIVED from the stable key (same name/flag every session) —
       // UNLESS the player edited their profile: a sanitized custom name and/or a
       // valid custom flag override the derived default and are persisted.
-      const derived = deriveIdentity(idKey, country);
+      const derived = deriveIdentity(idKey);
       const customName = sanitizeName(msg.name);
       const customFlag = msg.flag; // parse validated it is a flag emoji (or undefined)
       // Wallet-linked players keep their ELO + custom identity across sessions.
@@ -1495,24 +1485,6 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
   // than re-queueing publicly (both seats share the origin).
   a.lastGamePrivate = fromTable;
   b.lastGamePrivate = fromTable;
-  // Two GUESTS can still draw the same derived identity (~0.4% of games). Both
-  // boards would then show an identical name+flag on either side and nobody could
-  // tell who is who, so re-flag one of them. Only a guest is ever re-flagged —
-  // a wallet player's flag is their own chosen identity and stays untouched.
-  if (a.name.toLowerCase() === b.name.toLowerCase() && a.flag === b.flag) {
-    const victim = !b.wallet ? b : !a.wallet ? a : null; // both wallet-backed → leave their real identities alone
-    if (victim) {
-      const other = victim === b ? a : b;
-      const hv = stableHash(`${victim.id}#flag-dedupe`);
-      for (let k = 0; k < FLAGS.length; k++) {
-        const cand = FLAGS[(hv + k) % FLAGS.length]!;
-        if (cand !== other.flag) {
-          victim.flag = cand;
-          break;
-        }
-      }
-    }
-  }
   // Anti-grinding (audit HIGH-1): STAKED games REQUIRE the commit-reveal flow —
   // both clients must have sent an entropy COMMIT in hello so the server binds its
   // seed without ever seeing raw entropy first. A client that omits it (stale
@@ -1728,18 +1700,35 @@ function pickBot4(taken: ReadonlySet<string>, seat: number): { name: string; fla
   return { name: `${base.name} ${seat + 1}`, flag: base.flag };
 }
 
+/** `base`, or "base 2"/"base 3"… if the table already shows that name. Nobody
+ *  picks their own display name here — a guest's is drawn from a 32-name pool, so
+ *  two players at one table hit the same one often (~18% with four humans). Since
+ *  a quadrant label is JUST the name (no flag by design), two identical labels
+ *  are unreadable. Display only: the durable player row keeps the real name. */
+function uniqueAtTable(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; n <= TABLE4.seats; n++) {
+    const cand = `${base} ${n}`;
+    if (!taken.has(cand.toLowerCase())) return cand;
+  }
+  return base;
+}
+
 function startRoom4(humans: Session[]): void {
   const gameId = randomBytes(16).toString('hex');
   const seats: Seat4[] = [];
   const seatSeeds: string[] = [];
-  // Names already at the table. A bot must never borrow a seated human's name:
-  // BOT4_NAMES overlaps the guest pool (both hold "Amara" 🇳🇬), so a table could
-  // show two identical players and nobody could tell which one was the bot.
-  const taken = new Set(humans.filter(Boolean).map((h) => h.name.toLowerCase()));
+  // No two seats may show the same label. Every 4p label comes from THIS payload
+  // (including each player's own), so disambiguating here is consistent on every
+  // screen. Bots must not borrow a human's name either — BOT4_NAMES overlaps the
+  // guest pool (both hold "Amara"), which put a human and a bot under one name.
+  const taken = new Set<string>();
   for (let i = 0; i < TABLE4.seats; i++) {
     const h = humans[i];
     if (h) {
-      seats.push({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
+      const name = uniqueAtTable(h.name, taken);
+      taken.add(name.toLowerCase());
+      seats.push({ client: h, bot: false, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
       const bot = pickBot4(taken, i);

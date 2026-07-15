@@ -17,11 +17,13 @@ import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { t } from '../lib/i18n';
 
+// Practice bots show the neutral globe: a flag only ever means "this player
+// chose it in their profile" (and flagged bots would mark out the bot seats).
 const PLAYERS = [
   { name: 'YOU', flag: '🌍' },
-  { name: 'Ana', flag: '🇭🇷' },
+  { name: 'Ana', flag: '🌍' },
   { name: 'Young', flag: '🌍' },
-  { name: 'Dragan', flag: '🇷🇸' },
+  { name: 'Dragan', flag: '🌍' },
 ];
 
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);

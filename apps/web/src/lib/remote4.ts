@@ -159,7 +159,7 @@ export class Remote4 {
         }
         // Guests: pin the first server-assigned name so it stays the same in
         // every later game/mode (the server derives a NEW one per connection).
-        adoptServerIdentity(msg.name, msg.flag);
+        adoptServerIdentity(msg.name);
         // Wallet ownership proof (SIWE) for a staked table: sign the server's nonce.
         if (msg.walletNonce && this.stakeCents > 0 && this.auth?.signMessage) {
           void this.auth

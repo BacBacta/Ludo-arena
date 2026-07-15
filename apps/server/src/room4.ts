@@ -290,11 +290,15 @@ export class Room4 {
 }
 
 /** Bot names/flags for filling empty 4-player seats. */
+/** Bots show the neutral globe like every other unclaimed identity. Giving them
+ *  fixed country flags while human guests show 🌍 would mark out exactly which
+ *  seats are bots. A flag only ever means "this player chose it in their
+ *  profile". */
 export const BOT4_NAMES: ReadonlyArray<{ name: string; flag: string }> = [
-  { name: 'Ana', flag: '🇭🇷' },
+  { name: 'Ana', flag: '🌍' },
   { name: 'Young', flag: '🌍' },
-  { name: 'Dragan', flag: '🇷🇸' },
-  { name: 'Amara', flag: '🇳🇬' },
+  { name: 'Dragan', flag: '🌍' },
+  { name: 'Amara', flag: '🌍' },
 ];
 
 // nextSeat4 is re-exported for callers that want to reason about rotation.

@@ -63,20 +63,23 @@ export function saveCustomIdentity(name: string | undefined, flag: string | unde
 }
 
 /**
- * Pin the FIRST server-assigned identity so it never changes again. A guest who
- * never edits their profile sends no name in `hello`, and the server derives one
- * from the per-connection session id — a NEW random name every connection. Their
+ * Pin the FIRST server-assigned NAME so it never changes again. A guest who never
+ * edits their profile sends no name in `hello`, and the server derives one from
+ * the per-connection session id — a NEW random name every connection. Their
  * friends saw "Kofi" one game and "Thabo" the next while their own screen said
  * something else entirely ("the names differ from one screen to another").
  * Persisting the first assignment makes every later `hello` carry it, and the
  * server honors a client-sent name — one stable name everywhere. A profile edit
  * still overwrites it via saveCustomIdentity.
+ *
+ * The FLAG is deliberately never pinned here: a flag is a claim about who you
+ * are, so it is only ever set by the player choosing one in their profile.
+ * Guests keep the neutral globe.
  */
-export function adoptServerIdentity(name: string | undefined, flag: string | undefined): void {
+export function adoptServerIdentity(name: string | undefined): void {
   try {
     if (!name || localStorage.getItem(NAME_KEY)) return;
     localStorage.setItem(NAME_KEY, name);
-    if (flag && !localStorage.getItem(FLAG_KEY)) localStorage.setItem(FLAG_KEY, flag);
   } catch {
     /* storage unavailable */
   }

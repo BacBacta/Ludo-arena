@@ -140,7 +140,7 @@ export class LocalBotSession implements GameSession {
       ev.onMatchFound({
         gameId: `local-${Date.now()}`,
         seat: 0,
-        opponent: { name: 'Kwame', elo: 1255, flag: '🇨🇲' },
+        opponent: { name: 'Kwame', elo: 1255, flag: '🌍' }, // bots show the globe: a flag means "chosen in a profile"
         stakeCents,
         potCents: pot,
         fairnessCommit: 'local-bot (client randomness, unstaked)',
@@ -750,7 +750,7 @@ export class RemoteSession implements GameSession {
         // Guests: pin the FIRST server-assigned identity (no-op once any name is
         // saved). Without this the server derives a NEW name per connection, so
         // friends saw a different name for the same player in every game.
-        adoptServerIdentity(msg.name, msg.flag);
+        adoptServerIdentity(msg.name);
         // Only apply the FULL profile from a WALLET-backed session — a wallet-less
         // freeroll/free-table connection carries a throwaway anon identity + 0/0
         // that must not clobber the returning wallet player's cached profile.
