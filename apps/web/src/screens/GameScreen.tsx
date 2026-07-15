@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BLITZ } from '@ludo/game-engine';
+import { BLITZ, type Seat } from '@ludo/game-engine';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { Board } from '../components/Board';
 import { DieFace } from '../components/Die';
@@ -120,6 +120,7 @@ export function GameScreen({
   const skin = skinById(diceSkin);
 
   const mySeat = match?.seat ?? 0;
+  const oppSeat = (1 - mySeat) as Seat;
 
   // Keep each side's dice separate so an opponent roll never animates my die.
   const myRollIndex = lastDice && lastDice.seat === mySeat ? lastDice.index : 0;
@@ -174,11 +175,19 @@ export function GameScreen({
           <div className="cornerstack">
             <EmoteFloat seat={1 - mySeat} />
             <GiftFloat seat={1 - mySeat} />
-            {!myTurn && (
-              <div className="huddie" aria-label={`${match.opponent.name} die`}>
-                <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKIN} />
-              </div>
-            )}
+            {/* ALWAYS mounted. Die3D animates via a CSS transition, and a freshly
+                mounted element cannot transition — gating this on `!myTurn` meant
+                the opponent's die mounted at the very moment their roll landed
+                (server-driven, no human delay), so the tumble never played and the
+                value just popped in. Our own die dodged it only because it mounts
+                at turn start and waits for a human tap. Hidden via CSS instead. */}
+            <div
+              className={`huddie${myTurn ? ' huddie--idle' : ''}`}
+              aria-label={`${match.opponent.name} die`}
+              aria-hidden={myTurn}
+            >
+              <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKIN} />
+            </div>
             <button
               className="avtap"
               aria-label={`${match.opponent.name} profile`}
@@ -201,9 +210,14 @@ export function GameScreen({
           game={game}
           mySeat={mySeat}
           onTokenTap={onMove}
+          // Name banners follow the REAL seats. The board never rotates (seat 0 is
+          // always bottom-left/blue, seat 1 top-right/green), and the joining
+          // player is seat 1 — so hardcoding "me" to seat 0 mislabelled every
+          // seat-1 player's board: their own tokens carried the opponent's name
+          // and they tapped the opponent's tokens, which did nothing ("frozen die").
           banners={[
-            { seat: 0, name: (profile.name || t('you')).toUpperCase(), flag: profile.flag || '🌍', active: myTurn },
-            { seat: 1, name: match.opponent.name, flag: match.opponent.flag, active: !myTurn },
+            { seat: mySeat, name: (profile.name || t('you')).toUpperCase(), flag: profile.flag || '🌍', active: myTurn },
+            { seat: oppSeat, name: match.opponent.name, flag: match.opponent.flag, active: !myTurn },
           ]}
         />
 

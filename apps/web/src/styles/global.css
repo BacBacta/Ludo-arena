@@ -948,6 +948,15 @@ small.muted { font-size: 12px; }
 .dicebtn:disabled { cursor: default; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 6px 14px rgba(23, 43, 99, 0.3); }
 
 /* compact opponent die tucked beside their name chip in the HUD */
+/* Kept MOUNTED even on my turn (a fresh mount can't run the tumble transition);
+   collapsed out of the corner stack instead of unmounted. */
+.huddie--idle {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  left: -9999px;
+}
+
 .huddie {
   flex: 0 0 auto;
   width: 44px;
