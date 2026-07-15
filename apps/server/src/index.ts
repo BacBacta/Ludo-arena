@@ -284,7 +284,16 @@ if (arbiter && BLOCKED_COUNTRIES.size === 0) {
 }
 else console.warn('[ludo-server] settlement disabled (no ARBITER_PRIVATE_KEY)');
 
-const NAMES = ['Kwame', 'Amara', 'Thabo', 'Zainab', 'Kofi', 'Nia', 'Sekou', 'Fatou'];
+/** Guest display-name pool. Kept LARGE on purpose: the name and flag together are
+ *  a guest's whole identity, so a small pool means players meet their own double.
+ *  With 8 names (the original pool) 12.5% of 1v1s and ~59% of 4-player tables had
+ *  two identical players — indistinguishable on screen. */
+const NAMES = [
+  'Kwame', 'Amara', 'Thabo', 'Zainab', 'Kofi', 'Nia', 'Sekou', 'Fatou',
+  'Chidi', 'Ngozi', 'Tunde', 'Aisha', 'Mandla', 'Lerato', 'Sipho', 'Naledi',
+  'Yaw', 'Adwoa', 'Kojo', 'Abena', 'Moussa', 'Aminata', 'Ibrahim', 'Khadija',
+  'Tendai', 'Chipo', 'Farai', 'Rudo', 'Juma', 'Zuri', 'Baraka', 'Imani',
+];
 const FLAGS = ['🇨🇲', '🇳🇬', '🇰🇪', '🇬🇭', '🇸🇳', '🇨🇮', '🇿🇦', '🇹🇿'];
 
 /** Deterministic 32-bit hash (FNV-1a) — stable across processes, unlike random. */
@@ -310,9 +319,17 @@ function countryFlag(iso: string): string {
  *  reflects the real country when the edge provides it. */
 function deriveIdentity(idKey: string, country: string | undefined): { name: string; flag: string } {
   const h = stableHash(idKey);
+  // Name and flag must come from INDEPENDENT bits of the hash. Deriving both from
+  // `h % len` made them perfectly correlated (Amara was always 🇳🇬), collapsing the
+  // identity space to NAMES.length — every Amara was an identical 🇳🇬 Amara.
+  // Re-hashing a SUFFIXED key does not fix it: FNV-1a streams, so H(k+"#flag")
+  // mod 8 is fully determined by H(k) mod 8 (mod a power of two, the multiply
+  // only carries low bits upward). Taking a HIGH slice of the same hash is
+  // genuinely independent of the low bits — measured 256/256 identities vs 32.
+  const hf = h >>> 16;
   return {
     name: NAMES[h % NAMES.length] ?? 'Player',
-    flag: country ? countryFlag(country) : (FLAGS[h % FLAGS.length] ?? '🌍'),
+    flag: country ? countryFlag(country) : (FLAGS[hf % FLAGS.length] ?? '🌍'),
   };
 }
 
@@ -1478,6 +1495,24 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
   // than re-queueing publicly (both seats share the origin).
   a.lastGamePrivate = fromTable;
   b.lastGamePrivate = fromTable;
+  // Two GUESTS can still draw the same derived identity (~0.4% of games). Both
+  // boards would then show an identical name+flag on either side and nobody could
+  // tell who is who, so re-flag one of them. Only a guest is ever re-flagged —
+  // a wallet player's flag is their own chosen identity and stays untouched.
+  if (a.name.toLowerCase() === b.name.toLowerCase() && a.flag === b.flag) {
+    const victim = !b.wallet ? b : !a.wallet ? a : null; // both wallet-backed → leave their real identities alone
+    if (victim) {
+      const other = victim === b ? a : b;
+      const hv = stableHash(`${victim.id}#flag-dedupe`);
+      for (let k = 0; k < FLAGS.length; k++) {
+        const cand = FLAGS[(hv + k) % FLAGS.length]!;
+        if (cand !== other.flag) {
+          victim.flag = cand;
+          break;
+        }
+      }
+    }
+  }
   // Anti-grinding (audit HIGH-1): STAKED games REQUIRE the commit-reveal flow —
   // both clients must have sent an entropy COMMIT in hello so the server binds its
   // seed without ever seeing raw entropy first. A client that omits it (stale
@@ -1681,17 +1716,34 @@ function recordRoom4Stats(humans: Session[], winnerSeat: number, seats: Seat4[])
   });
 }
 
+/** First bot identity (from `seat`'s slot onward) whose name is still free at the
+ *  table, so no two seats ever share a name. Falls back to a numbered suffix in
+ *  the impossible case that every bot name is taken. */
+function pickBot4(taken: ReadonlySet<string>, seat: number): { name: string; flag: string } {
+  for (let k = 0; k < BOT4_NAMES.length; k++) {
+    const cand = BOT4_NAMES[(seat + k) % BOT4_NAMES.length]!;
+    if (!taken.has(cand.name.toLowerCase())) return cand;
+  }
+  const base = BOT4_NAMES[seat % BOT4_NAMES.length]!;
+  return { name: `${base.name} ${seat + 1}`, flag: base.flag };
+}
+
 function startRoom4(humans: Session[]): void {
   const gameId = randomBytes(16).toString('hex');
   const seats: Seat4[] = [];
   const seatSeeds: string[] = [];
+  // Names already at the table. A bot must never borrow a seated human's name:
+  // BOT4_NAMES overlaps the guest pool (both hold "Amara" 🇳🇬), so a table could
+  // show two identical players and nobody could tell which one was the bot.
+  const taken = new Set(humans.filter(Boolean).map((h) => h.name.toLowerCase()));
   for (let i = 0; i < TABLE4.seats; i++) {
     const h = humans[i];
     if (h) {
       seats.push({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
-      const bot = BOT4_NAMES[i % BOT4_NAMES.length]!;
+      const bot = pickBot4(taken, i);
+      taken.add(bot.name.toLowerCase());
       seats.push({ client: null, bot: true, name: bot.name, flag: bot.flag });
       seatSeeds.push(randomSeatSeed());
     }
