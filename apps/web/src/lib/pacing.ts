@@ -16,6 +16,14 @@ export const BOT_ROLL_MS = 420;
 /** Time the rolled die stays visible before a move/turn passes. MUST exceed the
  *  die's ~0.7s tumble so the RESULT is read as settled, not cut off mid-spin. */
 export const DIE_SETTLE_MS = 1000;
+/** The Die3D somersault (matches its CSS transition). */
+export const DIE_TUMBLE_MS = 700;
+/** How long a die stays on screen after its roll, even once the turn has moved
+ *  on. ONLINE play is server-paced: the roll, the auto-move and the turn change
+ *  arrive in one burst, so a die shown only on its owner's turn is pulled the
+ *  instant it starts spinning (measured: the opponent's was visible for 0-32ms).
+ *  Tumble + a settled beat, so the number is actually readable. */
+export const DIE_HOLD_MS = DIE_TUMBLE_MS + DIE_SETTLE_MS;
 /** Bot "thinking" before it commits its move (after its roll settles). */
 export const BOT_MOVE_MS = DIE_SETTLE_MS;
 /** Pause before an only-legal move auto-plays, so the roll is read first. */

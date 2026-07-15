@@ -7,6 +7,7 @@ import { Die3D } from '../components/Die3D';
 import { Die } from '../components/DiePremium';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFloat } from '../components/Emote';
+import { DIE_HOLD_MS } from '../lib/pacing';
 import { skinById, type DiceSkin } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
@@ -142,18 +143,34 @@ export function GameScreen({
     else setOppVal(lastDice.value);
   }, [lastDice, mySeat]);
 
-  // Grace window that keeps my die button mounted while its tumble plays. A
-  // no-legal-move roll or a single-choice auto-move passes the turn the instant
-  // the roll lands, and unmounting the button right then cut the animation —
-  // the player tapped, their die vanished, and the only tumble they ever saw
-  // was the opponent's at the top ("my roll spins at the top").
+  // A die is normally shown only on its owner's turn, but the server sends the
+  // roll, the auto-move and the turn change in ONE burst — so the turn has often
+  // already flipped by the time the tumble starts, and whoever's die it is loses
+  // it instantly. Both sides therefore get a grace window that outlives the turn:
+  // long enough for the DIE_TUMBLE_MS somersault plus a beat to actually read the
+  // number. Without it the opponent's die was measured visible for 0-32ms.
+  // Each hold is cut short the moment the OTHER side rolls (their roll zeroes this
+  // side's index), so a stale die never lingers over a fresh one.
   const [myRolling, setMyRolling] = useState(false);
   useEffect(() => {
-    if (myRollIndex === 0) return;
+    if (myRollIndex === 0) {
+      setMyRolling(false);
+      return;
+    }
     setMyRolling(true);
-    const id = setTimeout(() => setMyRolling(false), 800);
+    const id = setTimeout(() => setMyRolling(false), DIE_HOLD_MS);
     return () => clearTimeout(id);
   }, [myRollIndex]);
+  const [oppShowing, setOppShowing] = useState(false);
+  useEffect(() => {
+    if (oppRollIndex === 0) {
+      setOppShowing(false);
+      return;
+    }
+    setOppShowing(true);
+    const id = setTimeout(() => setOppShowing(false), DIE_HOLD_MS);
+    return () => clearTimeout(id);
+  }, [oppRollIndex]);
 
   if (!game || !match) return null;
 
@@ -205,9 +222,9 @@ export function GameScreen({
                 value just popped in. Our own die dodged it only because it mounts
                 at turn start and waits for a human tap. Hidden via CSS instead. */}
             <div
-              className={`huddie${myTurn ? ' huddie--idle' : ''}`}
+              className={`huddie${myTurn && !oppShowing ? ' huddie--idle' : ''}`}
               aria-label={`${match.opponent.name} die`}
-              aria-hidden={myTurn}
+              aria-hidden={myTurn && !oppShowing}
             >
               <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKINS[oppSeat]} />
             </div>
