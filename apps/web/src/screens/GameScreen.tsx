@@ -6,7 +6,7 @@ import { DieFace } from '../components/Die';
 import { Die3D } from '../components/Die3D';
 import { Die } from '../components/DiePremium';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
-import { EmoteBar, EmoteFloat, GiftBar, GiftFloat } from '../components/Emote';
+import { EmoteBar, EmoteFloat, GiftBar, GiftFlight } from '../components/Emote';
 import { DIE_HOLD_MS } from '../lib/pacing';
 import { skinById, type DiceSkin } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
@@ -207,15 +207,15 @@ export function GameScreen({
     <div className="screen screen--game">
       {reconnecting && <div className="reconnectbar">📡 {t('reconnecting')}</div>}
       <div className="gamewrap">
+        {/* one overlay flies each gift from the sender's tile to the recipient's */}
+        <GiftFlight />
         {/* opponent's corner: avatar top-right (their quadrant side), die beside it */}
         <div className="gamecorner gamecorner--top">
           <div className="pot">
             {match.stakeCents > 0 ? `${t('pot')} ${fmtUsd(match.potCents)}` : t('training')}
           </div>
-          <div className="cornerstack">
+          <div className="cornerstack" data-seat-anchor={1 - mySeat}>
             <EmoteFloat seat={1 - mySeat} />
-            {/* opponent's corner (top): a gift they SEND flies down toward you */}
-            <GiftFloat seat={1 - mySeat} dir="down" />
             {/* ALWAYS mounted. Die3D animates via a CSS transition, and a freshly
                 mounted element cannot transition — gating this on `!myTurn` meant
                 the opponent's die mounted at the very moment their roll landed
@@ -266,10 +266,8 @@ export function GameScreen({
 
         {/* my corner: avatar bottom-left (my quadrant side), my gold die beside it */}
         <div className="gamecorner gamecorner--bottom">
-          <div className="cornerstack">
+          <div className="cornerstack" data-seat-anchor={mySeat}>
             <EmoteFloat seat={mySeat} />
-            {/* my corner (bottom): a gift I SEND flies up toward the opponent */}
-            <GiftFloat seat={mySeat} dir="up" />
             <AvatarCard initial={myLabel.slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} avatar={avatar} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
             {((myTurn && !handoff) || myRolling) && (
               <button

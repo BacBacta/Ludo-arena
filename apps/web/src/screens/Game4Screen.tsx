@@ -8,7 +8,7 @@ import { Board4 } from '../components/Board4';
 import { Die } from '../components/DiePremium';
 import { SeatAvatar, SeatDie } from '../components/Seat4';
 import { skinById } from '../lib/diceSkins';
-import { EmoteBar, EmoteFloat, GiftBar, GiftFloat, type GiftTarget } from '../components/Emote';
+import { EmoteBar, EmoteFloat, GiftBar, GiftFlight, type GiftTarget } from '../components/Emote';
 import { IconMenu } from '../components/icons';
 import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
 import { EMOTES } from '@ludo/shared';
@@ -161,6 +161,8 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
   return (
     <div className="screen screen--game">
       <div className="gamewrap">
+        {/* one overlay flies each gift from the sender's quadrant to the recipient's */}
+        <GiftFlight />
         <div className="gametop">
           <button className="chromebtn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
             <IconMenu />
@@ -179,12 +181,12 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         {/* top corner avatars: Ana (left) / Young (right); die appears beside the active one */}
         <div className="avrow">
           <div className="avrow__side">
-            <span className="emoteanchor"><EmoteFloat seat={1} /><GiftFloat seat={1} /><SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} avatar={seatAvatar(1)} active={activeSeat === 1} /></span>
+            <span className="emoteanchor" data-seat-anchor={1}><EmoteFloat seat={1} /><SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} avatar={seatAvatar(1)} active={activeSeat === 1} /></span>
             {activeSeat === 1 && <SeatDie value={dieValue} rollKey={rollKey} />}
           </div>
           <div className="avrow__side">
             {activeSeat === 2 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <span className="emoteanchor"><EmoteFloat seat={2} /><GiftFloat seat={2} /><SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} avatar={seatAvatar(2)} active={activeSeat === 2} /></span>
+            <span className="emoteanchor" data-seat-anchor={2}><EmoteFloat seat={2} /><SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} avatar={seatAvatar(2)} active={activeSeat === 2} /></span>
           </div>
         </div>
 
@@ -198,7 +200,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         {/* bottom corner avatars: YOU (left) / Dragan (right) */}
         <div className="avrow">
           <div className="avrow__side">
-            <span className="emoteanchor"><EmoteFloat seat={0} /><GiftFloat seat={0} /><SeatAvatar name="YOU" flag={seatFlag(0)} frame={seatFrame(0)} avatar={seatAvatar(0)} active={myTurn} /></span>
+            <span className="emoteanchor" data-seat-anchor={0}><EmoteFloat seat={0} /><SeatAvatar name="YOU" flag={seatFlag(0)} frame={seatFrame(0)} avatar={seatAvatar(0)} active={myTurn} /></span>
             {myTurn && (
               <button
                 className="ludodie ludodie--tap"
@@ -212,7 +214,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           </div>
           <div className="avrow__side">
             {activeSeat === 3 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <span className="emoteanchor"><EmoteFloat seat={3} /><GiftFloat seat={3} /><SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} avatar={seatAvatar(3)} active={activeSeat === 3} /></span>
+            <span className="emoteanchor" data-seat-anchor={3}><EmoteFloat seat={3} /><SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} avatar={seatAvatar(3)} active={activeSeat === 3} /></span>
           </div>
         </div>
       </div>

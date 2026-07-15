@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Board4, seatAtQuad4, shownQuad4 } from '../components/Board4';
 import { Die } from '../components/DiePremium';
 import { SeatAvatar, SeatDie } from '../components/Seat4';
-import { EmoteBar, EmoteFloat, GiftBar, GiftFloat, type GiftTarget } from '../components/Emote';
+import { EmoteBar, EmoteFloat, GiftBar, GiftFlight, type GiftTarget } from '../components/Emote';
 import { IconMenu } from '../components/icons';
 import type { Player4Info } from '@ludo/shared';
 import type { Game4 } from '@ludo/game-engine';
@@ -142,7 +142,7 @@ export function Game4OnlineScreen({
         },
         onEmote: (seat, id) => dispatch({ type: 'EMOTE', seat, id }),
         onGift: (from, to, id) => {
-          dispatch({ type: 'GIFT', from, to, id }); // GiftFloat plays the chime
+          dispatch({ type: 'GIFT', from, to, id }); // GiftFlight plays the chime
           if (to === mySeatRef.current && from !== to) onToast(`${playersRef.current[from]?.name ?? ''} ${t('giftFrom')} ${id}`);
         },
         onOver: (info) => {
@@ -268,9 +268,8 @@ export function Game4OnlineScreen({
     );
 
     const av = (
-      <span className="emoteanchor">
+      <span className="emoteanchor" data-seat-anchor={seat}>
         <EmoteFloat seat={seat} />
-        <GiftFloat seat={seat} />
         {players[seat]?.pid && !players[seat]?.bot ? (
           <button className="avtap" aria-label={`${name} profile`} onClick={() => onViewProfile(players[seat]!.pid!)}>
             <SeatAvatar name={name} flag={flag} frame={frame} avatar={avatar} active={active} />
@@ -292,6 +291,8 @@ export function Game4OnlineScreen({
   return (
     <div className="screen screen--game">
       <div className="gamewrap">
+        {/* one overlay flies each gift from the sender's quadrant to the recipient's */}
+        <GiftFlight />
         <div className="gametop">
           <button className="chromebtn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
             <IconMenu />

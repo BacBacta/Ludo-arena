@@ -2,7 +2,7 @@
  *  pills, and a floating reaction over a player's avatar when they express.
  *  Emojis get a per-emote animation + sound signature; quick-chats render as a
  *  localized speech bubble. Both travel the same throttled game.emote channel. */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EMOTES, GIFTS, QUICK_CHATS, isQuickChat, type QuickChat } from '@ludo/shared';
 import { useAppState } from '../state/store';
 import { playEmote, playGift, playTap } from '../lib/sound';
@@ -169,22 +169,46 @@ export function GiftBar({
   );
 }
 
-/** Floating gift over a seat's avatar. `gifts[seat].n` bumps on each received
- *  gift → re-keying the span replays the drop-in animation; the same bump plays
- *  the gift chime (mine and theirs, like the emote channel). */
-export function GiftFloat({ seat, dir = 'up' }: { seat: number; dir?: 'up' | 'down' }) {
-  const { gifts } = useAppState();
-  const g = gifts[seat];
+/**
+ * A single gift-flight overlay: when a gift is sent, it flies from the SENDER's
+ * tile to the RECIPIENT's, arcing across the board — so it's unmistakable who
+ * sent it and to whom. Mount ONE per game screen inside the positioned wrapper;
+ * it locates the two seats via `[data-seat-anchor="<seat>"]` and animates a
+ * flying emoji between their measured positions (works for 1v1 and 4p alike).
+ */
+export function GiftFlight({ anchor = '.gamewrap' }: { anchor?: string }) {
+  const { giftFlight } = useAppState();
+  const lastN = useRef(0);
+  const [fly, setFly] = useState<{ id: string; n: number; style: React.CSSProperties } | null>(null);
+
   useEffect(() => {
-    if (g) playGift(g.id);
-  }, [g]);
-  if (!g) return null;
-  // `dir` launches the gift TOWARD the recipient: from the top (opponent) corner
-  // it flies down toward you; from your corner it flies up toward them. The gift
-  // is anchored on the SENDER's corner, so this reads as "sent from X to Y".
+    if (!giftFlight || giftFlight.n === lastN.current) return;
+    lastN.current = giftFlight.n;
+    playGift(giftFlight.id);
+    const root = document.querySelector(anchor) as HTMLElement | null;
+    const fromEl = root?.querySelector(`[data-seat-anchor="${giftFlight.from}"]`);
+    const toEl = root?.querySelector(`[data-seat-anchor="${giftFlight.to}"]`);
+    if (!root || !fromEl || !toEl) return; // nothing to fly between (e.g. laid out oddly)
+    const R = root.getBoundingClientRect();
+    const f = fromEl.getBoundingClientRect();
+    const tt = toEl.getBoundingClientRect();
+    const centre = (r: DOMRect, axis: 'x' | 'y') =>
+      axis === 'x' ? r.left + r.width / 2 - R.left : r.top + r.height / 2 - R.top;
+    const style = {
+      ['--fx']: `${centre(f, 'x')}px`,
+      ['--fy']: `${centre(f, 'y')}px`,
+      ['--tx']: `${centre(tt, 'x')}px`,
+      ['--ty']: `${centre(tt, 'y')}px`,
+    } as unknown as React.CSSProperties;
+    setFly({ id: giftFlight.id, n: giftFlight.n, style });
+  }, [giftFlight, anchor]);
+
+  if (!fly) return null;
   return (
-    <span key={g.n} className={`giftfloat giftfloat--${dir}`} aria-hidden="true">
-      <span className="giftin">{g.id}</span>
-    </span>
+    <div className="giftflight-layer" aria-hidden="true">
+      <span key={fly.n} className="giftflight" style={fly.style} onAnimationEnd={() => setFly(null)}>
+        {fly.id}
+      </span>
+    </div>
   );
 }

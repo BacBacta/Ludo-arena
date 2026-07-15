@@ -167,7 +167,9 @@ export interface AppState {
   emotes: Record<number, { id: string; n: number }>;
   /** Latest gift per SENDER seat (so it emanates from whoever sent it); `to` is
    *  the recipient seat, used to fly the gift toward them. `n` bumps to re-animate. */
-  gifts: Record<number, { id: string; n: number; to: number }>;
+  /** Latest in-game gift, animated as a flight from the sender's tile (`from`)
+   *  to the recipient's (`to`); `n` bumps so each new gift re-triggers the flight. */
+  giftFlight: { id: string; from: number; to: number; n: number } | null;
   /** All rolls this game, for client-side fairness verification (E5.1). */
   diceHistory: Array<{ index: number; value: number; seat: Seat }>;
   turnDeadlineTs: number | null;
@@ -269,7 +271,7 @@ export const initialState: AppState = {
   game: null,
   lastDice: null,
   emotes: {},
-  gifts: {},
+  giftFlight: null,
   diceHistory: [],
   turnDeadlineTs: null,
   activeTurn: 0,
@@ -354,9 +356,9 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SELECT_STAKE':
       return { ...s, stakeCents: a.stake };
     case 'START_PRACTICE4':
-      return { ...s, screen: 'game', practice4: true, online4: false, match: null, game: null, result: null, lastDice: null, emotes: {}, gifts: {} };
+      return { ...s, screen: 'game', practice4: true, online4: false, match: null, game: null, result: null, lastDice: null, emotes: {}, giftFlight: null };
     case 'START_ONLINE4':
-      return { ...s, screen: 'game', online4: true, online4Stake: a.stakeCents, practice4: false, match: null, game: null, result: null, lastDice: null, emotes: {}, gifts: {} };
+      return { ...s, screen: 'game', online4: true, online4Stake: a.stakeCents, practice4: false, match: null, game: null, result: null, lastDice: null, emotes: {}, giftFlight: null };
     case 'START_MATCHMAKING':
       return {
         ...s,
@@ -380,7 +382,7 @@ export function reducer(s: AppState, a: Action): AppState {
       return {
         ...s,
         match: a.match,
-        privateCode: null, emotes: {}, gifts: {}, rematchOffer: null, // friend joined; the game is starting
+        privateCode: null, emotes: {}, giftFlight: null, rematchOffer: null, // friend joined; the game is starting
         // Balance only ever changes via SET_BALANCE (refreshed from the wallet):
         // staked play requires a wallet, so there is no simulated debit anymore.
       };
@@ -395,16 +397,14 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'EMOTE':
       return { ...s, emotes: { ...s.emotes, [a.seat]: { id: a.id, n: (s.emotes[a.seat]?.n ?? 0) + 1 } } };
     case 'GIFT': {
-      // The gift floats over the SENDER's seat (a.from), not the recipient's, so
-      // the person receiving it can SEE who it came from — it emanates from the
-      // sender's avatar. Anchoring it on the recipient (the old behaviour) meant
-      // a gift popped over your own corner with no clue who sent it.
-      const gifts = { ...s.gifts, [a.from]: { id: a.id, n: (s.gifts[a.from]?.n ?? 0) + 1, to: a.to } };
+      // Animate the gift as a FLIGHT from the sender's tile to the recipient's, so
+      // it's unmistakable who sent it and to whom (GiftFlight reads from/to).
+      const n = (s.giftFlight?.n ?? 0) + 1;
       const toast = s.match && a.to === s.match.seat && a.from !== a.to ? `${s.match.opponent.name} ${t('giftFrom')} ${a.id}` : s.toast;
-      return { ...s, gifts, toast };
+      return { ...s, giftFlight: { id: a.id, from: a.from, to: a.to, n }, toast };
     }
     case 'CLEAR_EMOTES':
-      return { ...s, emotes: {}, gifts: {} };
+      return { ...s, emotes: {}, giftFlight: null };
     case 'MOVED':
       // Challenge progress is server-authoritative (CHALLENGE_UPDATE), not derived here.
       return { ...s, game: a.game };
@@ -492,7 +492,7 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_WALLET_ADDRESS':
       return { ...s, walletAddress: a.address };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', emotes: {}, gifts: {}, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null, rematchOffer: null };
+      return { ...s, screen: 'lobby', emotes: {}, giftFlight: null, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null, rematchOffer: null };
     case 'REMATCH_OFFER':
       return { ...s, rematchOffer: a.name };
     case 'REMATCH_CLEAR':
