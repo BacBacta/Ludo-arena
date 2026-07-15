@@ -588,6 +588,22 @@ export class RemoteSession implements GameSession {
   private inGame = false;
   private attempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Timestamp of the LAST message received — the liveness signal. A websocket
+   *  can die silently (mobile screen off, laptop sleep, NAT timeout): no close
+   *  event ever fires, so without an app-level heartbeat the UI freezes on the
+   *  last state while the server auto-plays us ("opponent away"). */
+  private lastSeen = 0;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  /** Waking from background: probe immediately; if nothing answers fast, the
+   *  socket is a zombie — force-close it so the reconnect path takes over. */
+  private readonly onVisible = (): void => {
+    if (this.disposed || typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+    this.send({ t: 'ping' });
+    const probeAt = Date.now();
+    setTimeout(() => {
+      if (!this.disposed && this.lastSeen < probeAt && this.ws) this.ws.close();
+    }, 3_500);
+  };
   private entropy = ''; // fresh 256-bit value per game (regenerated on rematch)
   private entropyCommit = ''; // sha256(entropy); sent in hello / rematch (anti-grinding)
   private revealedGameId = ''; // gameId we last revealed entropy for (once per game)
@@ -611,6 +627,14 @@ export class RemoteSession implements GameSession {
       this.entropyCommit = c;
       this.connect(true);
     });
+    // Liveness heartbeat: ping every 10s; if NOTHING has arrived for 25s the
+    // socket is silently dead — close it so the reconnect + resume path runs.
+    this.heartbeat = setInterval(() => {
+      if (this.disposed || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      this.send({ t: 'ping' });
+      if (this.lastSeen && Date.now() - this.lastSeen > 25_000) this.ws.close();
+    }, 10_000);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisible);
   }
 
   /** Draw fresh 256-bit entropy for a new match (first game, or a rematch). */
@@ -665,6 +689,7 @@ export class RemoteSession implements GameSession {
       } catch {
         return;
       }
+      this.lastSeen = Date.now(); // any traffic proves the socket is alive
       this.handle(msg);
     };
   }
@@ -849,6 +874,8 @@ export class RemoteSession implements GameSession {
   dispose(): void {
     this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
     this.ws?.close();
   }
 }

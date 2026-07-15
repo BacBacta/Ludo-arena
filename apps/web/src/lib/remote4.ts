@@ -63,6 +63,19 @@ export class Remote4 {
   private disposed = false;
   private inGame = false;
   private readonly entropy: string;
+  /** Last message timestamp — liveness. A silently-dead socket (screen off,
+   *  sleep, NAT timeout) fires no close event; the heartbeat force-closes it so
+   *  the session ends visibly (onGone) instead of freezing the board forever. */
+  private lastSeen = 0;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private readonly onVisible = (): void => {
+    if (this.disposed || typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+    this.send({ t: 'ping' });
+    const probeAt = Date.now();
+    setTimeout(() => {
+      if (!this.disposed && this.lastSeen < probeAt && this.ws) this.ws.close();
+    }, 3_500);
+  };
 
   constructor(
     private readonly ev: Remote4Events,
@@ -79,6 +92,14 @@ export class Remote4 {
     void sha256Hex(this.entropy).then((commit) => {
       if (!this.disposed) this.connect(commit);
     });
+    // Liveness heartbeat (mirrors RemoteSession): ping every 10s; 25s of silence
+    // means the socket is dead — close it so the player isn't left frozen.
+    this.heartbeat = setInterval(() => {
+      if (this.disposed || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      this.send({ t: 'ping' });
+      if (this.lastSeen && Date.now() - this.lastSeen > 25_000) this.ws.close();
+    }, 10_000);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisible);
   }
 
   private connect(entropyCommit: string): void {
@@ -123,6 +144,7 @@ export class Remote4 {
       } catch {
         return;
       }
+      this.lastSeen = Date.now(); // any traffic proves the socket is alive
       this.handle(msg);
     };
   }
@@ -233,6 +255,8 @@ export class Remote4 {
 
   dispose(): void {
     this.disposed = true;
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
     this.ws?.close();
   }
 }
