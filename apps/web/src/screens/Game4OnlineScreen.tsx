@@ -5,7 +5,7 @@
  * client only sends roll/move/resign and paints what the server broadcasts.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Board4 } from '../components/Board4';
+import { Board4, seatAtQuad4, shownQuad4 } from '../components/Board4';
 import { Die } from '../components/DiePremium';
 import { SeatAvatar, SeatDie } from '../components/Seat4';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFloat, type GiftTarget } from '../components/Emote';
@@ -23,9 +23,10 @@ import { t } from '../lib/i18n';
 type Status = 'connecting' | 'waiting' | 'playing' | 'over';
 interface Roll4 { seat: number; value: number; key: number }
 
-/** Fixed board corner for each seat (seat colours are painted in place, not
- *  rotated to the local player): 1=top-left, 2=top-right, 0=bottom-left,
- *  3=bottom-right — matches Board4's quadrant layout. */
+/** Which side of its row a QUADRANT sits on: 0=bottom-left, 1=top-left,
+ *  2=top-right, 3=bottom-right — matches Board4's quadrant layout. Board4 spins
+ *  the board so the local player is always bottom-left, so these are keyed by the
+ *  DISPLAYED quadrant (see shownQuad4), never by the raw seat. */
 const CORNER: Record<number, 'left' | 'right'> = { 1: 'left', 2: 'right', 0: 'left', 3: 'right' };
 
 export function Game4OnlineScreen({
@@ -254,7 +255,7 @@ export function Game4OnlineScreen({
         )}
       </span>
     );
-    return <div className="avrow__side">{CORNER[seat] === 'left' ? <>{av}{inner}</> : <>{inner}{av}</>}</div>;
+    return <div className="avrow__side">{CORNER[shownQuad4(seat, mySeat)] === 'left' ? <>{av}{inner}</> : <>{inner}{av}</>}</div>;
   }
 
   // Gift recipients: every seated opponent (humans + bots — all are "in the
@@ -281,18 +282,18 @@ export function Game4OnlineScreen({
           </button>
         </div>
 
-        {/* top corners: seat 1 (left) / seat 2 (right) */}
+        {/* top corners: whoever the spun board draws in quadrant 1 (left) / 2 (right) */}
         <div className="avrow">
-          {renderCorner(1)}
-          {renderCorner(2)}
+          {renderCorner(seatAtQuad4(1, mySeat))}
+          {renderCorner(seatAtQuad4(2, mySeat))}
         </div>
 
         <Board4 game={game} mySeat={mySeat} onTokenTap={doMove} banners={banners} />
 
-        {/* bottom corners: seat 0 (left) / seat 3 (right) */}
+        {/* bottom corners: quadrant 0 (left) is ALWAYS me / 3 (right) */}
         <div className="avrow">
-          {renderCorner(0)}
-          {renderCorner(3)}
+          {renderCorner(seatAtQuad4(0, mySeat))}
+          {renderCorner(seatAtQuad4(3, mySeat))}
         </div>
       </div>
 

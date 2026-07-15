@@ -183,6 +183,18 @@ function useAnimated4(positions: number[][]): number[][] {
   return display;
 }
 
+/**
+ * Board geometry is fixed (seat 0 bottom-left, then CLOCKWISE: 1 top-left,
+ * 2 top-right, 3 bottom-right), so every player but seat 0 would otherwise play
+ * from a far corner. The board is spun so the local player's quadrant is always
+ * bottom-left: rotate(90*k) moves seat s to seat (s+k)'s corner, hence k = -mySeat mod 4.
+ */
+export const quarters4 = (mySeat: number): number => (4 - (mySeat % 4)) % 4;
+/** seat → the quadrant it is DRAWN in after the spin (for un-rotated HTML overlays). */
+export const shownQuad4 = (seat: number, mySeat: number): number => (seat + quarters4(mySeat)) % 4;
+/** inverse of `shownQuad4`: which seat is drawn in quadrant `quad`. */
+export const seatAtQuad4 = (quad: number, mySeat: number): number => (quad + mySeat) % 4;
+
 export interface Board4Props {
   game: Game4;
   mySeat: number;
@@ -193,6 +205,13 @@ export interface Board4Props {
 export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
   const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
   const positions = useAnimated4(game.positions);
+
+  // Board geometry is fixed (seat 0 bottom-left, then CLOCKWISE: 1 top-left,
+  // 2 top-right, 3 bottom-right), so every player but seat 0 would otherwise
+  // play from a far corner. Spin the board so MY quadrant is always bottom-left:
+  // rotate(90*k) moves seat s to seat (s+k)'s corner, so k = -mySeat mod 4.
+  const rot = quarters4(mySeat) * 90;
+  const shownQuad = (seat: number): number => shownQuad4(seat, mySeat);
 
   // Group every token by the TRACK cell it shares (across ALL seats) so co-located
   // tokens of ANY colour fan out and stay individually visible.
@@ -270,7 +289,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
             <stop offset="100%" stopColor="#eef2f9" />
           </radialGradient>
         </defs>
-        <g clipPath="url(#board4clip)">
+        <g clipPath="url(#board4clip)" transform={rot ? `rotate(${rot} 7.5 7.5)` : undefined}>
         <rect x={0} y={0} width={15} height={15} fill="#ffffff" />
 
         {QUADS.map((q) => (
@@ -387,7 +406,12 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
                   </circle>
                 )}
                 <g className={`token__body${walking ? ' token__body--hop' : ''}${pos === -1 ? ' token__body--base' : ''}`}>
-                  <Pawn seat={seat} />
+                  {/* Counter-rotate on an INNER group: .token__body carries a CSS
+                      transform (scale/hop), and CSS beats the SVG transform
+                      attribute — putting the rotate there leaves the pegs tilted. */}
+                  <g transform={rot ? `rotate(${-rot})` : undefined}>
+                    <Pawn seat={seat} />
+                  </g>
                 </g>
               </g>
             );
@@ -415,7 +439,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
 
       {/* plain white name labels painted on each quadrant (Ludo Club style) */}
       {banners?.map((b) => (
-        <div key={b.seat} className={`plabel plabel--q${b.seat}${b.active ? ' plabel--active' : ''}`}>
+        <div key={b.seat} className={`plabel plabel--q${shownQuad(b.seat)}${b.active ? ' plabel--active' : ''}`}>
           {b.name}
         </div>
       ))}
