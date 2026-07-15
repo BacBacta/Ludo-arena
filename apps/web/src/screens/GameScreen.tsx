@@ -7,15 +7,20 @@ import { Die3D } from '../components/Die3D';
 import { Die } from '../components/DiePremium';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFloat } from '../components/Emote';
-import { skinById } from '../lib/diceSkins';
+import { skinById, type DiceSkin } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
 import { PremiumFrame } from '../components/PremiumFrame';
 import { playDice } from '../lib/sound';
 import { t } from '../lib/i18n';
 
-/** Opponent always rolls a fixed green die, so their roll is unmistakably theirs. */
-const OPP_SKIN = skinById('emerald');
+/** The opponent's die carries THEIR seat colour (seat 0 = blue, seat 1 = green),
+ *  matching their pawns on the board so a roll is unmistakably theirs. A fixed
+ *  green die used to collide with the joining player's own green tokens. */
+const OPP_SKINS: Record<Seat, DiceSkin> = {
+  0: { id: 'seat-blue', name: 'Blue', body1: '#63C4EC', body2: '#105F97', pip: '#ffffff', stroke: '#0b3f66', unlocked: () => true },
+  1: { id: 'seat-green', name: 'Green', body1: '#5FCE79', body2: '#16792E', pip: '#ffffff', stroke: '#0d4a1c', unlocked: () => true },
+};
 
 /** Remaining fraction of the move clock (1 → 0), ticking every 100 ms. */
 function useCountdown(deadlineTs: number | null): number {
@@ -186,7 +191,7 @@ export function GameScreen({
               aria-label={`${match.opponent.name} die`}
               aria-hidden={myTurn}
             >
-              <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKIN} />
+              <Die3D value={oppDieVal} rollKey={oppRollIndex} skin={OPP_SKINS[oppSeat]} />
             </div>
             <button
               className="avtap"

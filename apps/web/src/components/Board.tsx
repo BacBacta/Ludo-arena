@@ -228,6 +228,11 @@ export interface BoardProps {
 }
 
 export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
+  // The two seats sit DIAGONALLY (0 = bottom-left, 1 = top-right) and the geometry
+  // is fixed, so seat 1 would play from the far corner with the opponent sitting in
+  // "their" place — the board read upside-down and every tap felt wrong. Mirror the
+  // whole board 180° for seat 1 so YOU are always at the bottom, like any Ludo.
+  const flip = mySeat === 1;
   const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
   const positions = useAnimatedPositions(game.positions);
 
@@ -302,7 +307,7 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
             <rect x={0} y={0} width={15} height={15} rx={0.35} />
           </clipPath>
         </defs>
-        <g clipPath="url(#boardclip)">
+        <g clipPath="url(#boardclip)" transform={flip ? 'rotate(180 7.5 7.5)' : undefined}>
         {/* flat white plate (edge-to-edge; the wrapper gives the soft shadow) */}
         <rect x={0} y={0} width={15} height={15} fill="#ffffff" />
 
@@ -422,7 +427,12 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
                   </circle>
                 )}
                 <g className={`token__body${pos !== (game.positions[seat]?.[token] ?? pos) ? ' token__body--hop' : ''}${pos === -1 ? ' token__body--base' : ''}`}>
-                  <Pawn seat={seat as Seat} />
+                  {/* Counter-rotate on an INNER group: .token__body carries a CSS
+                      transform (scale/hop), and CSS beats the SVG transform
+                      attribute — putting the rotate there left the pegs upside-down. */}
+                  <g transform={flip ? 'rotate(180)' : undefined}>
+                    <Pawn seat={seat as Seat} />
+                  </g>
                 </g>
               </g>
             );
@@ -456,7 +466,9 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
       {banners?.map((b) => (
         <div
           key={b.seat}
-          className={`pbanner pbanner--s${b.seat}${b.active ? ' pbanner--active' : ''}`}
+          // Banners are HTML overlays (never rotated), so they must follow the
+          // DISPLAYED corner: on a flipped board seat 1 shows bottom-left.
+          className={`pbanner pbanner--s${flip ? 1 - b.seat : b.seat}${b.active ? ' pbanner--active' : ''}`}
           style={{ borderColor: SEAT_COLOR[b.seat]![1] }}
         >
           <span className="pbanner__flag">{b.flag}</span>
