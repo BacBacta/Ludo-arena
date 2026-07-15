@@ -1,6 +1,10 @@
 /** i18n: FR/EN/PT/ES/SW (E6.1). English is the complete reference (TKey). */
 const en = {
   play: 'PLAY ⚡',
+  playFreeSub: '1v1 online · free · vs a real player',
+  playForUsdt: 'Play for USDT',
+  addCash: '+ Add',
+  firstWin: 'Win your first game → earn a freeroll ticket',
   rematch: 'REMATCH ⚡',
   acceptRematch: 'ACCEPT REMATCH ⚡',
   declineRematch: 'Decline',
@@ -131,7 +135,7 @@ const en = {
   days: 'days',
   streakHint: 'Daily login — free ticket at day 3, +2 at day 7',
   freeroll: 'Daily freeroll',
-  freerollDesc: 'Entry 1 🎟️ · winner takes 3 🎟️',
+  freerollDesc: 'Entry 1 ticket · winner takes 3',
   privateTable: 'Private table',
   privateTableDesc: 'Create a room and invite a friend',
   tableWaiting: 'Share this code with your friend:',
@@ -210,6 +214,10 @@ type Dict = Record<TKey, string>;
 
 const fr: Dict = {
   play: 'JOUER ⚡',
+  playFreeSub: '1v1 en ligne · gratuit · vs un vrai joueur',
+  playForUsdt: 'Jouer pour de l’USDT',
+  addCash: '+ Ajouter',
+  firstWin: 'Gagne ta 1ʳᵉ partie → un ticket freeroll',
   rematch: 'REVANCHE ⚡',
   acceptRematch: 'ACCEPTER LA REVANCHE ⚡',
   declineRematch: 'Refuser',
@@ -340,7 +348,7 @@ const fr: Dict = {
   days: 'jours',
   streakHint: 'Connexion quotidienne — ticket offert au jour 3, +2 au jour 7',
   freeroll: 'Freeroll du jour',
-  freerollDesc: 'Entrée 1 🎟️ · le gagnant prend 3 🎟️',
+  freerollDesc: '1 ticket · le gagnant en prend 3',
   privateTable: 'Table privée',
   privateTableDesc: 'Crée un salon et invite un ami',
   tableWaiting: 'Partage ce code avec ton ami :',
@@ -416,6 +424,10 @@ const fr: Dict = {
 
 const pt: Dict = {
   play: 'JOGAR ⚡',
+  playFreeSub: '1v1 online · grátis · contra um jogador real',
+  playForUsdt: 'Jogar por USDT',
+  addCash: '+ Adicionar',
+  firstWin: 'Vença sua 1ª partida → ganhe um bilhete freeroll',
   rematch: 'REVANCHE ⚡',
   acceptRematch: 'ACCEPTER LA REVANCHE ⚡',
   declineRematch: 'Refuser',
@@ -546,7 +558,7 @@ const pt: Dict = {
   days: 'dias',
   streakHint: 'Login diário — ticket grátis no dia 3, +2 no dia 7',
   freeroll: 'Freeroll do dia',
-  freerollDesc: 'Entrada 1 🎟️ · o vencedor leva 3 🎟️',
+  freerollDesc: '1 bilhete · o vencedor leva 3',
   privateTable: 'Mesa privada',
   privateTableDesc: 'Crie uma sala e convide um amigo',
   tableWaiting: 'Compartilhe este código com seu amigo:',
@@ -622,6 +634,10 @@ const pt: Dict = {
 
 const es: Dict = {
   play: 'JUGAR ⚡',
+  playFreeSub: '1v1 en línea · gratis · vs un jugador real',
+  playForUsdt: 'Jugar por USDT',
+  addCash: '+ Añadir',
+  firstWin: 'Gana tu 1ª partida → un boleto freeroll',
   rematch: 'REVANCHA ⚡',
   acceptRematch: 'ACEPTAR REVANCHA ⚡',
   declineRematch: 'Rechazar',
@@ -752,7 +768,7 @@ const es: Dict = {
   days: 'días',
   streakHint: 'Conexión diaria — ticket gratis el día 3, +2 el día 7',
   freeroll: 'Freeroll del día',
-  freerollDesc: 'Entrada 1 🎟️ · el ganador se lleva 3 🎟️',
+  freerollDesc: '1 boleto · el ganador se lleva 3',
   privateTable: 'Mesa privada',
   privateTableDesc: 'Crea una sala e invita a un amigo',
   tableWaiting: 'Comparte este código con tu amigo:',
@@ -828,6 +844,10 @@ const es: Dict = {
 
 const sw: Dict = {
   play: 'CHEZA ⚡',
+  playFreeSub: '1v1 mtandaoni · bure · dhidi ya mchezaji halisi',
+  playForUsdt: 'Cheza kwa USDT',
+  addCash: '+ Ongeza',
+  firstWin: 'Shinda mchezo wako wa 1 → tiketi ya freeroll',
   rematch: 'REJEA ⚡',
   acceptRematch: 'KUBALI KUREJEA ⚡',
   declineRematch: 'Kataa',
@@ -958,7 +978,7 @@ const sw: Dict = {
   days: 'siku',
   streakHint: 'Ingia kila siku — tiketi ya bure siku ya 3, +2 siku ya 7',
   freeroll: 'Freeroll ya leo',
-  freerollDesc: 'Kuingia tiketi 1 🎟️ · mshindi huchukua 3 🎟️',
+  freerollDesc: 'Tiketi 1 · mshindi huchukua 3',
   privateTable: 'Meza binafsi',
   privateTableDesc: 'Fungua chumba na mwalike rafiki',
   tableWaiting: 'Shiriki msimbo huu na rafiki yako:',

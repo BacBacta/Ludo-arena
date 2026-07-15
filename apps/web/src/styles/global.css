@@ -306,6 +306,45 @@ a.btn {
 .gstake--sel small { color: #8a6200; }
 .gstake--sel.gstake--free b { color: #6b4d00; }
 .gstake:active { transform: translateY(0) scale(0.96); }
+.gstake__lock { width: 11px; height: 11px; vertical-align: -1px; opacity: .7; }
+
+/* Secondary "Play for USDT" toggle under the primary free CTA (Option A). */
+.btn--usdt {
+  width: 100%;
+  margin-top: 9px;
+  padding: 12px 16px;
+  border: 1px solid rgba(245, 179, 1, 0.55);
+  border-radius: 14px;
+  background: rgba(245, 179, 1, 0.1);
+  color: var(--txt);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-display);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.btn--usdt:active { transform: scale(0.99); }
+.btn--usdt-open { background: rgba(245, 179, 1, 0.18); border-color: rgba(245, 179, 1, 0.8); }
+.btn--usdt__lead { font-weight: 700; font-size: 15px; }
+.btn--usdt__hint { font-size: 12px; color: var(--muted); font-weight: 600; }
+/* revealed stake tiles animate down from the toggle */
+.gstakes--reveal { margin-top: 9px; animation: stakesReveal 0.22s ease both; }
+@keyframes stakesReveal { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .gstakes--reveal { animation: none; } }
+
+.mrow__ticket { width: 13px; height: 13px; vertical-align: -2px; }
+
+/* First-time incentive replacing the wall of empty dashboards for a new player. */
+.firstwin {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--txt);
+}
 
 /* dice-skin picker */
 .skingrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -458,6 +497,12 @@ small.muted { font-size: 12px; }
   box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
 }
 .topbar__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--me); }
+/* Low-balance top-up chip inside the balance pill. */
+.topbar__add {
+  margin-left: 3px; padding: 2px 8px; border-radius: 999px;
+  background: var(--accent); color: #3a2b00; font-size: 11px; font-weight: 800;
+  text-decoration: none; cursor: pointer;
+}
 /* No wallet yet: the balance slot becomes an honest connect CTA (no demo number). */
 .topbar__connect { border: none; cursor: pointer; background: var(--accent); color: #3a2b00; }
 .topbar__connect:active { transform: scale(0.96); }

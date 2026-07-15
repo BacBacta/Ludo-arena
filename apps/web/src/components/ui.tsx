@@ -83,6 +83,17 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
           <div className="topbar__balance">
             <span className="topbar__dot" />
             {fmtCents(balanceCents)} USDT
+            {/* Low balance → a top-up path instead of a dead end (MiniPay Add-Cash
+                deeplink; the lowest stake is 25¢, so under that you can't stake). */}
+            {balanceCents < 25 && (
+              <a
+                className="topbar__add"
+                href="https://link.minipay.xyz/add_cash?tokens=USDT,USDC"
+                onClick={(e) => { if (!isMiniPay()) e.preventDefault(); }}
+              >
+                {t('addCash')}
+              </a>
+            )}
           </div>
         ) : isMiniPay() ? (
           // MiniPay requirement: never show a "Connect" button inside MiniPay —

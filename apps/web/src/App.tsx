@@ -27,12 +27,20 @@ import { t } from './lib/i18n';
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
 /** Responsible-gaming reality check cadence — remind an actively-staking player. */
 const REALITY_CHECK_MS = 20 * 60_000;
+/** Free 1v1: how long to seek a real human before falling back to a bot game, so
+ *  the primary CTA always delivers a game even when nobody else is queuing. */
+const FREE_MATCH_TIMEOUT_MS = 8_000;
 
 export default function App() {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const sessionRef = useRef<GameSession | null>(null);
   const walletRef = useRef<Wallet | null>(null);
+  // Free-1v1 matchmaking fallback timer: cleared on match/cancel/new-flow.
+  const freeFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearFreeFallback = useCallback(() => {
+    if (freeFallback.current) { clearTimeout(freeFallback.current); freeFallback.current = null; }
+  }, []);
   const matchSeatRef = useRef<number>(0);
   // Gameplay pedagogy: a roll that ends the turn with NO move (no legal move, or
   // the three-sixes burn) looks like a silent bug — track the dice stream so the
@@ -134,6 +142,7 @@ export default function App() {
   const makeEvents = useCallback((): SessionEvents => {
     return {
       onMatchFound: (match) => {
+        clearFreeFallback(); // a real opponent paired — cancel the bot fallback
         matchSeatRef.current = match.seat;
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
@@ -225,6 +234,7 @@ export default function App() {
         dispatch({ type: 'RESUME', match, game });
       },
       onGone: () => {
+        clearFreeFallback();
         dispatch({ type: 'TOAST', message: t('connectionLost') });
         dispatch({ type: 'GO_LOBBY' });
       },
@@ -237,7 +247,7 @@ export default function App() {
         dispatch({ type: 'GO_LOBBY' });
       },
     };
-  }, [dispatch, stakeForMatch, refreshBalance]);
+  }, [dispatch, stakeForMatch, refreshBalance, clearFreeFallback]);
 
   // Consent (18+/ToS) + wallet signer for staked play: consent goes in hello and
   // the signer answers the server's wallet-ownership nonce (SIWE). Both are read
@@ -261,23 +271,42 @@ export default function App() {
 
   const startMatch = useCallback(
     async (stake: StakeCents) => {
+      clearFreeFallback();
       sessionRef.current?.dispose();
       sessionRef.current = null;
-      // Free PLAY launches a full 4-player practice game (you + 3 bots) — a lively
-      // board is the default free experience. Staked PLAY is 1v1 PvP. The other
-      // 4-player modes (free online, real money) live in the "4-player" sheet.
+
+      // Free PLAY = a real ONLINE 1v1 (matchmaking, no wallet). If nobody is
+      // queuing within FREE_MATCH_TIMEOUT_MS — or the server is unreachable — fall
+      // back to a lively bot game, so the primary CTA always delivers a match.
       if (stake === 0) {
-        dispatch({ type: 'START_PRACTICE4' });
+        dispatch({ type: 'START_MATCHMAKING', botMode: false });
+        const ev = makeEvents();
+        const toBot = (): void => {
+          clearFreeFallback();
+          sessionRef.current?.dispose();
+          sessionRef.current = new LocalBotSession(ev, 0);
+        };
+        sessionRef.current = new RemoteSession(
+          ev,
+          0,
+          SERVER_URL,
+          () => { dispatch({ type: 'TOAST', message: t('offline') }); toBot(); }, // server down → bot
+          walletRef.current?.address,
+          { kind: 'queue' },
+          makeAuth(),
+        );
+        freeFallback.current = setTimeout(toBot, FREE_MATCH_TIMEOUT_MS); // no human → bot
         return;
       }
+
       // Staked game: the wallet is REQUIRED (no simulated demo money) so the
       // stake can be locked on match. No wallet → stay in the lobby.
       if (!(await connectWalletCta())) return;
       dispatch({ type: 'START_MATCHMAKING', botMode: false });
 
       const ev = makeEvents();
-      // PvP: real-time server. If it's unreachable, fall back to a FREE local
-      // bot game — never a simulated staked one (money must always be real).
+      // Staked PvP: if the server is unreachable, fall back to a FREE local bot
+      // game — never a simulated staked one (money must always be real).
       sessionRef.current = new RemoteSession(
         ev,
         stake,
@@ -291,7 +320,7 @@ export default function App() {
         makeAuth(),
       );
     },
-    [dispatch, makeEvents, connectWalletCta, makeAuth],
+    [dispatch, makeEvents, connectWalletCta, makeAuth, clearFreeFallback],
   );
 
   // Private tables (E4.4): open a remote session with a create/join intent.
@@ -547,6 +576,7 @@ export default function App() {
       {state.screen === 'matchmaking' && (
         <Matchmaking
           onCancel={() => {
+            clearFreeFallback();
             sessionRef.current?.dispose();
             sessionRef.current = null;
             dispatch({ type: 'GO_LOBBY' });

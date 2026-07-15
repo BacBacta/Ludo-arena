@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@ludo/shared';
 import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { TopBar, Table4Modal } from '../components/ui';
-import { IconFlame, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
+import { IconFlame, IconShield, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
 import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
 import { frameClass } from '../lib/avatarFrames';
@@ -75,11 +76,6 @@ export function Lobby({
   // All rationalised tiers fit the picker now (0 / 25¢ / $1 / $5).
   const lobbyStakes = ALLOWED_STAKES_CENTS;
 
-  function play() {
-    if (guardStaked(stakeCents)) return;
-    onPlay(stakeCents);
-  }
-
   function createTable() {
     if (guardStaked(stakeCents)) return;
     onCreateTable(stakeCents);
@@ -98,6 +94,20 @@ export function Lobby({
   };
 
   const inLeague = league.rank > 0 || league.points > 0;
+  // Stakes are secondary in the hero (Option A): a "Play for USDT" toggle reveals
+  // the tiers, so the dominant CTA can be a plain free online 1v1.
+  const [showStakes, setShowStakes] = useState(false);
+  // Real-money tiers only (Free is the primary CTA, not a tile anymore).
+  const stakedTiers = lobbyStakes.filter((s) => s > 0);
+  // Newcomer with nothing yet → show one incentive instead of a wall of zeros.
+  const hasHistory =
+    profile.games > 0 || streak.days > 0 || tickets > 0 || league.top.length > 0 || recentOpponents.length > 0;
+
+  /** Launch a staked 1v1 directly from a stake tile (guarded for wallet/limits). */
+  const playStaked = (s: number): void => {
+    if (guardStaked(s)) return;
+    onPlay(s as StakeCents);
+  };
 
   return (
     <div className="screen screen--lobby">
@@ -105,110 +115,53 @@ export function Lobby({
 
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
-      {/* HERO — one idea per band: promise → stake → the single dominant CTA.
-          A first-time user reads: what it is, what it costs, where to tap. */}
+      {/* HERO (Option A): one promise, one dominant CTA that starts a REAL online
+          1v1 for free. Stakes are a secondary, opt-in choice below. */}
       <div className="hero">
         <div className="hero__tagline">{t('tagline')}</div>
-        <div className="gstakes">
-          {lobbyStakes.map((s) => {
-            // Staked tiers are visibly locked until a real wallet backs the
-            // balance (no demo money); tapping one attempts the connection.
-            const locked = s > 0 && !walletBacked;
+      </div>
+
+      <button className="btn btn--hero" onClick={() => { playTap(); onPlay(0); }}>
+        {t('play')}
+        <small>{t('playFreeSub')}</small>
+      </button>
+
+      {/* Secondary money path: reveal the USDT stake tiles on demand. */}
+      <button
+        className={`btn btn--usdt${showStakes ? ' btn--usdt-open' : ''}`}
+        onClick={() => { playTap(); setShowStakes((v) => !v); }}
+        aria-expanded={showStakes}
+      >
+        <span className="btn--usdt__lead">{t('playForUsdt')}</span>
+        <span className="btn--usdt__hint">{stakedTiers.map((s) => (s >= 100 ? `$${s / 100}` : `${s}¢`)).join(' · ')} {showStakes ? '▲' : '▾'}</span>
+      </button>
+      {showStakes && (
+        <div className="gstakes gstakes--reveal">
+          {stakedTiers.map((s) => {
+            const locked = !walletBacked;
             return (
               <button
                 key={s}
-                className={`gstake${s === stakeCents ? ' gstake--sel' : ''}${s === 0 ? ' gstake--free' : ''}${locked ? ' gstake--locked' : ''}`}
-                onClick={() => {
-                  playTap('select');
-                  dispatch({ type: 'SELECT_STAKE', stake: s });
-                  if (locked) void onConnectWallet();
-                }}
+                className={`gstake${locked ? ' gstake--locked' : ''}`}
+                onClick={() => { playTap('select'); playStaked(s); }}
               >
-                <b>{s === 0 ? t('free') : s >= 100 ? `$${s / 100}` : `${s}¢`}</b>
-                <small>{s === 0 ? t('training') : locked ? `🔒 ${t('needsWallet')}` : `${t('win')} ${fmtUsd(potCents(s))}`}</small>
+                <b>{s >= 100 ? `$${s / 100}` : `${s}¢`}</b>
+                <small>
+                  {locked ? (<><IconShield className="gstake__lock" /> {t('needsWallet')}</>) : `${t('win')} ${fmtUsd(potCents(s))}`}
+                </small>
               </button>
             );
           })}
         </div>
-        {/* responsible-gaming budget, visible where the money decision is made */}
-        {stakeCents > 0 && walletBacked && (
-          <small className="muted" style={{ display: 'block', marginTop: 6 }}>
-            {t('realityStaked')} {fmtUsd(limits.stakedTodayCents)} / {fmtUsd(limits.dailyLimitCents)}
-          </small>
-        )}
-      </div>
-
-      <button className="btn btn--hero" onClick={play}>
-        {t('play')}
-        <small>
-          {stakeCents === 0
-            ? `${t('training')} · ${t('fourPlayer')}`
-            : `1v1 · ${fmtUsd(stakeCents)} → ${t('win')} ${fmtUsd(potCents(stakeCents))}`}
+      )}
+      {walletBacked && limits.stakedTodayCents > 0 && (
+        <small className="muted" style={{ display: 'block', marginTop: 6, textAlign: 'center' }}>
+          {t('realityStaked')} {fmtUsd(limits.stakedTodayCents)} / {fmtUsd(limits.dailyLimitCents)}
         </small>
-      </button>
-
-      <div style={{ height: 18 }} />
-
-      {/* Stable identity card: same name + country flag every session (wallet-keyed),
-          with ELO + W/L. The player's public identity — never a raw 0x address. */}
-      {profile.name && (
-        <button
-          className="card profilecard"
-          onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
-          aria-label={t('editProfile')}
-        >
-          <div className="profilecard__id">
-            <span className={`profilecard__flag ${frameClass(avatarFrame)}`}>
-              {avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : profile.flag}
-              <PremiumFrame frame={avatarFrame} />
-            </span>
-            <div className="profilecard__meta">
-              <b>{profile.name}</b>
-              <span className="profilecard__div">{DIVISIONS[league.division] ?? ''}</span>
-            </div>
-          </div>
-          <div className="profilecard__stats">
-            <span><b>{profile.elo}</b> ELO</span>
-            <span className="profilecard__w">{profile.wins} {t('winsShort')}</span>
-            <span className="profilecard__l">{Math.max(0, profile.games - profile.wins)} {t('lossesShort')}</span>
-          </div>
-          <span className="profilecard__edit" aria-hidden="true">✏️</span>
-        </button>
       )}
 
-      {/* Rivals & recent opponents (C4): who you've faced in 1v1 + YOUR local
-          record vs each. A rival (played ≥ RIVAL_GAMES) is badged. Tap → profile. */}
-      {recentOpponents.length > 0 && (
-        <div className="card rivalscard">
-          <h3>
-            <span className="chip-ic chip-ic--opp"><IconUsers /></span>
-            {t('rivalsTitle')}
-          </h3>
-          <div className="rivalrow">
-            {recentOpponents.map((o, i) => {
-              const rival = o.wins + o.losses >= RIVAL_GAMES;
-              return (
-                <button
-                  key={o.pid ?? i}
-                  className={`rival${rival ? ' rival--rival' : ''}`}
-                  disabled={!o.pid}
-                  onClick={() => o.pid && onViewProfile(o.pid)}
-                >
-                  <span className={`rival__av ${frameClass(o.frame)}`} aria-hidden="true">{o.flag}</span>
-                  <b className="rival__name">{o.name}</b>
-                  <small className="rival__wl">
-                    <span className="profilecard__w">{o.wins}</span>–<span className="profilecard__l">{o.losses}</span>
-                  </small>
-                  {rival && <span className="rival__badge" aria-label={t('rivalBadge')}>⚔️</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* GAME MODES — one scannable list, one row per mode (was a cramped
-          3-column grid whose copy wrapped badly on small screens). */}
+      {/* MODE MENU — promoted right under the hero (was buried below the cards).
+          The single scannable menu of everything you can play. */}
       <div className="seclabel">{t('gameModes')}</div>
       <div className="card modelist">
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
@@ -240,75 +193,131 @@ export function Lobby({
             <b>{t('freeroll')}</b>
             <small>{t('freerollDesc')}</small>
           </span>
-          <span className="mrow__badge">🎟️ {tickets}</span>
+          <span className="mrow__badge"><IconTicket className="mrow__ticket" /> {tickets}</span>
         </button>
       </div>
 
-      {/* TODAY — streak, daily challenge and tickets merged into ONE compact
-          card (they were three separate full-width cards of equal weight). */}
-      <div className="seclabel">{t('today')}</div>
-      <div className="card daily">
-        <div className="dstat">
-          <span className="dstat__ic dstat__ic--fire"><IconFlame /></span>
-          <b>{streak.days}</b>
-          <small>{t('streakLabel')}</small>
-        </div>
-        <div className="dstat">
-          <span className="dstat__ic dstat__ic--target"><IconTarget /></span>
-          <b>{challenge.progress}/{challenge.target}</b>
-          <small>{t('challengeLabel')}</small>
-        </div>
-        <div className="dstat">
-          <span className="dstat__ic dstat__ic--ticket"><IconTicket /></span>
-          <b>{tickets}</b>
-          <small>{t('ticketsLabel')}</small>
-        </div>
-      </div>
-      <small className="daily__hint muted">
-        {challenge.completed ? t('challengeDone') : `${t('challengeDesc')} ${t('challengeReward')}`}
-      </small>
-
-      {/* League: full card only when there is something to show; otherwise a
-          single-line teaser (the empty ghost rows read as broken to new users). */}
-      {league.top.length > 0 || inLeague ? (
-        <div className="card">
-          <h3>
-            <span className="chip-ic"><IconTrophy /></span>
-            {DIVISIONS[league.division] ?? '—'} {t('league')}
-            {inLeague && (
-              <span className="h3val">
-                {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
-              </span>
-            )}
-          </h3>
-          {league.top.length > 0 && (
-            <ol className="board">
-              {league.top.map((e, i) => (
-                <li key={i} className={e.pid ? 'board__row--tap' : undefined} onClick={() => e.pid && onViewProfile(e.pid)}>
-                  <span>
-                    {i + 1}. {e.flag} {e.name}
-                  </span>
-                  <b>{e.points}</b>
-                </li>
-              ))}
-            </ol>
-          )}
-          <small className="muted">{inLeague ? t('leagueHint') : t('leagueEmpty')}</small>
-        </div>
-      ) : (
-        <div className="card leaguateaser">
-          <span className="chip-ic"><IconTrophy /></span>
-          <span className="leaguateaser__txt">{t('leagueEmpty')}</span>
-        </div>
-      )}
-
-      {/* How it works: three tiny numbered steps in ONE row (was a tall card
-          with a paragraph of ticket lore — moved to the freeroll row + modal). */}
+      {/* How it works — moved UP, right under the menu, for first-time visitors. */}
       <div className="howstrip">
         <span><i>1</i>{t('howStep1')}</span>
         <span><i>2</i>{t('howStep2')}</span>
         <span><i>3</i>{t('howStep3')}</span>
       </div>
+
+      {/* Identity + progression. A brand-new player (no history) sees ONE incentive
+          line instead of a wall of zeros; everything else appears once earned. */}
+      {profile.name && (
+        <button
+          className="card profilecard"
+          onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
+          aria-label={t('editProfile')}
+        >
+          <div className="profilecard__id">
+            <span className={`profilecard__flag ${frameClass(avatarFrame)}`}>
+              {avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : profile.flag}
+              <PremiumFrame frame={avatarFrame} />
+            </span>
+            <div className="profilecard__meta">
+              <b>{profile.name}</b>
+              <span className="profilecard__div">{DIVISIONS[league.division] ?? ''}</span>
+            </div>
+          </div>
+          <div className="profilecard__stats">
+            <span><b>{profile.elo}</b> ELO</span>
+            <span className="profilecard__w">{profile.wins} {t('winsShort')}</span>
+            <span className="profilecard__l">{Math.max(0, profile.games - profile.wins)} {t('lossesShort')}</span>
+          </div>
+          <span className="profilecard__edit" aria-hidden="true">✏️</span>
+        </button>
+      )}
+
+      {!hasHistory ? (
+        <div className="card firstwin">
+          <span className="chip-ic chip-ic--opp"><IconTrophy /></span>
+          <span>{t('firstWin')}</span>
+        </div>
+      ) : (
+        <>
+          {recentOpponents.length > 0 && (
+            <div className="card rivalscard">
+              <h3>
+                <span className="chip-ic chip-ic--opp"><IconUsers /></span>
+                {t('rivalsTitle')}
+              </h3>
+              <div className="rivalrow">
+                {recentOpponents.map((o, i) => {
+                  const rival = o.wins + o.losses >= RIVAL_GAMES;
+                  return (
+                    <button
+                      key={o.pid ?? i}
+                      className={`rival${rival ? ' rival--rival' : ''}`}
+                      disabled={!o.pid}
+                      onClick={() => o.pid && onViewProfile(o.pid)}
+                    >
+                      <span className={`rival__av ${frameClass(o.frame)}`} aria-hidden="true">{o.flag}</span>
+                      <b className="rival__name">{o.name}</b>
+                      <small className="rival__wl">
+                        <span className="profilecard__w">{o.wins}</span>–<span className="profilecard__l">{o.losses}</span>
+                      </small>
+                      {rival && <span className="rival__badge" aria-label={t('rivalBadge')}>⚔️</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TODAY — streak, daily challenge and tickets in one compact card. */}
+          <div className="seclabel">{t('today')}</div>
+          <div className="card daily">
+            <div className="dstat">
+              <span className="dstat__ic dstat__ic--fire"><IconFlame /></span>
+              <b>{streak.days}</b>
+              <small>{t('streakLabel')}</small>
+            </div>
+            <div className="dstat">
+              <span className="dstat__ic dstat__ic--target"><IconTarget /></span>
+              <b>{challenge.progress}/{challenge.target}</b>
+              <small>{t('challengeLabel')}</small>
+            </div>
+            <div className="dstat">
+              <span className="dstat__ic dstat__ic--ticket"><IconTicket /></span>
+              <b>{tickets}</b>
+              <small>{t('ticketsLabel')}</small>
+            </div>
+          </div>
+          <small className="daily__hint muted">
+            {challenge.completed ? t('challengeDone') : `${t('challengeDesc')} ${t('challengeReward')}`}
+          </small>
+
+          {(league.top.length > 0 || inLeague) && (
+            <div className="card">
+              <h3>
+                <span className="chip-ic"><IconTrophy /></span>
+                {DIVISIONS[league.division] ?? '—'} {t('league')}
+                {inLeague && (
+                  <span className="h3val">
+                    {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
+                  </span>
+                )}
+              </h3>
+              {league.top.length > 0 && (
+                <ol className="board">
+                  {league.top.map((e, i) => (
+                    <li key={i} className={e.pid ? 'board__row--tap' : undefined} onClick={() => e.pid && onViewProfile(e.pid)}>
+                      <span>
+                        {i + 1}. {e.flag} {e.name}
+                      </span>
+                      <b>{e.points}</b>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <small className="muted">{inLeague ? t('leagueHint') : t('leagueEmpty')}</small>
+            </div>
+          )}
+        </>
+      )}
 
       <div className="fairnote">
         {t('fairnote')}{' '}
