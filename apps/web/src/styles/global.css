@@ -955,6 +955,21 @@ small.muted { font-size: 12px; }
 /* compact opponent die tucked beside their name chip in the HUD */
 /* Kept MOUNTED even on my turn (a fresh mount can't run the tumble transition);
    collapsed out of the corner stack instead of unmounted. */
+/* "(tap to close)" — a REAL button (block, centered like the old muted div):
+   the modal card swallows bubbled clicks, so the hint must close explicitly. */
+.closehint {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  background: none;
+  border: 0;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+}
+
 .huddie--idle {
   opacity: 0;
   pointer-events: none;

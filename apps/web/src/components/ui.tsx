@@ -17,6 +17,28 @@ import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
 
+/** The "(tap to close)" hint at the bottom of a modal card. It MUST be a real
+ *  control: every modal card stops click propagation (so taps on the body don't
+ *  dismiss it), which silently swallowed taps on the hint too — the one element
+ *  that explicitly PROMISES to close. On a phone there is no Escape key, so a
+ *  first-time guest joining via a shared link could be stuck behind the welcome
+ *  modal for the whole game (auto-played as "away", rematch unreachable). */
+function CloseHint({ onClose, top = 10 }: { onClose(): void; top?: number }) {
+  return (
+    <button
+      type="button"
+      className="muted closehint"
+      style={{ marginTop: top }}
+      onClick={(e) => {
+        e.stopPropagation(); // the card's handler must not re-swallow it
+        onClose();
+      }}
+    >
+      {t('closeHint')}
+    </button>
+  );
+}
+
 export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
   const { balanceCents, walletBacked, soundOn } = useAppState();
   const dispatch = useAppDispatch();
@@ -141,9 +163,7 @@ export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?
             ))}
           </div>
         )}
-        <div style={{ marginTop: 12, textAlign: 'center' }} className="muted">
-          {t('closeHint')}
-        </div>
+        <CloseHint onClose={close} top={12} />
       </div>
     </div>
   );
@@ -271,9 +291,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
           })}
         </div>
 
-        <div style={{ marginTop: 10, textAlign: 'center' }} className="muted">
-          {t('closeHint')}
-        </div>
+        <CloseHint onClose={close} />
       </div>
     </div>
   );
@@ -495,7 +513,7 @@ export function Table4Modal({ onPractice, onFree, onStaked }: {
             </div>
           )}
         </div>
-        <div style={{ marginTop: 12, textAlign: 'center' }} className="muted">{t('closeHint')}</div>
+        <CloseHint onClose={close} top={12} />
       </div>
     </div>
   );
@@ -596,9 +614,7 @@ export function WelcomeModal({ onStartFree }: { onStartFree(): void }) {
         >
           {t('welcomeCta')}
         </button>
-        <div style={{ marginTop: 10 }} className="muted">
-          {t('closeHint')}
-        </div>
+        <CloseHint onClose={doneOnboard} />
       </div>
     </div>
   );
@@ -706,9 +722,7 @@ export function FairnessModal() {
         )}
 
         {t('fairBody3')}
-        <div style={{ marginTop: 10, textAlign: 'center' }} className="muted">
-          {t('closeHint')}
-        </div>
+        <CloseHint onClose={closeFair} />
       </div>
     </div>
   );
