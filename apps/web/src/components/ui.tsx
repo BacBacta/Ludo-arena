@@ -1,5 +1,5 @@
 /** Small cross-cutting UI components: TopBar, Toast, FairnessModal. */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFocusTrap } from './useFocusTrap';
 import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
@@ -783,7 +783,10 @@ export function FairnessModal() {
 
   const reveal = result?.fairnessReveal;
   const commit = match?.fairnessCommit;
-  const own = match?.myEntropy ? { entropy: match.myEntropy, seat: match.seat } : undefined;
+  const own = useMemo(
+    () => (match?.myEntropy ? { entropy: match.myEntropy, seat: match.seat } : undefined),
+    [match?.myEntropy, match?.seat],
+  );
   useEffect(() => {
     setReport(null);
     if (!fairModalOpen || !reveal || !commit) return;
