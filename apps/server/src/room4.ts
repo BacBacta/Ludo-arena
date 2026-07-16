@@ -150,11 +150,40 @@ export class Room4 {
     this.broadcast({ t: 'game.gift', from, to, id });
   }
 
-  /** A human dropped (socket closed): a bot drives the seat and the client is
-   *  removed (they no longer receive broadcasts). */
+  /** Is this a real-money table? Staked seats get a reconnect grace window; free
+   *  seats forfeit to a bot on drop (no funds at risk). */
+  private staked(): boolean {
+    return this.payoutCents > 0;
+  }
+
+  /** A human dropped (socket closed). Free table: hand the seat to a bot at once
+   *  (no money at stake). Staked table (R-WEB-1): DETACH the client but KEEP the
+   *  seat human — their turns auto-play on the clock, and only the existing
+   *  autoStreak forfeit hands it to a bot after repeated no-shows. That leaves a
+   *  grace window for a reconnect (attach) to resume before the stake is lost. */
   drop(clientId: string): void {
     const seat = this.seatOf(clientId);
-    if (seat >= 0) this.handOverToBot(seat, true);
+    if (seat < 0) return;
+    const s = this.seats[seat];
+    if (this.staked() && s && !s.bot) {
+      s.client = null; // detach only; seat stays human → clock auto-plays its turns
+      return;
+    }
+    this.handOverToBot(seat, true);
+  }
+
+  /** Reconnect (R-WEB-1): rebind a live client to `seat` and resync it. Only while
+   *  the seat is still the human's (not yet bot-forfeited) does it forgive the
+   *  no-show streak; a seat already handed to a bot can still re-attach to WATCH
+   *  the game finish. Returns false if the game is already over (nothing to resume). */
+  attach(seat: number, client: Client4): boolean {
+    const s = this.seats[seat];
+    if (!s || this.over) return false;
+    s.client = client;
+    if (!s.bot) this.autoStreak[seat] = 0; // still their seat → reset the no-show streak
+    client.send({ t: 'game.state4', state: this.state });
+    client.send({ t: 'game.turn4', seat: this.state.turn, deadlineTs: this.deadlineTs });
+    return true;
   }
 
   private handOverToBot(seat: number, disconnected: boolean): void {

@@ -102,4 +102,14 @@
 
 ---
 
-*(Lot 7 — R-WEB-1, reconnexion 4p staké — ci-dessous.)*
+### Lot 7 — Reconnexion / resume du 4 joueurs staké (R-WEB-1)
+
+| ID | Sév. | Statut | Correctif | Test de régression |
+|---|---|---|---|---|
+| **R-WEB-1** | 🔴 | ✅ Corrigé (staké) | **Grâce + réattache côté serveur, boucle de reconnexion côté client.** `Room4.drop` : sur table **stakée** (`payoutCents>0`), on **détache** le client sans bot-forfait immédiat — les tours s'auto-jouent à l'horloge et le forfait n'arrive qu'après `forfeitAfterAutoMoves` no-shows (fenêtre de grâce) ; table gratuite → bot immédiat (inchangé). `Room4.attach` ré-attache le socket au siège + resync (`game.state4`+`game.turn4`). Au `hello` de resume, `index.ts` ré-attache le siège 4p vivant. Client `remote4.ts` : `onclose` en cours de partie **retente** (token, sans `queue.join4`) jusqu'à `MAX_RECONNECTS` (~45 s de backoff) au lieu d'`onGone` immédiat ; `game.over4` marque la fin (close attendu). | `room4.test.ts` (6) : drop staké **garde le siège humain**, drop gratuit → bot immédiat, `attach` resync state+turn. `e2e/wire-reconnect4.mjs` : drop → reconnexion par token → `game.state4` (réattache sur socket réel). |
+
+**Vérification :** cœur serveur (grâce/réattache) unit-testé ; wiring resume→attach confirmé sur socket réel (table gratuite, le staké-4p étant gated). Boucle de reconnexion client typecheck-clean, calquée sur le `RemoteSession` 2p éprouvé. La **grâce stakée bout-en-bout on-chain** se vérifie au lancement M9 (avec le re-déploiement).
+
+---
+
+*Tous les risques Phase 0 corrigeables en code sont traités ; le verdict et les items humains résiduels sont ci-dessous.*

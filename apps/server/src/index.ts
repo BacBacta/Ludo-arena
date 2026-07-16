@@ -795,6 +795,13 @@ wss.on('connection', (ws, req) => {
           walletProven: rProof.walletProven,
           consentTosVersion: resumedSession.consentTos,
         });
+        // R-WEB-1: if this session had a live 4-player seat (staked table), rebind
+        // the new socket to it and resync — a dropped staker resumes instead of
+        // forfeiting their locked stake. The room kept the seat during the grace
+        // window (Room4.drop detaches without bot-forfeiting for staked tables).
+        if (resumedSession.room4 && resumedSession.seat4 != null && !resumedSession.room4.isOver()) {
+          resumedSession.room4.attach(resumedSession.seat4, resumedSession);
+        }
         return;
       }
       const id = randomBytes(16).toString('hex');

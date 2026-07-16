@@ -70,4 +70,49 @@ describe('Room4 (4-player online)', () => {
     expect(room.isOver()).toBe(true);
     expect(done).toBe(true);
   });
+
+  // R-WEB-1: a dropped human on a STAKED table must keep their seat during a grace
+  // window (their turns auto-play) so a reconnect can resume before the stake is lost.
+  function humanSeats(send: (m: { t: string }) => void = () => {}): Seat4[] {
+    const human = { id: 'h1', name: 'Me', flag: '🌍', send };
+    return [
+      { client: human, bot: false, name: 'Me', flag: '🌍' },
+      { client: null, bot: true, name: 'B1', flag: '🤖' },
+      { client: null, bot: true, name: 'B2', flag: '🤖' },
+      { client: null, bot: true, name: 'B3', flag: '🤖' },
+    ];
+  }
+
+  it('staked table: a dropped human KEEPS their seat (grace), not an instant bot-forfeit', () => {
+    vi.useFakeTimers();
+    // payoutCents > 0 → staked table.
+    const room = new Room4('gs1', humanSeats(), createFairness4(['w', 'x', 'y', 'z']), 0, 0, 200, 20);
+    room.start();
+    room.drop('h1');
+    expect(room.players()[0]!.bot).toBe(false); // seat still human → reconnect can resume
+    room.suspend();
+  });
+
+  it('free table: a dropped human forfeits to a bot immediately (no money at stake)', () => {
+    vi.useFakeTimers();
+    const room = new Room4('gf1', humanSeats(), createFairness4(['w', 'x', 'y', 'z']), 1, 3); // payoutCents 0 → free
+    room.start();
+    room.drop('h1');
+    expect(room.players()[0]!.bot).toBe(true); // forfeited at once
+    room.suspend();
+  });
+
+  it('staked table: reconnect (attach) rebinds the seat and resyncs state + turn', () => {
+    vi.useFakeTimers();
+    const room = new Room4('gs2', humanSeats(), createFairness4(['w', 'x', 'y', 'z']), 0, 0, 200, 20);
+    room.start();
+    room.drop('h1');
+    const sent: Array<{ t: string }> = [];
+    const rejoined = { id: 'h1', name: 'Me', flag: '🌍', send: (m: { t: string }) => sent.push(m) };
+    const ok = room.attach(0, rejoined);
+    expect(ok).toBe(true);
+    expect(sent.some((m) => m.t === 'game.state4')).toBe(true); // full state resync
+    expect(sent.some((m) => m.t === 'game.turn4')).toBe(true); // whose turn + deadline
+    room.suspend();
+  });
 });
