@@ -113,3 +113,48 @@
 ---
 
 *Tous les risques Phase 0 corrigeables en code sont traités ; le verdict et les items humains résiduels sont ci-dessous.*
+
+---
+
+## Synthèse — état des 23 risques Phase 0
+
+| Risque | Sév. | État |
+|---|---|---|
+| R-ESCROW-1 | 🔴 | ✅ Corrigé (contrat + tests) — **redéploiement requis** |
+| R-SETTLE-1 | 🔴 | ✅ Corrigé (+ tests) |
+| R-KEY-1 | 🔴 | 🔵 Ops (flag livré ; custody KMS/split = humain) |
+| R-DEPLOY-1 | 🔴 | 🔵 Redéploiement planifié (humain + autorisation) |
+| R-DICE-3 | 🔴 | ✅ Corrigé (staké + tests) — e2e on-chain au M9 |
+| R-WEB-1 | 🔴 | ✅ Corrigé (+ tests) — e2e on-chain au M9 |
+| R-SETTLE-2 | 🟠 | ✅ Corrigé (+ tests) |
+| R-SETTLE-3 | 🟠 | ✅ Corrigé (+ tests) |
+| R-SETTLE-4 | 🟠 | ✅ Corrigé |
+| R-CONTRACT-1 | 🟠 | ✅ Mitigé (gate déposants R-SETTLE-3) |
+| R-DICE-1 | 🟠 | ✅ Corrigé (+ tests) |
+| R-DICE-2 | 🟠 | ⬜ Phase 1 (test chi-carré des dés) |
+| R-AUTH-1 | 🟠 | 🟡 Mitigé (résiduel : origine MiniPay) |
+| R-AUTH-2 | 🟠 | ✅ Corrigé (+ test wire) |
+| R-RT-1 | 🟠 | ✅ Corrigé (+ test wire) |
+| R-WEB-2 | 🟠 | ✅ Corrigé |
+| R-WEB-3 | 🟠 | 🟡 Mitigé serveur (2 gardes vérifiées) |
+| R-DEPLOY-2 | 🟠 | 🔵 Ops (= R-KEY-1) |
+| R-CONTRACT-2 | 🟠 | ⬜ Phase 2 (invariants + fork + Slither) |
+| R-COMP-1 | 🟠 | 🔵 Humain (liste légale BLOCKED_COUNTRIES) |
+| R-COMP-2 | 🟠 | ✅ Corrigé (flag de lancement) |
+| R-COMP-3 | 🟠 | 🔵 Humain (E7 ToS/privacy/listing) |
+| R-CONTRACT-3, R-CI-*, R-COV-1, R-RT-2 | 🟢/🟠 | ⬜ Phases 1/2/8 (infra de test) |
+
+**Bilan code :** 6 critiques → 4 corrigées en code (R-ESCROW-1, R-SETTLE-1, R-DICE-3, R-WEB-1), 2 sont ops/humain (R-KEY-1, R-DEPLOY-1). Tous les majeurs corrigeables en code sont traités. **205 tests** verts (engine 31, serveur 94, web 10, contrats 70) + sondes wire (`wire-security`, `wire-reconnect4`). Lint + typecheck propres.
+
+## Verdict — remédiation Phase 0
+
+**GO pour passer en Phase 1.** Tous les risques Phase 0 corrigeables en code sont résolus avec test de régression, ou mitigés+documentés. Les risques restants relèvent des phases de test suivantes (chi-carré des dés → Phase 1 ; invariants/fork contrats → Phase 2) ou d'actions humaines/ops (ci-dessous). Aucun de ces résiduels ne bloque le démarrage de la Phase 1 (moteur), puisque l'argent réel reste gated (`STAKING_ENABLED` + testnet only).
+
+## Actions humaines/ops résiduelles (bloquantes AVANT argent réel)
+
+1. **Redéploiement des contrats durcis** (R-ESCROW-1 pull-payment 1v1 + R-DEPLOY-1 escrowN post-C3) sur Celo Sepolia puis mainnet — nécessite `DEPLOYER_PRIVATE_KEY` + autorisation nommée. Mettre à jour les secrets Fly + `deployments.json`.
+2. **Custody de la clé arbitre** (R-KEY-1/R-DEPLOY-2) — KMS/secret manager + split signataire/soumetteur avant mainnet.
+3. **`BLOCKED_COUNTRIES`** (R-COMP-1) — liste légale validée avant `STAKING_ENABLED=true`.
+4. **E7 listing MiniPay** (R-COMP-3) — pages ToS/confidentialité + soumission.
+5. **R-AUTH-1** — attestation d'origine du webview MiniPay (dépend de garanties plateforme) pour fermer le contournement des limites RG par session.
+6. Rappel plan de test : audit externe des contrats, certification RNG (labo accrédité), bêta fermée MiniPay, validation juridique par pays — inchangés, humains.
