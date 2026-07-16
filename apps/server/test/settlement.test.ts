@@ -7,6 +7,7 @@ const WINNER = '0x1111111111111111111111111111111111111111';
 const PLAYER_B = '0x2222222222222222222222222222222222222222';
 const TX = '0xset' as Hex;
 const REFUND_TX = '0xref' as Hex;
+const VOID_TX = '0xvoid' as Hex;
 
 function makeArbiter(over: Partial<ArbiterLike> = {}): ArbiterLike {
   return {
@@ -14,6 +15,7 @@ function makeArbiter(over: Partial<ArbiterLike> = {}): ArbiterLike {
     gameStatus: async () => ({ status: GameStatus.Active, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }),
     submitSettle: async () => TX,
     submitRefund: async () => REFUND_TX,
+    submitVoid: async () => VOID_TX,
     ...over,
   };
 }
@@ -166,6 +168,77 @@ describe('SettlementQueue', () => {
     await vi.runAllTimersAsync();
 
     expect(await store.listPendingSettlements()).toEqual([]);
+  });
+
+  // ---- R-SETTLE-1: a refund-only job (no winner) recovers a stranded deposit ----
+
+  it('refund job voids an Active game (both stakes locked, match must not proceed)', async () => {
+    const store = new MemoryStore();
+    const voidFn = vi.fn(async () => VOID_TX);
+    const settle = vi.fn(async () => TX);
+    const refunded: Array<[string, string]> = [];
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({
+        gameStatus: async () => ({ status: GameStatus.Active, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }),
+        submitVoid: voidFn,
+        submitSettle: settle,
+      }),
+      onSettled: () => {},
+      onRefunded: (gameId, tx) => refunded.push([gameId, tx]),
+    });
+    await q.enqueueRefund('gr1');
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(voidFn).toHaveBeenCalledOnce();
+    expect(settle).not.toHaveBeenCalled(); // a refund job never pays a winner
+    expect(refunded).toEqual([['gr1', VOID_TX]]);
+    expect(await store.listPendingSettlements()).toEqual([]);
+  });
+
+  it('refund job refunds a lone staker (WaitingOpponent) past the timeout', async () => {
+    const store = new MemoryStore();
+    const refund = vi.fn(async () => REFUND_TX);
+    const refunded: Array<[string, string]> = [];
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({
+        gameStatus: async () => ({ status: GameStatus.WaitingOpponent, createdAt: 500, playerA: WINNER, playerB: PLAYER_B }),
+        submitRefund: refund,
+      }),
+      onSettled: () => {},
+      onRefunded: (gameId, tx) => refunded.push([gameId, tx]),
+      now: () => 500 + JOIN_TIMEOUT_S + 1,
+    });
+    await q.enqueueRefund('gr2');
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(refund).toHaveBeenCalledOnce();
+    expect(refunded).toEqual([['gr2', REFUND_TX]]);
+  });
+
+  it('refund job is a clean no-op when nobody staked (status None)', async () => {
+    const store = new MemoryStore();
+    const voidFn = vi.fn(async () => VOID_TX);
+    const refund = vi.fn(async () => REFUND_TX);
+    const refunded: string[] = [];
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({
+        gameStatus: async () => ({ status: GameStatus.None, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }),
+        submitVoid: voidFn,
+        submitRefund: refund,
+      }),
+      onSettled: () => {},
+      onRefunded: (g) => refunded.push(g),
+    });
+    await q.enqueueRefund('gr3');
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(voidFn).not.toHaveBeenCalled();
+    expect(refund).not.toHaveBeenCalled();
+    expect(refunded).toEqual([]); // nothing to recover
+    expect(await store.listPendingSettlements()).toEqual([]); // marked done, not retried
   });
 
   it('resumePending re-processes jobs from a previous run on the same chain', async () => {

@@ -40,6 +40,7 @@ export const CHAINS: Record<string, Chain> = { celo, 'celo-sepolia': celoSepolia
 const SETTLE_ABI = [
   { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'sig', type: 'bytes' }], outputs: [] },
   { type: 'function', name: 'refundExpired', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
+  { type: 'function', name: 'voidGame', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   {
     type: 'function', name: 'games', stateMutability: 'view', inputs: [{ name: '', type: 'bytes32' }],
     outputs: [
@@ -151,7 +152,7 @@ export class Arbiter {
     };
   }
 
-  private async submit(functionName: 'settle' | 'refundExpired', args: readonly unknown[]): Promise<Hex> {
+  private async submit(functionName: 'settle' | 'refundExpired' | 'voidGame', args: readonly unknown[]): Promise<Hex> {
     // Serialize on the arbiter EOA so 2p + 4p submissions never race on the nonce.
     return serializeByKey(this.account.address, async () => {
       const hash = await this.walletClient.writeContract({
@@ -182,6 +183,13 @@ export class Arbiter {
   /** Refund the lone staker of an expired game (opponent never joined). */
   async submitRefund(gameId: string): Promise<Hex> {
     return this.submit('refundExpired', [gameIdToBytes32(gameId)]);
+  }
+
+  /** Return BOTH stakes to their depositors for an Active game the server
+   *  decided must not proceed (e.g. a pre-Room abort that raced with both joins,
+   *  or a squatted gameId whose depositors don't match the matched players). */
+  async submitVoid(gameId: string): Promise<Hex> {
+    return this.submit('voidGame', [gameIdToBytes32(gameId)]);
   }
 }
 
@@ -220,6 +228,7 @@ export interface ArbiterLike {
   gameStatus(gameId: string): Promise<{ status: GameStatus; createdAt: number; playerA: Address; playerB: Address }>;
   submitSettle(gameId: string, winner: Address): Promise<Hex>;
   submitRefund(gameId: string): Promise<Hex>;
+  submitVoid(gameId: string): Promise<Hex>;
 }
 
 export interface SettlementDeps {
@@ -241,8 +250,21 @@ export class SettlementQueue {
 
   constructor(private readonly deps: SettlementDeps) {}
 
-  /** Enqueue a new job and kick off processing (non-blocking). */
+  /** Enqueue a winner payout for a completed game (durable, non-blocking). */
   async enqueue(gameId: string, winnerWallet: string): Promise<void> {
+    return this.add(gameId, winnerWallet);
+  }
+
+  /** Enqueue a refund for a staked 1v1 that must NOT proceed (winner unknown):
+   *  a pre-Room abort, a disconnect during entropy reveal, or a squatted gameId.
+   *  The queue reads the on-chain status and does the right thing — refund the
+   *  lone staker (WaitingOpponent) or void both deposits (Active) — so a stranded
+   *  deposit is recovered automatically instead of waiting for a manual call. */
+  async enqueueRefund(gameId: string): Promise<void> {
+    return this.add(gameId, '');
+  }
+
+  private async add(gameId: string, winnerWallet: string): Promise<void> {
     const job: SettlementJob = {
       gameId,
       winnerWallet,
@@ -285,10 +307,22 @@ export class SettlementQueue {
 
   private async process(job: SettlementJob): Promise<void> {
     const attempts = job.attempts + 1;
+    // A refund-only job (no winner) recovers a stranded deposit: refund the lone
+    // staker or void an Active game rather than pay anyone.
+    const isRefund = job.winnerWallet === '';
     try {
       const { status, createdAt, playerA, playerB } = await this.deps.arbiter.gameStatus(job.gameId);
 
       if (status === GameStatus.Active) {
+        if (isRefund) {
+          // Both stakes locked but the match must not proceed → void, returning
+          // each stake to its depositor (never pays a winner).
+          const txHash = await this.deps.arbiter.submitVoid(job.gameId);
+          await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
+          this.deps.onRefunded(job.gameId, txHash);
+          console.log(`[settlement] ${job.gameId} voided (refund) in tx ${txHash}`);
+          return;
+        }
         // Reconcile the reported winner against the actual on-chain depositors.
         // settle() reverts NotAPlayer otherwise, wasting gas and burning retries
         // until the pot is stuck in Active forever. Fail loudly instead.
@@ -309,6 +343,8 @@ export class SettlementQueue {
 
       if (status === GameStatus.WaitingOpponent) {
         // Only one player staked: refund them once JOIN_TIMEOUT elapses (E3.4).
+        // Reached by both settle jobs (a game that finished lone-staked) and
+        // refund jobs (a pre-Room abort where one side deposited).
         const readyAt = createdAt + JOIN_TIMEOUT_S;
         const waitS = readyAt - this.nowS();
         if (waitS > 0) {
@@ -323,6 +359,13 @@ export class SettlementQueue {
         return;
       }
 
+      // A refund job that finds nobody staked (None) is a clean no-op: neither
+      // matched player deposited, so there is nothing to recover.
+      if (isRefund && status === GameStatus.None) {
+        await this.deps.store.markSettlement(job.gameId, 'refunded', attempts);
+        return;
+      }
+
       // Already resolved on-chain, or nobody staked (None): nothing to do.
       const terminal = status === GameStatus.Settled ? 'settled' : status === GameStatus.Refunded ? 'refunded' : 'failed';
       await this.deps.store.markSettlement(job.gameId, terminal, attempts);
@@ -334,7 +377,7 @@ export class SettlementQueue {
         await this.deps.store.markSettlement(job.gameId, 'failed', attempts);
         // A winner was NOT paid after every retry — this needs a human. Emit a
         // loud, greppable alert (an error tracker / pager hooks in via onAlert).
-        const msg = `[settlement][ALERT] PAYOUT FAILED after ${attempts} attempts — game ${job.gameId}, winner ${job.winnerWallet}, chain ${job.chainId}. Funds may be locked in escrow; manual settle/refund required.`;
+        const msg = `[settlement][ALERT] PAYOUT FAILED after ${attempts} attempts — game ${job.gameId}, winner ${job.winnerWallet || '(refund)'}, chain ${job.chainId}. Funds may be locked in escrow; manual settle/refund required.`;
         console.error(msg);
         this.deps.onAlert?.(msg);
         return;

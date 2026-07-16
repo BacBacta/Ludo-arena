@@ -1344,6 +1344,9 @@ wss.on('connection', (ws, req) => {
           refundFreerollEntry(p.a);
           refundFreerollEntry(p.b);
         }
+        // Staked game abandoned pre-Room: auto-refund any on-chain deposit either
+        // side already locked (R-SETTLE-1) — the queue voids/refunds by status.
+        scheduleRefund1v1(p);
         opp.send({ t: 'error', code: 'INTERNAL', message: 'Opponent left before the game started.' });
       }
     }
@@ -1725,26 +1728,64 @@ function maybeStartPending(p: PendingReveal): void {
   pollStakeLock(p, 0);
 }
 
+/** Enqueue an automatic refund for a staked 1v1 that must NOT proceed (a pre-Room
+ *  abort, a disconnect during entropy reveal, or a squatted gameId). The durable
+ *  queue reads the on-chain status and recovers any deposit — refund the lone
+ *  staker (WaitingOpponent) or void both stakes (Active) — instead of stranding it
+ *  until a manual refundExpired. No-op for non-staked or wallet-less games. */
+function scheduleRefund1v1(p: PendingReveal): void {
+  if (!settlementQueue || p.stake <= 0 || !p.a.wallet || !p.b.wallet) return;
+  settlementNotify.set(p.gameId, { sessionIds: [p.a.id, p.b.id], winner: 0 });
+  settlementQueue.enqueueRefund(p.gameId).catch((e) => console.error('[settlement] enqueue refund', e));
+}
+
+/** Tear down a pending staked match before the Room exists: drop the pending
+ *  entry, free both players to queue again, tell them, and auto-refund any locked
+ *  stake. Centralised so every abort path (timeout, RPC exhaustion, depositor
+ *  mismatch, disconnect) recovers funds identically (R-SETTLE-1/3/4). */
+function abortPendingStaked(p: PendingReveal, message: string, alert?: string): void {
+  if (pendingReveals.get(p.gameId) !== p) return; // already torn down
+  pendingReveals.delete(p.gameId);
+  p.a.pendingGameId = undefined;
+  p.b.pendingGameId = undefined;
+  const err: ServerMsg = { t: 'error', code: 'INTERNAL', message };
+  p.a.send(err);
+  p.b.send(err);
+  scheduleRefund1v1(p);
+  if (alert) {
+    console.error(alert);
+    postOpsAlert(alert);
+  }
+}
+
 /** Poll the escrow until both stakes are Active, then start; abort on timeout. */
 function pollStakeLock(p: PendingReveal, attempt: number): void {
   if (pendingReveals.get(p.gameId) !== p) return; // finalized or aborted
   void arbiter!
     .gameStatus(p.gameId)
-    .then(({ status }) => {
+    .then(({ status, playerA, playerB }) => {
       if (pendingReveals.get(p.gameId) !== p) return;
       if (status === GameStatus.Active) {
+        // R-SETTLE-3: `join` is permissionless and the gameId is known to both
+        // clients, so a stranger who learns it could fill the second seat. Before
+        // starting, verify the on-chain depositors ARE the two matched players —
+        // otherwise void both deposits and cancel, never play a mismatched escrow.
+        const want = [p.a.wallet!.toLowerCase(), p.b.wallet!.toLowerCase()].sort();
+        const got = [playerA.toLowerCase(), playerB.toLowerCase()].sort();
+        if (want[0] !== got[0] || want[1] !== got[1]) {
+          abortPendingStaked(
+            p,
+            'Stake verification failed — match cancelled. Any locked stake is refunded shortly.',
+            `[stake-gate][ALERT] ${p.gameId} depositor mismatch: matched {${want.join(', ')}} but escrow holds {${got.join(', ')}} — voiding.`,
+          );
+          return;
+        }
         finalizeGame(p);
         return;
       }
       if (attempt >= MAX_LOCK_POLLS) {
-        // Stakes never both locked. Abort the match; whoever DID lock can reclaim
-        // via the escrow's refundExpired (WaitingOpponent) after JOIN_TIMEOUT.
-        pendingReveals.delete(p.gameId);
-        p.a.pendingGameId = undefined;
-        p.b.pendingGameId = undefined;
-        const err: ServerMsg = { t: 'error', code: 'INTERNAL', message: 'Stakes were not locked in time — match cancelled.' };
-        p.a.send(err);
-        p.b.send(err);
+        // Stakes never both locked. Abort + auto-refund whoever DID lock.
+        abortPendingStaked(p, 'Stakes were not locked in time — match cancelled. Any locked stake is refunded shortly.');
         console.warn(`[stake-gate] ${p.gameId} aborted: stakes not Active after ${attempt} polls`);
         return;
       }
@@ -1752,9 +1793,17 @@ function pollStakeLock(p: PendingReveal, attempt: number): void {
     })
     .catch((e) => {
       console.error('[stake-gate] gameStatus poll failed', e instanceof Error ? e.message : e);
-      if (attempt < MAX_LOCK_POLLS && pendingReveals.get(p.gameId) === p) {
-        setTimeout(() => pollStakeLock(p, attempt + 1), LOCK_POLL_MS);
+      if (pendingReveals.get(p.gameId) !== p) return;
+      if (attempt >= MAX_LOCK_POLLS) {
+        // R-SETTLE-4: the poll exhausted on persistent RPC errors. It used to stop
+        // silently — leaking any locked deposit and wedging pendingGameId (players
+        // couldn't re-queue until they disconnected). Abort + refund like the
+        // success-path timeout instead.
+        abortPendingStaked(p, 'Could not confirm stakes on-chain — match cancelled. Any locked stake is refunded shortly.');
+        console.warn(`[stake-gate] ${p.gameId} aborted: gameStatus poll errored out after ${attempt} attempts`);
+        return;
       }
+      setTimeout(() => pollStakeLock(p, attempt + 1), LOCK_POLL_MS);
     });
 }
 
