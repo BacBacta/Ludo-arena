@@ -84,4 +84,13 @@
 
 ---
 
-*(Lots suivants ajoutés au fur et à mesure.)*
+### Lot 8 — Durabilité du token & jeu staké sans wallet (R-WEB-2, R-WEB-3)
+
+| ID | Sév. | Statut | Correctif | Test de régression |
+|---|---|---|---|---|
+| **R-WEB-2** | 🟠 | ✅ Corrigé | **Token de session en `localStorage`** (au lieu de `sessionStorage`) dans `session.ts` et `remote4.ts`. Il survit désormais au kill de la webview/onglet (cycle de vie mobile Android/MiniPay courant) → au relancement le client **reprend** une partie stakée en cours au lieu d'être auto-joué jusqu'au forfait et de perdre sa mise en escrow. Le partage multi-onglets est rendu sûr par le take-over R-RT-1 (le socket le plus récent possède la session). | Typecheck + suite web (10). Enabler de la reprise ; couvert e2e au niveau resume. |
+| **R-WEB-3** | 🟠 | 🟡 Mitigé (serveur) | L'exploit « client modifié joue staké sans risque / wallet strandé contre un démo » est **empêché côté serveur par deux gardes vérifiées** : (1) `matchmaking.ts:46` interdit tout appariement staké **wallet-vs-démo** (parité `walletBacked`) ; (2) `index.ts` `needsLock` n'active l'escrow/règlement que si **les deux** sièges ont un wallet. Un client sans wallet ne peut donc être que dans une partie **démo-vs-démo** sans escrow. Le `return` silencieux client (chemin démo simulé intentionnel, ARCHITECTURE.md) est désormais **loggé + commenté** avec référence aux gardes serveur. | Gardes serveur vérifiées par lecture ; log défensif client. |
+
+---
+
+*(Lot 7 — R-WEB-1, reconnexion 4p staké — ci-dessous.)*

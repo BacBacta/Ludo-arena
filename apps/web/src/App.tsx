@@ -144,7 +144,15 @@ export default function App() {
   const stakeForMatch = useCallback(
     async (gameId: string, stakeCents: number) => {
       const wallet = walletRef.current;
-      if (!wallet) return; // no wallet: simulated dev path
+      if (!wallet) {
+        // No wallet → simulated demo stake, never real funds. Safe by construction:
+        // the server refuses to mix a wallet player with a demo one in a staked
+        // match (matchmaking walletBacked parity) AND only locks/settles on-chain
+        // when BOTH seats have wallets (needsLock). So a wallet-less client can only
+        // ever be in a both-demo game with no escrow. Log it so it's never silent.
+        console.warn('[stake] staked match with no connected wallet — simulated demo stake (no on-chain funds).');
+        return;
+      }
       dispatch({ type: 'STAKING', status: 'approving' });
       try {
         await lockStake(wallet, gameId, stakeCents, (status) => dispatch({ type: 'STAKING', status }));

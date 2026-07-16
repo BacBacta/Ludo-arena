@@ -319,6 +319,12 @@ export type JoinIntent =
   | { kind: 'create' }
   | { kind: 'join'; code: string };
 
+// R-WEB-2: the resume token lives in localStorage, not sessionStorage, so it
+// SURVIVES an OS-initiated webview/tab kill (a routine Android/MiniPay lifecycle
+// event when backgrounded). On relaunch the client can resume an in-progress
+// staked game instead of being auto-played to a timeout-forfeit and losing the
+// escrowed stake. Two tabs now share the token — safe since the server take-over
+// (R-RT-1) lets the newest socket own the session and the stale one go quiet.
 const TOKEN_KEY = 'ludo.sessionToken';
 
 /** One-shot lobby sync at app open: pulls fresh league standings + daily
@@ -350,7 +356,7 @@ export function syncLobby(
     const entropy = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
     let token: string | null = null;
     try {
-      token = sessionStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
     } catch {
       /* storage unavailable */
     }
@@ -366,7 +372,7 @@ export function syncLobby(
     if (msg.t !== 'hello.ok') return;
     clearTimeout(timer);
     try {
-      if (msg.sessionToken) sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
+      if (msg.sessionToken) localStorage.setItem(TOKEN_KEY, msg.sessionToken);
     } catch {
       /* storage unavailable */
     }
@@ -532,7 +538,7 @@ export function sendLimits(
     })();
     let token: string | null = null;
     try {
-      token = sessionStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
     } catch {
       /* storage unavailable */
     }
@@ -593,7 +599,7 @@ export function buySkin(
     })();
     let token: string | null = null;
     try {
-      token = sessionStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
     } catch {
       /* storage unavailable */
     }
@@ -658,7 +664,7 @@ export function claimCosmetic(
     })();
     let token: string | null = null;
     try {
-      token = sessionStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
     } catch {
       /* storage unavailable */
     }
@@ -820,7 +826,7 @@ export class RemoteSession implements GameSession {
 
   private token(): string | null {
     try {
-      return sessionStorage.getItem(TOKEN_KEY);
+      return localStorage.getItem(TOKEN_KEY);
     } catch {
       return null;
     }
@@ -830,7 +836,7 @@ export class RemoteSession implements GameSession {
     switch (msg.t) {
       case 'hello.ok': {
         try {
-          sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
+          localStorage.setItem(TOKEN_KEY, msg.sessionToken);
         } catch {
           /* storage unavailable: reconnection within this session still works */
         }

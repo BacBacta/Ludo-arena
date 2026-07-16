@@ -57,6 +57,8 @@ export interface Remote4Events {
   onGone(): void;
 }
 
+// R-WEB-2: localStorage (not sessionStorage) so the resume token survives a
+// webview/tab kill — see the note in session.ts. Shared key with the 2p session.
 const TOKEN_KEY = 'ludo.sessionToken';
 
 export class Remote4 {
@@ -155,7 +157,7 @@ export class Remote4 {
     switch (msg.t) {
       case 'hello.ok':
         try {
-          sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
+          localStorage.setItem(TOKEN_KEY, msg.sessionToken);
         } catch {
           /* storage unavailable */
         }
@@ -231,7 +233,7 @@ export class Remote4 {
 
   private token(): string | null {
     try {
-      return sessionStorage.getItem(TOKEN_KEY);
+      return localStorage.getItem(TOKEN_KEY);
     } catch {
       return null;
     }
