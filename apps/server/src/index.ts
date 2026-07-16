@@ -901,6 +901,10 @@ wss.on('connection', (ws, req) => {
         // Freeroll (ticket-gated free 1v1): its own queue; entry checked here and
         // SPENT at match time (refunded on abandon before the game starts).
         if (msg.freeroll) {
+          if (walletKeyedWriteBlocked(session)) {
+            session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to spend a freeroll ticket.' });
+            break;
+          }
           const fpid = playerId(session.wallet, session.id);
           const held = (await store.getChallenge(fpid, utcToday())).tickets;
           if (held < FREEROLL.entryTickets) {
@@ -1163,6 +1167,10 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'limits.set': {
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to change limits.' });
+          break;
+        }
         const pid = playerId(session.wallet, session.id);
         const selfExcludedUntil = msg.selfExcludeDays ? utcPlusDays(msg.selfExcludeDays) : undefined;
         await store.setLimits(pid, { dailyLimitCents: msg.dailyLimitCents, selfExcludedUntil });
@@ -1171,6 +1179,10 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'skin.buy': {
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to spend tickets.' });
+          break;
+        }
         // Unlock a premium dice skin by spending its ticket price (server-authoritative).
         const price = PREMIUM_SKINS[msg.skinId];
         if (price === undefined) {
@@ -1335,6 +1347,12 @@ wss.on('connection', (ws, req) => {
     if (n <= 0) connsByIp.delete(ip);
     else connsByIp.set(ip, n);
     if (!session) return;
+    // R-RT-1: a resume (double tab / reconnect) rebinds the SAME Session object to
+    // a newer socket. If this closing socket is no longer the session's active one,
+    // it is stale — do the per-connection cleanup above but NEVER tear down the live
+    // session (nulling its ws, dropping its live 4p seat to a bot, forfeiting a
+    // locked stake). Only the owning socket's close tears the session down.
+    if (session.ws !== ws) return;
     session.ws = null;
     session.alive = false;
     // If the last opponent is waiting on us for a rematch, don't leave them
@@ -1449,6 +1467,16 @@ async function recordConsent(session: Session, consent?: { tosVersion: string; a
 /** Wallet ownership proof state for hello.ok. Proof is PER-SESSION (never durable
  *  by wallet — that would let anyone claim a proven address), so a fresh session
  *  with an unproven wallet gets a nonce to sign. */
+/** R-AUTH-2: a wallet-keyed durable write (tickets, cosmetics, RG limits/self-
+ *  exclusion, ELO) must never act on a wallet the session only CLAIMED. Wallet
+ *  addresses are public, so a scripted client that sets `wallet` without proving
+ *  it could spend a victim's tickets or force their self-exclusion. Proven wallets
+ *  (incl. MiniPay, trusted by the platform) and wallet-less sessions (keyed by the
+ *  ephemeral session id, no cross-account reach) are fine. */
+function walletKeyedWriteBlocked(session: Session): boolean {
+  return !!session.wallet && !session.walletProven;
+}
+
 function issueWalletNonce(session: Session): { walletNonce?: string; walletProven?: boolean } {
   if (!session.wallet) return {};
   // MiniPay: the wallet is auto-connected + trusted and cannot personal_sign, so
@@ -1506,8 +1534,19 @@ async function resumeSession(token: string, ws: WebSocket, wallet: string | unde
     // change then); otherwise fall through to a fresh, correctly-tagged session.
     const inGame = !!existing.room && !existing.room.isOver();
     if (!inGame && !walletsMatch(existing.wallet, wallet)) return null;
+    // R-RT-1: proactively close the previous socket so a lingering stale tab stops
+    // receiving state. Its close handler is now a no-op for the session (guarded on
+    // session.ws === ws), so this take-over can't null the new live socket.
+    const prev = existing.ws;
     existing.ws = ws;
     existing.alive = true;
+    if (prev && prev !== ws) {
+      try {
+        prev.close();
+      } catch {
+        /* already closing */
+      }
+    }
     return existing;
   }
   const rec = await store.loadSession(token);
