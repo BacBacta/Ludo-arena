@@ -225,3 +225,35 @@ Framework **Foundry** (solc 0.8.24) + **Slither**. Dossier auditeur : [docs/AUDI
 ## Bilan Phase 2
 
 **GO.** Escrows fund-holding couverts par : 66 tests exemples + adversariaux, **campagnes d'invariants de solvabilité** (128k appels sans violation), fuzz d'autorisation, **Slither** (34 alertes justifiées), et **fork Celo Sepolia** contre un vrai token 6-déc. Suite contrats : **78 tests** verts (70 → +8). Dossier `AUDIT_PACKAGE.md` prêt. **L'audit humain externe reste obligatoire avant mainnet** (R-KEY-1, redéploiement R-DEPLOY-1, fee-currency Celo, revue du digest EIP-191 — §7 du dossier).
+
+---
+
+# Phase 3 — Tests d'intégration & E2E
+
+Framework **Playwright** (core, scripts autonomes) + **Vitest** (intégration wallet déterministe). Provider MiniPay **mocké** pour la CI ; signature réelle sur Celo Sepolia (suites `e2e/staked/`, manuelles).
+
+## Intégration wallet — transactions déterministes (`apps/web/test/escrow.test.ts`, 12 tests)
+
+Le flux on-chain (`stakeInEscrow`/`stakeInEscrowN`) piloté contre des **clients viem factices** — couvre en CI, sans navigateur ni chaîne :
+- Signature de transaction : séquence `approve` → `join` avec les bons args (`gameId32`, token, `stakeUnits`) ; `feeCurrency` MiniPay propagé.
+- `stakeUnits` (cents → unités par décimales), `gameIdToBytes32` (padding + rejet non-hex), `cosmeticItemId`.
+- Sauts d'`approve` si allowance suffisante ; **idempotence** (adresse déjà jointe → pas de 2ᵉ dépôt).
+- **Refus de signature** (l'utilisateur rejette, `code 4001`) → l'erreur remonte proprement (1v1 **et** 4p).
+- `join` qui revert on-chain → throw.
+
+## Provider MiniPay mocké + mobile (`e2e/ui-wallet.mjs`, 10 checks — exécuté, vert)
+
+Provider `window.ethereum` injecté via `addInitScript` (helper `injectMiniPay` + contexte `MOBILE_CONTEXT` 360×800 Android). Vérifié :
+- **Détection** : l'app voit `isMiniPay` et fait le **zero-click connect** (`eth_requestAccounts` appelé sans clic) — sur viewport **360×800**.
+- **Refus de connexion** (`eth_requestAccounts` throw 4001) → aucune erreur de page non catchée, lobby reste interactif.
+- **Provider absent** → mode démo : l'app boote sans crash et un board/partie est atteignable sans wallet.
+
+## Parcours complet sur mobile (`e2e/ui-mobile.mjs`, 6 checks — exécuté, vert)
+
+Deux joueurs sur **webview Android 360×800** s'apparient (table privée = matchmaking), atteignent le board, et **jouent de vrais tours** (roll + move landing, état qui avance sur 30 ticks) — **crash-free** (aucune `pageerror`). Les parcours victoire/abandon/timeout sur WS réel restent couverts par `wire-regression.mjs` ; cette sonde ajoute la dimension mobile.
+
+Les deux sondes sont enregistrées dans `run-all.mjs`.
+
+## Bilan Phase 3
+
+**GO.** Intégration wallet couverte de bout en bout au niveau approprié : **transactions + refus** déterministes en CI (12 tests vitest), **détection/refus/absence** du provider MiniPay mocké + **viewport mobile Android** (Playwright, 16 checks exécutés verts). Suite web : **22 tests** vitest (10 → +12). Le happy-path staké **on-chain réel** (mise+gain) reste manuel sur Celo Sepolia (`e2e/staked/`), conformément au plan.

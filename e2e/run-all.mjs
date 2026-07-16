@@ -19,6 +19,8 @@ const SUITES = [
   ['ui-dice.mjs', 6 * 60_000],
   ['ui-4p.mjs', 4 * 60_000],
   ['ui-practice.mjs', 6 * 60_000],
+  ['ui-wallet.mjs', 4 * 60_000], // Phase 3: mocked MiniPay + mobile viewport
+  ['ui-mobile.mjs', 5 * 60_000], // Phase 3: full journey on Android 360x800
 ];
 
 const run = (file, timeout) => new Promise((resolve) => {
