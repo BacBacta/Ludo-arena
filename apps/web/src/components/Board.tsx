@@ -35,21 +35,22 @@ const STEP_MS = WALK_STEP_MS; // per-cell walk pace (deliberate, readable)
 /** Quadrant origin per seat: you (blue) bottom-left, opponent (green) top-right. */
 const SEAT_QUAD: Record<number, readonly [number, number]> = { 0: [0, 9], 1: [9, 0] };
 
-/** Centre of a quadrant's white home square (nudged toward the board centre). */
+/** Centre of a quadrant's white home square (4-player geometry: the label band
+ *  sits on the OUTER edge, exactly like Board4). */
 function homeCenter(qx: number, qy: number): [number, number] {
   const isTop = qy === 0;
-  const hy = isTop ? qy + 1.35 : qy + 0.25;
-  return [qx + 3, hy + 2.2];
+  const hy = isTop ? qy + 1.05 : qy + 0.45;
+  return [qx + 3, hy + 2.25];
 }
 
-/** The four resting-slot centres inside a quadrant's home square. */
+/** The four resting-slot centres inside a quadrant's home square (Board4). */
 function quadSlots(qx: number, qy: number): Array<[number, number]> {
   const [cx, cy] = homeCenter(qx, qy);
   return [
-    [cx - 0.8, cy - 0.8],
-    [cx + 0.8, cy - 0.8],
-    [cx - 0.8, cy + 0.8],
-    [cx + 0.8, cy + 0.8],
+    [cx - 0.85, cy - 0.85],
+    [cx + 0.85, cy - 0.85],
+    [cx - 0.85, cy + 0.85],
+    [cx + 0.85, cy + 0.85],
   ];
 }
 
@@ -161,9 +162,15 @@ function PegShape({ c, idKey }: { c: readonly [string, string, string]; idKey: s
           <stop offset="34%" stopColor={c[1]} />
           <stop offset="100%" stopColor={c[2]} />
         </radialGradient>
+        {/* soft radial cast shadow (Board4's pawnCast, per-instance id) */}
+        <radialGradient id={`${idKey}-cast`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#0f1f4d" stopOpacity="0.42" />
+          <stop offset="58%" stopColor="#0f1f4d" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#0f1f4d" stopOpacity="0" />
+        </radialGradient>
       </defs>
       {/* soft contact shadow, directly under the foot */}
-      <ellipse cx={0.02} cy={0.36} rx={0.3} ry={0.08} fill="rgba(16,24,48,.3)" />
+      <ellipse cx={0.02} cy={0.36} rx={0.3} ry={0.08} fill={`url(#${idKey}-cast)`} />
       {/* teardrop: ball top blending smoothly into a flared cone foot */}
       <path
         d="M -0.3 0.28 C -0.3 0.06 -0.17 -0.06 -0.13 -0.24 C -0.1 -0.4 0.1 -0.4 0.13 -0.24 C 0.17 -0.06 0.3 0.06 0.3 0.28 Q 0.3 0.36 0 0.36 Q -0.3 0.36 -0.3 0.28 Z"
@@ -198,33 +205,22 @@ export function HeroPeg({ colors, idKey }: { colors: readonly [string, string, s
  * square with grey resting slots. The tray is nudged toward the board centre so
  * the outer band holds the name banner (rendered as HTML over the board).
  */
-function Quadrant({
-  x,
-  y,
-  colors,
-  inactive,
-}: {
-  x: number;
-  y: number;
-  colors: readonly [string, string, string];
-  inactive?: boolean;
-}) {
+function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [string, string, string] }) {
   const isTop = y === 0;
-  const hy = isTop ? y + 1.35 : y + 0.25; // home-square top
+  const hy = isTop ? y + 1.05 : y + 0.45;
   const slots = quadSlots(x, y);
   return (
-    <g opacity={inactive ? 0.42 : 1}>
-      {/* flat solid quadrant, square edges — reads as one continuous surface (matches 4p) */}
+    <g>
+      {/* flat solid quadrant, square edges — the board reads as ONE continuous surface */}
       <rect x={x} y={y} width={6} height={6} fill={colors[1]} />
-      {/* big white home square, lifted with a soft cast shadow */}
-      {!inactive && <rect x={x + 0.82} y={hy + 0.09} width={4.4} height={4.4} rx={0.45} fill="rgba(16,24,48,.18)" />}
-      <rect x={x + 0.8} y={hy} width={4.4} height={4.4} rx={0.45} fill="#ffffff" opacity={inactive ? 0.85 : 1} />
-      {/* Only the TWO lower resting discs — the tokens rest there (2-token blitz),
-          so empty upper discs no longer read as missing pieces. */}
-      {!inactive &&
-        slots.slice(2).map(([sx, sy], i) => (
-          <circle key={i} cx={sx} cy={sy} r={0.56} fill="#d4dae6" />
-        ))}
+      {/* white home square with a soft drop edge (Board4 geometry) */}
+      <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill="rgba(16,24,48,.16)" />
+      <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill="#ffffff" />
+      {/* all four resting discs, exactly like the 4-player board — the unused
+          seats' homes sit pristine and empty (Ludo-Club 1v1 look) */}
+      {slots.map(([sx, sy], i) => (
+        <circle key={i} cx={sx} cy={sy} r={0.56} fill="#d4dae6" />
+      ))}
     </g>
   );
 }
@@ -329,10 +325,10 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         <rect x={0} y={0} width={15} height={15} fill="#ffffff" />
 
         {/* quadrants: red / green / blue / yellow (classic) */}
-        <Quadrant x={0} y={0} colors={RED} inactive />
+        <Quadrant x={0} y={0} colors={RED} />
         <Quadrant x={9} y={0} colors={GREEN} />
         <Quadrant x={0} y={9} colors={BLUE} />
-        <Quadrant x={9} y={9} colors={YELLOW} inactive />
+        <Quadrant x={9} y={9} colors={YELLOW} />
 
         {/* track cells: continuous grid, shared hairline borders (matches the 4-player board) */}
         {TRACK.map(([x, y], i) => (
@@ -479,17 +475,16 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
         </g>
       </svg>
 
-      {/* name banners over each seat's quadrant (crisp HTML text + flag) */}
+      {/* plain white name labels painted on each quadrant (Board4 style; the
+          flag/avatar identity lives in the corner avatar cards). Labels are
+          HTML overlays (never rotated), so they follow the DISPLAYED corner:
+          on a flipped board seat 1 shows bottom-left (q0), seat 0 top-right (q2). */}
       {banners?.map((b) => (
         <div
           key={b.seat}
-          // Banners are HTML overlays (never rotated), so they must follow the
-          // DISPLAYED corner: on a flipped board seat 1 shows bottom-left.
-          className={`pbanner pbanner--s${flip ? 1 - b.seat : b.seat}${b.active ? ' pbanner--active' : ''}`}
-          style={{ borderColor: SEAT_COLOR[b.seat]![1] }}
+          className={`plabel plabel--q${(flip ? 1 - b.seat : b.seat) === 0 ? 0 : 2}${b.active ? ' plabel--active' : ''}`}
         >
-          <span className="pbanner__flag">{b.flag}</span>
-          <span className="pbanner__name">{b.name}</span>
+          {b.name}
         </div>
       ))}
     </div>
