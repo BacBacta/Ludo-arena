@@ -234,9 +234,11 @@ export function Lobby({
         <span><i>3</i>{t('howStep3')}</span>
       </div>
 
-      {/* Identity + progression. A brand-new player (no history) sees ONE incentive
-          line instead of a wall of zeros; everything else appears once earned. */}
-      {profile.name && (
+      {/* Identity + progression. Stats (ELO/W-L/division) are shown ONLY for a
+          wallet-backed account: a guest carries default-looking numbers (Silver,
+          1200, 0-0) that read as fake data — reported twice. Guests instead get
+          a slim row that keeps the profile editor reachable, with no numbers. */}
+      {walletBacked && profile.name ? (
         <button
           className="card profilecard"
           onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
@@ -257,6 +259,17 @@ export function Lobby({
             <span className="profilecard__w">{profile.wins} {t('winsShort')}</span>
             <span className="profilecard__l">{Math.max(0, profile.games - profile.wins)} {t('lossesShort')}</span>
           </div>
+          <span className="profilecard__edit" aria-hidden="true">✏️</span>
+        </button>
+      ) : (
+        <button
+          className="card guestrow"
+          onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
+          aria-label={t('editProfile')}
+        >
+          <span className="guestrow__flag">{avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : '🌍'}</span>
+          <b>{profile.name || t('guestLabel')}</b>
+          <small>{t('setupProfile')}</small>
           <span className="profilecard__edit" aria-hidden="true">✏️</span>
         </button>
       )}

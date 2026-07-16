@@ -430,6 +430,24 @@ a.btn {
 
 .mrow__ticket { width: 13px; height: 13px; vertical-align: -2px; }
 
+/* Guest identity row: no stats (a guest's ELO/W-L are default-looking noise),
+   just the door to the profile editor. */
+.guestrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  margin-bottom: 10px;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+}
+.guestrow b { font-family: var(--font-display); }
+.guestrow small { color: var(--muted); font-size: 12px; margin-left: auto; }
+.guestrow__flag { font-size: 20px; line-height: 1; display: flex; }
+.guestrow__flag .profilecard__img { width: 26px; height: 26px; border-radius: 50%; }
+
 /* First-time incentive replacing the wall of empty dashboards for a new player. */
 .firstwin {
   display: flex;
