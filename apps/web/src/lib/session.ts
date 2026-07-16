@@ -303,6 +303,64 @@ export type JoinIntent =
 
 const TOKEN_KEY = 'ludo.sessionToken';
 
+/** One-shot lobby sync at app open: pulls fresh league standings + daily
+ *  challenge/limits over a throwaway hello, so device-cached data self-heals
+ *  (weekly rollover, server-side resets) without waiting for the next game.
+ *  Resumes the tab's session token when one exists — same identity as the next
+ *  game — and adopts the returned token so a fresh guest keeps ONE anon pid
+ *  across sync + play. Silent on failure: offline keeps the cache. */
+export function syncLobby(
+  serverUrl: string,
+  walletAddress: string | undefined,
+  on: {
+    league(league: LeagueState): void;
+    challenge(challenge: ChallengeState): void;
+    streak(streak: StreakState): void;
+    limits(limits: LimitsState): void;
+  },
+): void {
+  let ws: WebSocket;
+  try {
+    ws = new WebSocket(withQa(serverUrl));
+  } catch {
+    return;
+  }
+  const timer = setTimeout(() => ws.close(), 8_000);
+  ws.onopen = () => {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    const entropy = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    let token: string | null = null;
+    try {
+      token = sessionStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+  };
+  ws.onmessage = (e) => {
+    let msg: ServerMsg;
+    try {
+      msg = JSON.parse(String(e.data)) as ServerMsg;
+    } catch {
+      return;
+    }
+    if (msg.t !== 'hello.ok') return;
+    clearTimeout(timer);
+    try {
+      if (msg.sessionToken) sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
+    } catch {
+      /* storage unavailable */
+    }
+    if (msg.league) on.league(msg.league);
+    if (msg.challenge) on.challenge(msg.challenge);
+    if (msg.streak) on.streak(msg.streak);
+    if (msg.limits) on.limits(msg.limits);
+    ws.close();
+  };
+  ws.onerror = () => clearTimeout(timer);
+}
+
 /**
  * One-shot profile save (edited name/flag). Resumes the player's session so the
  * server persists it to their wallet row, then resolves with the SERVER-VALIDATED

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { TOS_VERSION, cosmeticCents, type StakeCents } from '@ludo/shared';
-import {
+import { syncLobby,
   LocalBotSession,
   RemoteSession,
   type GameSession,
@@ -125,9 +125,20 @@ export default function App() {
 
   // Inside MiniPay the wallet is ambient — connect silently on launch so the
   // header shows the real balance and the staked tiers are playable at once.
+  // Then (everywhere) refresh lobby state over a one-shot hello: the league
+  // card and daily counters self-heal at app OPEN (weekly rollover, resets)
+  // instead of waiting for the next online game.
   useEffect(() => {
-    if (isMiniPay()) void connectWalletCta(true);
-  }, [connectWalletCta]);
+    const sync = (): void =>
+      syncLobby(SERVER_URL, walletRef.current?.address, {
+        league: (league) => dispatch({ type: 'LEAGUE_UPDATE', league }),
+        challenge: (challenge) => dispatch({ type: 'CHALLENGE_UPDATE', challenge }),
+        streak: (streak) => dispatch({ type: 'STREAK_UPDATE', streak }),
+        limits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
+      });
+    if (isMiniPay()) void connectWalletCta(true).finally(sync);
+    else sync();
+  }, [connectWalletCta, dispatch]);
 
   /** Lock the stake on-chain for a staked match; leave the match on failure. */
   const stakeForMatch = useCallback(
