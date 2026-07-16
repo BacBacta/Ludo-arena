@@ -19,3 +19,4 @@ broadcast/
 packages/contracts/lib/
 packages/contracts/out/
 packages/contracts/cache/
+e2e/.qa-key
