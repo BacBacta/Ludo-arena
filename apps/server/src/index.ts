@@ -234,14 +234,23 @@ function postOpsAlert(message: string): void {
   }).catch((e) => console.error('[ops] alert webhook failed', e instanceof Error ? e.message : e));
 }
 
-// On-chain settlement (E3.3). null when no ARBITER_PRIVATE_KEY is configured.
-const arbiter = createArbiter();
+// R-COMP-2: real-money staked play must be an EXPLICIT launch decision, not a side
+// effect of the arbiter secret being present. Settlement arms ONLY when
+// STAKING_ENABLED === 'true'; otherwise staked play stays off even with a key +
+// escrow configured, so mainnet addresses landing in secrets can never silently
+// go live. Flip this flag deliberately (per network) once launch is signed off.
+const stakingEnabled = (process.env.STAKING_ENABLED ?? '').trim() === 'true';
+if (!stakingEnabled && (process.env.ARBITER_PRIVATE_KEY ?? '').trim()) {
+  console.warn('[ludo-server] ARBITER_PRIVATE_KEY is set but STAKING_ENABLED != true — staked play is DISABLED (explicit launch gate, R-COMP-2). Set STAKING_ENABLED=true to arm settlement.');
+}
+// On-chain settlement (E3.3). null unless staking is armed AND a key is configured.
+const arbiter = stakingEnabled ? createArbiter() : null;
 // cUSD cosmetic-purchase verifier (rec 6). null until the CosmeticsStore is
 // deployed → cosmetic.claim stays off (ticket unlocks still work regardless).
 const cosmeticsVerifier = createCosmeticsVerifier();
-// N-player settlement for staked 4-player games (LudoEscrowN). null until the
-// N-player escrow is deployed + configured → staked 4-player stays deferred.
-const arbiterN = createArbiterN();
+// N-player settlement for staked 4-player games (LudoEscrowN). null unless staking
+// is armed AND the N-player escrow is deployed + configured.
+const arbiterN = stakingEnabled ? createArbiterN() : null;
 // gameId → who to notify with game.settled once the payout tx is mined.
 const settlementNotify = new Map<string, { sessionIds: [string, string]; winner: Seat }>();
 const settlementQueue = arbiter

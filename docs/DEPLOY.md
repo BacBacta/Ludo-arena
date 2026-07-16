@@ -27,10 +27,37 @@ flyctl secrets set \
   ARBITER_PRIVATE_KEY="0x…" \
   CHAIN="celo-sepolia" \
   ESCROW_ADDRESS="0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6" \
+  STAKING_ENABLED="false" \
   BLOCKED_COUNTRIES=""
 
 flyctl deploy
 ```
+
+### Real-money launch gate (R-COMP-2)
+
+`STAKING_ENABLED` is the **explicit** switch for staked play. Settlement arms
+ONLY when `STAKING_ENABLED="true"`; with it unset/false the server refuses to
+create arbiters even when `ARBITER_PRIVATE_KEY` + escrow addresses are present
+(it logs a warning at boot). This exists so mainnet addresses landing in secrets
+can never *silently* take real money — enabling staking is a deliberate,
+auditable step, not a side effect of a key being configured. Flip it to `"true"`
+per network only after launch sign-off.
+
+Before setting it `"true"` for real money, also confirm:
+
+- **`BLOCKED_COUNTRIES`** (R-COMP-1) holds the legal-reviewed deny list — it is
+  intentionally empty above and the server warns while it is. Real-money rake in
+  a prohibited jurisdiction is a compliance exposure.
+- **Arbiter key custody (R-KEY-1, ops task — NOT closed in code).** The single
+  hot `ARBITER_PRIVATE_KEY` here signs every payout AND is the treasury+owner on
+  the current deployment. A compromise lets the holder name themselves winner of
+  any game they seat in and redirect the rake. Before mainnet: move the key to a
+  KMS/secret manager (not a plaintext Fly secret), and split the signer from the
+  gas submitter so the signing key is not exposed on the always-on box. The
+  `refundActive` 24 h valve + the gas-balance monitor are mitigations, not a fix.
+- **Contracts redeployed** with the R-ESCROW-1 pull-payment `LudoEscrow` and the
+  post-C3 `LudoEscrowN` (R-DEPLOY-1), and `ESCROW_ADDRESS`/`ESCROW_N_ADDRESS`
+  updated to the new addresses.
 
 The app listens on `internal_port` 8080 (WS upgrades over the same port), health
 check `/health`. Result URL: `wss://ludo-arena-server.fly.dev` — this is the URL

@@ -93,4 +93,13 @@
 
 ---
 
+### Lot 9 — Flag de lancement & custody de la clé (R-COMP-2, R-KEY-1)
+
+| ID | Sév. | Statut | Correctif | Test de régression |
+|---|---|---|---|---|
+| **R-COMP-2** | 🟠 | ✅ Corrigé | **Flag `STAKING_ENABLED` explicite.** Le jeu d'argent n'est plus armé par la seule présence de la clé arbitre : `arbiter`/`arbiterN` ne sont créés que si `STAKING_ENABLED === 'true'`. Sinon, staked désactivé même avec clé + escrow configurés, et le serveur logue un avertissement au boot. Des adresses mainnet dans les secrets ne peuvent plus **silencieusement** prendre de l'argent réel. Documenté dans `DEPLOY.md` (checklist de lancement). | Typecheck ; logique simple (gate unique sur la création des arbitres). |
+| **R-KEY-1** | 🔴 | 🔵 Résiduel (ops) | **Pas de correctif purement code.** La clé arbitre chaude unique (= arbitre + trésor + owner) est un risque de custody. Livré : le flag de lancement (ci-dessus) + la checklist `DEPLOY.md` exigeant, avant mainnet, (1) la clé en KMS/secret manager (pas secret Fly en clair), (2) un split signataire/soumetteur. Mitigations en place : valve `refundActive` 24 h + monitor de solde gas. **Reste une tâche humaine/ops.** | — (item ops, hors périmètre code) |
+
+---
+
 *(Lot 7 — R-WEB-1, reconnexion 4p staké — ci-dessous.)*
