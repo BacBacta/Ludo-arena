@@ -19,6 +19,9 @@
     "sim:contracts": "cd packages/contracts && forge test",
     "sim": "npm run sim:engine && npm run sim:contracts",
     "sim:flow": "tsx sim/flow.ts",
+    "sim:rational": "node simulation/rational.mjs",
+    "sim:chaos": "node simulation/chaos.mjs",
+    "sim:replay": "tsx simulation/replay.mjs",
     "sim:all": "npm run sim:engine && npm run sim:contracts && npm run sim:flow"
   },
   "engines": {

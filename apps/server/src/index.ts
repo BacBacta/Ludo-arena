@@ -698,13 +698,18 @@ wss.on('connection', (ws, req) => {
       qaConn = false;
     }
   }
-  if (limiter.isBanned(ip)) {
+  // Authorized QA/load-test connections (they carry the secret QA_KEY) are exempt
+  // from the per-IP connection cap, the ban list and the rate limiter — a load run
+  // (Phase 4 bot sim, Phase 6 load) drives thousands of fast actions from ONE host,
+  // which the prod-facing limits would throttle. Real users never have QA_KEY, so
+  // prod protection is unchanged.
+  if (!qaConn && limiter.isBanned(ip)) {
     send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Temporarily banned. Try again later.' });
     ws.close();
     return;
   }
   const liveForIp = connsByIp.get(ip) ?? 0;
-  if (liveForIp >= MAX_CONNS_PER_IP) {
+  if (!qaConn && liveForIp >= MAX_CONNS_PER_IP) {
     send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Too many connections.' });
     ws.close();
     return;
@@ -721,7 +726,7 @@ wss.on('connection', (ws, req) => {
   let inbox = Promise.resolve();
 
   ws.on('message', (data) => {
-    const verdict = limiter.allow(connKey, ip);
+    const verdict = qaConn ? 'ok' : limiter.allow(connKey, ip);
     if (verdict !== 'ok') {
       // silent drop while over rate (no error amplification); one notice on ban
       if (verdict === 'ban') {

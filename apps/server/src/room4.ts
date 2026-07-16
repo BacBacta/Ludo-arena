@@ -40,8 +40,10 @@ export interface Room4Result {
   fairness: Fairness4;
 }
 
-const BOT_ROLL_MS = 700; // bot "thinking" before it rolls
-const BOT_MOVE_MS = 900; // then before it commits its move (die settles first)
+// Bot pacing ("thinking" before rolling / committing). Env-tunable so a sim /
+// load test can accelerate (BOT_ROLL_MS=0 BOT_MOVE_MS=0); prod keeps the beat.
+const BOT_ROLL_MS = Number(process.env.BOT_ROLL_MS ?? 700); // bot "thinking" before it rolls
+const BOT_MOVE_MS = Number(process.env.BOT_MOVE_MS ?? 900); // then before it commits its move (die settles first)
 
 export class Room4 {
   readonly gameId: string;

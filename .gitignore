@@ -21,3 +21,4 @@ packages/contracts/out/
 packages/contracts/cache/
 e2e/.qa-key
 docs/preview/
+simulation/out/

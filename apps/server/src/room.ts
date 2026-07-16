@@ -44,7 +44,10 @@ export interface RoomResult {
   freeroll: boolean;
 }
 
-const DIE_SETTLE_MS = 900; // hold a forced move until the die stops tumbling (~700ms)
+// Hold a forced (single-legal) move until the die stops tumbling (~700ms). Env-
+// tunable so a bot sim / load test (Phase 4/6) can run games accelerated
+// (DIE_SETTLE_MS=0); prod keeps the 900ms animation beat by default.
+const DIE_SETTLE_MS = Number(process.env.DIE_SETTLE_MS ?? 900);
 
 export class Room {
   readonly gameId: string;
