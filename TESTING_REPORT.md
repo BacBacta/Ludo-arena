@@ -158,3 +158,42 @@
 4. **E7 listing MiniPay** (R-COMP-3) — pages ToS/confidentialité + soumission.
 5. **R-AUTH-1** — attestation d'origine du webview MiniPay (dépend de garanties plateforme) pour fermer le contournement des limites RG par session.
 6. Rappel plan de test : audit externe des contrats, certification RNG (labo accrédité), bêta fermée MiniPay, validation juridique par pays — inchangés, humains.
+
+---
+
+# Phase 1 — Tests unitaires du moteur de jeu
+
+Framework **Vitest** (existant) + **fast-check** (property-based) + provider de couverture **@vitest/coverage-v8**.
+
+## Couverture du moteur (`packages/game-engine`, R-COV-1 clos)
+
+Mesurée via `npm run coverage` (config `vitest.config.ts`, seuils appliqués ; `types.ts`/`index.ts` = déclarations, exclus) :
+
+| Fichier | Stmts | Branch | Funcs | Lines |
+|---|---|---|---|---|
+| **engine.ts** (2p) | 100% | 89.7% | 100% | 100% |
+| **ludo4.ts** (4p) | 100% | 89.1% | 100% | 100% |
+| constants.ts | 100% | 100% | 100% | 100% |
+| **Total** | **100%** | **89.4%** | **100%** | **100%** |
+
+Baseline avant Phase 1 : 89.7% stmts. **Cible ≥ 90 % atteinte** sur statements/lignes/fonctions (100 %). Les branches (89.4 %, seuil documenté à 88) sont plafonnées par des gardes défensives `?? -1` / `if (!row)` inatteignables via l'API publique (une row absente rend `legalMoves` vide → sortie avant la garde) ; le seuil documente la limite plutôt que d'asserter des états impossibles.
+
+## Tests ajoutés (78 tests moteur, +47)
+
+- **Règles 2p** (`engine.rules.test.ts`, 19) : chemins d'erreur (`applyRoll`/`applyMove` mauvais phase, dé invalide), `absCell` (null hors piste, throw siège invalide), **immunité home-column** (capture impossible rel>50), **reset du sixStreak** sur tour supplémentaire non-six (6,6,capture-2,6 ≠ forfait), ladder `pickAutoMove` complet (finish>capture>exit>most-advanced + tie-break), legal forgé (l'API serveur reste l'autorité).
+- **Règles 4p** (`ludo4.rules.test.ts`, 25) : géométrie (4 starts sûrs, home columns disjointes), **capture multi-siège simultanée** (un coup renvoie 2 adversaires), pair protégée coexistant avec un lone capturé, `nextSeat4` fallback tout-fini, `pickAutoMove4` complet, **`tokenXY4`** (base/finished/track/home + fallbacks).
+- **Property-based** (`invariants.property.test.ts`, fast-check, 4) : sur des flux de dés aléatoires jouant des parties complètes (2p+4p) — **conservation des pions** + état bien-formé après chaque transition, **capture → retour en base**, gagnant ⇒ tous pions arrivés, jamais d'overshoot, **déterminisme** (rejeu identique). fast-check réduit toute séquence en échec à un reproducteur minimal.
+
+## Test statistique des dés (`apps/server/test/dice-stats.test.ts`, R-DICE-2 clos)
+
+**Source d'aléa documentée** : dés = commit-reveal SHA-256, `die #i = 1 + (48 bits de sha256(serverSeed|eA|eB|i)) % 6` — `serverSeed` = 256 bits `node:crypto` ; biais du `%6` ≈ 1.4e-14 (négligeable). Pas de `Math.random`.
+
+- **Uniformité** : 1 000 000 lancers, chi-carré d'ajustement (df=5) < 15.086 (**p > 0,01**).
+- **Indépendance** : table de contingence 6×6 des lancers consécutifs, chi-carré (df=25) < 44.314 (**p > 0,01**).
+- La fairness du flux repose sur le contrôle reveal==commit (primitive testée).
+
+> Ce test **ne remplace pas** la certification RNG par un laboratoire accrédité (iTech/GLI/eCOGRA), qui reste une action humaine pré-mainnet.
+
+## Bilan Phase 1
+
+**GO.** Moteur 2p **et** 4p couverts à 100 % (stmts/lignes/fonctions) avec property-based sur les invariants, dés validés statistiquement (uniformité + indépendance sur 1M lancers). Suite totale : **185 tests** verts (engine 78, serveur 97, web 10) + 70 contrats. Reste pour la certification RNG : action humaine (labo accrédité).
