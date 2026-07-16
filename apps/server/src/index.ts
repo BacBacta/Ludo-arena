@@ -505,9 +505,15 @@ function wireRoom(room: Room): void {
     const winnerWallet = result.players[result.winner].wallet;
     if (settlementQueue && result.stakeCents > 0 && pa.wallet && pb.wallet && winnerWallet) {
       settlementNotify.set(result.gameId, { sessionIds: [pa.id, pb.id], winner: result.winner });
-      settlementQueue
-        .enqueue(result.gameId, winnerWallet)
-        .catch((e) => console.error('[settlement] enqueue', e));
+      settlementQueue.enqueue(result.gameId, winnerWallet).catch((e) => {
+        // A dropped enqueue would silently lose the winner's payout (the terminal
+        // snapshot is already persisted). Page ops — the boot reconciliation
+        // (R-SETTLE-2) is the net that re-enqueues it, but a live DB blip that
+        // never crashes the process would otherwise go unnoticed.
+        const msg = `[settlement][ALERT] enqueue FAILED for game ${result.gameId}, winner ${winnerWallet}: ${e instanceof Error ? e.message : e}. Winner not yet queued for payout.`;
+        console.error(msg);
+        postOpsAlert(msg);
+      });
     }
   };
 }
@@ -525,6 +531,20 @@ for (const snap of await store.loadRooms()) {
   wireRoom(room);
   room.resume();
   console.log(`[ludo-server] restored game ${snap.gameId} (stake ${snap.stakeCents}c)`);
+  // R-SETTLE-2: a staked game can persist its terminal (over=true) snapshot and
+  // then crash before onResult's async enqueue lands — the payout job is lost and
+  // resume() no-ops for an over room, so the winner would never be paid. Re-enqueue
+  // any finished staked game that has no settlement record yet.
+  const winnerSeat = snap.over ? snap.state.winner : null;
+  if (settlementQueue && snap.stakeCents > 0 && winnerSeat != null) {
+    const winnerWallet = snap.players[winnerSeat]?.wallet;
+    const bothWallets = snap.players[0].wallet && snap.players[1].wallet;
+    if (winnerWallet && bothWallets && !(await store.hasSettlement(snap.gameId))) {
+      settlementNotify.set(snap.gameId, { sessionIds: [snap.players[0].sessionId, snap.players[1].sessionId], winner: winnerSeat });
+      await settlementQueue.enqueue(snap.gameId, winnerWallet).catch((e) => console.error('[settlement] boot re-enqueue', e));
+      console.warn(`[settlement] re-enqueued orphaned staked game ${snap.gameId} (crash between game-over and settlement)`);
+    }
+  }
 }
 // Finish any settlements interrupted by the previous run (1v1 and 4p).
 await settlementQueue?.resumePending();

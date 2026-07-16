@@ -48,6 +48,19 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
+    it('hasSettlement reflects any settlement record (R-SETTLE-2 boot reconcile)', async () => {
+      const store = make();
+      await store.init();
+      expect(await store.hasSettlement('gS')).toBe(false); // nothing enqueued yet
+      await store.enqueueSettlement({ gameId: 'gS', winnerWallet: '0xabc', chainId: 11_142_220, status: 'pending', attempts: 0, variant: '2p' });
+      expect(await store.hasSettlement('gS')).toBe(true);
+      // still true once resolved (rows are marked, never deleted) → no false re-enqueue
+      await store.markSettlement('gS', 'settled', 1, '0xtx');
+      expect(await store.hasSettlement('gS')).toBe(true);
+      expect(await store.hasSettlement('other')).toBe(false);
+      await store.close();
+    });
+
     it('round-trips room snapshots and lists them', async () => {
       const store = make();
       await store.init();

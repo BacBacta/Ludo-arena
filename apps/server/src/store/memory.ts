@@ -187,6 +187,9 @@ export class MemoryStore implements Store {
       if (txHash) job.txHash = txHash;
     }
   }
+  async hasSettlement(gameId: string): Promise<boolean> {
+    return this.settlements.has(gameId);
+  }
 
   async getChallenge(playerId: string, today: string): Promise<ChallengeState> {
     const row = this.players.get(playerId);

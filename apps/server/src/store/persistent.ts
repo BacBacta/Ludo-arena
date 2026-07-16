@@ -335,6 +335,11 @@ export class PersistentStore implements Store {
     );
   }
 
+  async hasSettlement(gameId: string): Promise<boolean> {
+    const res = await this.pool.query(`SELECT 1 FROM settlements WHERE game_id = $1`, [gameId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   private challengeFrom(row: { challenge_date: string | null; challenge_captures: number; challenge_done: boolean; freeroll_tickets: number } | undefined, today: string): ChallengeState {
     const fresh = !row || row.challenge_date !== today;
     return {

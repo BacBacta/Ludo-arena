@@ -125,6 +125,10 @@ export interface Store {
   enqueueSettlement(job: SettlementJob): Promise<void>;
   listPendingSettlements(): Promise<SettlementJob[]>;
   markSettlement(gameId: string, status: SettlementJob['status'], attempts: number, txHash?: string): Promise<void>;
+  /** Whether ANY settlement record (any status) exists for a game — used at boot
+   *  to detect a staked game that finished but whose settlement job never landed
+   *  (crash between the terminal snapshot and the enqueue). */
+  hasSettlement(gameId: string): Promise<boolean>;
 
   // Daily challenge (E4.1). `today` is a UTC date string (YYYY-MM-DD); progress
   // resets when the stored day differs. Tickets persist across days.
