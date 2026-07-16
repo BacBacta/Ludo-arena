@@ -1124,6 +1124,15 @@ small.muted { font-size: 12px; }
 .dicebtn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; }
 /* disabled only occurs mid-turn (picking a token): stay gold, just inert */
 .dicebtn:disabled { cursor: default; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 6px 14px rgba(23, 43, 99, 0.3); }
+/* Hidden-but-MOUNTED between turns (same trick as .huddie--idle): the die element
+   must exist before its roll arrives or the Die3D tumble transition can't play,
+   which made the first roll after each turn just pop to the result. */
+.dicebtn--idle {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  left: -9999px;
+}
 
 /* compact opponent die tucked beside their name chip in the HUD */
 /* Kept MOUNTED even on my turn (a fresh mount can't run the tumble transition);

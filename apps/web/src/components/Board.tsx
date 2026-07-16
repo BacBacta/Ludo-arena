@@ -120,8 +120,12 @@ function tokenXY(seat: Seat, token: number, rel: number): [number, number] {
 function baseSlotXY(seat: Seat, token: number): [number, number] {
   const quad = SEAT_QUAD[seat] ?? [0, 9];
   const slots = quadSlots(quad[0], quad[1]);
-  // two tokens rest on the two lower slots so the banner edge stays clear
-  return slots[token + 2] ?? slots[token] ?? [7.5, 7.5];
+  // Each of the 4 tokens rests on its OWN disc — matching the four discs Quadrant
+  // draws, exactly like Board4. The old `slots[token + 2]` crammed all four onto
+  // the lower two discs, stacking the non-movable tokens ON TOP of the movable ones:
+  // that hid their pulse AND stole taps (the covering copy has no onClick), so a
+  // base pawn couldn't be played at all — the "die frozen after a 6" bot freeze.
+  return slots[token] ?? [7.5, 7.5];
 }
 
 /** Ten-point star polygon string — crisp vector stars (text glyphs render fuzzy). */
@@ -273,7 +277,6 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
 
   const prevRef = useRef(game.positions);
   const [bursts, setBursts] = useState<Burst[]>([]);
-  const [shake, setShake] = useState(false);
   useEffect(() => {
     const prev = prevRef.current;
     prevRef.current = game.positions;
@@ -284,8 +287,9 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
           const [x, y] = tokenXY(seat as Seat, token, before);
           const key = Date.now() + seat * 100 + token;
           setBursts((b) => [...b, { key, x, y, seat: seat as Seat }]);
-          setShake(true);
-          setTimeout(() => setShake(false), 320);
+          // Capture feedback stays LOCAL (a particle burst on the eaten pawn). The
+          // whole-board shake was removed on purpose — translating the entire board
+          // on every capture read as the board being unstable.
           setTimeout(() => setBursts((b) => b.filter((bb) => bb.key !== key)), 650);
         }
       }),
@@ -307,7 +311,7 @@ export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
   );
 
   return (
-    <div className={`boardwrap${shake ? ' boardwrap--shake' : ''}`}>
+    <div className="boardwrap">
       <svg
         viewBox="0 0 15 15"
         xmlns="http://www.w3.org/2000/svg"

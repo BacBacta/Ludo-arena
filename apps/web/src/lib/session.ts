@@ -239,10 +239,24 @@ export class LocalBotSession implements GameSession {
       } else if (seat === 1) {
         const pick = pickAutoMove(this.state, 1, value) ?? this.state.legal[0];
         if (pick !== undefined) setTimeout(() => this.applyMove(1, pick), BOT_MOVE_MS);
+      } else {
+        // seat 0 with a REAL choice: the human must pick a token, so the client
+        // needs the post-roll state (phase=awaiting-move + legal list) to make
+        // tokens tappable. The server (room.ts) broadcasts game.state here for
+        // exactly this reason; the local bot has no server, so emit it ourselves.
+        // Without it the board shows nothing to tap and the die looks frozen after
+        // the player's own roll (only after the opening, once a roll first yields
+        // more than one legal move).
+        this.ev.onState(this.state);
       }
-      // seat 0 with multiple choices: wait for the player's tap
     } else {
-      // rolled with no legal move — no walk, just pass the turn after a beat
+      // Rolled with no legal move (or a three-6 burn): applyRoll ALREADY flipped the
+      // turn, but only onTurn (activeTurn) fires below — the store's game.turn stays
+      // stale, so when the turn hands BACK to the human (e.g. the bot rolls a no-move)
+      // the client's `handoff` guard hides the roll button and the die freezes for
+      // good. Publish the flipped state first, mirroring the server's announceTurn
+      // (room.ts), which broadcasts game.state on every turn pass for this exact reason.
+      this.ev.onState(this.state);
       this.afterTurnChange(0);
     }
   }

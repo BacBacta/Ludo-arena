@@ -269,19 +269,24 @@ export function GameScreen({
           <div className="cornerstack" data-seat-anchor={mySeat}>
             <EmoteFloat seat={mySeat} />
             <AvatarCard initial={myLabel.slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} avatar={avatar} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
-            {((myTurn && !handoff) || myRolling) && (
-              <button
-                className="dicebtn"
-                disabled={!canRoll}
-                onClick={() => {
-                  playDice(skin.sound); // my equipped die's own material sound (premium)
-                  onRoll();
-                }}
-                aria-label={`${t('you')} die`}
-              >
-                <Die value={myDieVal} rollKey={myRollIndex} skin={skin} />
-              </button>
-            )}
+            {/* ALWAYS mounted, like the opponent die above: a freshly-mounted element
+                cannot run the CSS tumble transition, so unmounting the die between
+                turns made the FIRST roll after each remount just pop to the result
+                (the bot's always-mounted die tumbled fine). Hidden via CSS when it
+                isn't ours to throw. */}
+            <button
+              className={`dicebtn${(myTurn && !handoff) || myRolling ? '' : ' dicebtn--idle'}`}
+              disabled={!canRoll}
+              aria-hidden={!((myTurn && !handoff) || myRolling)}
+              tabIndex={(myTurn && !handoff) || myRolling ? undefined : -1}
+              onClick={() => {
+                playDice(skin.sound); // my equipped die's own material sound (premium)
+                onRoll();
+              }}
+              aria-label={`${t('you')} die`}
+            >
+              <Die value={myDieVal} rollKey={myRollIndex} skin={skin} />
+            </button>
           </div>
           <div className="gamemsg">
             <span>{message}</span>
