@@ -19,6 +19,10 @@ export interface QueueEntry<T> {
    *  Staked games must be wallet-vs-wallet or demo-vs-demo — a mixed pairing
    *  makes the real staker lock funds against a simulated opponent. */
   walletBacked: boolean;
+  /** QA session (secret-keyed test traffic): only ever pairs with other QA
+   *  sessions, so automated tests can run against production without a real
+   *  player being seated opposite a headless script. */
+  qa?: boolean;
 }
 
 export const BASE_WINDOW = 100;
@@ -36,6 +40,7 @@ export function compatible<T>(a: QueueEntry<T>, b: QueueEntry<T>, now: number, s
   // self-match — that would run a one-player game / farm freeroll tickets).
   if (a.session === b.session) return false;
   if (a.identity !== undefined && a.identity === b.identity) return false; // same durable player
+  if (!!a.qa !== !!b.qa) return false; // QA test traffic never meets real players
   // Money-mode parity: staked games never mix a real-wallet player with a demo
   // (simulated) player — the real stake would be locked against nothing.
   if (stake > 0 && a.walletBacked !== b.walletBacked) return false;

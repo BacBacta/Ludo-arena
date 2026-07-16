@@ -15,10 +15,10 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { DiceModal, FairnessModal, LegalModal, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { DiceModal, FairnessModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits, buySkin, claimCosmetic, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
-import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet } from './lib/minipay';
+import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
 import { recordGameResult } from './lib/diceSkins';
@@ -106,7 +106,13 @@ export default function App() {
       }
       const wallet = await connectWallet().catch(() => null);
       if (!wallet) {
-        if (!silent) dispatch({ type: 'TOAST', message: t('noWallet') });
+        // No provider at all (Chrome mobile…): a toast is a dead end — open the
+        // actionable MiniPay sheet instead. A present-but-refusing provider
+        // (user rejected the prompt) keeps the simple toast.
+        if (!silent) {
+          if (!hasInjectedWallet()) dispatch({ type: 'NOWALLET', open: true });
+          else dispatch({ type: 'TOAST', message: t('noWallet') });
+        }
         return false;
       }
       walletRef.current = wallet;
@@ -649,6 +655,7 @@ export default function App() {
         minutesPlayed={Math.max(1, Math.round((Date.now() - sessionStart.current) / 60_000))}
         onBreak={() => void applyLimits({ selfExcludeDays: 1 })}
       />
+      <NoWalletSheet />
       <Toast />
     </>
   );

@@ -50,6 +50,10 @@ export class Room {
   readonly gameId: string;
   readonly stakeCents: StakeCents;
   readonly fairness: Fairness;
+  /** QA game (a secret-keyed test session at either seat): the result must not
+   *  touch public ladders/rewards. In-memory only — a server restart mid-game
+   *  loses the flag, acceptable for short test games. */
+  qa = false;
   private state: GameState;
   private clients: [Client, Client];
   private diceIndex = 0;

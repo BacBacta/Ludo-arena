@@ -12,6 +12,7 @@ import type { Game4 } from '@ludo/game-engine';
 import { walletProofMessage, type Player4Info, type ServerMsg } from '@ludo/shared';
 import { deviceFingerprint } from './fingerprint';
 import { isMiniPay } from './minipay';
+import { withQa } from './session';
 import { loadFrameId } from './avatarFrames';
 import { loadAvatarId } from './avatars';
 import { adoptServerIdentity, loadCustomIdentity } from './profile';
@@ -105,7 +106,7 @@ export class Remote4 {
   private connect(entropyCommit: string): void {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(this.serverUrl);
+      ws = new WebSocket(withQa(this.serverUrl));
     } catch {
       this.ev.onGone();
       return;

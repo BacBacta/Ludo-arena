@@ -82,6 +82,8 @@ interface Session extends Client {
   consentTos?: string;
   /** profile.get throttle: last lookup timestamp (anti-spam, DB-bound query). */
   lastProfileGetAt?: number;
+  /** QA test session (see QA_KEY): isolated matchmaking, no ladder writes. */
+  qa?: boolean;
   /** Equipped avatar frame (cosmetic, client-authoritative like dice skins). */
   frame?: string;
   /** Chosen profile avatar id (cosmetic, client-authoritative like the frame). */
@@ -122,6 +124,12 @@ function isGeoBlocked(country: string | undefined): boolean {
 }
 
 const store = await createStore();
+/** Secret gate for QA test traffic (e2e runs against production). A session
+ *  connecting with ?qa=<QA_KEY> is isolated: it only pairs with other QA
+ *  sessions, may not stake, and its games write nothing to public ladders.
+ *  Unset (default) disables the flag entirely. */
+const QA_KEY = process.env.QA_KEY ?? '';
+
 const sessions = new Map<string, Session>();
 const rooms = new Map<string, Room>();
 const matchmaker = new Matchmaker<Session>();
@@ -459,6 +467,9 @@ function wireRoom(room: Room): void {
     const loserId = result.winner === 0 ? idB : idA;
     const winnerSession = sessions.get(result.players[result.winner].id);
     const loserSession = sessions.get(result.players[result.winner === 0 ? 1 : 0].id);
+    // QA games keep the audit trail (recordGame/ELO above) but must not touch
+    // the public ladder or grant rewards — test traffic polluted the league.
+    if (room.qa) return;
     store
       .addLeaguePoints(winnerId, leaguePointsForWin(result.stakeCents))
       .then((league) => winnerSession?.send({ t: 'league.update', league }))
@@ -645,6 +656,14 @@ let connSeq = 0;
 wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress ?? 'unknown';
   const country = countryOf(req.headers);
+  let qaConn = false;
+  if (QA_KEY !== '') {
+    try {
+      qaConn = new URL(req.url ?? '/', 'ws://x').searchParams.get('qa') === QA_KEY;
+    } catch {
+      qaConn = false;
+    }
+  }
   if (limiter.isBanned(ip)) {
     send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Temporarily banned. Try again later.' });
     ws.close();
@@ -699,6 +718,7 @@ wss.on('connection', (ws, req) => {
       const resumedSession = msg.sessionToken ? await resumeSession(msg.sessionToken, ws, wallet) : null;
       if (resumedSession) {
         session = resumedSession;
+        resumedSession.qa = qaConn || undefined;
         if (msg.fingerprint) resumedSession.fingerprint = msg.fingerprint;
         resumedSession.country = country;
         resumedSession.ip = ip;
@@ -773,6 +793,10 @@ wss.on('connection', (ws, req) => {
       session.entropyCommit = msg.entropyCommit; // anti-grinding commit (new clients)
       session.fingerprint = msg.fingerprint;
       session.country = country;
+      if (qaConn) {
+        session.qa = true;
+        console.log('[qa] session flagged: isolated matchmaking, no ladder writes');
+      }
       session.ip = ip;
       session.miniPay = msg.miniPay === true; // trusted address, no SIWE (before issueWalletNonce)
       session.frame = msg.frame; // cosmetic; validated to AVATAR_FRAMES in parse
@@ -872,12 +896,17 @@ wss.on('connection', (ws, req) => {
             elo: session.elo,
             enqueuedAt: Date.now(),
             walletBacked: !!session.wallet,
+            qa: session.qa,
           });
           if (!fpair) {
             session.send({ t: 'queue.ok', position: freerollMatchmaker.position(0, session) });
             break;
           }
           await startFreeroll(fpair[0].session, fpair[1].session);
+          break;
+        }
+        if (session.qa && msg.stake > 0) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'QA sessions cannot join staked queues.' });
           break;
         }
         const blocked = await stakeBlock(session, msg.stake);
@@ -894,6 +923,7 @@ wss.on('connection', (ws, req) => {
           elo: session.elo,
           enqueuedAt: Date.now(),
           walletBacked: !!session.wallet,
+          qa: session.qa,
         });
         if (!pair) {
           await store.queuePush(msg.stake, session.id);
@@ -911,6 +941,15 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const stake4 = msg.stakeCents ?? 0;
+        if (session.qa && stake4 > 0) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'QA sessions cannot join staked queues.' });
+          break;
+        }
+        if (session.qa && stake4 === 0) {
+          // Isolated table: the QA session + bots, never seated with real players.
+          startRoom4([session]);
+          break;
+        }
         if (stake4 > 0) {
           // Staked cUSD 4-player: needs the N-player escrow + a wallet, and the
           // same money-mode parity gates as 1v1 (consent + wallet-proof + durable
@@ -1247,6 +1286,7 @@ wss.on('connection', (ws, req) => {
           elo: session.elo,
           enqueuedAt: Date.now(),
           walletBacked: !!session.wallet,
+          qa: session.qa,
         });
         if (pair) {
           await store.queueRemove(pair[0].session.id);
@@ -1636,6 +1676,7 @@ function matchFoundMsg(gameId: string, seat: Seat, me: Session, opp: Session, st
 /** Create the Room from a finalized fairness and start it (match.found already sent). */
 function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fairness: Fairness, freeroll = false): void {
   const room = new Room(gameId, stake, a, b, fairness);
+  room.qa = !!a.qa || !!b.qa;
   room.freeroll = freeroll;
   a.room = room;
   a.seat = 0;

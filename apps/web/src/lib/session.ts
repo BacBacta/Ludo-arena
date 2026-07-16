@@ -39,6 +39,22 @@ import {
 
 /** Auth material the client attaches to a staked session: 18+/ToS consent to send
  *  in hello, and a wallet signer to answer the server's ownership-proof nonce. */
+/** Append the QA isolation key (test harnesses only) to a server WS URL.
+ *  Real users never have `ludo.qa` set; a wrong value is ignored server-side.
+ *  With a valid key the session only ever pairs with other QA sessions and
+ *  writes nothing to public ladders. */
+export function withQa(url: string): string {
+  try {
+    const key = localStorage.getItem('ludo.qa');
+    if (!key) return url;
+    const u = new URL(url);
+    u.searchParams.set('qa', key);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 export interface WalletAuth {
   consent?: { tosVersion: string; age18: boolean };
   signMessage?: (message: string) => Promise<string>;
@@ -303,7 +319,7 @@ export function pushIdentity(
   return new Promise((resolve) => {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(serverUrl);
+      ws = new WebSocket(withQa(serverUrl));
     } catch {
       resolve(null);
       return;
@@ -358,7 +374,7 @@ export function fetchProfile(serverUrl: string, pid: string): Promise<PublicProf
   return new Promise((resolve) => {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(serverUrl);
+      ws = new WebSocket(withQa(serverUrl));
     } catch {
       resolve(null);
       return;
@@ -419,7 +435,7 @@ export function sendLimits(
   return new Promise((resolve) => {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(serverUrl);
+      ws = new WebSocket(withQa(serverUrl));
     } catch {
       resolve(null);
       return;
@@ -480,7 +496,7 @@ export function buySkin(
   return new Promise((resolve) => {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(serverUrl);
+      ws = new WebSocket(withQa(serverUrl));
     } catch {
       resolve(null);
       return;
@@ -545,7 +561,7 @@ export function claimCosmetic(
   return new Promise((resolve) => {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(serverUrl);
+      ws = new WebSocket(withQa(serverUrl));
     } catch {
       resolve(null);
       return;
@@ -661,7 +677,7 @@ export class RemoteSession implements GameSession {
   }
 
   private connect(initial: boolean): void {
-    const ws = new WebSocket(this.serverUrl);
+    const ws = new WebSocket(withQa(this.serverUrl));
     this.ws = ws;
     const failTimer = setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) ws.close();

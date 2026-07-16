@@ -201,6 +201,8 @@ export interface AppState {
   diceModalOpen: boolean;
   /** 4-player mode chooser (practice / free online / real money) open state. */
   table4Open: boolean;
+  /** "No wallet in this browser" sheet (Chrome mobile etc.): explains MiniPay. */
+  noWalletOpen: boolean;
   profileEditOpen: boolean;
   /** First-session welcome (E6.4): open until the player has been onboarded. */
   onboardOpen: boolean;
@@ -287,6 +289,7 @@ export const initialState: AppState = {
   fairModalOpen: false,
   settingsOpen: false,
   table4Open: false,
+  noWalletOpen: false,
   profileEditOpen: false,
   soundOn: soundEnabled(),
   diceSkin: loadSkinId(),
@@ -321,6 +324,7 @@ export type Action =
   | { type: 'CHALLENGE_UPDATE'; challenge: ChallengeState }
   | { type: 'STREAK_UPDATE'; streak: StreakState }
   | { type: 'LEAGUE_UPDATE'; league: LeagueState }
+  | { type: 'NOWALLET'; open: boolean }
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
   | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
@@ -435,6 +439,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, streak: a.streak, tickets: a.streak.tickets };
     case 'LEAGUE_UPDATE':
       return { ...s, league: a.league };
+    case 'NOWALLET':
+      return { ...s, noWalletOpen: a.open };
     case 'TABLE_CREATED':
       return { ...s, screen: 'matchmaking', privateCode: a.code };
     case 'TICKETS':

@@ -474,6 +474,43 @@ export function ProfileEditor({ onSave }: { onSave(name: string, flag: string, a
   );
 }
 
+/** "No wallet in this browser" sheet — shown when connect is tapped and no
+ *  provider is injected (Chrome mobile etc.). Actionable, not a dead end:
+ *  open the game inside MiniPay (deeplink), copy the link, or keep playing
+ *  free. Staking itself stays MiniPay/injected-wallet only. */
+export function NoWalletSheet() {
+  const { noWalletOpen } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'NOWALLET', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(noWalletOpen, close);
+  if (!noWalletOpen) return null;
+  const here = window.location.origin + window.location.pathname;
+  const openInMiniPay = `https://link.minipay.xyz/browse?url=${encodeURIComponent(here)}`;
+  const copy = (): void => {
+    navigator.clipboard?.writeText(here).then(
+      () => dispatch({ type: 'TOAST', message: t('nwCopied') }),
+      () => undefined,
+    );
+  };
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>{t('nwTitle')}</h3>
+        <p className="muted" style={{ fontSize: 13, margin: '8px 0 14px' }}>{t('nwBody')}</p>
+        <a className="btn" href={openInMiniPay} target="_blank" rel="noreferrer">
+          {t('nwOpen')}
+        </a>
+        <button className="btn btn--ghost" style={{ marginTop: 8 }} onClick={copy}>
+          {t('copyLink')}
+        </button>
+        <button className="btn btn--ghost" style={{ marginTop: 8 }} onClick={() => { playTap(); close(); }}>
+          {t('nwFree')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Table4Modal({ onPractice, onFree, onStaked }: {
   onPractice(): void;
   onFree(): void;
