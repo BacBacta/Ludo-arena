@@ -136,11 +136,16 @@ function starPoints(cx: number, cy: number, r: number): string {
 
 /** Chunky glossy Ludo-Club peg: bulb head, flared skirt, cast shadow, hot specular. */
 function Pawn({ seat }: { seat: Seat }) {
-  const c = SEAT_COLOR[seat] ?? BLUE;
+  return <PegShape c={SEAT_COLOR[seat] ?? BLUE} idKey={`peg-${seat}`} />;
+}
+
+/** The peg geometry itself, parameterised so the lobby hero can reuse it with
+ *  any of the four seat colours (gradient ids must be unique per instance). */
+function PegShape({ c, idKey }: { c: readonly [string, string, string]; idKey: string }) {
   const dark = c[2];
   const rim = c[0];
-  const gid = `peg-${seat}`;
-  const hid = `peghead-${seat}`;
+  const gid = idKey;
+  const hid = `${idKey}-head`;
   return (
     <>
       <defs>
@@ -173,6 +178,18 @@ function Pawn({ seat }: { seat: Seat }) {
       <path d="M -0.12 0.26 C -0.16 0.08 -0.09 -0.06 -0.06 -0.16" fill="none" stroke="#ffffff" strokeWidth={0.045} strokeLinecap="round" opacity={0.45} />
       <path d="M 0.145 -0.33 A 0.17 0.17 0 0 1 0.06 -0.13" fill="none" stroke={rim} strokeWidth={0.03} strokeLinecap="round" opacity={0.85} />
     </>
+  );
+}
+
+/** The four canonical seat colour triples, for use outside the board (lobby hero). */
+export const PEG_COLORS = { blue: BLUE, green: GREEN, red: RED, yellow: YELLOW } as const;
+
+/** One standalone pawn in its own <svg>, for the lobby hero scene. */
+export function HeroPeg({ colors, idKey }: { colors: readonly [string, string, string]; idKey: string }) {
+  return (
+    <svg className="heropeg" viewBox="-0.38 -0.5 0.76 0.96" aria-hidden="true">
+      <PegShape c={colors} idKey={idKey} />
+    </svg>
   );
 }
 

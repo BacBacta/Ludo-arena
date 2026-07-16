@@ -16,7 +16,7 @@
   --line: #dbe2ef;
   --glass: rgba(255, 255, 255, 0.35);
   --txt: #233150;
-  --muted: #8091ad;
+  --muted: #5b6d92;
   --label: #64759b;
   --accent: #f5b301;
   --accent-2: #ffca3a;
@@ -199,22 +199,95 @@ a.btn {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.3px;
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.95);
   text-shadow: 0 2px 0 rgba(23, 43, 99, 0.3);
   text-align: center;
-  margin: 4px 0 12px;
+  text-wrap: balance;
+  margin: 8px 0 12px;
+}
+
+/* hero game table: four seat-colour pegs flanking the REAL 3D die (tappable).
+   The one bold moment of the page — everything below stays calm. */
+.hero--table { margin-bottom: 10px; }
+.herotable {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 0 4px;
+}
+.herotable__glow {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 250px;
+  height: 78px;
+  transform: translateX(-50%);
+  background: radial-gradient(55% 62% at 50% 100%, rgba(255, 255, 255, 0.16), transparent 72%);
+  pointer-events: none;
+}
+.herotable__pegs { display: flex; align-items: flex-end; gap: 8px; }
+.heropeg {
+  width: 33px;
+  height: 42px;
+  filter: drop-shadow(0 4px 5px rgba(16, 24, 48, 0.35));
+  animation: pegBob 3.8s ease-in-out infinite;
+}
+/* outer pegs sit further from the table -> slightly smaller, for depth */
+.herotable__pegs:first-of-type .heropeg:first-child,
+.herotable__pegs:last-of-type .heropeg:last-child { width: 27px; height: 34px; }
+.herotable__pegs:first-of-type .heropeg:first-child { animation-delay: 0.5s; }
+.herotable__pegs:first-of-type .heropeg:last-child { animation-delay: 1.4s; }
+.herotable__pegs:last-of-type .heropeg:first-child { animation-delay: 2.2s; }
+.herotable__pegs:last-of-type .heropeg:last-child { animation-delay: 3s; }
+.herotable__die {
+  border: none;
+  background: none;
+  padding: 8px 6px;
+  min-width: 64px;
+  min-height: 64px;
+  cursor: pointer;
+  animation: heroFloat 3.8s ease-in-out infinite;
+}
+.herotable__die:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 3px; border-radius: 16px; }
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes pegBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .herotable__die, .heropeg { animation: none; }
 }
 
 /* scannable section label — gives the page a visible information hierarchy */
 .seclabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--font-display);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.4px;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.95);
   text-shadow: 0 1px 0 rgba(23, 43, 99, 0.3);
   margin: 4px 2px 8px;
+}
+/* the four seat colours as a 2x2 quad-dot — the page's Ludo signature */
+.seclabel::before {
+  content: '';
+  flex: 0 0 11px;
+  width: 11px;
+  height: 11px;
+  background:
+    radial-gradient(circle at 27% 27%, #1f8fd4 2.3px, transparent 2.8px),
+    radial-gradient(circle at 73% 27%, #25a544 2.3px, transparent 2.8px),
+    radial-gradient(circle at 27% 73%, #f6c200 2.3px, transparent 2.8px),
+    radial-gradient(circle at 73% 73%, #e62e2a 2.3px, transparent 2.8px);
 }
 
 /* game modes: one clean row per mode (icon · title/sub · chevron/badge) */
@@ -294,7 +367,7 @@ a.btn {
   transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.18s ease, background 0.18s ease;
 }
 .gstake b { display: block; font-family: var(--font-display); font-size: 16px; font-weight: 600; }
-.gstake small { display: block; margin-top: 1px; font-size: 9px; color: var(--muted); white-space: nowrap; }
+.gstake small { display: block; margin-top: 1px; font-size: 10px; color: var(--muted); white-space: nowrap; }
 .gstake--free b { color: var(--candy); }
 .gstake--sel {
   transform: translateY(-4px);
@@ -310,25 +383,46 @@ a.btn {
 
 /* Secondary "Play for USDT" toggle under the primary free CTA (Option A). */
 .btn--usdt {
-  width: 100%;
-  margin-top: 9px;
-  padding: 12px 16px;
-  border: 1px solid rgba(245, 179, 1, 0.55);
-  border-radius: 14px;
-  background: rgba(245, 179, 1, 0.1);
-  color: var(--txt);
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  cursor: pointer;
   font-family: var(--font-display);
-  transition: background 0.18s ease, border-color 0.18s ease;
+  color: #ffffff;
+  background: linear-gradient(180deg, #2d4193 0%, #22347a 100%);
+  border: 1px solid rgba(255, 202, 58, 0.55);
+  border-bottom: 3px solid #17245c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 14px rgba(23, 43, 99, 0.3);
+  transition: transform 0.12s ease, border-color 0.2s ease;
 }
 .btn--usdt:active { transform: scale(0.99); }
-.btn--usdt-open { background: rgba(245, 179, 1, 0.18); border-color: rgba(245, 179, 1, 0.8); }
-.btn--usdt__lead { font-weight: 700; font-size: 15px; }
-.btn--usdt__hint { font-size: 12px; color: var(--muted); font-weight: 600; }
+.btn--usdt-open { border-color: var(--accent); }
+.btn--usdt__lead { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.btn--usdt__coin {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #3a2b00;
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25);
+}
+.btn--usdt__hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-2); /* gold on navy: 7.5:1 */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 /* revealed stake tiles animate down from the toggle */
 .gstakes--reveal { margin-top: 9px; animation: stakesReveal 0.22s ease both; }
 @keyframes stakesReveal { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
@@ -374,17 +468,22 @@ a.btn {
 .btn--hero {
   position: relative;
   overflow: hidden;
-  padding: 16px 16px 13px;
+  padding: 15px 16px 13px;
   font-size: 21px;
+  /* deeper candy: the label zone (~34% down) measures >=3:1 vs white (AA large) */
+  background: linear-gradient(180deg, #7ed465 0%, #43a047 14%, #2e7d32 100%);
+  border-bottom-color: #1f5c23;
 }
 .btn--hero small {
-  display: block;
-  margin-top: 2px;
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 11px 3px;
+  border-radius: 999px;
+  background: rgba(15, 46, 17, 0.4); /* dark pill -> white 12px passes 4.5:1 */
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.3px;
-  color: rgba(255, 255, 255, 0.92);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
+  color: #ffffff;
 }
 .btn--hero::after {
   content: '';
@@ -430,6 +529,7 @@ a.btn {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .muted { color: var(--muted); }
+.stagehint { color: rgba(255, 255, 255, 0.95); font-size: 12px; text-align: center; }
 small.muted { font-size: 12px; }
 
 /* inline SVG icon set */
@@ -508,8 +608,9 @@ small.muted { font-size: 12px; }
 .topbar__connect:active { transform: scale(0.96); }
 
 /* Staked tier locked until a real wallet backs the balance (no demo money). */
-.gstake--locked { opacity: 0.65; }
-.gstake--locked b { color: var(--muted); }
+/* A locked tile is still a LIVE button (tapping connects the wallet), so it
+   keeps the solid chip look — the shield + caption alone say "wallet first". */
+.gstake--locked b { color: var(--txt); }
 
 /* Player profile card (stable identity + ELO + W/L). */
 /* the identity card is now a tappable button (opens the profile editor) */
@@ -661,7 +762,7 @@ small.muted { font-size: 12px; }
 }
 .mini--action:hover { border-color: rgba(46, 158, 107, 0.4); }
 
-.fairnote { text-align: center; color: rgba(255, 255, 255, 0.75); font-size: 11px; margin-top: 10px; }
+.fairnote { text-align: center; color: rgba(255, 255, 255, 0.95); font-size: 11px; margin-top: 10px; }
 .fairnote a { color: #ffffff; text-decoration: underline; cursor: pointer; }
 
 /* Matchmaking: expanding radar rings around the searching avatar */
@@ -1468,7 +1569,26 @@ small.muted { font-size: 12px; }
   border-bottom: 1px solid var(--line);
 }
 .board li:last-child { border-bottom: none; }
-.board b { color: var(--accent); }
+.board b { color: var(--txt); font-family: var(--font-display); font-variant-numeric: tabular-nums; }
+.board__who { display: flex; align-items: center; gap: 7px; }
+.board__rank {
+  font-style: normal;
+  flex: 0 0 19px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted); /* 4.62:1 on card-2 (AA small) — --label measured 4.10 */
+  background: var(--card-2);
+}
+.board__rank--1 { background: linear-gradient(180deg, #ffe08a, #f5b301); color: #5d4300; }
+.board__rank--2 { background: linear-gradient(180deg, #e8edf5, #c3cddd); color: #45536b; }
+.board__rank--3 { background: linear-gradient(180deg, #ecc39a, #cf8d52); color: #5d3a12; }
 .reconnectbar {
   background: #fff6dd;
   border: 1px solid var(--accent);

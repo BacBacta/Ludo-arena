@@ -3,8 +3,11 @@ import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@lud
 import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconShield, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
+import { HeroPeg, PEG_COLORS } from '../components/Board';
+import { Die3D } from '../components/Die3D';
+import { skinById } from '../lib/diceSkins';
 import { isMiniPay } from '../lib/minipay';
-import { playTap } from '../lib/sound';
+import { playDice, playTap } from '../lib/sound';
 import { frameClass } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
 import { PremiumFrame } from '../components/PremiumFrame';
@@ -34,7 +37,7 @@ export function Lobby({
   /** Tap a league row → open that player's public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
@@ -109,6 +112,14 @@ export function Lobby({
     onPlay(s as StakeCents);
   };
 
+  // Hero die: the REAL in-game 3D die, playable right on the lobby — tap it and
+  // it tumbles with the real roll sound. The product demos itself.
+  const [heroDie, setHeroDie] = useState<{ value: number; key: number }>({ value: 6, key: 0 });
+  const rollHeroDie = (): void => {
+    playDice();
+    setHeroDie((d) => ({ value: 1 + Math.floor(Math.random() * 6), key: d.key + 1 }));
+  };
+
   return (
     <div className="screen screen--lobby">
       <TopBar onConnect={onConnectWallet} />
@@ -116,8 +127,24 @@ export function Lobby({
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
       {/* HERO (Option A): one promise, one dominant CTA that starts a REAL online
-          1v1 for free. Stakes are a secondary, opt-in choice below. */}
-      <div className="hero">
+          1v1 for free. Stakes are a secondary, opt-in choice below. The scene
+          shows the game itself — four seat-colour pegs around the real 3D die,
+          which is tappable and rolls with the real engine + sound. */}
+      <div className="hero hero--table">
+        <div className="herotable">
+          <span className="herotable__glow" aria-hidden="true" />
+          <div className="herotable__pegs" aria-hidden="true">
+            <HeroPeg colors={PEG_COLORS.red} idKey="hp-red" />
+            <HeroPeg colors={PEG_COLORS.blue} idKey="hp-blue" />
+          </div>
+          <button type="button" className="herotable__die" onClick={rollHeroDie} aria-label={t('tapDie')}>
+            <Die3D value={heroDie.value} rollKey={heroDie.key} skin={skinById(diceSkin)} />
+          </button>
+          <div className="herotable__pegs" aria-hidden="true">
+            <HeroPeg colors={PEG_COLORS.green} idKey="hp-green" />
+            <HeroPeg colors={PEG_COLORS.yellow} idKey="hp-yellow" />
+          </div>
+        </div>
         <div className="hero__tagline">{t('tagline')}</div>
       </div>
 
@@ -132,7 +159,10 @@ export function Lobby({
         onClick={() => { playTap(); setShowStakes((v) => !v); }}
         aria-expanded={showStakes}
       >
-        <span className="btn--usdt__lead">{t('playForUsdt')}</span>
+        <span className="btn--usdt__lead">
+          <span className="btn--usdt__coin" aria-hidden="true">$</span>
+          {t('playForUsdt')}
+        </span>
         <span className="btn--usdt__hint">{stakedTiers.map((s) => (s >= 100 ? `$${s / 100}` : `${s}¢`)).join(' · ')} {showStakes ? '▲' : '▾'}</span>
       </button>
       {showStakes && (
@@ -155,7 +185,7 @@ export function Lobby({
         </div>
       )}
       {walletBacked && limits.stakedTodayCents > 0 && (
-        <small className="muted" style={{ display: 'block', marginTop: 6, textAlign: 'center' }}>
+        <small className="stagehint" style={{ display: 'block', marginTop: 6 }}>
           {t('realityStaked')} {fmtUsd(limits.stakedTodayCents)} / {fmtUsd(limits.dailyLimitCents)}
         </small>
       )}
@@ -286,7 +316,7 @@ export function Lobby({
               <small>{t('ticketsLabel')}</small>
             </div>
           </div>
-          <small className="daily__hint muted">
+          <small className="daily__hint stagehint">
             {challenge.completed ? t('challengeDone') : `${t('challengeDesc')} ${t('challengeReward')}`}
           </small>
 
@@ -305,8 +335,9 @@ export function Lobby({
                 <ol className="board">
                   {league.top.map((e, i) => (
                     <li key={i} className={e.pid ? 'board__row--tap' : undefined} onClick={() => e.pid && onViewProfile(e.pid)}>
-                      <span>
-                        {i + 1}. {e.flag} {e.name}
+                      <span className="board__who">
+                        <i className={`board__rank${i < 3 ? ` board__rank--${i + 1}` : ''}`}>{i + 1}</i>
+                        {e.flag} {e.name}
                       </span>
                       <b>{e.points}</b>
                     </li>
