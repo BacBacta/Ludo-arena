@@ -45,12 +45,11 @@ import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
-import { createFairness, createFairness4, createSeedCommit, finalizeFairness, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
+import { createFairness, createFairness4, createSeed4Commit, createSeedCommit, finalizeFairness, finalizeFairness4, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { type Fairness4 } from './fairness.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -161,7 +160,13 @@ interface PendingStaked4 {
   stake: number;
   pot: number;
   rake: number;
-  fairness: Fairness4;
+  // Anti-grinding (R-DICE-3): the seed is committed knowing only the seat commits;
+  // each human reveals its raw entropy, and the dice bind to those reveals — so the
+  // server can't pre-grind the sequence. Fairness is finalized once all reveals are in.
+  serverSeed: string;
+  commit: string;
+  seatCommits: string[]; // each seat's hello entropyCommit, to verify its reveal
+  reveals: (string | null)[]; // raw entropy per seat (null until revealed)
 }
 const pendingStaked4 = new Map<string, PendingStaked4>();
 // Per-room write chain: snapshots must reach the store in transition order.
@@ -1150,19 +1155,35 @@ wss.on('connection', (ws, req) => {
         // Anti-grinding reveal: verify the raw entropy against the hello commit,
         // store it, and finalize the game once both players have revealed.
         const pending = session.pendingGameId ? pendingReveals.get(session.pendingGameId) : undefined;
-        if (!pending) break;
-        let seat: 0 | 1;
-        if (session === pending.a) seat = 0;
-        else if (session === pending.b) seat = 1;
-        else break;
-        if (!session.entropyCommit || sha256Hex(msg.entropy) !== session.entropyCommit) {
-          session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Entropy does not match commit.' });
+        if (pending) {
+          let seat: 0 | 1;
+          if (session === pending.a) seat = 0;
+          else if (session === pending.b) seat = 1;
+          else break;
+          if (!session.entropyCommit || sha256Hex(msg.entropy) !== session.entropyCommit) {
+            session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Entropy does not match commit.' });
+            break;
+          }
+          session.entropy = msg.entropy;
+          pending.entropies[seat] = msg.entropy;
+          // Start once both revealed AND (for real-money games) both stakes are locked.
+          maybeStartPending(pending);
           break;
         }
-        session.entropy = msg.entropy;
-        pending.entropies[seat] = msg.entropy;
-        // Start once both revealed AND (for real-money games) both stakes are locked.
-        maybeStartPending(pending);
+        // Staked 4-player reveal (R-DICE-3): bind this seat's raw entropy against
+        // its hello commit; play starts once all four reveal AND all stakes lock.
+        const p4 = session.pendingGameId ? pendingStaked4.get(session.pendingGameId) : undefined;
+        if (p4) {
+          const seat4 = p4.humans.indexOf(session);
+          if (seat4 < 0) break;
+          if (sha256Hex(msg.entropy) !== p4.seatCommits[seat4]) {
+            session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Entropy does not match commit.' });
+            break;
+          }
+          session.entropy = msg.entropy;
+          p4.reveals[seat4] = msg.entropy;
+          maybeStartStaked4(p4);
+        }
         break;
       }
 
@@ -2025,17 +2046,41 @@ function startStakedRoom4(humans: Session[], stake: number): void {
   const gameId = randomBytes(16).toString('hex');
   const pot = potCents4(stake);
   const rake = stake * 4 - pot;
-  const seatSeeds = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
-  const fairness = createFairness4(seatSeeds);
+  // Anti-grinding (R-DICE-3): commit the seed knowing ONLY the seat commits, then
+  // wait for each human to reveal its raw entropy. Staked 4p is all-human, so every
+  // dice input is committed before the server can see it (matches the 2p scheme).
+  const { serverSeed, commit } = createSeed4Commit();
+  const seatCommits = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
   const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
-  pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, fairness });
+  pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, serverSeed, commit, seatCommits, reveals: humans.map(() => null) });
   // count each seat's stake toward the daily limit (E5.2)
   void Promise.all(humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), stake))).catch((e) => console.error('[4p] dailyStake', e));
   humans.forEach((h, seat) => {
     h.pendingGameId = gameId; // block other joins while staking
-    h.send({ t: 'match.found4', gameId, seat, players, entryTickets: 0, prizeTickets: 0, stakeCents: stake, potCents: pot, fairnessCommit: fairness.commit });
+    h.send({ t: 'match.found4', gameId, seat, players, entryTickets: 0, prizeTickets: 0, stakeCents: stake, potCents: pot, fairnessCommit: commit });
   });
   pollStaked4Lock(gameId, 0);
+}
+
+/** All four seats revealed their raw entropy (R-DICE-3)? Only then can the dice
+ *  be bound to inputs the server committed to blind. */
+function allRevealed4(p: PendingStaked4): boolean {
+  return p.reveals.every((r) => r !== null);
+}
+
+/** A reveal arrived out of order (before stakes locked): if every seat has now
+ *  revealed AND the escrow is already Active, start immediately instead of waiting
+ *  for the next poll tick. Otherwise the lock poll drives the start. */
+function maybeStartStaked4(p: PendingStaked4): void {
+  if (!allRevealed4(p) || !arbiterN) return;
+  void arbiterN
+    .gameStatus(p.gameId)
+    .then(({ status }) => {
+      if (pendingStaked4.get(p.gameId) === p && status === GameStatusN.Active) startStaked4Room(p);
+    })
+    .catch(() => {
+      /* the lock poll will retry */
+    });
 }
 
 function pollStaked4Lock(gameId: string, attempt: number): void {
@@ -2045,7 +2090,11 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
     .gameStatus(gameId)
     .then(({ status }) => {
       if (pendingStaked4.get(gameId) !== p) return;
-      if (status === GameStatusN.Active) {
+      // Start only when the money is locked AND fairness can be bound to all four
+      // revealed entropies. If stakes are Active but a reveal is still missing, keep
+      // polling — the MAX_LOCK_POLLS timeout below tears down + refunds a table that
+      // never completes (a seat that never reveals).
+      if (status === GameStatusN.Active && allRevealed4(p)) {
         startStaked4Room(p);
         return;
       }
@@ -2066,11 +2115,15 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
     });
 }
 
-/** All 4 stakes Active → create + start the Room4, settling the winner on win. */
+/** All 4 stakes Active AND all entropies revealed → bind the dice to the reveals
+ *  (R-DICE-3) and start the Room4, settling the winner on win. */
 function startStaked4Room(p: PendingStaked4): void {
   pendingStaked4.delete(p.gameId);
+  // Bind the committed seed to the now-revealed raw seat seeds. allRevealed4 gated
+  // this call, so every reveal is present; `?? ''` only satisfies the type.
+  const fairness = finalizeFairness4(p.serverSeed, p.commit, p.reveals.map((r) => r ?? ''));
   const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
-  const room = new Room4(p.gameId, seats, p.fairness, 0, 0, p.pot, p.rake);
+  const room = new Room4(p.gameId, seats, fairness, 0, 0, p.pot, p.rake);
   room.onResult = (r) => {
     recordRoom4Stats(p.humans, r.winnerSeat, r.seats);
     settleStaked4(p, r.winnerSeat);

@@ -75,9 +75,30 @@ export interface Fairness4 {
   seeds: string[]; // per-seat contribution
 }
 
+/** Legacy/free-table path: the server generates its seed already knowing every
+ *  seat contribution — grindable, so ONLY for FREE 4p (bot-filled, no money).
+ *  Staked 4p must use createSeed4Commit + finalizeFairness4 (anti-grinding). */
 export function createFairness4(seatSeeds: string[]): Fairness4 {
   const serverSeed = randomBytes(32).toString('hex');
   return { serverSeed, commit: sha256Hex(serverSeed), seeds: [...seatSeeds] };
+}
+
+/**
+ * Anti-grinding 4p, step 1 (R-DICE-3): the server commits its seed knowing ONLY
+ * the seats' entropy COMMITS (hashes) — never the raw values — so it cannot
+ * brute-force serverSeed to bias the dice. Published in match.found4; each human
+ * seat then reveals its raw entropy (verified against its hello commit) before the
+ * game is finalized. Staked 4p is all-human, so every dice input is committed
+ * before it is known to the server (matches the 2p anti-grinding scheme).
+ */
+export function createSeed4Commit(): { serverSeed: string; commit: string } {
+  const serverSeed = randomBytes(32).toString('hex');
+  return { serverSeed, commit: sha256Hex(serverSeed) };
+}
+
+/** Step 2: bind the already-committed seed to the now-revealed per-seat seeds. */
+export function finalizeFairness4(serverSeed: string, commit: string, seatSeeds: string[]): Fairness4 {
+  return { serverSeed, commit, seeds: [...seatSeeds] };
 }
 
 export function rollDie4(f: Fairness4, index: number): number {

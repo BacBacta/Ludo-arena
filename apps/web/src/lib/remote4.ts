@@ -64,6 +64,7 @@ export class Remote4 {
   private disposed = false;
   private inGame = false;
   private readonly entropy: string;
+  private revealedGameId = ''; // gameId we last revealed raw entropy for (once per game)
   /** Last message timestamp — liveness. A silently-dead socket (screen off,
    *  sleep, NAT timeout) fires no close event; the heartbeat force-closes it so
    *  the session ends visibly (onGone) instead of freezing the board forever. */
@@ -176,6 +177,13 @@ export class Remote4 {
         break;
       case 'match.found4':
         this.inGame = true;
+        // Anti-grinding reveal (R-DICE-3): the server committed its seed knowing
+        // only our entropy COMMIT; reveal the raw value now so the staked-4p dice
+        // bind to it. Harmless on a free table (the server ignores the reveal).
+        if (this.revealedGameId !== msg.gameId) {
+          this.revealedGameId = msg.gameId;
+          this.send({ t: 'game.entropy', entropy: this.entropy });
+        }
         this.ev.onMatch({
           gameId: msg.gameId,
           seat: msg.seat,
