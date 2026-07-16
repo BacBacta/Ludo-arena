@@ -55,6 +55,26 @@ contract FeeToken is IERC20 {
     }
 }
 
+/// @dev Token that BLACKLISTS one recipient (like USDC/USDT freeze): transfer TO
+///      the blacklisted address reverts. Models a griefing/frozen winner or player.
+contract BlacklistToken is IERC20 {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    address public blocked;
+    function setBlocked(address a) external { blocked = a; }
+    function mint(address to, uint256 a) external { balanceOf[to] += a; }
+    function approve(address s, uint256 a) external { allowance[msg.sender][s] = a; }
+    function transferFrom(address f, address t, uint256 a) external returns (bool) {
+        if (allowance[f][msg.sender] < a || balanceOf[f] < a) return false;
+        allowance[f][msg.sender] -= a; balanceOf[f] -= a; balanceOf[t] += a; return true;
+    }
+    function transfer(address t, uint256 a) external returns (bool) {
+        require(t != blocked, "blacklisted");
+        if (balanceOf[msg.sender] < a) return false;
+        balanceOf[msg.sender] -= a; balanceOf[t] += a; return true;
+    }
+}
+
 /// @dev Reentrant token: on payout it tries to re-enter settle() to double-pay.
 contract ReentrantToken is IERC20 {
     mapping(address => uint256) public balanceOf;
@@ -182,6 +202,90 @@ contract AdversarialTest is Test {
         // winner paid EXACTLY once (payout 1.82e18); reentrancy blocked by CEI.
         assertEq(r.balanceOf(alice), 10e18 - 1e18 + 1.82e18);
         assertEq(r.balanceOf(address(esc)), 0); // escrow fully drained, no residue
+    }
+
+    // ---------- C3 (R-ESCROW-1) FIX: pull-payment ports to the 1v1 escrow ----------
+    // Before the fix, settle/_refundBoth/refundExpired all pushed via a reverting
+    // transfer, so ONE blacklisted/frozen recipient locked the WHOLE pot forever
+    // (settle, voidGame AND refundActive all reverted — no escape valve). Now a
+    // push the token refuses is credited to `withdrawable` and pulled via withdraw().
+
+    /// A blacklisted WINNER can't block settlement: the payout is credited and
+    /// withdrawn later; the rake still reaches the treasury (mirrors LudoEscrowN).
+    function testSettle_BlacklistedWinnerIsCredited() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(treasury); esc.setTokenAllowed(address(tok), true);
+        tok.mint(alice, 10e18); tok.mint(bob, 10e18);
+        vm.prank(alice); tok.approve(address(esc), type(uint256).max);
+        vm.prank(bob); tok.approve(address(esc), type(uint256).max);
+        vm.prank(alice); esc.join(gameId, address(tok), 1e18);
+        vm.prank(bob); esc.join(gameId, address(tok), 1e18);
+
+        tok.setBlocked(alice); // the winner is unpayable at settle time
+        esc.settle(gameId, alice, _sign(gameId, alice)); // MUST NOT revert
+
+        uint256 pot = 2e18;
+        uint256 rake = (pot * 900) / 10_000;
+        uint256 payout = pot - rake;
+        assertEq(esc.withdrawable(address(tok), alice), payout); // credited, not lost
+        assertEq(tok.balanceOf(treasury), rake); // rake still delivered
+        assertEq(tok.balanceOf(address(esc)), payout); // only the winner's payout stays
+
+        tok.setBlocked(address(0));
+        vm.prank(alice); esc.withdraw(address(tok));
+        assertEq(tok.balanceOf(alice), 9e18 + payout);
+        assertEq(tok.balanceOf(address(esc)), 0);
+    }
+
+    /// A blacklisted player must NOT block the OTHER player's refund on voidGame.
+    function testVoidGame_OneBadPlayerDoesNotBlockOther() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(treasury); esc.setTokenAllowed(address(tok), true);
+        tok.mint(alice, 10e18); tok.mint(bob, 10e18);
+        vm.prank(alice); tok.approve(address(esc), type(uint256).max);
+        vm.prank(bob); tok.approve(address(esc), type(uint256).max);
+        vm.prank(alice); esc.join(gameId, address(tok), 1e18);
+        vm.prank(bob); esc.join(gameId, address(tok), 1e18);
+
+        tok.setBlocked(bob); // bob becomes unpayable
+        vm.prank(arbiter); esc.voidGame(gameId); // MUST NOT revert
+
+        assertEq(tok.balanceOf(alice), 10e18); // alice refunded immediately (push)
+        assertEq(tok.balanceOf(bob), 9e18); // bob not paid...
+        assertEq(esc.withdrawable(address(tok), bob), 1e18); // ...but credited
+        assertEq(tok.balanceOf(address(esc)), 1e18); // only bob's stake stays
+
+        tok.setBlocked(address(0));
+        vm.prank(bob); esc.withdraw(address(tok));
+        assertEq(tok.balanceOf(bob), 10e18);
+        assertEq(tok.balanceOf(address(esc)), 0);
+    }
+
+    /// A blacklisted lone staker is credited on refundExpired, never blocked.
+    function testRefundExpired_BlacklistedLoneStakerCredited() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(treasury); esc.setTokenAllowed(address(tok), true);
+        tok.mint(alice, 10e18);
+        vm.prank(alice); tok.approve(address(esc), type(uint256).max);
+        vm.prank(alice); esc.join(gameId, address(tok), 1e18); // WaitingOpponent
+
+        tok.setBlocked(alice);
+        vm.warp(block.timestamp + esc.JOIN_TIMEOUT() + 1);
+        esc.refundExpired(gameId); // MUST NOT revert
+
+        assertEq(esc.withdrawable(address(tok), alice), 1e18); // credited
+        assertEq(tok.balanceOf(address(esc)), 1e18);
+        tok.setBlocked(address(0));
+        vm.prank(alice); esc.withdraw(address(tok));
+        assertEq(tok.balanceOf(alice), 10e18);
+    }
+
+    /// withdraw() with nothing owed reverts cleanly (no silent no-op).
+    function testWithdrawNothingReverts() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(alice);
+        vm.expectRevert(LudoEscrow.NothingToWithdraw.selector);
+        esc.withdraw(address(tok));
     }
 
     // ---------- fuzz: payout + rake == pot for any stake & rake ----------

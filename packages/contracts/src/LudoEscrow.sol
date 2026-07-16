@@ -47,11 +47,21 @@ contract LudoEscrow {
     /// @notice Only allowlisted stablecoins may be staked. Keeps out fee-on-transfer
     ///         / rebasing / hostile tokens that would break `pot == stake*2`.
     mapping(address => bool) public allowedToken;
+    /// @notice Pull-payment credits (C3 fix): funds a PUSH could not deliver — e.g.
+    ///         a stablecoin (USDT/USDC) that blacklists/freezes one recipient — are
+    ///         recorded here instead of reverting the whole call. Without this, a
+    ///         single unpayable winner/refundee would lock BOTH stakes forever (no
+    ///         escape valve: settle, voidGame and refundActive all pushed). The
+    ///         credited party pulls it via withdraw() once it can receive again.
+    mapping(address => mapping(address => uint256)) public withdrawable; // token => account => amount
 
     // ---------- Events ----------
     event Joined(bytes32 indexed gameId, address indexed player, address token, uint96 stake);
     event Settled(bytes32 indexed gameId, address indexed winner, uint256 payout, uint256 rake);
     event Refunded(bytes32 indexed gameId);
+    /// @notice A push transfer could not be delivered; `amount` is now withdrawable by `account`.
+    event Credited(bytes32 indexed gameId, address indexed account, address token, uint256 amount);
+    event Withdrawn(address indexed account, address token, uint256 amount);
     event RakeChanged(uint256 oldBps, uint256 newBps);
     event OwnershipTransferred(address indexed from, address indexed to);
     event TokenAllowed(address indexed token, bool allowed);
@@ -67,6 +77,7 @@ contract LudoEscrow {
     error NotOwner();
     error LengthMismatch();
     error TokenNotAllowed();
+    error NothingToWithdraw();
 
     constructor(address _arbiter, address _treasury, uint256 _rakeBps) {
         require(_rakeBps <= MAX_RAKE_BPS, "rake > max");
@@ -113,6 +124,26 @@ contract LudoEscrow {
     function _safeTransferFrom(address token, address from, address to, uint256 value) internal {
         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value));
         if (!success || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed();
+    }
+
+    /// @dev Non-reverting transfer: returns false instead of reverting, so ONE
+    ///      unpayable recipient can't abort a settlement/refund. Safe because only
+    ///      vetted, allowlisted stablecoins are ever the token — no ERC777 hooks,
+    ///      no reentrancy/gas-griefing surface.
+    function _tryTransfer(address token, address to, uint256 value) internal returns (bool) {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, value));
+        return success && (data.length == 0 || abi.decode(data, (bool)));
+    }
+
+    /// @dev Push `value` to `to`; if the token refuses it (blacklist / frozen
+    ///      account), record a withdrawable credit instead of reverting — the C3
+    ///      fix that keeps one bad recipient from locking both stakes.
+    function _payOrCredit(bytes32 gameId, address token, address to, uint256 value) internal {
+        if (value == 0) return;
+        if (!_tryTransfer(token, to, value)) {
+            withdrawable[token][to] += value;
+            emit Credited(gameId, to, token, value);
+        }
     }
 
     /// @notice Joins (or creates) game `gameId` by locking one's stake.
@@ -172,8 +203,11 @@ contract LudoEscrow {
         uint256 rake = (pot * g.rakeBps) / 10_000; // snapshotted at creation
         uint256 payout = pot - rake;
 
-        _safeTransfer(g.token, winner, payout);
-        if (rake > 0) _safeTransfer(g.token, treasury, rake);
+        // Pay-or-credit both legs: a blacklisted winner (or treasury) is credited
+        // for later withdrawal rather than reverting — one unpayable recipient can
+        // no longer strand the pot (C3 posture, matching LudoEscrowN).
+        _payOrCredit(gameId, g.token, winner, payout);
+        _payOrCredit(gameId, g.token, treasury, rake);
         emit Settled(gameId, winner, payout, rake);
     }
 
@@ -183,7 +217,8 @@ contract LudoEscrow {
         if (g.status != Status.WaitingOpponent) revert BadStatus();
         if (block.timestamp < g.createdAt + JOIN_TIMEOUT) revert NotExpired();
         g.status = Status.Refunded;
-        _safeTransfer(g.token, g.playerA, g.stake);
+        // Pay-or-credit: a blacklisted lone staker is credited, never blocked.
+        _payOrCredit(gameId, g.token, g.playerA, g.stake);
         emit Refunded(gameId);
     }
 
@@ -210,9 +245,23 @@ contract LudoEscrow {
         Game storage g = games[gameId];
         if (g.status != Status.Active) revert BadStatus();
         g.status = Status.Refunded;
-        _safeTransfer(g.token, g.playerA, g.stake);
-        _safeTransfer(g.token, g.playerB, g.stake);
+        // Pay-or-credit each player: one blacklisted/frozen depositor is credited
+        // for withdrawal and never blocks the other's refund (C3). Status is
+        // already Refunded (CEI), so this can't be re-entered to double-refund.
+        _payOrCredit(gameId, g.token, g.playerA, g.stake);
+        _payOrCredit(gameId, g.token, g.playerB, g.stake);
         emit Refunded(gameId);
+    }
+
+    /// @notice Pull a credit that a push transfer could not deliver (see
+    ///         `withdrawable`). CEI: the balance is zeroed before the transfer, so
+    ///         a still-failing transfer reverts the whole call and preserves it.
+    function withdraw(address token) external {
+        uint256 amount = withdrawable[token][msg.sender];
+        if (amount == 0) revert NothingToWithdraw();
+        withdrawable[token][msg.sender] = 0;
+        _safeTransfer(token, msg.sender, amount);
+        emit Withdrawn(msg.sender, token, amount);
     }
 
     // ---------- Signatures ----------
