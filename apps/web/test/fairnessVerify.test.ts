@@ -51,4 +51,36 @@ describe('fairnessVerify (E5.1)', () => {
     expect(report.rolls[0]!.ok).toBe(false);
     expect(report.allOk).toBe(false);
   });
+
+  // R-DICE-1: a dishonest server that IGNORES our committed entropy and picks the
+  // whole sequence itself would still pass commitOk + every roll (they're all
+  // internally consistent with the seed it published). Only the own-entropy check
+  // catches it — our real entropy is absent from the reveal at our seat.
+  it('flags a reveal that dropped our own entropy (own-entropy grinding)', async () => {
+    const commit = serverSha(seed);
+    // The server pre-ground the seed with ITS OWN entropy at seat 0, not ours.
+    const forged: [string, string] = [randomBytes(16).toString('hex'), entropies[1]];
+    const dice = Array.from({ length: 5 }, (_, k) => ({ index: k + 1, value: serverRoll(seed, forged, k + 1) }));
+    const report = await verifyFairness(commit, { serverSeed: seed, entropies: forged }, dice, { entropy: entropies[0], seat: 0 });
+    expect(report.commitOk).toBe(true); // seed matches the commit…
+    expect(report.rolls.every((r) => r.ok)).toBe(true); // …and every roll is self-consistent…
+    expect(report.ownEntropyOk).toBe(false); // …but OUR entropy was never used
+    expect(report.allOk).toBe(false); // so verification correctly FAILS
+  });
+
+  it('confirms our own entropy when the server bound it honestly', async () => {
+    const commit = serverSha(seed);
+    const dice = [{ index: 1, value: serverRoll(seed, entropies, 1) }];
+    const report = await verifyFairness(commit, { serverSeed: seed, entropies }, dice, { entropy: entropies[0], seat: 0 });
+    expect(report.ownEntropyOk).toBe(true);
+    expect(report.allOk).toBe(true);
+  });
+
+  it('leaves ownEntropyOk null when we cannot check (no own entropy)', async () => {
+    const commit = serverSha(seed);
+    const dice = [{ index: 1, value: serverRoll(seed, entropies, 1) }];
+    const report = await verifyFairness(commit, { serverSeed: seed, entropies }, dice);
+    expect(report.ownEntropyOk).toBeNull();
+    expect(report.allOk).toBe(true); // can't check → don't spuriously fail a replay
+  });
 });

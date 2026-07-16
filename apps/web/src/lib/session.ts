@@ -72,6 +72,10 @@ export interface MatchInfo {
   stakeCents: StakeCents;
   potCents: number;
   fairnessCommit: string;
+  /** Our OWN committed entropy for this game (RemoteSession only). Kept so the
+   *  fairness verifier can confirm the server actually bound it at our seat in the
+   *  reveal, not silently ignore it (R-DICE-1). Absent for the local bot. */
+  myEntropy?: string;
 }
 
 export interface GameResult {
@@ -887,7 +891,9 @@ export class RemoteSession implements GameSession {
           this.revealedGameId = msg.gameId;
           this.send({ t: 'game.entropy', entropy: this.entropy });
         }
-        this.ev.onMatchFound(msg);
+        // Carry our own entropy so the fairness modal can prove the server bound it
+        // at our seat in the reveal (R-DICE-1), not pre-grind the sequence itself.
+        this.ev.onMatchFound({ ...msg, myEntropy: this.entropy });
         break;
       case 'game.state':
         this.ev.onState(msg.state);

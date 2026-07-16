@@ -783,17 +783,18 @@ export function FairnessModal() {
 
   const reveal = result?.fairnessReveal;
   const commit = match?.fairnessCommit;
+  const own = match?.myEntropy ? { entropy: match.myEntropy, seat: match.seat } : undefined;
   useEffect(() => {
     setReport(null);
     if (!fairModalOpen || !reveal || !commit) return;
     let live = true;
-    void verifyFairness(commit, reveal, diceHistory).then((r) => {
+    void verifyFairness(commit, reveal, diceHistory, own).then((r) => {
       if (live) setReport(r);
     });
     return () => {
       live = false;
     };
-  }, [fairModalOpen, reveal, commit, diceHistory]);
+  }, [fairModalOpen, reveal, commit, diceHistory, own]);
 
   const closeFair = (): void => void dispatch({ type: 'FAIR_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(fairModalOpen, closeFair);
@@ -824,6 +825,7 @@ export function FairnessModal() {
                 </div>
                 <div className="muted" style={{ fontSize: 11 }}>
                   {t('commitLabel')} {report.commitOk ? '✓' : '✗'}
+                  {report.ownEntropyOk !== null && <> · {t('yourEntropyLabel')} {report.ownEntropyOk ? '✓' : '✗'}</>}
                 </div>
                 {report.rolls.length > 0 && (
                   <table className="verify__rolls">
