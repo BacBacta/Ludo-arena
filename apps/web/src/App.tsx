@@ -15,7 +15,7 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { DiceModal, FairnessModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { sendLimits, buySkin, claimCosmetic, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
@@ -308,6 +308,7 @@ export default function App() {
         const toBot = (): void => {
           clearFreeFallback();
           sessionRef.current?.dispose();
+          dispatch({ type: 'START_MATCHMAKING', botMode: true }); // badge: "practice"
           sessionRef.current = new LocalBotSession(ev, 0);
         };
         sessionRef.current = new RemoteSession(
@@ -337,6 +338,7 @@ export default function App() {
         SERVER_URL,
         () => {
           dispatch({ type: 'TOAST', message: t('offline') });
+          dispatch({ type: 'START_MATCHMAKING', botMode: true }); // badge: "practice"
           sessionRef.current = new LocalBotSession(ev, 0);
         },
         walletRef.current?.address,
@@ -352,8 +354,10 @@ export default function App() {
     clearFreeFallback();
     freeSearchRef.current = false;
     sessionRef.current?.dispose();
+    // botMode drives the in-game badge: bot game = "practice", human = "Free 1v1".
+    dispatch({ type: 'START_MATCHMAKING', botMode: true });
     sessionRef.current = new LocalBotSession(makeEvents(), 0);
-  }, [makeEvents, clearFreeFallback]);
+  }, [makeEvents, clearFreeFallback, dispatch]);
 
   // Private tables (E4.4): open a remote session with a create/join intent.
   const openPrivate = useCallback(
@@ -667,6 +671,8 @@ export default function App() {
         onBreak={() => void applyLimits({ selfExcludeDays: 1 })}
       />
       <NoWalletSheet />
+      <HelpModal />
+      <DocModal />
       <Toast />
     </>
   );

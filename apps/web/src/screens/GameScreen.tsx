@@ -120,7 +120,7 @@ export function GameScreen({
   /** Tap the opponent's avatar → their public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn, profile, avatarFrame, avatar } =
+  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn, profile, avatarFrame, avatar, botMode } =
     useAppState();
   const dispatch = useAppDispatch();
   const skin = skinById(diceSkin);
@@ -212,7 +212,7 @@ export function GameScreen({
         {/* opponent's corner: avatar top-right (their quadrant side), die beside it */}
         <div className="gamecorner gamecorner--top">
           <div className="pot">
-            {match.stakeCents > 0 ? `${t('pot')} ${fmtUsd(match.potCents)}` : t('training')}
+            {match.stakeCents > 0 ? `${t('pot')} ${fmtUsd(match.potCents)}` : botMode ? t('training') : t('freeMatch')}
           </div>
           <div className="cornerstack" data-seat-anchor={1 - mySeat}>
             <EmoteFloat seat={1 - mySeat} />

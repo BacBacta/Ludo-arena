@@ -203,6 +203,10 @@ export interface AppState {
   table4Open: boolean;
   /** "No wallet in this browser" sheet (Chrome mobile etc.): explains MiniPay. */
   noWalletOpen: boolean;
+  /** "How it works" help sheet (tickets, freeroll, league, fair dice, support). */
+  helpOpen: boolean;
+  /** Read-only Terms/Privacy viewer (outside the staking consent gate). */
+  legalDoc: 'tos' | 'privacy' | null;
   profileEditOpen: boolean;
   /** First-session welcome (E6.4): open until the player has been onboarded. */
   onboardOpen: boolean;
@@ -290,6 +294,8 @@ export const initialState: AppState = {
   settingsOpen: false,
   table4Open: false,
   noWalletOpen: false,
+  helpOpen: false,
+  legalDoc: null,
   profileEditOpen: false,
   soundOn: soundEnabled(),
   diceSkin: loadSkinId(),
@@ -325,6 +331,8 @@ export type Action =
   | { type: 'STREAK_UPDATE'; streak: StreakState }
   | { type: 'LEAGUE_UPDATE'; league: LeagueState }
   | { type: 'NOWALLET'; open: boolean }
+  | { type: 'HELP_MODAL'; open: boolean }
+  | { type: 'LEGAL_DOC'; doc: 'tos' | 'privacy' | null }
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
   | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
@@ -441,6 +449,10 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, league: a.league };
     case 'NOWALLET':
       return { ...s, noWalletOpen: a.open };
+    case 'HELP_MODAL':
+      return { ...s, helpOpen: a.open };
+    case 'LEGAL_DOC':
+      return { ...s, legalDoc: a.doc };
     case 'TABLE_CREATED':
       return { ...s, screen: 'matchmaking', privateCode: a.code };
     case 'TICKETS':

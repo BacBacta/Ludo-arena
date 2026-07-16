@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@ludo/shared';
 import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store';
-import { TopBar, Table4Modal } from '../components/ui';
+import { SUPPORT_EMAIL, TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconShield, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
 import { HeroPeg, PEG_COLORS } from '../components/Board';
 import { Die3D } from '../components/Die3D';
@@ -368,6 +368,17 @@ export function Lobby({
         <a onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>{t('howItWorks')}</a>
         {' · '}
         <a onClick={() => dispatch({ type: 'SETTINGS', open: true })}>{t('rgLink')}</a>
+      </div>
+      {/* info & legal: the landing said nothing about tickets/freeroll/league,
+          and Terms/Privacy/Support had no entry point outside the staking gate. */}
+      <div className="fairnote fairnote--links">
+        <a onClick={() => { playTap(); dispatch({ type: 'HELP_MODAL', open: true }); }}>{t('footHelp')}</a>
+        {' · '}
+        <a href={`mailto:${SUPPORT_EMAIL}`}>{t('footSupport')}</a>
+        {' · '}
+        <a onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'tos' })}>{t('legalReadTos')}</a>
+        {' · '}
+        <a onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'privacy' })}>{t('legalReadPrivacy')}</a>
       </div>
 
       <Table4Modal onPractice={sheetPractice} onFree={sheetFree} onStaked={sheetStaked} />

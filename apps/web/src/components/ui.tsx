@@ -511,6 +511,81 @@ export function NoWalletSheet() {
   );
 }
 
+/** Operator contact for the Support links (footer + help sheet). */
+export const SUPPORT_EMAIL = 'swappilot.exchange@gmail.com';
+
+/** "How it works" sheet: the landing was mute about tickets, the daily
+ *  freeroll, the weekly league, fair dice and money games — this explains all
+ *  five, with real constants (10 pts/win, 1 ticket entry → 3, 9% rake). */
+export function HelpModal() {
+  const { helpOpen } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'HELP_MODAL', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(helpOpen, close);
+  if (!helpOpen) return null;
+  const openFair = (): void => {
+    close();
+    dispatch({ type: 'FAIR_MODAL', open: true });
+  };
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card help__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>{t('helpTitle')}</h3>
+        <div className="help__scroll">
+          <section className="help__sec">
+            <h4>🎟️ {t('hTickets')}</h4>
+            <p>{t('hTicketsBody')}</p>
+          </section>
+          <section className="help__sec">
+            <h4>🏆 {t('hFreeroll')}</h4>
+            <p>{t('hFreerollBody')}</p>
+          </section>
+          <section className="help__sec">
+            <h4>🥇 {t('hLeague')}</h4>
+            <p>{t('hLeagueBody')}</p>
+          </section>
+          <section className="help__sec">
+            <h4>🎲 {t('hFair')}</h4>
+            <p>
+              {t('hFairBody')} <a className="help__link" onClick={openFair}>{t('howItWorks')}</a>
+            </p>
+          </section>
+          <section className="help__sec">
+            <h4>💵 {t('hMoney')}</h4>
+            <p>{t('hMoneyBody')}</p>
+          </section>
+          <section className="help__sec">
+            <h4>📮 {t('hSupport')}</h4>
+            <p>
+              {t('hSupportBody')} <a className="help__link" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+            </p>
+          </section>
+        </div>
+        <button className="btn btn--ghost" onClick={() => { playTap(); close(); }}>{t('close')}</button>
+      </div>
+    </div>
+  );
+}
+
+/** Read-only Terms/Privacy viewer, reachable from the lobby footer — before
+ *  this, the drafts were only visible inside the staking consent gate. */
+export function DocModal() {
+  const { legalDoc } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'LEGAL_DOC', doc: null });
+  if (!legalDoc) return null;
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
+        <h3>{legalDoc === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h3>
+        <div className="legal__draft">{t('legalDraft')}</div>
+        <p className="legal__body">{legalDoc === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
+        <button className="btn btn--ghost" onClick={close}>{t('close')}</button>
+      </div>
+    </div>
+  );
+}
+
 export function Table4Modal({ onPractice, onFree, onStaked }: {
   onPractice(): void;
   onFree(): void;
