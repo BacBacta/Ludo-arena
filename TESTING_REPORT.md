@@ -197,3 +197,31 @@ Baseline avant Phase 1 : 89.7% stmts. **Cible ≥ 90 % atteinte** sur statements
 ## Bilan Phase 1
 
 **GO.** Moteur 2p **et** 4p couverts à 100 % (stmts/lignes/fonctions) avec property-based sur les invariants, dés validés statistiquement (uniformité + indépendance sur 1M lancers). Suite totale : **185 tests** verts (engine 78, serveur 97, web 10) + 70 contrats. Reste pour la certification RNG : action humaine (labo accrédité).
+
+---
+
+# Phase 2 — Tests des smart contracts
+
+Framework **Foundry** (solc 0.8.24) + **Slither**. Dossier auditeur : [docs/AUDIT_PACKAGE.md](docs/AUDIT_PACKAGE.md).
+
+## Invariants StdInvariant (R-CONTRACT-2 clos)
+
+`test/InvariantEscrow.t.sol` + `test/InvariantEscrowN.t.sol` — handlers bounded pilotant des séquences aléatoires `join/settle/refund/void/withdraw/warp` (128 runs × 250 depth ; profil `ci` : 256 × 500).
+
+- **`invariant_solvent` (invariant maître)** : le solde du contrat = mises verrouillées des parties ouvertes **+** crédits pull-payment non retirés. Cette égalité englobe *pot jamais distribué 2×*, *sorties ≤ entrées*, *pas de création de valeur*, *crédits toujours couverts*. **128 000 appels, 0 revert, 0 violation** sur les deux escrows.
+
+## Fuzz d'autorisation (R-CI-3)
+
+`test/FuzzAuthorization.t.sol` (256 runs) : seule la signature de l'arbitre règle (`BadSignature` sinon) ; l'arbitre ne peut payer qu'un déposant (`NotAPlayer`) ; un joueur ne retire que son propre crédit (`NothingToWithdraw`).
+
+## Analyse statique Slither (R-CI-3)
+
+`slither src/` — **34 alertes, toutes triées ; aucune vulnérabilité sur le chemin argent.** Reentrancy (CEI-protégée, tokens allowlistés sans callback), `calls-loop` (pay-or-credit non-reverting), `low-level-calls` (SafeERC20 intentionnel), `timestamp` (timeouts 120s/24h), `missing-zero-check` (CosmeticsStore owner-only), + cosmétiques (faucets/event). Justifications détaillées dans le dossier d'audit §5.
+
+## Tests d'intégration sur fork Celo Sepolia (R-CI-3)
+
+`test/ForkCeloSepolia.t.sol` — sur un **fork réel** de Celo Sepolia contre le **MockUSDT déployé** (6 décimales) : `join`+`settle` (payout+rake exacts en 6-déc) et `refundExpired`. Auto-skip sans `CELO_SEPOLIA_RPC` (CI verte). Vérifié en live contre le RPC forno.
+
+## Bilan Phase 2
+
+**GO.** Escrows fund-holding couverts par : 66 tests exemples + adversariaux, **campagnes d'invariants de solvabilité** (128k appels sans violation), fuzz d'autorisation, **Slither** (34 alertes justifiées), et **fork Celo Sepolia** contre un vrai token 6-déc. Suite contrats : **78 tests** verts (70 → +8). Dossier `AUDIT_PACKAGE.md` prêt. **L'audit humain externe reste obligatoire avant mainnet** (R-KEY-1, redéploiement R-DEPLOY-1, fee-currency Celo, revue du digest EIP-191 — §7 du dossier).
