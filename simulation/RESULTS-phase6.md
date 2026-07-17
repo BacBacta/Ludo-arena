@@ -109,6 +109,26 @@ writing `lastDie` (like `rec.dice`) from the **host stream only**. Re-run: **0
 violations**. The Phase 4 10 k run was unaffected — `checkMove` did not exist yet,
 and its 200-game validation was too small to hit the race.
 
+## 5b. Slow leak found by *reasoning about* the 24 h soak (fixed)
+
+The 16-minute run plateaus, but that only clears leaks that fill within the
+10-minute session-retention window. Asking "what would a 24 h run still catch?" led
+to an audit of the server's long-lived maps for **unbounded** growth — and found a
+real one: **`settlementNotify` / `settlement4Notify`** (gameId → sessions to notify
+of a payout) were purged **only** by `onSettled`/`onRefunded`. Three terminal
+outcomes notify nobody and so **never deleted their entry**: a `failed` payout
+(non-depositor winner / exhausted retries), an already-resolved game, and a no-op
+refund (`None` status — added in Phase 0). Each leaks one small object per staked
+settlement, **forever** — invisible at 16 min, real over a day of staked play.
+
+Fix: an `onTerminal(gameId)` callback that fires on **every** terminal outcome.
+`process()` now wraps a `processOnce()` that returns a terminal/not-terminal
+boolean, so no future branch can leak the caller's bookkeeping. `index.ts` drops
+the notify entry in `onTerminal` for both the 1v1 and 4p queues. Regression:
+`settlement.test.ts` asserts `onTerminal` fires for settled/failed/already-resolved/
+None/no-op-refund and does **not** fire while a job is merely rescheduled (server
+suite 103/104).
+
 ## 6. Verdict
 
 **GO.** p95 is 15 ms at 500 and 138 ms at 2 000 simultaneous games (budget 300 ms)

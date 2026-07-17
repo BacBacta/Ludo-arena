@@ -274,6 +274,11 @@ const settlementQueue = arbiter
         }
         settlementNotify.delete(gameId);
       },
+      // Drop the notify entry on EVERY terminal outcome, not just the two that
+      // notify players: a `failed` payout, an already-resolved game and a no-op
+      // refund would otherwise keep their entry forever (an unbounded slow leak
+      // only a long soak would surface).
+      onTerminal: (gameId) => settlementNotify.delete(gameId),
     })
   : null;
 // gameId → seats to notify + winner seat, for the durable 4p queue's callbacks.
@@ -291,6 +296,7 @@ const settlementQueue4 = arbiterN
         }
         settlement4Notify.delete(gameId);
       },
+      onTerminal: (gameId) => settlement4Notify.delete(gameId),
       onRefunded: (gameId, txHash) => {
         const info = settlement4Notify.get(gameId);
         if (!info) return;

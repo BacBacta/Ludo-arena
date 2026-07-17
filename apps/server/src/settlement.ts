@@ -240,6 +240,12 @@ export interface SettlementDeps {
   onRefunded: (gameId: string, txHash: string) => void;
   /** Money-critical alert (payout failed / stuck escrow) for an ops pager. */
   onAlert?: (message: string) => void;
+  /** Fired on EVERY terminal outcome (settled, refunded, failed, nothing-to-do),
+   *  after any onSettled/onRefunded. The caller uses it to drop per-game bookkeeping
+   *  it kept while the job was in flight. Without it, the outcomes that notify
+   *  nobody (a `failed` payout, an already-resolved game, a no-op refund) would leak
+   *  that bookkeeping forever — a slow leak only a long soak would surface. */
+  onTerminal?: (gameId: string) => void;
   /** Wall-clock seconds; injectable for tests. */
   now?: () => number;
 }
@@ -305,7 +311,17 @@ export class SettlementQueue {
     this.timers.add(timer);
   }
 
+  /** Runs the job and fires onTerminal exactly once when it reaches ANY terminal
+   *  outcome. Wrapping processOnce (rather than sprinkling the call across seven
+   *  return paths) makes it impossible to add a terminal branch that silently
+   *  leaks the caller's per-game bookkeeping. */
   private async process(job: SettlementJob): Promise<void> {
+    const terminal = await this.processOnce(job);
+    if (terminal) this.deps.onTerminal?.(job.gameId);
+  }
+
+  /** @returns true when the job is DONE (any outcome); false when it rescheduled. */
+  private async processOnce(job: SettlementJob): Promise<boolean> {
     const attempts = job.attempts + 1;
     // A refund-only job (no winner) recovers a stranded deposit: refund the lone
     // staker or void an Active game rather than pay anyone.
@@ -321,7 +337,7 @@ export class SettlementQueue {
           await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
           this.deps.onRefunded(job.gameId, txHash);
           console.log(`[settlement] ${job.gameId} voided (refund) in tx ${txHash}`);
-          return;
+          return true;
         }
         // Reconcile the reported winner against the actual on-chain depositors.
         // settle() reverts NotAPlayer otherwise, wasting gas and burning retries
@@ -332,13 +348,13 @@ export class SettlementQueue {
           const msg = `[settlement][ALERT] winner ${job.winnerWallet} is not an on-chain player (A=${playerA}, B=${playerB}) for game ${job.gameId}. NOT settling; manual review — funds are locked in Active escrow.`;
           console.error(msg);
           this.deps.onAlert?.(msg);
-          return;
+          return true;
         }
         const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
         await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
         this.deps.onSettled(job.gameId, txHash);
         console.log(`[settlement] ${job.gameId} settled in tx ${txHash}`);
-        return;
+        return true;
       }
 
       if (status === GameStatus.WaitingOpponent) {
@@ -350,27 +366,27 @@ export class SettlementQueue {
         if (waitS > 0) {
           console.log(`[settlement] ${job.gameId} awaiting refund window (${waitS}s)`);
           this.reschedule(job, (waitS + 3) * 1_000); // small buffer past the timeout
-          return;
+          return false; // not terminal — will run again after the wait
         }
         const txHash = await this.deps.arbiter.submitRefund(job.gameId);
         await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
         this.deps.onRefunded(job.gameId, txHash);
         console.log(`[settlement] ${job.gameId} refunded in tx ${txHash}`);
-        return;
+        return true;
       }
 
       // A refund job that finds nobody staked (None) is a clean no-op: neither
       // matched player deposited, so there is nothing to recover.
       if (isRefund && status === GameStatus.None) {
         await this.deps.store.markSettlement(job.gameId, 'refunded', attempts);
-        return;
+        return true;
       }
 
       // Already resolved on-chain, or nobody staked (None): nothing to do.
       const terminal = status === GameStatus.Settled ? 'settled' : status === GameStatus.Refunded ? 'refunded' : 'failed';
       await this.deps.store.markSettlement(job.gameId, terminal, attempts);
       if (terminal === 'failed') console.warn(`[settlement] ${job.gameId} not stakeable (status ${status}); skipping`);
-      return;
+      return true;
     } catch (e) {
       console.error(`[settlement] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);
       if (attempts >= MAX_ATTEMPTS) {
@@ -380,7 +396,7 @@ export class SettlementQueue {
         const msg = `[settlement][ALERT] PAYOUT FAILED after ${attempts} attempts — game ${job.gameId}, winner ${job.winnerWallet || '(refund)'}, chain ${job.chainId}. Funds may be locked in escrow; manual settle/refund required.`;
         console.error(msg);
         this.deps.onAlert?.(msg);
-        return;
+        return true;
       }
       await this.deps.store.markSettlement(job.gameId, 'pending', attempts);
       const backoff = Math.min(1_000 * 2 ** (attempts - 1), 30_000);
@@ -389,6 +405,7 @@ export class SettlementQueue {
         void this.process({ ...job, attempts });
       }, backoff);
       this.timers.add(timer);
+      return false; // retrying — the retry's own run fires onTerminal
     }
   }
 }

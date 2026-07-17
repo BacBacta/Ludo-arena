@@ -197,6 +197,9 @@ export interface Settlement4Deps {
   onRefunded: (gameId: string, txHash: string) => void;
   /** Money-critical alert (payout failed / stuck escrow) for an ops pager. */
   onAlert?: (message: string) => void;
+  /** Fired on EVERY terminal outcome — the caller drops per-game bookkeeping it
+   *  held while the job was in flight (mirrors SettlementQueue.onTerminal). */
+  onTerminal?: (gameId: string) => void;
   /** Wall-clock seconds; injectable for tests. */
   now?: () => number;
 }
@@ -263,7 +266,15 @@ export class SettlementQueue4 {
     this.timers.add(timer);
   }
 
+  /** Wraps processOnce so onTerminal fires exactly once on ANY terminal outcome —
+   *  no terminal branch can silently leak the caller's per-game bookkeeping. */
   private async process(job: SettlementJob): Promise<void> {
+    const terminal = await this.processOnce(job);
+    if (terminal) this.deps.onTerminal?.(job.gameId);
+  }
+
+  /** @returns true when DONE (any outcome); false when it rescheduled/retried. */
+  private async processOnce(job: SettlementJob): Promise<boolean> {
     const attempts = job.attempts + 1;
     try {
       const { status, createdAt } = await this.deps.arbiter.gameStatus(job.gameId);
@@ -278,13 +289,13 @@ export class SettlementQueue4 {
           const msg = `[settlement4][ALERT] winner ${job.winnerWallet} is not an on-chain seat (${seats.join(', ')}) for 4p game ${job.gameId}. NOT settling; manual review — funds locked in Active escrow.`;
           console.error(msg);
           this.deps.onAlert?.(msg);
-          return;
+          return true;
         }
         const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
         await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
         this.deps.onSettled(job.gameId, txHash);
         console.log(`[settlement4] ${job.gameId} settled in tx ${txHash}`);
-        return;
+        return true;
       }
 
       if (status === GameStatusN.Filling) {
@@ -294,20 +305,20 @@ export class SettlementQueue4 {
         if (waitS > 0) {
           console.log(`[settlement4] ${job.gameId} awaiting refund window (${waitS}s)`);
           this.reschedule(job, (waitS + 3) * 1_000);
-          return;
+          return false; // not terminal — runs again after the wait
         }
         const txHash = await this.deps.arbiter.submitRefundUnfilled(job.gameId);
         await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
         this.deps.onRefunded(job.gameId, txHash);
         console.log(`[settlement4] ${job.gameId} refundUnfilled in tx ${txHash}`);
-        return;
+        return true;
       }
 
       // Already resolved on-chain (Settled/Refunded), or nobody staked (None).
       const terminal = status === GameStatusN.Settled ? 'settled' : status === GameStatusN.Refunded ? 'refunded' : 'failed';
       await this.deps.store.markSettlement(job.gameId, terminal, attempts);
       if (terminal === 'failed') console.warn(`[settlement4] ${job.gameId} not stakeable (status ${status}); skipping`);
-      return;
+      return true;
     } catch (e) {
       console.error(`[settlement4] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);
       if (attempts >= MAX_ATTEMPTS_4) {
@@ -315,7 +326,7 @@ export class SettlementQueue4 {
         const msg = `[settlement4][ALERT] PAYOUT FAILED after ${attempts} attempts — 4p game ${job.gameId}, winner ${job.winnerWallet || '(refund)'}, chain ${job.chainId}. Funds may be locked in LudoEscrowN; manual settle/refund required.`;
         console.error(msg);
         this.deps.onAlert?.(msg);
-        return;
+        return true;
       }
       await this.deps.store.markSettlement(job.gameId, 'pending', attempts);
       const backoff = Math.min(1_000 * 2 ** (attempts - 1), 30_000);
@@ -324,6 +335,7 @@ export class SettlementQueue4 {
         void this.process({ ...job, attempts });
       }, backoff);
       this.timers.add(timer);
+      return false; // retrying
     }
   }
 }

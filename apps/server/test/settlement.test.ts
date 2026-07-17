@@ -3,8 +3,8 @@ import type { Hex } from 'viem';
 import { GameStatus, JOIN_TIMEOUT_S, SettlementQueue, type ArbiterLike } from '../src/settlement.js';
 import { MemoryStore } from '../src/store/memory.js';
 
-const WINNER = '0x1111111111111111111111111111111111111111';
-const PLAYER_B = '0x2222222222222222222222222222222222222222';
+const WINNER = '0x1111111111111111111111111111111111111111' as const;
+const PLAYER_B = '0x2222222222222222222222222222222222222222' as const;
 const TX = '0xset' as Hex;
 const REFUND_TX = '0xref' as Hex;
 const VOID_TX = '0xvoid' as Hex;
@@ -239,6 +239,61 @@ describe('SettlementQueue', () => {
     expect(refund).not.toHaveBeenCalled();
     expect(refunded).toEqual([]); // nothing to recover
     expect(await store.listPendingSettlements()).toEqual([]); // marked done, not retried
+  });
+
+  // ---- onTerminal fires on EVERY terminal outcome (no settlementNotify leak) ----
+  // Regression for a slow leak: the notify map was purged only by onSettled/
+  // onRefunded, so outcomes that notify nobody (failed payout, already-resolved,
+  // no-op refund) kept their entry forever. onTerminal must fire on all of them.
+  it.each([
+    ['settled (Active + valid winner)', { status: GameStatus.Active, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }, WINNER],
+    ['failed (Active + non-depositor winner, notifies nobody)', { status: GameStatus.Active, createdAt: 0, playerA: PLAYER_B, playerB: PLAYER_B }, WINNER],
+    ['already-resolved (Settled on-chain, notifies nobody)', { status: GameStatus.Settled, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }, WINNER],
+    ['not-stakeable (None, notifies nobody)', { status: GameStatus.None, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }, WINNER],
+  ])('onTerminal fires for a %s job', async (_label, gameStatus, winner) => {
+    const store = new MemoryStore();
+    const terminal: string[] = [];
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({ gameStatus: async () => gameStatus }),
+      onSettled: () => {},
+      onRefunded: () => {},
+      onTerminal: (g) => terminal.push(g),
+    });
+    await q.enqueue('gt', winner);
+    await vi.runOnlyPendingTimersAsync();
+    expect(terminal).toEqual(['gt']); // fired exactly once, whatever the outcome
+  });
+
+  it('onTerminal fires for a refund-only job that finds None (no-op refund)', async () => {
+    const store = new MemoryStore();
+    const terminal: string[] = [];
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.None, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }) }),
+      onSettled: () => {},
+      onRefunded: () => {},
+      onTerminal: (g) => terminal.push(g),
+    });
+    await q.enqueueRefund('gtr');
+    await vi.runOnlyPendingTimersAsync();
+    expect(terminal).toEqual(['gtr']);
+  });
+
+  it('onTerminal does NOT fire while a job is only rescheduled (still waiting)', async () => {
+    const store = new MemoryStore();
+    const terminal: string[] = [];
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({ gameStatus: async () => ({ status: GameStatus.WaitingOpponent, createdAt: 1_000, playerA: WINNER, playerB: PLAYER_B }) }),
+      onSettled: () => {},
+      onRefunded: () => {},
+      onTerminal: (g) => terminal.push(g),
+      now: () => 1_000, // inside the refund window → reschedules, not terminal yet
+    });
+    await q.enqueue('gw', WINNER);
+    await vi.runOnlyPendingTimersAsync();
+    expect(terminal).toEqual([]); // not terminal while waiting
   });
 
   it('resumePending re-processes jobs from a previous run on the same chain', async () => {
