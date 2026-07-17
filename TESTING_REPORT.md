@@ -351,8 +351,12 @@ Serveur **frais**, 40 000 parties continues à 25–43 parties/s (~50–86 sessi
 
 **La pente s'effondre à ~2 % du taux de remplissage exactement à l'horizon des 10 min**, puis la RSS oscille dans une bande plate 1028–1077 Mo et **termine 40 Mo plus bas** qu'au début du plateau. C'est la signature d'une rétention bornée arrivée en régime (arrivées ≈ expirations) — **pas une fuite**. Sur tout le run (**24 000 parties**) : **0 violation · 0 crash · 0 zombie**, **FD plats à ~90–94**.
 
+**Confirmation sur 1 heure** (serveur frais, 45 250 parties continues) : après le remplissage (t+0→t+9, 329→999 Mo), le plateau tient **plat pendant 48 min** (bande 1033–1126 Mo, sans tendance haussière), **0 violation/crash/zombie**, FD plats à 107–113, serveur en vie **1 h 00 m 56 s**. Mémoire hôte **entièrement réclamée à l'arrêt** (used 6650→5160 Mo) — aucune mémoire fuie ne survit au process. Preuve 10× plus longue que la fenêtre initiale.
+
+**Fuite lente trouvée en amont (corrigée, `a957575`)** : plutôt que d'attendre passivement le 24 h, un audit des maps serveur à croissance non bornée a révélé que `settlementNotify`/`settlement4Notify` n'étaient purgés que par `onSettled`/`onRefunded` — trois issues terminales (paiement `failed`, partie déjà résolue, refund no-op) ne supprimaient jamais leur entrée → une petite fuite par règlement staké, invisible à 16 min mais réelle sur une journée. Corrigé via un callback `onTerminal` déclenché sur **toute** issue terminale (`process()` enveloppe `processOnce()` retournant un booléen terminal → impossible d'oublier une branche). Régression : `settlement.test.ts` (serveur 103/104).
+
 ## Bilan Phase 6
 
-**GO.** Charge (p95 15 ms / 138 ms), budgets client (201 Ko / 3,95 s) et endurance (plateau mémoire prouvé, 0 fuite FD, 0 zombie) tous verts.
+**GO.** Charge (p95 15 ms / 138 ms), budgets client (201 Ko / 3,95 s) et endurance (plateau mémoire **prouvé plat sur 1 h**, 0 fuite FD, 0 zombie) tous verts.
 
-**Résiduel humain/ops** : le **soak 24 h sur hôte dédié** reste requis — cette session prouve que le plateau *existe* et *où il se situe*, pas qu'il tient une journée. **Note de dimensionnement** : RSS en régime ≈ **1,05 Go à ~30 parties/s** → dimensionner l'instance Fly sur le **plateau**, pas sur la baseline au repos (172 Mo).
+**Résiduel humain/ops** : le **soak 24 h sur hôte dédié** reste le sign-off formel, mais il est désormais **bien dé-risqué** (plateau prouvé plat sur une heure, pas seulement au-delà de l'horizon) — et une fuite lente qu'il aurait révélée a été trouvée et corrigée en amont. **Note de dimensionnement** : RSS en régime ≈ **1,06 Go** au débit testé → dimensionner l'instance Fly sur le **plateau**, pas sur la baseline (~330 Mo à froid / 172 Mo au repos réel).

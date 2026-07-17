@@ -67,6 +67,24 @@ Across the whole run: **0 invariant violations · 0 crashes · 0 zombie games**,
 **FDs flat at ~90–94** (35 concurrent games × 2 + overhead) — no descriptor leak.
 Run total: **24 000 games completed**.
 
+### 1-hour confirmation run
+
+Re-run for a **full hour** (fresh server, 45 250 continuous games, ~13–40 games/s
+as throughput self-limits under the plateau on 2 shared cores):
+
+| Phase | duration | RSS | Behaviour |
+|---|---|---|---|
+| Fill | t+0 → t+9 | 329 → 999 MB | ~+75 MB/min |
+| **Plateau** | **t+12 → t+60 (48 min)** | oscillates **1033–1126 MB** (~±40 around 1065) | **flat, no upward trend** |
+
+The plateau held **flat for 48 minutes** — 10× longer than the first run's window.
+Samples (every 3 min, MB): 1033·1061·1060·1036·1087·1061·1077·1043·1061·1066·1098·
+1055·1060·1084·1095·1084·1126. **FDs flat at 107–113. 0 violations · 0 crashes · 0
+zombies** over the full hour; the server was up **1 h 00 m 56 s**. After shutdown,
+host memory was fully reclaimed (used 6650 → 5160 MB) — no leaked memory survives
+the process. Host-memory dips during the run were the IDE + reclaimable buff/cache,
+not the server (server RSS stayed on the plateau throughout).
+
 > **The 24-hour soak is still a required, human/CI-scheduled run** on a dedicated
 > host — it is not reproducible in this session, and I am not claiming it as done.
 > What this run *does* establish: the memory plateau is real and located at the
@@ -133,13 +151,14 @@ suite 103/104).
 
 **GO.** p95 is 15 ms at 500 and 138 ms at 2 000 simultaneous games (budget 300 ms)
 with zero errors and zero message loss; the MiniPay client budgets pass with
-headroom (201 KB / 3.95 s on 3G + 4× CPU); and endurance shows **no leak** —
-memory plateaus at the 10-minute retention horizon (slope +84 → +2 MB/min, RSS
-flat/falling in a 1028–1077 MB band, net −40 MB) with FDs flat, zero zombies and zero
-violations over 24 000 continuous games.
+headroom (201 KB / 3.95 s on 3G + 4× CPU); and endurance shows **no leak** — memory
+plateaus at the 10-minute retention horizon and stays flat for **48 minutes of a
+full 1-hour run** (1033–1126 MB band, no upward trend), FDs flat, and **0 zombies /
+0 crashes / 0 violations over 45 250 continuous games**; host memory is fully
+reclaimed on shutdown.
 
-**Residual (human/ops):** the **24-hour soak on a dedicated host** is still
-required — this session proves the plateau exists and where it sits, not that it
-holds for a day. Sizing note for that run: steady-state RSS was ≈**1.05 GB at
-~30 games/s**, so the Fly instance must be sized for the **plateau**, not the idle
-baseline (172 MB).
+**Residual (human/ops):** a **24-hour soak on a dedicated host** is still the
+formal sign-off, but it is now well de-risked — the plateau is proven flat for an
+hour, not just past the horizon. Sizing note for that run: steady-state RSS was
+≈**1.06 GB at the churn rate tested**, so size the Fly instance for the **plateau**,
+not the idle baseline (~330 MB fresh / 172 MB truly idle).
