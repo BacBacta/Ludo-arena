@@ -59,6 +59,10 @@ body {
   color: #ffffff; /* default text sits on the blue stage; panels re-set to dark */
   display: flex;
   justify-content: center;
+  /* MiniPay/webview: kill the rubber-band overscroll that drags the page into the
+     dotted corners, and never allow horizontal scroll (the full-bleed board). */
+  overscroll-behavior: none;
+  overflow-x: hidden;
 }
 
 /* signature dotted stage */
@@ -87,6 +91,22 @@ body::before {
   min-height: 100dvh;
   padding: calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
   animation: fade 0.25s ease;
+}
+
+/* The game screen must fit the VISIBLE viewport without scrolling. MiniPay's webview
+   reports dvh as the toolbar-HIDDEN (large) height, so a dvh-tall screen overflowed
+   the actually-visible area and dragged into the dotted corners. svh is the small
+   (toolbar-shown) height → it always fits; overflow:hidden stops any residual scroll.
+   The board is capped so it can never push the corner avatars / action bar off the
+   bottom — the square SVG shrinks and centres within the full-bleed wrapper. */
+.screen--game {
+  min-height: 0;
+  height: 100vh; /* fallback for engines without svh */
+  height: 100svh;
+  overflow: hidden;
+}
+.screen--game .boardwrap {
+  max-height: calc(100svh - 300px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
 
 /* staggered lobby entrance */
@@ -1742,20 +1762,12 @@ small.muted { font-size: 12px; }
   transition: transform 0.7s cubic-bezier(0.16, 0.72, 0.24, 1);
   will-change: transform;
 }
-/* Optimistic roll spin (online RTT): the die tumbles from the instant of the
-   click — while the roll intent is in flight — and eases onto the server's value
-   the moment it lands. The animation's transform overrides the inline rest
-   transform while running; removing the class hands back to the inline transform
-   (which transitions), so the die decelerates onto its face instead of the number
-   just popping in ~1.5s after the click. */
-@keyframes die3dSpin {
-  from { transform: rotateX(0deg) rotateY(0deg); }
-  to { transform: rotateX(720deg) rotateY(1080deg); }
-}
-.die3d--spinning { animation: die3dSpin 0.7s linear infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .die3d--spinning { animation: none; }
-}
+/* Optimistic roll spin (online RTT): the die tumbles from the instant of the click
+   while the roll intent is in flight, then decelerates onto the server's value when
+   it lands. The rotation itself is JS-driven (Die3D winds the shared accumulator on
+   an interval); here we only swap the timing to LINEAR so the chained tumbles read
+   as one continuous spin instead of pulsing with the settle easing. */
+.die3d--spinning { transition-timing-function: linear; }
 /* each face: rounded plastic tile — top-lit edge (bright top / dark bottom) so
    it reads as a lit rounded solid, plus a specular sweep for wet-plastic gloss */
 .die3d__face {

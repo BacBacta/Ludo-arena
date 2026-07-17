@@ -56,6 +56,9 @@ export function Die3D({ value, rollKey, skin, spinning }: Die3DProps) {
   const lastKey = useRef<number | null>(null);
   const [rolling, setRolling] = useState(false);
   const [rot, setRot] = useState<[number, number]>(() => REST[value] ?? [0, 0]);
+  // Latest value for the spin interval (avoids a stale closure without re-arming it).
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   useEffect(() => {
     const base = REST[value] ?? [0, 0];
@@ -88,6 +91,30 @@ export function Die3D({ value, rollKey, skin, spinning }: Die3DProps) {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rollKey]);
+
+  // Optimistic roll (online RTT): keep tumbling from the click until the server's
+  // value lands. Driven by the SAME `turns` accumulator as the settle above — each
+  // tick is one more forward tumble — so when the real value arrives the rollKey
+  // effect above continues winding forward and decelerates onto the face. Sharing
+  // the accumulator is what keeps it stable: a separate CSS keyframe wound a second,
+  // independent angle that snapped/back-spun at the landing.
+  useEffect(() => {
+    if (!spinning) return;
+    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const wind = (): void => {
+      turns.current.x += 4;
+      turns.current.y += 3;
+      const base = REST[valueRef.current] ?? [0, 0];
+      setRolling(true);
+      setRot([base[0] + 360 * turns.current.x, base[1] + 360 * turns.current.y]);
+    };
+    wind();
+    // Interval a touch under the 0.7s transition so each tumble retargets before it
+    // settles → continuous motion (with the linear timing set by .die3d--spinning).
+    const id = setInterval(wind, 640);
+    return () => clearInterval(id);
+  }, [spinning]);
 
   // The cube is ALWAYS mounted so the CSS transition can animate the tumble (a
   // freshly-mounted element can't transition — that broke the roll). Perspective
