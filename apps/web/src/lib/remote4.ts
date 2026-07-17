@@ -66,6 +66,8 @@ const TOKEN_KEY = 'ludo.sessionToken';
 // R-WEB-1: bounded reconnect attempts for a dropped in-progress (staked) game,
 // ~45s of backoff total — mirrors the 2p RemoteSession budget.
 const MAX_RECONNECTS = 12;
+/** Initial-connect retries before "server unreachable" — survives 3G jitter. */
+const MAX_INITIAL_ATTEMPTS4 = 4;
 
 export class Remote4 {
   private ws: WebSocket | null = null;
@@ -76,6 +78,7 @@ export class Remote4 {
   private revealedGameId = ''; // gameId we last revealed raw entropy for (once per game)
   private gameOver = false; // set on game.over4 — a close after this is expected
   private reconnects = 0; // consecutive reconnect attempts (bounded)
+  private initialAttempts = 0; // initial-connect retries before onGone (3G jitter)
   /** Last message timestamp — liveness. A silently-dead socket (screen off,
    *  sleep, NAT timeout) fires no close event; the heartbeat force-closes it so
    *  the session ends visibly (onGone) instead of freezing the board forever. */
@@ -125,9 +128,12 @@ export class Remote4 {
       return;
     }
     this.ws = ws;
+    // Generous handshake budget (was 2.5 s): on a distant/3G link the wss upgrade
+    // legitimately takes a few seconds — a tight window turned jitter into a false
+    // "server unreachable" on the initial connect.
     const failTimer = setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) ws.close();
-    }, 2500);
+    }, 4500);
 
     ws.onopen = () => {
       clearTimeout(failTimer);
@@ -147,6 +153,7 @@ export class Remote4 {
       // resyncs (R-WEB-1); joining the queue again would try to start a new game.
       if (!resume) this.send({ t: 'queue.join4', stakeCents: this.stakeCents });
       this.reconnects = 0; // a successful open resets the retry budget
+      this.initialAttempts = 0; // reachable → later drops retry, not instant onGone
     };
     ws.onclose = () => {
       clearTimeout(failTimer);
@@ -249,7 +256,21 @@ export class Remote4 {
    *  locked, so a drop there just ends the search. Gives up after MAX_RECONNECTS. */
   private scheduleReconnectOrGone(): void {
     if (this.disposed || this.gameOver) return;
-    if (!this.inGame || this.reconnects >= MAX_RECONNECTS) {
+    // Initial connection (never reached a game): retry a few times before declaring
+    // the server gone — a single slow/dropped 3G handshake must not fail instantly.
+    if (!this.inGame) {
+      this.initialAttempts += 1;
+      if (this.initialAttempts >= MAX_INITIAL_ATTEMPTS4) {
+        this.ev.onGone();
+        return;
+      }
+      const delay = Math.min(400 * 2 ** (this.initialAttempts - 1), 2000);
+      setTimeout(() => {
+        if (!this.disposed && !this.gameOver) this.connect(false); // re-send queue.join4
+      }, delay);
+      return;
+    }
+    if (this.reconnects >= MAX_RECONNECTS) {
       this.ev.onGone();
       return;
     }

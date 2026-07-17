@@ -696,12 +696,18 @@ export function claimCosmetic(
 }
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
+/** The INITIAL connection is retried this many times before we declare the server
+ *  unreachable. The target audience is low-end Android on slow 3G, where a single
+ *  wss handshake can miss a tight window on jitter/packet loss — one slow attempt
+ *  must NOT read as "server unreachable" (private tables have no bot fallback). */
+const MAX_INITIAL_ATTEMPTS = 4;
 
 export class RemoteSession implements GameSession {
   private ws: WebSocket | null = null;
   private disposed = false;
   private inGame = false;
   private attempts = 0;
+  private initialAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** Timestamp of the LAST message received — the liveness signal. A websocket
    *  can die silently (mobile screen off, laptop sleep, NAT timeout): no close
@@ -762,9 +768,12 @@ export class RemoteSession implements GameSession {
   private connect(initial: boolean): void {
     const ws = new WebSocket(withQa(this.serverUrl));
     this.ws = ws;
+    // Per-attempt handshake budget. Kept generous (not the old 2.5 s) because on a
+    // distant/3G link the TCP+TLS+WS upgrade legitimately takes a few seconds; a too
+    // tight window turned normal jitter into a false "server unreachable".
     const failTimer = setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) ws.close();
-    }, 2500);
+    }, 4500);
 
     ws.onopen = () => {
       clearTimeout(failTimer);
@@ -791,8 +800,21 @@ export class RemoteSession implements GameSession {
       clearTimeout(failTimer);
       if (this.disposed) return;
       if (!this.inGame) {
-        // never reached a game: initial-connection failure → bot fallback
-        if (initial) this.onUnavailable();
+        if (!initial) return;
+        // Initial connection never reached a game. RETRY a few times before giving
+        // up: a single slow/dropped handshake on 3G must not read as "unreachable".
+        // Only after the retries are exhausted do we fall back (bot for matchmaking,
+        // back-to-lobby for a private table). Re-uses reconnectTimer (idle here).
+        this.initialAttempts += 1;
+        if (this.initialAttempts < MAX_INITIAL_ATTEMPTS) {
+          const delay = Math.min(400 * 2 ** (this.initialAttempts - 1), 2000);
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            if (!this.disposed) this.connect(true);
+          }, delay);
+        } else {
+          this.onUnavailable();
+        }
         return;
       }
       this.scheduleReconnect();
@@ -857,6 +879,7 @@ export class RemoteSession implements GameSession {
         }
         const wasReconnecting = this.attempts > 0;
         this.attempts = 0;
+        this.initialAttempts = 0; // server is proven reachable → later drops retry generously, not "unreachable"
         if (msg.challenge) this.ev.onChallenge(msg.challenge);
         if (msg.streak) this.ev.onStreak(msg.streak);
         if (msg.league) this.ev.onLeague(msg.league);
