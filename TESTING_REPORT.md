@@ -443,3 +443,89 @@ Suites après correctifs : **109 tests unitaires serveur** (+6), **wire-regressi
 **NO-GO argent réel en l'état — un seul bloquant : R-AUTH-1.** Le serveur tient bien son rôle d'autorité (dés, coups, victoire, payouts inviolables), et les deux attaques HIGH indépendantes de l'identité sont fermées et testées. Mais tant que `miniPay:true` auto-prouve n'importe quel wallet, **l'identité du joueur n'est pas authentifiée** et les garde-fous de jeu responsable (plafond, auto-exclusion) — exigences réglementaires, pas confort — restent contournables par session. Fermeture = attestation d'origine MiniPay (**action humaine**, dépend de la plateforme).
 
 **Un correctif de test au passage :** `wire-gates` échouait sur `M3 refusal names the actual gate` — **prouvé pré-existant** en rejouant contre le code d'avant la Phase 7 (échec identique). Artefact du harnais : avec `?qa=`, la porte QA se déclenche avant celle du consentement, rendant le message recherché inatteignable. Le check accepte désormais la porte QA → 12/12.
+
+---
+
+# Phase 8 — CI/CD & verdict final
+
+Détail des pipelines : [docs/CI.md](docs/CI.md).
+
+## Deux pipelines, un partage délibéré
+
+**Chaque PR ne paie que ce qui attrape vite une régression** ; les preuves lentes et à forte assurance tournent la nuit.
+
+| Par PR (`ci.yml`) | Contenu | Prouvé en local |
+|---|---|---|
+| `check` | lint · typecheck · **tests unitaires** · simulate moteur · build | 109 tests serveur verts |
+| `audit` | `npm audit --omit=dev --audit-level=high` | exit 0 ✅ |
+| `e2e-smoke` | serveur réel + sondes **WebSocket réelles** : regression, gates, security, anticheat | **45/45 checks, exit 0** ✅ |
+| `contracts` | `forge test` (unit + fuzz + invariants) | déjà vert (Phase 2) |
+
+| Nocturne (`nightly.yml`, 03:00 UTC + à la demande) | Contenu | Prouvé en local |
+|---|---|---|
+| `bot-sim` | **500 parties complètes** + invariants après chaque état, puis catalogue hostile | **500/500 · 0 violation · 0 crash · 0 zombie** (12 s) ; **chaos 16/16** ✅ |
+| `e2e-full` | harnais filaire complet (dont `wire-identity`, `wire-4p` cadencé) | suites vertes ✅ |
+| `money-flow` | `sim:flow` — anvil + **vrais contrats** + **vrai arbitre**, cycle complet | **35 assertions vertes**, fonds conservés ✅ |
+
+**Chaque job a été répété en local avant d'être écrit** — une CI qui référence un script inexistant est pire que pas de CI. Trois défauts réels attrapés ainsi dans mon propre YAML : `chaos.mjs` ne prend **aucun argument** (les miens auraient été ignorés en silence) ; sa doc exige un `DIE_SETTLE_MS` **non nul** — je le lançais à `0`, ce qui aurait rendu ses contrôles de course **vides** (le piège du test vacuous de la Phase 5, à nouveau) ; et les échecs s'écrivent dans `simulation/out`, pas `simulation/failures/` — mon artefact aurait toujours été vide.
+
+## Deux pièges de cadence, encodés exprès
+
+- `bot-sim` lance `rational` à `DIE_SETTLE_MS=0` (il teste l'état, pas le timing) mais démarre un **second serveur à 150 ms pour `chaos.mjs`** : plusieurs attaques courent contre la fenêtre de settle, qui à `0` n'existe pas — les sondes passeraient **par construction sans rien tester**.
+- `e2e-full` tourne à cadence par défaut car `wire-4p` vérifie qu'aucun coup n'atterrit pendant le tumble du dé — précisément ce que `DIE_SETTLE_MS=0` supprime. Le smoke de PR l'exclut pour cette raison.
+
+## Quand le nocturne devient rouge
+
+`rational.mjs` écrit `simulation/out/fail-<n>.json` avec **la graine et toute la séquence dés+coups** ; le job l'archive en artefact et `replay.mjs` le rejoue **à l'identique**. Un échec nocturne est reproductible, pas un mystère.
+
+---
+
+# Phase 8 (suite) — Revue adversariale du verdict & GO/NO-GO final
+
+Avant de prononcer un GO/NO-GO, j'ai lancé une revue **chargée d'attaquer ma propre conclusion** plutôt que de la confirmer : 4 angles indépendants (affirmations non étayées, bloquants manqués, prêt-pour-la-prod ops, phases silencieusement affaiblies), chaque écart trouvé étant ensuite soumis à un vérificateur adversarial qui devait le **réfuter** par défaut. Le filtre a fonctionné — la majorité des écarts levés ont été **rétrogradés en mineur** par les vérificateurs. Mais il a aussi trouvé de **vrais bloquants argent que ma campagne en 8 phases avait manqués**. J'ai vérifié chacun **moi-même dans le code** avant d'agir.
+
+## Le constat structurant : le 4 joueurs misé est en retard de sécurité sur le 1v1
+
+Trois des bloquants sont **spécifiques au 4p** et correspondent, un par un, à une sécurité que le 1v1 possède déjà. Le chemin argent 4 joueurs a été ajouté sans porter les garde-fous du 1v1.
+
+## Corrigés et validés cette session
+
+| ID | Sév. vérifiée | Défaut | Correctif | Preuve |
+|---|---|---|---|---|
+| **G-1** | 🔴 Bloquant | **Porte de lancement *fail-open*.** `STAKING_ENABLED=false` ne coupe que l'arbitre ; `needsLock = … && !!arbiter` devient faux → une partie 1v1 misée **démarre sans attendre l'escrow et n'est jamais réglée**. Un client qui a déposé (son adresse d'escrow est dans son propre bundle) voit ses fonds bloqués jusqu'au `refundActive` 24 h. Le 4p refusait déjà (`!arbiterN`), le 1v1 n'avait aucune porte. | Refus dans `stakeBlock` si l'arbitre du mode est désarmé (couvre les 8 entrées misées). | **Prouvé avant/après** : serveur durable (Docker PG+Redis), staking coupé → pré-correctif `queue.join`/`table.create` renvoient `queue.ok`/`table.created` ; post-correctif refusés. Sonde [wire-launchgate.mjs](e2e/wire-launchgate.mjs). |
+| **G-3** | 🔴 Bloquant | **Refund 4p sur escrow `Active` impossible.** Les 4 déposent (escrow `Active`) mais un siège ne révèle pas son entropie → le timeout enfile un refund, mais `refundUnfilled` **revert** sur `Active` (il exige `Filling`) ; le job (`winnerWallet=''`) tombait dans la branche settle, échouait « winner '' n'est pas un siège », et laissait le pot bloqué 24 h. | Job de refund sur escrow `Active` → `voidGame` (rend chaque mise à son déposant). | Test de régression `settlement4.test.ts` (void, pas settle/refundUnfilled, terminal) ; `sim:flow` 35 assertions. |
+| **G-4** | 🟠 Majeur | **Contrôle d'identité des déposants absent côté 4p.** `pollStaked4Lock` démarrait sur `Active && allRevealed4` sans vérifier que les 4 déposants on-chain **sont** les 4 appariés (le 1v1 le fait, R-SETTLE-3). Un tiers qui apprend le `gameId` peut déposer dans un siège → mapping joué/misé rompu, payout potentiellement bloqué. | `seatsOf` comparé aux 4 wallets appariés ; sur divergence → void + annulation + alerte ops. | typecheck + `sim:flow` ; réutilise le chemin void G-3 (testé). Test on-chain dédié : **suivi** (exige un escrow réel avec déposant hostile). |
+
+## Confirmés, non corrigés — documentés en bloquants suivis (décision : clôturer la Phase 8 d'abord)
+
+| ID | Sév. vérifiée | Défaut & repro | Forme du correctif |
+|---|---|---|---|
+| **G-2** | 🔴 Bloquant | **Concordance escrow serveur/client non vérifiée.** Le serveur résout l'escrow depuis `ESCROW_ADDRESS` (secret Fly) ; le client depuis une copie **vendorée dans son bundle** ([deployments.ts](apps/web/src/lib/deployments.ts)). Rien ne vérifie qu'elles concordent. **Repro** : mettre à jour le secret Fly sans rebuild du web (ou l'inverse) — pile le scénario du **re-déploiement des contrats durcis planifié** → le client dépose dans l'escrow A, le serveur règle sur B, ne voit rien, annule ; l'argent dort dans A jusqu'au `refundActive` 24 h. | Le serveur **annonce** son adresse d'escrow (dans `hello.ok`) ; le client **refuse de déposer** si elle diverge de la sienne. Touche protocole + client → cycle de validation dédié. |
+| **G-5** | 🔴 Bloquant | **Aucune persistance de Room4.** Le store n'expose que `saveRoom`/`loadRooms` (1v1) ; `wireRoom4` n'a pas de `onChange` persistant ; la réconciliation au boot ne parcourt que les snapshots 1v1. **Repro** : partie 4p misée en cours (escrow `Active`, 4 mises) → restart serveur (déploiement, OOM, **ou le filet `uncaughtException` de la Phase 7 qui fait sortir le process**) → la Room4 disparaît, sans trace pour rembourser ; fonds bloqués jusqu'au `refundActive` 24 h. | Sous-système de snapshots Room4 + restauration/reattach au boot, comparable à celui du 1v1 (`RoomSnapshot`/`loadRooms`/`resume`). Gros changement → cycle dédié. |
+| **G-6** | 🟠 Majeur (vérif. bloquant) | **Géo-blocage inerte ET falsifiable.** `BLOCKED_COUNTRIES` vide par défaut (déjà R-COMP-1) ; et `countryOf` lit `cf-ipcountry`/`x-vercel-ip-country` — si le serveur Fly est joignable en direct (WS), le client **envoie l'en-tête qu'il veut**. Le code s'en avertit lui-même ([index.ts:316](apps/server/src/index.ts#L316)). | Liste légale (R-COMP-1) **plus** enforcement de l'en-tête pays derrière un edge de confiance qui l'écrase (ops/infra). |
+| **E5.2-défaut** | 🟢 Mineur (conformité) | **Limite de mise par défaut divergente, masquée par un test skippé.** Constante `DEFAULT_DAILY_STAKE_LIMIT_CENTS = 500` (store mémoire) vs schéma Postgres `daily_limit_cents … DEFAULT 200` ([persistent.ts:88](apps/server/src/store/persistent.ts#L88)). En prod (Postgres) le défaut réel est **2 $, pas 5 $**. Pas un trou d'argent (plus strict), mais une incohérence sur un paramètre réglementaire. | Aligner sur une **source unique** — mais **relever une limite réglementaire est une décision de conformité, pas technique** → laissé au décideur. |
+| **Store prod non testé en CI** | 🟠 Majeur (process) | Les tests `PersistentStore` **skippent** sans `REDIS_URL + DATABASE_URL` — donc le store **réellement utilisé en prod** n'est exercé ni en local ni en CI ; c'est ce qui a laissé E5.2-défaut passer. Exécutés à la main (Docker PG+Redis) : **34/35 verts**, 1 échec = E5.2-défaut ci-dessus. | Ajouter un service Postgres au job CI `check` — **après** résolution de E5.2-défaut (sinon la CI casse sur cette divergence). |
+
+## Verdict final — **NO-GO argent réel**
+
+Le serveur tient son rôle d'autorité (dés, coups, victoire, payouts inviolables) ; l'endurance, la charge, les contrats et l'anti-triche passent ; et la CI garde désormais les acquis. Mais l'argent réel reste **NO-GO**, et la revue adversariale a **allongé la liste des bloquants** — ce qui est une bien meilleure nouvelle avant lancement qu'après.
+
+**Recommandation de périmètre (au décideur) : lancer le 1v1 misé d'abord ; garder le 4 joueurs en gratuit jusqu'à ce que son chemin argent soit durci (G-5) et audité.** Les données le disent — G-3, G-4 et G-5 sont tous des manques 4p que le 1v1 n'a pas.
+
+### Bloquants argent réel restants
+
+**Code (à traiter avant argent) :**
+1. **G-2** — garde-fou de concordance escrow serveur/client (critique au re-déploiement).
+2. **G-5** — persistance Room4 (**bloque le 4p misé** ; sans objet si lancement 1v1-first).
+3. **G-4** — test on-chain dédié du contrôle des déposants 4p (correctif fait, preuve à compléter).
+
+**Humain / ops (inchangés, toujours requis) :**
+4. Re-déploiement des contrats durcis (R-ESCROW-1 + escrowN post-C3) sur Sepolia puis mainnet — **coordonné avec G-2**.
+5. Custody de la clé arbitre (KMS + split signataire/soumetteur) — R-KEY-1.
+6. **R-AUTH-1** — attestation d'origine du webview MiniPay (identité non authentifiée sans elle ; dépend de la plateforme).
+7. `BLOCKED_COUNTRIES` légal **+ edge de confiance** pour l'en-tête pays — R-COMP-1 / G-6.
+8. Décision de conformité sur la limite de mise par défaut (2 $ vs 5 $) — E5.2-défaut.
+9. Listing MiniPay (ToS/confidentialité) — R-COMP-3.
+10. Audit externe des contrats, certification RNG (labo accrédité), bêta fermée MiniPay sur Sepolia, soak 24 h sur hôte dédié, validation juridique par pays.
+
+**Résumé :** le code 1v1 est proche de la cible (bloquants code corrigés ; ne restent que des actions humaines) ; le code 4p a besoin de G-5 avant tout argent réel. Aucun lancement tant que les actions humaines/ops ci-dessus ne sont pas levées.

@@ -1,0 +1,141 @@
+name: Nightly
+
+# The heavy evidence the PR path can't afford to pay for on every push: bot games
+# at volume, network chaos, and the full staked money lifecycle against a real chain.
+on:
+  schedule:
+    - cron: '0 3 * * *' # 03:00 UTC daily
+  workflow_dispatch: # so a release candidate can be checked on demand
+
+jobs:
+  bot-sim:
+    name: bot simulation (500 games, invariants)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Boot server
+        env:
+          QA_KEY: ci-nightly
+          DIE_SETTLE_MS: '0' # accelerated: the sim asserts state, not pacing
+          BOT_ROLL_MS: '0'
+          BOT_MOVE_MS: '0'
+          PORT: '8787'
+        run: |
+          npx tsx apps/server/src/index.ts > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if node -e "require('net').connect(8787,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))" 2>/dev/null; then
+              echo "server up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server failed to start"; cat /tmp/server.log; exit 1
+      # 500 full games over the REAL socket, every server-applied state checked
+      # against the structural invariants. A violation writes simulation/failures/
+      # with the seed + the full dice/move sequence, which replay.mjs re-runs
+      # deterministically — so a nightly red is reproducible, not a mystery.
+      - name: Rational bots — 500 games
+        env:
+          SRV: ws://localhost:8787/?qa=ci-nightly
+        run: node simulation/rational.mjs 500 16
+      # Chaos needs its OWN server with a NON-zero DIE_SETTLE_MS (its module docs say
+      # so): several of its attacks race the die-settle window, and at 0 that window
+      # does not exist — the probes would pass by construction while testing nothing.
+      # It also takes no arguments; the catalog it drives is fixed.
+      - name: Boot a paced server for the chaos catalog
+        env:
+          QA_KEY: ci-nightly
+          DIE_SETTLE_MS: '150'
+          PORT: '8788'
+        run: |
+          npx tsx apps/server/src/index.ts > /tmp/server-chaos.log 2>&1 &
+          for i in $(seq 1 30); do
+            if node -e "require('net').connect(8788,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))" 2>/dev/null; then
+              echo "chaos server up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "chaos server failed to start"; cat /tmp/server-chaos.log; exit 1
+      - name: Chaos bots — hostile input catalog
+        env:
+          SRV: ws://localhost:8788/?qa=ci-nightly
+        run: node simulation/chaos.mjs
+      - name: Upload failure seeds
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-failures
+          # rational.mjs writes fail-<n>.json (seed + full dice/move sequence) and
+          # rational-summary.json here; replay.mjs re-runs them deterministically.
+          path: |
+            simulation/out/
+            /tmp/server.log
+            /tmp/server-chaos.log
+          if-no-files-found: ignore
+
+  e2e-full:
+    name: e2e — full wire harness (incl. 4p paced)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Default pacing on purpose: wire-4p asserts that no move lands inside the die
+      # tumble, which is exactly what DIE_SETTLE_MS=0 (used by the PR smoke) removes.
+      - name: Boot server
+        env:
+          QA_KEY: ci-nightly
+          PORT: '8787'
+        run: |
+          npx tsx apps/server/src/index.ts > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if node -e "require('net').connect(8787,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))" 2>/dev/null; then
+              echo "server up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server failed to start"; cat /tmp/server.log; exit 1
+      - name: Wire probes
+        env:
+          SRV: ws://localhost:8787/?qa=ci-nightly
+        run: |
+          set -e
+          node e2e/wire-regression.mjs
+          node e2e/wire-identity.mjs
+          node e2e/wire-gates.mjs
+          node e2e/wire-4p.mjs
+          node e2e/wire-security.mjs
+          node e2e/wire-anticheat.mjs
+      - name: Server log on failure
+        if: failure()
+        run: cat /tmp/server.log
+
+  money-flow:
+    name: staked money lifecycle (anvil + real contracts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Vendor forge-std
+        run: git clone --depth 1 https://github.com/foundry-rs/forge-std packages/contracts/lib/forge-std
+      - run: npm ci
+      # Boots its own anvil, deploys the REAL escrows, and drives every player
+      # behaviour (win, resign, no-show, drop, AFK, stall) through the real arbiter
+      # to a payout/refund — asserting tokens are conserved end to end. This is the
+      # closest thing to a rehearsal of real money, and it never touches mainnet.
+      - name: Full staked lifecycle
+        run: npm run sim:flow
