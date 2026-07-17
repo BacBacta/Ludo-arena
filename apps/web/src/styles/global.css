@@ -1001,15 +1001,20 @@ small.muted { font-size: 12px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   background: rgba(23, 37, 84, 0.55);
   border-radius: 16px;
-  padding: 8px 10px;
+  padding: 6px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 14px rgba(15, 26, 68, 0.3);
 }
+/* The bar packs 8 controls; on a narrow (MiniPay) width they must SHRINK to fit —
+   otherwise the last ones (menu, and critically the leave ✕) overflow and, under
+   the game screen's overflow:hidden, get clipped off entirely. Let every control
+   shrink toward a still-tappable floor instead of pushing the exit off-screen. */
 .gamebar__btn {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   width: 44px;
+  min-width: 30px;
   height: 44px;
   border: none;
   border-radius: 12px;
@@ -1361,21 +1366,23 @@ small.muted { font-size: 12px; }
 /* ---- in-game emotes ---- */
 .emotebar { position: relative; display: inline-flex; }
 .emotebar__toggle {
-  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  width: 40px; height: 40px; min-width: 30px; flex-shrink: 1; border-radius: 50%; border: none; cursor: pointer;
   font-size: 20px; line-height: 1; background: var(--surface); color: var(--txt);
   box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
 }
 .emotebar__toggle:active { transform: scale(0.92); }
 /* popover sheet: emoji row + quick-chat pill row */
 .emotebar__sheet {
-  position: absolute; z-index: 20; width: 224px; box-sizing: border-box;
+  position: absolute; z-index: 20; width: 224px; max-width: calc(100vw - 20px); box-sizing: border-box;
   display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--surface);
   border-radius: 18px; box-shadow: 0 12px 30px rgba(23, 43, 99, 0.5);
   animation: emoteRow 0.14s ease-out;
 }
-/* anchored to the button's edge (not centred) so a top-bar bar doesn't overhang
-   the board centre; the up-variant (1v1 bottom bar) opens upward, right-aligned */
-.emotebar--up .emotebar__sheet { bottom: 100%; margin-bottom: 8px; left: 0; transform-origin: bottom left; }
+/* Anchor to the button's RIGHT edge so the sheet opens toward the board centre and
+   never overhangs the screen edge (the emote toggle sits right-of-centre in the
+   1v1 bottom bar; left-aligning pushed the 224px sheet off the right edge, where the
+   game screen's overflow:hidden clipped it to half). Matches the gift sheet. */
+.emotebar--up .emotebar__sheet { bottom: 100%; margin-bottom: 8px; right: 0; left: auto; transform-origin: bottom right; }
 .emotebar--down .emotebar__sheet { top: 100%; margin-top: 8px; right: 0; transform-origin: top right; }
 /* compact grids: 4 emojis / 2 quick-chats per row → half the height it was */
 .emotebar__row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
@@ -1436,7 +1443,7 @@ small.muted { font-size: 12px; }
 /* ---- in-game gifts (directed treats: coffee, rose, cake…) ---- */
 .giftbar { position: relative; display: inline-flex; }
 .giftbar__toggle {
-  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  width: 40px; height: 40px; min-width: 30px; flex-shrink: 1; border-radius: 50%; border: none; cursor: pointer;
   font-size: 20px; line-height: 1; color: var(--txt); background: rgba(245, 179, 1, 0.16);
   box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
 }
