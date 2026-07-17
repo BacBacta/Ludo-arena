@@ -40,6 +40,10 @@ export interface Die3DProps {
   /** Bumps on every fresh roll to trigger a new tumble; 0 = never rolled. */
   rollKey: number;
   skin: DiceSkin;
+  /** A roll intent is in flight (online RTT) with no value yet: spin continuously
+   *  from the click and land on `value` when the server's roll arrives (rollKey
+   *  bumps). Purely visual — the local bot resolves instantly so it never spins. */
+  spinning?: boolean;
 }
 
 /**
@@ -47,7 +51,7 @@ export interface Die3DProps {
  * forward (never rewinds), landing on REST[value]. Unequal X/Y turn counts make
  * the somersault read as "all directions", not a single-axis spin.
  */
-export function Die3D({ value, rollKey, skin }: Die3DProps) {
+export function Die3D({ value, rollKey, skin, spinning }: Die3DProps) {
   const turns = useRef({ x: 0, y: 0 });
   const lastKey = useRef<number | null>(null);
   const [rolling, setRolling] = useState(false);
@@ -92,8 +96,8 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
   // there's no lean-back-to-flat settle that would flash the side faces/corners.
   return (
     <div className="die3d-stage">
-      <div className={`die3d-lift${rolling ? ' die3d-lift--rolling' : ''}`}>
-        <div className="die3d" style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
+      <div className={`die3d-lift${rolling || spinning ? ' die3d-lift--rolling' : ''}`}>
+        <div className={`die3d${spinning ? ' die3d--spinning' : ''}`} style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
           {FACES.map((f) => (
             <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
               <DieFace value={f.v} skin={skin} />

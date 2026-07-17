@@ -290,7 +290,7 @@ export function GameScreen({
               }}
               aria-label={`${t('you')} die`}
             >
-              <Die value={myDieVal} rollKey={myRollIndex} skin={skin} />
+              <Die value={myDieVal} rollKey={myRollIndex} skin={skin} spinning={pendingAction === 'roll'} />
             </button>
           </div>
           <div className="gamemsg">

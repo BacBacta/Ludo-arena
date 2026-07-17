@@ -1742,6 +1742,20 @@ small.muted { font-size: 12px; }
   transition: transform 0.7s cubic-bezier(0.16, 0.72, 0.24, 1);
   will-change: transform;
 }
+/* Optimistic roll spin (online RTT): the die tumbles from the instant of the
+   click — while the roll intent is in flight — and eases onto the server's value
+   the moment it lands. The animation's transform overrides the inline rest
+   transform while running; removing the class hands back to the inline transform
+   (which transitions), so the die decelerates onto its face instead of the number
+   just popping in ~1.5s after the click. */
+@keyframes die3dSpin {
+  from { transform: rotateX(0deg) rotateY(0deg); }
+  to { transform: rotateX(720deg) rotateY(1080deg); }
+}
+.die3d--spinning { animation: die3dSpin 0.7s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .die3d--spinning { animation: none; }
+}
 /* each face: rounded plastic tile — top-lit edge (bright top / dark bottom) so
    it reads as a lit rounded solid, plus a specular sweep for wet-plastic gloss */
 .die3d__face {

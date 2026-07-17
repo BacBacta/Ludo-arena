@@ -14,7 +14,7 @@ export function Die(props: Die3DProps) {
   return props.skin.material ? <DiePremium3D {...props} /> : <Die3D {...props} />;
 }
 
-function DiePremium3D({ value, rollKey, skin }: Die3DProps) {
+function DiePremium3D({ value, rollKey, skin, spinning }: Die3DProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<DieEngine | null>(null);
   const [ready, setReady] = useState(false);
@@ -72,7 +72,7 @@ function DiePremium3D({ value, rollKey, skin }: Die3DProps) {
       <div ref={hostRef} className="diepremium__host" style={{ opacity: ready ? 1 : 0 }} />
       {!ready && (
         <div className="diepremium__fallback">
-          <Die3D value={value} rollKey={rollKey} skin={skin} />
+          <Die3D value={value} rollKey={rollKey} skin={skin} spinning={spinning} />
         </div>
       )}
     </div>

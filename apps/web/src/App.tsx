@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { applyMove } from '@ludo/game-engine';
+import type { GameState } from '@ludo/game-engine';
 import { TOS_VERSION, cosmeticCents, type StakeCents } from '@ludo/shared';
 import { syncLobby,
   LocalBotSession,
@@ -94,6 +96,13 @@ export default function App() {
   const prevPositionsRef = useRef<number[][] | null>(null);
   const animUntilRef = useRef(0);
   const turnDeferTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Client-side prediction: the latest authoritative game state (mirrors the store)
+  // so a tapped move can be applied through the shared pure engine and animated
+  // IMMEDIATELY, instead of waiting a full RTT for the server echo. `optimisticMove`
+  // marks that the next game.moved is the echo of our own predicted move (identical
+  // state → no re-animation, and the walk timing must not be recomputed off it).
+  const gameRef = useRef<GameState | null>(null);
+  const optimisticMove = useRef(false);
   const clearTurnDefer = useCallback(() => {
     if (turnDeferTimer.current) {
       clearTimeout(turnDeferTimer.current);
@@ -224,11 +233,13 @@ export default function App() {
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };
-        // Fresh match: drop any stale in-flight lock / turn-defer carried over.
+        // Fresh match: drop any stale in-flight lock / turn-defer / prediction carried over.
         clearPendingTimer();
         clearTurnDefer();
         prevPositionsRef.current = null;
         animUntilRef.current = 0;
+        gameRef.current = null;
+        optimisticMove.current = false;
         dispatch({ type: 'MATCH_FOUND', match });
         if (match.stakeCents > 0) void stakeForMatch(match.gameId, match.stakeCents, match.fairnessCommit);
       },
@@ -237,6 +248,7 @@ export default function App() {
         // carries the same positions as before the move, so the next onMoved diff
         // measures exactly the pawn that advances.
         prevPositionsRef.current = game.positions;
+        gameRef.current = game; // prediction baseline (dice + legal for the next move)
         dispatch({ type: 'GAME_STATE', game });
       },
       onDice: (value, index, seat) => {
@@ -256,12 +268,20 @@ export default function App() {
       },
       onMoved: (game, capture) => {
         movedSinceDiceRef.current = true;
-        // The authoritative move arrived → the move lock is released by the MOVED
-        // reducer; cancel its failsafe.
         clearPendingTimer();
-        // Measure how long this pawn will walk so the next turn hand-off (Fix 2)
-        // waits for the animation to finish before the HUD flips, matching the
-        // local bot's pacing. The Board animates the same prev→next delta.
+        gameRef.current = game; // authoritative sync
+        if (optimisticMove.current) {
+          // Echo of OUR OWN predicted move: the pawn already animated + sounded at
+          // click time and the state is identical, so re-dispatching MOVED is a
+          // no-op for the board (no position diff) and we KEEP the optimistic
+          // animUntil so the turn hand-off matches the animation already running.
+          optimisticMove.current = false;
+          prevPositionsRef.current = game.positions;
+          dispatch({ type: 'MOVED', game, capture });
+          return;
+        }
+        // Opponent's move (or any non-predicted move): animate from our last known
+        // board, and measure the walk so the turn hand-off (Fix 2) waits for it.
         const prev = prevPositionsRef.current;
         const steps = prev ? walkSteps(prev, game.positions) : 1;
         animUntilRef.current = Date.now() + steps * WALK_STEP_MS + WALK_TWEEN_MS;
@@ -364,12 +384,14 @@ export default function App() {
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };
-        // Resync baselines: drop any in-flight lock / deferred turn from before the
-        // drop and re-anchor the walk baseline to the authoritative resumed board.
+        // Resync baselines: drop any in-flight lock / deferred turn / prediction from
+        // before the drop and re-anchor to the authoritative resumed board.
         clearPendingTimer();
         clearTurnDefer();
         prevPositionsRef.current = game.positions;
         animUntilRef.current = 0;
+        gameRef.current = game;
+        optimisticMove.current = false;
         dispatch({ type: 'RESUME', match, game });
       },
       onGone: () => {
@@ -632,11 +654,34 @@ export default function App() {
   }, [armPending]);
   const move = useCallback(
     (token: number) => {
-      if (!sessionRef.current) return;
+      const session = sessionRef.current;
+      if (!session) return;
+      const g = gameRef.current;
+      const mySeat = matchSeatRef.current;
+      // Optimistic prediction: when the tap is a legal move for us, apply it through
+      // the SAME pure engine the server runs and animate it NOW — no RTT wait. The
+      // server's game.moved echo is identical (deterministic engine + in-sync state)
+      // so it reconciles without re-animating. The server stays authoritative: we
+      // only ever SEND the intent; the echo/turn confirm it.
+      if (g && g.turn === mySeat && g.phase === 'awaiting-move' && g.legal.includes(token)) {
+        const { state, events } = applyMove(g, token);
+        gameRef.current = state;
+        optimisticMove.current = true;
+        movedSinceDiceRef.current = true;
+        if (events.capture) playCapture();
+        const steps = walkSteps(g.positions, state.positions);
+        animUntilRef.current = Date.now() + steps * WALK_STEP_MS + WALK_TWEEN_MS;
+        prevPositionsRef.current = state.positions;
+        dispatch({ type: 'MOVED', game: state, capture: events.capture });
+        session.move(token);
+        return;
+      }
+      // Fallback (state not locally known / not obviously legal): lock and let the
+      // server echo drive the board, as before.
       armPending('move');
-      sessionRef.current.move(token);
+      session.move(token);
     },
-    [armPending],
+    [armPending, dispatch],
   );
   // True direct rematch: reuse the still-open session so the server can re-pair
   // the same opponent (it re-queues if they didn't ask / the cap is hit). Falls
