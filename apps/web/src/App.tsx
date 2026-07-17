@@ -569,6 +569,55 @@ export default function App() {
     );
   }, [dispatch, makeEvents, makeAuth]);
 
+  // Auto-update: while the app stays open (SPA / kept-open MiniPay webview) it can
+  // sit on the build it first loaded across new deployments. Poll the deployed
+  // build id (/version.json, cache-busted past the service worker) and reload to
+  // pick up a newer one — but only at a SAFE moment (lobby/end), never mid-game.
+  const screenRef = useRef(state.screen);
+  screenRef.current = state.screen;
+  const updatePending = useRef(false);
+  const RELOAD_GUARD = 'ludo.autoUpdatedTo';
+  const applyUpdate = useCallback((version: string) => {
+    try {
+      // Reload at most once per target build per tab, so a reload that somehow
+      // doesn't pick up the new assets can never become a refresh loop.
+      if (sessionStorage.getItem(RELOAD_GUARD) === version) return;
+      sessionStorage.setItem(RELOAD_GUARD, version);
+    } catch {
+      /* storage unavailable — the in-tab updatePending guard still bounds it */
+    }
+    window.location.reload();
+  }, []);
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    const safe = (): boolean => screenRef.current === 'lobby' || screenRef.current === 'end';
+    const check = async (): Promise<void> => {
+      try {
+        const r = await fetch(`/version.json?_=${Date.now()}`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const { version } = (await r.json()) as { version?: string };
+        if (!version || version === __APP_VERSION__) return;
+        if (safe()) applyUpdate(version);
+        else updatePending.current = version ? true : false; // apply between games
+      } catch {
+        /* offline / version.json not deployed yet — try again next tick */
+      }
+    };
+    const id = setInterval(() => void check(), 60_000);
+    return () => clearInterval(id);
+  }, [applyUpdate]);
+  // Apply a deferred update the instant the player returns to a safe screen.
+  useEffect(() => {
+    if (updatePending.current && (state.screen === 'lobby' || state.screen === 'end')) {
+      void fetch(`/version.json?_=${Date.now()}`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j: { version?: string } | null) => {
+          if (j?.version && j.version !== __APP_VERSION__) applyUpdate(j.version);
+        })
+        .catch(() => undefined);
+    }
+  }, [state.screen, applyUpdate]);
+
   // Responsible-gaming reality check: while a player who has staked today keeps
   // playing, periodically remind them of time played + amount staked (read via a
   // ref so the interval isn't reset on every limits update).
