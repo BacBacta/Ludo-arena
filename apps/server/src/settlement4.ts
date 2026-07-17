@@ -143,6 +143,15 @@ export class ArbiterN {
     return this.submit('refundUnfilled', [gameIdToBytes32(gameId)]);
   }
 
+  /** Return every stake of an ACTIVE (all-seats-deposited) game to its depositor.
+   *  The 4p analogue of the 1v1 voidGame: needed when a table filled on-chain but
+   *  the game never started (e.g. a seat never revealed its fairness entropy).
+   *  refundUnfilled reverts on an Active escrow (it requires Filling), so without
+   *  this the pot would be stuck until the 24 h permissionless refundActive. */
+  async submitVoid(gameId: string): Promise<Hex> {
+    return this.submit('voidGame', [gameIdToBytes32(gameId)]);
+  }
+
   async healthcheck(): Promise<bigint> {
     return this.publicClient.getBlockNumber();
   }
@@ -186,6 +195,7 @@ export interface ArbiterNLike {
   seatsOf(gameId: string): Promise<Address[]>;
   submitSettle(gameId: string, winner: Address): Promise<Hex>;
   submitRefundUnfilled(gameId: string): Promise<Hex>;
+  submitVoid(gameId: string): Promise<Hex>;
 }
 
 export interface Settlement4Deps {
@@ -280,6 +290,18 @@ export class SettlementQueue4 {
       const { status, createdAt } = await this.deps.arbiter.gameStatus(job.gameId);
 
       if (status === GameStatusN.Active) {
+        // A refund job (winnerWallet === '') on an Active escrow means the table
+        // filled on-chain but the game never started (e.g. a seat never revealed).
+        // voidGame returns every stake to its depositor; refundUnfilled would
+        // revert here (it requires Filling). Without this the pot sat in Active
+        // until the 24 h refundActive — the 4p gap the 1v1 void path already closes.
+        if (job.winnerWallet === '') {
+          const txHash = await this.deps.arbiter.submitVoid(job.gameId);
+          await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
+          this.deps.onRefunded(job.gameId, txHash);
+          console.log(`[settlement4] ${job.gameId} voided (Active, refund) in tx ${txHash}`);
+          return true;
+        }
         // Reconcile the winner against the actual on-chain seats; settle() reverts
         // NotAPlayer otherwise, burning retries until the pot is stuck in Active.
         const seats = await this.deps.arbiter.seatsOf(job.gameId);

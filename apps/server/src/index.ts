@@ -1039,7 +1039,7 @@ wss.on('connection', (ws, req) => {
             session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to play a staked 4-player table.' });
             break;
           }
-          const blocked4 = await stakeBlock(session, stake4 as StakeCents);
+          const blocked4 = await stakeBlock(session, stake4 as StakeCents, !!arbiterN);
           if (blocked4) {
             session.send({ t: 'error', code: 'LIMIT_REACHED', message: blocked4 });
             break;
@@ -1565,8 +1565,24 @@ function issueWalletNonce(session: Session): { walletNonce?: string; walletProve
   return { walletNonce: session.walletNonce, walletProven: false };
 }
 
-async function stakeBlock(session: Session, stake: StakeCents): Promise<string | null> {
+/**
+ * @param settlerReady is the arbiter that will settle THIS mode armed? Defaults to
+ *   the 1v1 arbiter; the 4p entry passes `!!arbiterN`.
+ */
+async function stakeBlock(session: Session, stake: StakeCents, settlerReady = !!arbiter): Promise<string | null> {
   if (stake <= 0) return null;
+  // The launch gate (R-COMP-2) must fail SAFE. STAKING_ENABLED=false only nulls the
+  // arbiter — and `needsLock` is `stake > 0 && wallets && !!arbiter`, so a
+  // wallet-backed staked game would then start WITHOUT waiting for the escrow and
+  // would never be settled. A client that deposited anyway (its escrow address is
+  // baked into its own bundle, not handed out by us) leaves real funds locked until
+  // the contract's 24 h refundActive. Turning staking OFF must stop staked play, not
+  // silently turn it into unsettled staked play. Staked 4p already refused on
+  // `!arbiterN` at its entry (index.ts:1034) — 1v1 had no equivalent. Wallet-less
+  // demo players stake simulated balances (no escrow, no settlement) — unaffected.
+  if (session.wallet && !settlerReady) {
+    return 'Staked games are temporarily unavailable — free practice only.';
+  }
   // Staked play requires accepting the CURRENT terms (18+/ToS), enforced
   // server-side (the client gate is bypassable). Recorded in recordConsent.
   if (session.consentTos !== TOS_VERSION) {
@@ -2170,13 +2186,38 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
   if (!p || !arbiterN) return;
   void arbiterN
     .gameStatus(gameId)
-    .then(({ status }) => {
+    .then(async ({ status }) => {
       if (pendingStaked4.get(gameId) !== p) return;
       // Start only when the money is locked AND fairness can be bound to all four
       // revealed entropies. If stakes are Active but a reveal is still missing, keep
       // polling — the MAX_LOCK_POLLS timeout below tears down + refunds a table that
       // never completes (a seat that never reveals).
       if (status === GameStatusN.Active && allRevealed4(p)) {
+        // Before dealing, verify the four on-chain depositors ARE the four matched
+        // players — the 4p analogue of the 1v1 depositor check (R-SETTLE-3). status
+        // Active only means four seats are filled, not BY WHOM: a party that learned
+        // the gameId could have deposited into a seat. Play a mismatched escrow and
+        // the winner may not be an on-chain seat (settle reverts) — funds stuck.
+        // On mismatch: void (refund every depositor, squatter included) and cancel.
+        const want = p.humans.map((h) => h.wallet!.toLowerCase()).sort();
+        const seats = (await arbiterN!.seatsOf(gameId)).map((s) => s.toLowerCase()).sort();
+        const mismatch = want.length !== seats.length || want.some((w, i) => w !== seats[i]);
+        if (mismatch) {
+          if (pendingStaked4.get(gameId) !== p) return; // lost the race to another tick
+          pendingStaked4.delete(gameId);
+          for (const h of p.humans) {
+            h.pendingGameId = undefined;
+            h.send({ t: 'error', code: 'INTERNAL', message: 'Stake accounts did not match the table — cancelled. Any locked stake is refunded shortly.' });
+          }
+          const alert = `[4p stake-gate][ALERT] ${gameId} depositor mismatch: matched {${want.join(', ')}} but escrow holds {${seats.join(', ')}} — voiding.`;
+          console.error(alert);
+          postOpsAlert(alert);
+          // A refund job on an already-Active escrow is routed to voidGame by the
+          // settlement queue (returns every stake to its depositor) — see the
+          // Active-void branch in settlement4.ts.
+          scheduleRefundUnfilled4(gameId, p.humans);
+          return;
+        }
         startStaked4Room(p);
         return;
       }
