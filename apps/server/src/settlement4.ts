@@ -35,7 +35,7 @@ export enum GameStatusN {
 export const JOIN_TIMEOUT_N_S = 120;
 
 const ESCROW_N_ABI = [
-  { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'sig', type: 'bytes' }], outputs: [] },
+  { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'serverSeed', type: 'string' }, { name: 'seatSeeds', type: 'string[]' }, { name: 'sig', type: 'bytes' }], outputs: [] },
   { type: 'function', name: 'refundUnfilled', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'voidGame', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'seatsOf', stateMutability: 'view', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [{ name: '', type: 'address[]' }] },
@@ -133,9 +133,11 @@ export class ArbiterN {
     return this.publicClient.getBalance({ address: this.account.address });
   }
 
-  async submitSettle(gameId: string, winner: Address): Promise<Hex> {
+  /** Settle the winner AND reveal the dice fairness on-chain (serverSeed + per-seat
+   *  seeds). Money-flow-INDEPENDENT: absent reveal → empty, payout unchanged. */
+  async submitSettle(gameId: string, winner: Address, reveal?: { serverSeed: string; entropies: string[] }): Promise<Hex> {
     const sig = await this.signSettlement(gameId, winner);
-    return this.submit('settle', [gameIdToBytes32(gameId), winner, sig]);
+    return this.submit('settle', [gameIdToBytes32(gameId), winner, reveal?.serverSeed ?? '', reveal?.entropies ?? [], sig]);
   }
 
   /** Refund every depositor of a table that never filled (past JOIN_TIMEOUT). */
@@ -193,7 +195,7 @@ export interface ArbiterNLike {
   readonly chainId: number;
   gameStatus(gameId: string): Promise<GameN>;
   seatsOf(gameId: string): Promise<Address[]>;
-  submitSettle(gameId: string, winner: Address): Promise<Hex>;
+  submitSettle(gameId: string, winner: Address, reveal?: { serverSeed: string; entropies: string[] }): Promise<Hex>;
   submitRefundUnfilled(gameId: string): Promise<Hex>;
   submitVoid(gameId: string): Promise<Hex>;
 }
@@ -228,8 +230,8 @@ export class SettlementQueue4 {
   constructor(private readonly deps: Settlement4Deps) {}
 
   /** Enqueue a winner payout for a completed 4p game (durable, non-blocking). */
-  async enqueue(gameId: string, winnerWallet: string): Promise<void> {
-    return this.add(gameId, winnerWallet);
+  async enqueue(gameId: string, winnerWallet: string, reveal?: { serverSeed: string; entropies: string[] }): Promise<void> {
+    return this.add(gameId, winnerWallet, reveal);
   }
 
   /** Enqueue a full refund for a table that never filled (winner unknown). */
@@ -237,7 +239,7 @@ export class SettlementQueue4 {
     return this.add(gameId, '');
   }
 
-  private async add(gameId: string, winnerWallet: string): Promise<void> {
+  private async add(gameId: string, winnerWallet: string, reveal?: { serverSeed: string; entropies: string[] }): Promise<void> {
     const job: SettlementJob = {
       gameId,
       winnerWallet,
@@ -245,6 +247,7 @@ export class SettlementQueue4 {
       status: 'pending',
       attempts: 0,
       variant: '4p',
+      reveal,
     };
     await this.deps.store.enqueueSettlement(job);
     void this.process(job);
@@ -313,7 +316,7 @@ export class SettlementQueue4 {
           this.deps.onAlert?.(msg);
           return true;
         }
-        const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
+        const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address, job.reveal);
         await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
         this.deps.onSettled(job.gameId, txHash);
         console.log(`[settlement4] ${job.gameId} settled in tx ${txHash}`);

@@ -47,8 +47,8 @@ contract FuzzAuthorizationTest is Test {
         tok.mint(alice, 10e18); tok.mint(bob, 10e18);
         vm.prank(alice); tok.approve(address(esc), type(uint256).max);
         vm.prank(bob); tok.approve(address(esc), type(uint256).max);
-        vm.prank(alice); esc.join(gid, address(tok), 1e18);
-        vm.prank(bob); esc.join(gid, address(tok), 1e18);
+        vm.prank(alice); esc.join(gid, address(tok), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gid, address(tok), 1e18, bytes32(0));
     }
 
     /// Any signer that is NOT the arbiter fails to settle — no payout is possible
@@ -59,7 +59,7 @@ contract FuzzAuthorizationTest is Test {
         _fund2p();
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongPk, esc.settlementDigest(gid, alice));
         vm.expectRevert(LudoEscrow.BadSignature.selector);
-        esc.settle(gid, alice, abi.encodePacked(r, s, v));
+        esc.settle(gid, alice, "", "", "", abi.encodePacked(r, s, v));
         // the pot is untouched: both stakes still escrowed
         assertEq(tok.balanceOf(address(esc)), 2e18);
     }
@@ -71,7 +71,7 @@ contract FuzzAuthorizationTest is Test {
         _fund2p();
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(arbiterPk, esc.settlementDigest(gid, stranger));
         vm.expectRevert(LudoEscrow.NotAPlayer.selector);
-        esc.settle(gid, stranger, abi.encodePacked(r, s, v));
+        esc.settle(gid, stranger, "", "", "", abi.encodePacked(r, s, v));
     }
 
     /// withdraw() pays the CALLER their own credit and nothing more — one account's
@@ -84,11 +84,11 @@ contract FuzzAuthorizationTest is Test {
         bt.mint(alice, 10e18); bt.mint(bob, 10e18);
         vm.prank(alice); bt.approve(address(escN), type(uint256).max);
         vm.prank(bob); bt.approve(address(escN), type(uint256).max);
-        vm.prank(alice); escN.join(gid, address(bt), 1e18, 2);
-        vm.prank(bob); escN.join(gid, address(bt), 1e18, 2);
+        vm.prank(alice); escN.join(gid, address(bt), 1e18, 2, bytes32(0));
+        vm.prank(bob); escN.join(gid, address(bt), 1e18, 2, bytes32(0));
         bt.setBlocked(alice); // alice (winner) can't receive → credited
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(arbiterPk, escN.settlementDigest(gid, alice));
-        escN.settle(gid, alice, abi.encodePacked(r, s, v));
+        escN.settle(gid, alice, "", new string[](0), abi.encodePacked(r, s, v));
 
         uint256 pot = 2e18;
         uint256 payout = pot - (pot * 900) / 10_000;

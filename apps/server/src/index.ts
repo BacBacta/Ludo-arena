@@ -46,7 +46,7 @@ import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
-import { createFairness, createFairness4, createSeed4Commit, createSeedCommit, finalizeFairness, finalizeFairness4, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
+import { createFairness, createFairness4, createSeed4Commit, createSeedCommit, finalizeFairness, finalizeFairness4, randomSeatSeed, sha256Hex, type Fairness, type Fairness4 } from './fairness.js';
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { sameDepositors } from './depositors.js';
 import { countryOf as geoCountryOf, isGeoBlocked as geoIsBlocked } from './geo.js';
@@ -461,11 +461,13 @@ function persistRoom4(room: Room4): void {
 /** Settle a finished staked 4p game from the ROOM SEATS (not a live-session
  *  closure), so it works for a game restored after a restart too. The seats carry
  *  the depositor wallet + owning session id since G-5. */
-function settleStaked4FromSeats(gameId: string, seats: Seat4[], winnerSeat: number): void {
+function settleStaked4FromSeats(gameId: string, seats: Seat4[], winnerSeat: number, fairness?: Fairness4): void {
   const winnerWallet = seats[winnerSeat]?.wallet;
   if (!winnerWallet || !settlementQueue4) return;
   settlement4Notify.set(gameId, { sessionIds: seats.map((s) => s.sessionId ?? ''), winnerSeat });
-  settlementQueue4.enqueue(gameId, getAddress(winnerWallet)).catch((e) => console.error('[settlement4] enqueue', e));
+  // Reveal the dice fairness on-chain: the seed + every seat's revealed seed.
+  const reveal = fairness ? { serverSeed: fairness.serverSeed, entropies: [...fairness.seeds] } : undefined;
+  settlementQueue4.enqueue(gameId, getAddress(winnerWallet), reveal).catch((e) => console.error('[settlement4] enqueue', e));
 }
 
 /** Best-effort player stats (played/win) for a finished 4p game, from the seats. */
@@ -485,7 +487,7 @@ function wireStakedRoom4(room: Room4): void {
   room.onChange = persistRoom4;
   room.onResult = (r) => {
     recordRoom4StatsFromSeats(r.seats, r.winnerSeat);
-    settleStaked4FromSeats(r.gameId, r.seats, r.winnerSeat);
+    settleStaked4FromSeats(r.gameId, r.seats, r.winnerSeat, r.fairness);
   };
   room.onEnd = () => {
     rooms4.delete(room.gameId);
@@ -623,7 +625,10 @@ function wireRoom(room: Room): void {
     const winnerWallet = result.players[result.winner].wallet;
     if (settlementQueue && result.stakeCents > 0 && pa.wallet && pb.wallet && winnerWallet) {
       settlementNotify.set(result.gameId, { sessionIds: [pa.id, pb.id], winner: result.winner });
-      settlementQueue.enqueue(result.gameId, winnerWallet).catch((e) => {
+      // Reveal the dice fairness on-chain at settlement (provably-fair anchor): the
+      // seed whose sha256 is the escrow's fairnessCommit + both entropies.
+      const reveal = { serverSeed: result.fairness.serverSeed, entropies: [...result.fairness.entropies] };
+      settlementQueue.enqueue(result.gameId, winnerWallet, reveal).catch((e) => {
         // A dropped enqueue would silently lose the winner's payout (the terminal
         // snapshot is already persisted). Page ops — the boot reconciliation
         // (R-SETTLE-2) is the net that re-enqueues it, but a live DB blip that
@@ -659,7 +664,8 @@ for (const snap of await store.loadRooms()) {
     const bothWallets = snap.players[0].wallet && snap.players[1].wallet;
     if (winnerWallet && bothWallets && !(await store.hasSettlement(snap.gameId))) {
       settlementNotify.set(snap.gameId, { sessionIds: [snap.players[0].sessionId, snap.players[1].sessionId], winner: winnerSeat });
-      await settlementQueue.enqueue(snap.gameId, winnerWallet).catch((e) => console.error('[settlement] boot re-enqueue', e));
+      const reveal = { serverSeed: snap.fairness.serverSeed, entropies: [...snap.fairness.entropies] };
+      await settlementQueue.enqueue(snap.gameId, winnerWallet, reveal).catch((e) => console.error('[settlement] boot re-enqueue', e));
       console.warn(`[settlement] re-enqueued orphaned staked game ${snap.gameId} (crash between game-over and settlement)`);
     }
   }
@@ -680,7 +686,8 @@ for (const snap of await store.loadRooms4()) {
     const winnerWallet = snap.seats[winnerSeat]?.wallet;
     if (winnerWallet && !(await store.hasSettlement(snap.gameId))) {
       settlement4Notify.set(snap.gameId, { sessionIds: snap.seats.map((s) => s.sessionId), winnerSeat });
-      await settlementQueue4.enqueue(snap.gameId, getAddress(winnerWallet)).catch((e) => console.error('[settlement4] boot re-enqueue', e));
+      const reveal = { serverSeed: snap.fairness.serverSeed, entropies: [...snap.fairness.seeds] };
+      await settlementQueue4.enqueue(snap.gameId, getAddress(winnerWallet), reveal).catch((e) => console.error('[settlement4] boot re-enqueue', e));
       console.warn(`[settlement4] re-enqueued orphaned staked 4p game ${snap.gameId} (crash between game-over and settlement)`);
     }
   }

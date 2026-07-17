@@ -55,7 +55,7 @@ contract EscrowNHandler is Test {
         tok.mint(p, stake);
         vm.startPrank(p);
         tok.approve(address(esc), type(uint256).max);
-        try esc.join(gid, address(tok), stake, seats) {
+        try esc.join(gid, address(tok), stake, seats, bytes32(0)) {
             if (!seen[gid]) { seen[gid] = true; gameIds.push(gid); }
         } catch {}
         vm.stopPrank();
@@ -68,7 +68,7 @@ contract EscrowNHandler is Test {
         if (seats.length == 0) return;
         address winner = seats[wSeed % seats.length];
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(arbiterPk, esc.settlementDigest(gid, winner));
-        try esc.settle(gid, winner, abi.encodePacked(r, s, v)) {} catch {}
+        try esc.settle(gid, winner, "", new string[](0), abi.encodePacked(r, s, v)) {} catch {}
     }
 
     function refundUnfilled(uint256 gSeed) public {
@@ -128,7 +128,7 @@ contract InvariantEscrowNTest is StdInvariant, Test {
         uint256 n = handler.gameCount();
         for (uint256 i = 0; i < n; i++) {
             bytes32 gid = handler.gameIds(i);
-            (, uint96 stake, uint8 seatCount, uint8 joined, , LudoEscrowN.Status status,) = esc.games(gid);
+            (, uint96 stake, uint8 seatCount, uint8 joined, , LudoEscrowN.Status status,,) = esc.games(gid);
             seatCount; // silence unused
             if (status == LudoEscrowN.Status.Filling || status == LudoEscrowN.Status.Active) {
                 owed += uint256(stake) * joined;
@@ -149,7 +149,7 @@ contract InvariantEscrowNTest is StdInvariant, Test {
         uint256 n = handler.gameCount();
         for (uint256 i = 0; i < n; i++) {
             bytes32 gid = handler.gameIds(i);
-            (, , , , , LudoEscrowN.Status status,) = esc.games(gid);
+            (, , , , , LudoEscrowN.Status status,,) = esc.games(gid);
             // status is only ever one of the 5 enum values; a resolved one is terminal.
             assertTrue(uint8(status) <= uint8(LudoEscrowN.Status.Refunded));
         }

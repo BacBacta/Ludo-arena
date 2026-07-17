@@ -38,7 +38,7 @@ const celoSepolia = defineChain({
 export const CHAINS: Record<string, Chain> = { celo, 'celo-sepolia': celoSepolia };
 
 const SETTLE_ABI = [
-  { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'sig', type: 'bytes' }], outputs: [] },
+  { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'serverSeed', type: 'string' }, { name: 'entropyA', type: 'string' }, { name: 'entropyB', type: 'string' }, { name: 'sig', type: 'bytes' }], outputs: [] },
   { type: 'function', name: 'refundExpired', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'voidGame', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   {
@@ -175,9 +175,16 @@ export class Arbiter {
     return this.publicClient.getBalance({ address: this.account.address });
   }
 
-  async submitSettle(gameId: string, winner: Address): Promise<Hex> {
+  /** Settle the winner AND reveal the dice fairness on-chain. The reveal (serverSeed
+   *  + both entropies) is money-flow-INDEPENDENT: absent → empty strings, the payout
+   *  is identical, only the FairnessRevealed event differs. The signature is over the
+   *  UNCHANGED digest (chainid, escrow, gameId, winner) — the seed is self-verifying. */
+  async submitSettle(gameId: string, winner: Address, reveal?: { serverSeed: string; entropies: string[] }): Promise<Hex> {
     const sig = await this.signSettlement(gameId, winner);
-    return this.submit('settle', [gameIdToBytes32(gameId), winner, sig]);
+    const seed = reveal?.serverSeed ?? '';
+    const eA = reveal?.entropies?.[0] ?? '';
+    const eB = reveal?.entropies?.[1] ?? '';
+    return this.submit('settle', [gameIdToBytes32(gameId), winner, seed, eA, eB, sig]);
   }
 
   /** Refund the lone staker of an expired game (opponent never joined). */
@@ -226,7 +233,7 @@ export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | n
 export interface ArbiterLike {
   readonly chainId: number;
   gameStatus(gameId: string): Promise<{ status: GameStatus; createdAt: number; playerA: Address; playerB: Address }>;
-  submitSettle(gameId: string, winner: Address): Promise<Hex>;
+  submitSettle(gameId: string, winner: Address, reveal?: { serverSeed: string; entropies: string[] }): Promise<Hex>;
   submitRefund(gameId: string): Promise<Hex>;
   submitVoid(gameId: string): Promise<Hex>;
 }
@@ -257,8 +264,8 @@ export class SettlementQueue {
   constructor(private readonly deps: SettlementDeps) {}
 
   /** Enqueue a winner payout for a completed game (durable, non-blocking). */
-  async enqueue(gameId: string, winnerWallet: string): Promise<void> {
-    return this.add(gameId, winnerWallet);
+  async enqueue(gameId: string, winnerWallet: string, reveal?: { serverSeed: string; entropies: string[] }): Promise<void> {
+    return this.add(gameId, winnerWallet, reveal);
   }
 
   /** Enqueue a refund for a staked 1v1 that must NOT proceed (winner unknown):
@@ -270,7 +277,7 @@ export class SettlementQueue {
     return this.add(gameId, '');
   }
 
-  private async add(gameId: string, winnerWallet: string): Promise<void> {
+  private async add(gameId: string, winnerWallet: string, reveal?: { serverSeed: string; entropies: string[] }): Promise<void> {
     const job: SettlementJob = {
       gameId,
       winnerWallet,
@@ -278,6 +285,7 @@ export class SettlementQueue {
       status: 'pending',
       attempts: 0,
       variant: '2p',
+      reveal,
     };
     await this.deps.store.enqueueSettlement(job);
     void this.process(job);
@@ -350,7 +358,7 @@ export class SettlementQueue {
           this.deps.onAlert?.(msg);
           return true;
         }
-        const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
+        const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address, job.reveal);
         await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
         this.deps.onSettled(job.gameId, txHash);
         console.log(`[settlement] ${job.gameId} settled in tx ${txHash}`);

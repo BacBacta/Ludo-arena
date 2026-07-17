@@ -142,7 +142,7 @@ export default function App() {
 
   /** Lock the stake on-chain for a staked match; leave the match on failure. */
   const stakeForMatch = useCallback(
-    async (gameId: string, stakeCents: number) => {
+    async (gameId: string, stakeCents: number, fairnessCommit: string) => {
       const wallet = walletRef.current;
       if (!wallet) {
         // No wallet → simulated demo stake, never real funds. Safe by construction:
@@ -155,7 +155,7 @@ export default function App() {
       }
       dispatch({ type: 'STAKING', status: 'approving' });
       try {
-        await lockStake(wallet, gameId, stakeCents, (status) => dispatch({ type: 'STAKING', status }));
+        await lockStake(wallet, gameId, stakeCents, fairnessCommit, (status) => dispatch({ type: 'STAKING', status }));
         await refreshBalance(wallet);
       } catch (e) {
         dispatch({ type: 'STAKING', status: 'failed' });
@@ -178,7 +178,7 @@ export default function App() {
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };
         dispatch({ type: 'MATCH_FOUND', match });
-        if (match.stakeCents > 0) void stakeForMatch(match.gameId, match.stakeCents);
+        if (match.stakeCents > 0) void stakeForMatch(match.gameId, match.stakeCents, match.fairnessCommit);
       },
       onState: (game) => dispatch({ type: 'GAME_STATE', game }),
       onDice: (value, index, seat) => {
@@ -545,10 +545,10 @@ export default function App() {
 
   // Lock a seat's stake in LudoEscrowN for a staked 4-player table (E3.2 for 4p).
   const lockStakeForOnline4 = useCallback(
-    async (gameId: string, stakeCents: number, onStatus?: (s: StakeStatus) => void): Promise<void> => {
+    async (gameId: string, stakeCents: number, fairnessCommit: string, onStatus?: (s: StakeStatus) => void): Promise<void> => {
       const wallet = walletRef.current;
       if (!wallet) throw new Error('no wallet connected');
-      await lockStake4(wallet, gameId, stakeCents, onStatus);
+      await lockStake4(wallet, gameId, stakeCents, fairnessCommit, onStatus);
       void refreshBalance(wallet);
     },
     [refreshBalance],

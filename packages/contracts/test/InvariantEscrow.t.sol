@@ -49,7 +49,7 @@ contract EscrowHandler is Test {
         tok.mint(p, stake);
         vm.startPrank(p);
         tok.approve(address(esc), type(uint256).max);
-        try esc.join(gid, address(tok), stake) {
+        try esc.join(gid, address(tok), stake, bytes32(0)) {
             if (!seen[gid]) { seen[gid] = true; gameIds.push(gid); }
         } catch {}
         vm.stopPrank();
@@ -58,11 +58,11 @@ contract EscrowHandler is Test {
     function settle(uint256 gSeed, uint256 wSeed) public {
         if (gameIds.length == 0) return;
         bytes32 gid = gameIds[gSeed % gameIds.length];
-        (, , address a, address b, , ,) = esc.games(gid);
+        (, , address a, address b, , , ,) = esc.games(gid);
         address winner = (wSeed % 2 == 0) ? a : b;
         if (winner == address(0)) return;
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(arbiterPk, esc.settlementDigest(gid, winner));
-        try esc.settle(gid, winner, abi.encodePacked(r, s, v)) {} catch {}
+        try esc.settle(gid, winner, "", "", "", abi.encodePacked(r, s, v)) {} catch {}
     }
 
     function refundExpired(uint256 gSeed) public {
@@ -118,7 +118,7 @@ contract InvariantEscrowTest is StdInvariant, Test {
         uint256 n = handler.gameCount();
         for (uint256 i = 0; i < n; i++) {
             bytes32 gid = handler.gameIds(i);
-            (, uint96 stake, , , , LudoEscrow.Status status,) = esc.games(gid);
+            (, uint96 stake, , , , LudoEscrow.Status status,,) = esc.games(gid);
             if (status == LudoEscrow.Status.WaitingOpponent) owed += uint256(stake);
             else if (status == LudoEscrow.Status.Active) owed += uint256(stake) * 2;
         }

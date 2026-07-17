@@ -77,6 +77,7 @@ export async function lockStake(
   wallet: Wallet,
   gameId: string,
   stakeCents: number,
+  fairnessCommit: string,
   onStatus?: (s: StakeStatus) => void,
 ): Promise<void> {
   const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
@@ -92,6 +93,7 @@ export async function lockStake(
     token: dep.stablecoin,
     gameId,
     stakeCents,
+    fairnessCommit,
     // MiniPay pays gas in cUSD; on Celo Sepolia the stake token doubles as gas token
     feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
     onStatus,
@@ -107,6 +109,7 @@ export async function lockStake4(
   wallet: Wallet,
   gameId: string,
   stakeCents: number,
+  fairnessCommit: string,
   onStatus?: (s: StakeStatus) => void,
 ): Promise<void> {
   const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
@@ -122,6 +125,7 @@ export async function lockStake4(
     token: dep.stablecoin,
     gameId,
     stakeCents,
+    fairnessCommit,
     seatCount: 4,
     feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
     onStatus,

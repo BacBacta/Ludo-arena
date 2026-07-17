@@ -41,6 +41,11 @@ contract LudoEscrow {
         uint40 createdAt;
         Status status;
         uint16 rakeBps;     // rake SNAPSHOT at creation — settle can't be re-priced mid-game
+        // Provably-fair anchor (added last so the getter's field order is stable):
+        // sha256(serverSeed) as sent to the players BEFORE any die is rolled. The
+        // seed is revealed on-chain in the FairnessRevealed event at settlement, so
+        // ANYONE can check sha256(seed) == this commit and recompute every die.
+        bytes32 fairnessCommit;
     }
 
     mapping(bytes32 => Game) public games;
@@ -57,6 +62,10 @@ contract LudoEscrow {
 
     // ---------- Events ----------
     event Joined(bytes32 indexed gameId, address indexed player, address token, uint96 stake);
+    /// @notice Emitted at settlement with the revealed dice seed + player entropies,
+    ///         so anyone can verify sha256(serverSeed) == the game's fairnessCommit
+    ///         (fixed before play) and recompute every die off the on-chain record.
+    event FairnessRevealed(bytes32 indexed gameId, string serverSeed, string entropyA, string entropyB);
     event Settled(bytes32 indexed gameId, address indexed winner, uint256 payout, uint256 rake);
     event Refunded(bytes32 indexed gameId);
     /// @notice A push transfer could not be delivered; `amount` is now withdrawable by `account`.
@@ -78,6 +87,7 @@ contract LudoEscrow {
     error LengthMismatch();
     error TokenNotAllowed();
     error NothingToWithdraw();
+    error CommitMismatch();
 
     constructor(address _arbiter, address _treasury, uint256 _rakeBps) {
         require(_rakeBps <= MAX_RAKE_BPS, "rake > max");
@@ -148,7 +158,11 @@ contract LudoEscrow {
 
     /// @notice Joins (or creates) game `gameId` by locking one's stake.
     ///         The first call sets token + stake; the second must match.
-    function join(bytes32 gameId, address token, uint96 stake) external {
+    /// @param fairnessCommit sha256(serverSeed) the server published to BOTH players
+    ///        in match.found, before any die. The first joiner records it; the second
+    ///        must present the SAME value — so both stakers attest, on-chain, to the
+    ///        exact commit the dice will be checked against at settlement.
+    function join(bytes32 gameId, address token, uint96 stake, bytes32 fairnessCommit) external {
         if (stake == 0) revert BadStake();
         Game storage g = games[gameId];
 
@@ -160,9 +174,11 @@ contract LudoEscrow {
             g.createdAt = uint40(block.timestamp);
             g.status = Status.WaitingOpponent;
             g.rakeBps = uint16(rakeBps); // snapshot the fee at creation
+            g.fairnessCommit = fairnessCommit; // fix the dice commit before play
         } else if (g.status == Status.WaitingOpponent) {
             if (msg.sender == g.playerA) revert AlreadyJoined();
             if (token != g.token || stake != g.stake) revert BadStake();
+            if (fairnessCommit != g.fairnessCommit) revert CommitMismatch(); // both attest the same commit
             g.playerB = msg.sender;
             g.status = Status.Active;
         } else {
@@ -173,9 +189,13 @@ contract LudoEscrow {
         emit Joined(gameId, msg.sender, token, stake);
     }
 
-    /// @notice Settles the game. `sig` = the arbiter's ECDSA signature over
-    ///         keccak256(abi.encode(DOMAIN, gameId, winner)).
-    function settle(bytes32 gameId, address winner, bytes calldata sig) external {
+    /// @notice Settles the game AND reveals the dice fairness on-chain. `sig` = the
+    ///         arbiter's ECDSA signature over keccak256(abi.encode(DOMAIN, gameId,
+    ///         winner)) — UNCHANGED, so the reveal adds no new trust. The seed is not
+    ///         signed because it is self-verifying: anyone checks sha256(serverSeed)
+    ///         against the game's fairnessCommit (recorded at join, before play).
+    function settle(bytes32 gameId, address winner, string calldata serverSeed, string calldata entropyA, string calldata entropyB, bytes calldata sig) external {
+        emit FairnessRevealed(gameId, serverSeed, entropyA, entropyB);
         _settle(gameId, winner, sig);
     }
 

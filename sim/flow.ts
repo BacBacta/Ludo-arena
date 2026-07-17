@@ -21,6 +21,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import { compileAll } from '../packages/contracts/script/compile.js';
 import { Arbiter } from '../apps/server/src/settlement.js';
+import { ArbiterN } from '../apps/server/src/settlement4.js';
 import { Room, type Client } from '../apps/server/src/room.js';
 import { createFairness } from '../apps/server/src/fairness.js';
 import { newGame, applyRoll, applyMove, type GameState, type Seat } from '../packages/game-engine/src/index.js';
@@ -94,15 +95,19 @@ async function main(): Promise<void> {
   const bal = async (a: Address): Promise<bigint> => (await read(token, tokAbi, 'balanceOf', [a])) as bigint;
   const treasury = deployer.address;
   const arbiter = new Arbiter(PK[0] as Hex, foundry, escrow, RPC);
-  const arbiterN = new Arbiter(PK[0] as Hex, foundry, escrowN, RPC);
+  const arbiterN = new ArbiterN(PK[0] as Hex, foundry, escrowN, RPC);
 
   const tracked = [p1.address, p2.address, p3.address, p4.address, treasury, escrow, escrowN, DEAD];
   const totalTracked = async (): Promise<bigint> => { let s = 0n; for (const a of tracked) s += await bal(a); return s; };
   const SUPPLY = await totalTracked();
 
   const S = usd(10);
-  const join1 = (g: string, who: typeof p1) => send(who, escrow, escAbi, 'join', [b32(g), token, S]);
-  const join4 = (g: string, who: typeof p1) => send(who, escrowN, escNAbi, 'join', [b32(g), token, S, 4]);
+  // Fairness commit anchored at join (sha256(serverSeed) in production; a fixed
+  // placeholder here — this harness asserts MONEY flow, not dice fairness). Both
+  // joiners present the SAME value, as the contract requires.
+  const COMMIT = b32('c0de');
+  const join1 = (g: string, who: typeof p1) => send(who, escrow, escAbi, 'join', [b32(g), token, S, COMMIT]);
+  const join4 = (g: string, who: typeof p1) => send(who, escrowN, escNAbi, 'join', [b32(g), token, S, 4, COMMIT]);
   const pot2 = S * 2n, rake2 = (pot2 * 900n) / 10000n, payout2 = pot2 - rake2;
 
   // 1. NORMAL WIN → settle → payout is withdrawable

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Address, Hex } from 'viem';
-import { gameIdToBytes32, stakeInEscrow, stakeInEscrowN, stakeUnits, cosmeticItemId } from '../src/lib/escrow';
+import { gameIdToBytes32, commitToBytes32, stakeInEscrow, stakeInEscrowN, stakeUnits, cosmeticItemId } from '../src/lib/escrow';
 
 // Deterministic wallet-integration tests (Phase 3): the on-chain stake flow is
 // driven against FAKE viem clients so transaction signing, the approve/join
@@ -13,6 +13,7 @@ const TOKEN = '0x1111111111111111111111111111111111111111' as Address;
 const ESCROW = '0x2222222222222222222222222222222222222222' as Address;
 const ME = '0x00000000000000000000000000000000000000aa' as Address;
 const GAME = 'a'.repeat(32); // 16-byte server gameId (32 hex chars)
+const COMMIT = 'b'.repeat(64); // sha256(serverSeed) hex (32 bytes)
 
 interface Over {
   decimals?: number;
@@ -76,30 +77,30 @@ describe('stakeInEscrow (1v1)', () => {
   it('approves then joins with the right args when the allowance is short', async () => {
     const { publicClient, walletClient, writes } = fakeClients({ allowance: 0n, decimals: 6 });
     const statuses: string[] = [];
-    const r = await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, onStatus: (s) => statuses.push(s) });
+    const r = await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, onStatus: (s) => statuses.push(s) });
     expect(writes.map((w) => w.functionName)).toEqual(['approve', 'join']);
-    expect(writes[1]!.args).toEqual([gameIdToBytes32(GAME), TOKEN, 250_000n]); // join(gameId32, token, stakeUnits)
+    expect(writes[1]!.args).toEqual([gameIdToBytes32(GAME), TOKEN, 250_000n, commitToBytes32(COMMIT)]); // join(gameId32, token, stakeUnits, commit)
     expect(statuses).toEqual(['approving', 'joining', 'locked']);
     expect(r.stake).toBe(250_000n);
   });
 
   it('skips approve when the allowance already covers the stake', async () => {
     const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, decimals: 6 });
-    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25 });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT });
     expect(writes.map((w) => w.functionName)).toEqual(['join']); // no approve
   });
 
   it('is idempotent: an address that already joined does NOT lock a second time', async () => {
     // games getter returns playerA == ME → already deposited.
     const { publicClient, walletClient, writes } = fakeClients({ games: [TOKEN, 250_000n, ME, ZERO, 0, 2, 900] });
-    const r = await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25 });
+    const r = await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT });
     expect(writes).toEqual([]); // no tx sent
     expect(r.joinTx).toBe('0x');
   });
 
   it('passes MiniPay feeCurrency through to the txs', async () => {
     const { publicClient, walletClient, writes } = fakeClients({ allowance: 0n });
-    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, feeCurrency: TOKEN });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN });
     for (const w of writes) expect(w.feeCurrency).toBe(TOKEN);
   });
 
@@ -107,14 +108,14 @@ describe('stakeInEscrow (1v1)', () => {
     const rejection = Object.assign(new Error('User rejected the request'), { code: 4001 });
     const { publicClient, walletClient } = fakeClients({ allowance: 0n, rejectWrite: rejection });
     await expect(
-      stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25 }),
+      stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT }),
     ).rejects.toThrow(/User rejected/);
   });
 
   it('throws when the join tx reverts on-chain', async () => {
     const { publicClient, walletClient } = fakeClients({ allowance: 10n ** 18n, receiptStatus: 'reverted' });
     await expect(
-      stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25 }),
+      stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT }),
     ).rejects.toThrow(/join reverted/);
   });
 });
@@ -122,12 +123,12 @@ describe('stakeInEscrow (1v1)', () => {
 describe('stakeInEscrowN (4-player)', () => {
   it('joins with seatCount and is idempotent on an already-seated address', async () => {
     const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, seats: [] });
-    await stakeInEscrowN({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, seatCount: 4 });
+    await stakeInEscrowN({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, seatCount: 4 });
     expect(writes[0]!.functionName).toBe('join');
-    expect(writes[0]!.args).toEqual([gameIdToBytes32(GAME), TOKEN, 250_000n, 4]); // seatCount included
+    expect(writes[0]!.args).toEqual([gameIdToBytes32(GAME), TOKEN, 250_000n, 4, commitToBytes32(COMMIT)]); // seatCount + commit included
 
     const seated = fakeClients({ seats: [ME] });
-    const r = await stakeInEscrowN({ walletClient: seated.walletClient, publicClient: seated.publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, seatCount: 4 });
+    const r = await stakeInEscrowN({ walletClient: seated.walletClient, publicClient: seated.publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, seatCount: 4 });
     expect(seated.writes).toEqual([]); // already seated → no second deposit
     expect(r.joinTx).toBe('0x');
   });
@@ -135,7 +136,7 @@ describe('stakeInEscrowN (4-player)', () => {
   it('propagates a signature refusal on the 4p path too', async () => {
     const { publicClient, walletClient } = fakeClients({ allowance: 0n, rejectWrite: Object.assign(new Error('User rejected'), { code: 4001 }) });
     await expect(
-      stakeInEscrowN({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, seatCount: 4 }),
+      stakeInEscrowN({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, seatCount: 4 }),
     ).rejects.toThrow(/User rejected/);
   });
 });

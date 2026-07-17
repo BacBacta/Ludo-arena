@@ -44,7 +44,7 @@ export function Game4OnlineScreen({
   walletAddress?: string;
   stakeCents: number; // per-seat stake; 0 = free table
   auth?: WalletAuth;
-  lockStake(gameId: string, stakeCents: number, onStatus?: (s: StakeStatus) => void): Promise<void>;
+  lockStake(gameId: string, stakeCents: number, fairnessCommit: string, onStatus?: (s: StakeStatus) => void): Promise<void>;
   onToast(message: string): void;
   /** Tap a human seat's avatar → their public profile sheet. */
   onViewProfile(pid: string): void;
@@ -113,7 +113,7 @@ export function Game4OnlineScreen({
           // all 4 deposits (Active) before dealing, then game.state4 arrives.
           if (m.stakeCents > 0) {
             setStaking('approving');
-            lockStake(m.gameId, m.stakeCents, setStaking)
+            lockStake(m.gameId, m.stakeCents, m.fairnessCommit, setStaking)
               .then(() => setStaking(null))
               .catch(() => {
                 onToast(t('stakeFailed'));

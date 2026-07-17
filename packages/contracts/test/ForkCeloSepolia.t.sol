@@ -56,12 +56,12 @@ contract ForkCeloSepoliaTest is Test {
         vm.prank(bob); usdt.approve(address(esc), type(uint256).max);
 
         bytes32 gid = keccak256("fork-game");
-        vm.prank(alice); esc.join(gid, MOCK_USDT, stake);
-        vm.prank(bob); esc.join(gid, MOCK_USDT, stake);
+        vm.prank(alice); esc.join(gid, MOCK_USDT, stake, bytes32(0));
+        vm.prank(bob); esc.join(gid, MOCK_USDT, stake, bytes32(0));
         assertEq(usdt.balanceOf(address(esc)), uint256(stake) * 2, "both stakes escrowed");
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(arbiterPk, esc.settlementDigest(gid, alice));
-        esc.settle(gid, alice, abi.encodePacked(r, s, v));
+        esc.settle(gid, alice, "", "", "", abi.encodePacked(r, s, v));
 
         uint256 pot = uint256(stake) * 2; // 2.000000
         uint256 rake = (pot * 900) / 10_000; // 9% = 0.180000
@@ -80,7 +80,7 @@ contract ForkCeloSepoliaTest is Test {
         usdt.mint(alice, stake);
         vm.prank(alice); usdt.approve(address(esc), type(uint256).max);
         bytes32 gid = keccak256("fork-refund");
-        vm.prank(alice); esc.join(gid, MOCK_USDT, stake); // WaitingOpponent
+        vm.prank(alice); esc.join(gid, MOCK_USDT, stake, bytes32(0)); // WaitingOpponent
 
         vm.warp(block.timestamp + esc.JOIN_TIMEOUT() + 1);
         esc.refundExpired(gid);

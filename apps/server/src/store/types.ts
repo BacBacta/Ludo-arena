@@ -110,6 +110,12 @@ export interface SettlementJob {
   /** Which escrow this job settles. Absent (legacy rows) means the 1v1 '2p' path.
    *  Lets the 2p and 4p durable queues resume only their own jobs. */
   variant?: '2p' | '4p';
+  /** Dice fairness to REVEAL on-chain at settlement (provably-fair anchor). The
+   *  serverSeed whose sha256 is the game's on-chain fairnessCommit, plus the player
+   *  entropies (2 for 1v1, N for 4p) so anyone can recompute the dice. OPTIONAL and
+   *  money-flow-INDEPENDENT: a job without it still settles/pays correctly — the
+   *  reveal is an extra event, never a payout precondition. */
+  reveal?: { serverSeed: string; entropies: string[] };
 }
 
 export interface Store {
