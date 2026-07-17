@@ -8,6 +8,7 @@ regression fast**, and the slow, high-assurance evidence runs nightly.
 | Job | What it protects |
 |---|---|
 | `check` | lint · typecheck · **unit tests** · engine simulate · build. Engine coverage thresholds (statements/functions/lines 90, branches 88) are enforced inside `packages/game-engine/vitest.config.ts`, so a coverage drop fails `npm test` — no separate gate to forget. |
+| `store-postgres` | The **production store** (Postgres + Redis) tests, which skip without a DB — so they never ran in CI, and a stale SQL default drifted unnoticed. Now run against real service containers. |
 | `audit` | `npm audit --omit=dev --audit-level=high` — gates **what actually ships**. |
 | `e2e-smoke` | Boots a real server and runs the wire probes over a **real WebSocket**: `wire-regression`, `wire-gates`, `wire-security`, `wire-anticheat` (45 checks). |
 | `contracts` | `forge test` — unit + fuzz + invariants. |

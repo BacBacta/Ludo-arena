@@ -24,14 +24,36 @@ flyctl redis create                           # Upstash; note the REDIS_URL
 # secrets
 flyctl secrets set \
   REDIS_URL="redis://…" \
+  DATABASE_URL="postgres://…" \
   ARBITER_PRIVATE_KEY="0x…" \
   CHAIN="celo-sepolia" \
   ESCROW_ADDRESS="0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6" \
+  ESCROW_N_ADDRESS="0x…" \
   STAKING_ENABLED="false" \
-  BLOCKED_COUNTRIES=""
+  BLOCKED_COUNTRIES="" \
+  TRUSTED_EDGE_SECRET="" \
+  MINIPAY_ALLOWED_ORIGINS=""
 
 flyctl deploy
 ```
+
+### New security env (set before real money)
+
+- **`TRUSTED_EDGE_SECRET`** (G-6) — the geo header (`cf-ipcountry`/`x-vercel-ip-country`)
+  is client-forgeable because the Fly server is directly reachable over WS. Put a
+  trusted edge (Cloudflare/Vercel/Fly proxy) in front that sets both the country
+  header **and** `x-edge-secret: <this>`; the server only believes the country when
+  the secret matches. **Geo now fails CLOSED**: once `BLOCKED_COUNTRIES` is set, an
+  unverifiable region (no/forged secret) is refused staked play — so wire the edge
+  BEFORE the deny list, or all staked play is refused (the server warns at boot).
+- **`MINIPAY_ALLOWED_ORIGINS`** (R-AUTH-1 defence-in-depth) — comma-separated WS
+  origins allowed to auto-prove a MiniPay wallet (e.g. the MiniPay webview origin).
+  Browsers forbid JS from setting Origin, so this closes the malicious-website
+  vector. Empty = dev/testnet (any origin). A non-browser script can still forge
+  Origin; that residual needs the MiniPay attestation below.
+- **`DATABASE_URL`** — Postgres for durable settlement (`settlementDurable()` gates
+  real stakes on it). Without it the server runs Redis-only (in-memory durable) and
+  refuses wallet-backed staked play.
 
 ### Real-money launch gate (R-COMP-2)
 

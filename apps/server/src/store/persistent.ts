@@ -85,7 +85,15 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS owned_skins TEXT[] NOT NULL DEFAULT
 -- Responsible gaming (E5.2).
 ALTER TABLE players ADD COLUMN IF NOT EXISTS stake_date DATE;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS staked_today_cents INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_limit_cents INTEGER NOT NULL DEFAULT 200;
+-- Single source of truth for the default daily stake limit: the shared constant,
+-- interpolated so this never drifts from the client display / memory store again.
+-- A stale literal (200) here made production enforce a different default ($2) than
+-- the declared $5 everywhere else — a fresh DB got the wrong cap silently.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_limit_cents INTEGER NOT NULL DEFAULT ${DEFAULT_DAILY_STAKE_LIMIT_CENTS};
+-- ADD COLUMN IF NOT EXISTS is a no-op on an existing column (its old DEFAULT would
+-- persist), so realign the default on every boot. Existing ROWS are left untouched
+-- (changing a player's already-set limit is a compliance action, not a migration).
+ALTER TABLE players ALTER COLUMN daily_limit_cents SET DEFAULT ${DEFAULT_DAILY_STAKE_LIMIT_CENTS};
 ALTER TABLE players ADD COLUMN IF NOT EXISTS self_excluded_until DATE;
 
 CREATE TABLE IF NOT EXISTS meta (

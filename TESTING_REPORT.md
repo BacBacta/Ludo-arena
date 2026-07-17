@@ -567,3 +567,38 @@ La comparaison bug-prone (casse/ordre/longueur/squatter) est extraite en helper 
 Suites : **serveur 119 tests** (+ depositors 6, room4 +3), **web 28** (+ settlementGuard 6), **contrats Foundry tous verts** (dont AdversarialN void), **`sim:flow` 35 assertions**, typecheck + lint propres.
 
 **Verdict argent réel : toujours NO-GO, mais plus aucun bloquant *code* ne subsiste.** Les bloquants restants sont **exclusivement humains/ops** : re-déploiement des contrats durcis (à coordonner avec G-2), custody de la clé arbitre, R-AUTH-1 (attestation d'origine MiniPay), `BLOCKED_COUNTRIES` + edge de confiance (G-6), décision de conformité sur la limite par défaut (2 $ vs 5 $), store Postgres à intégrer en CI, audit externe des contrats, certification RNG, bêta fermée, soak 24 h, validation juridique. Le périmètre 1v1-first reste recommandé, mais le 4p misé n'est plus bloqué *par le code* (persistance + refund-Active + déposants tous fermés) — il reste soumis aux mêmes actions humaines et à l'audit.
+
+---
+
+# Phase 8 (suite) — Durcissement des résiduels : ce qui est fait en code vs humain
+
+Après fermeture des bloquants code, j'ai traité les points de durcissement restants **actionnables en code**, et séparé nettement ce qui demande une action **humaine/ops** (que je ne peux que préparer).
+
+## Corrigés en code (avec tests)
+
+| Point | Correctif | Tests |
+|---|---|---|
+| **Flake dice-stats** | Le chi-carré RNG utilisait un seed aléatoire → ~1 % d'échec à p>0.01 (poison pour une CI). Seed **déterministe « nothing-up-my-sleeve »** (un rouge devient un vrai bug reproductible) ; `DICE_STATS_RANDOM=1` pour fuzzer en local. La preuve RNG n'est pas affaiblie (stream SHA-256 : tout seed valide l'uniformité). | 3 runs déterministes verts |
+| **G-6 géo falsifiable** | [geo.ts](apps/server/src/geo.ts) : `countryOf` n'accepte l'en-tête pays que si l'edge s'authentifie (`x-edge-secret` = `TRUSTED_EDGE_SECRET`) ; `isGeoBlocked` **fail-closed** (liste configurée + pays inconnu → refus). Ferme le spoof : omettre/forger l'en-tête → pays inconnu → bloqué. | **8 tests** |
+| **E5.2 limite par défaut** | Le schéma Postgres avait `DEFAULT 200` en dur (le store de prod) vs la constante **500** partout ailleurs (protocole, store mémoire, affichage client). **Source unique** : le défaut SQL interpole la constante + `ALTER COLUMN SET DEFAULT` idempotent (bases neuves ET existantes ; lignes utilisateurs existantes intactes — les changer serait une action de conformité). | PersistentStore **35/35** (l'échec E5.2 disparaît) |
+| **Store prod non testé en CI** | Nouveau job CI `store-postgres` avec services **Postgres + Redis** : les tests du store réellement utilisé en prod tournent enfin en CI (ils skippaient sans base — c'est ce qui avait laissé E5.2 passer). | Reproduit en local, 35/35 |
+| **R-AUTH-1 (défense en profondeur)** | [originTrust.ts](apps/server/src/originTrust.ts) : l'auto-preuve MiniPay n'est honorée que depuis une **origine WS autorisée** (`MINIPAY_ALLOWED_ORIGINS`). Les navigateurs interdisent à JS de forger l'`Origin` → **ferme entièrement le vecteur « site malveillant qui revendique miniPay:true »**. | **5 tests** |
+
+Suites après ce batch : **serveur 132 tests** (+ geo 8, originTrust 5), **web 28**, PersistentStore **35/35** sur base réelle, typecheck + lint propres.
+
+## R-AUTH-1 — cadrage honnête du résiduel
+
+Point important établi par l'analyse : **R-SETTLE-3 protège déjà l'argent.** On ne peut pas miser depuis un wallet qu'on ne contrôle pas — le dépôt on-chain trahit le vrai déposant, comparé aux joueurs appariés ([depositors.ts](apps/server/src/depositors.ts)). Le résiduel de R-AUTH-1 est donc : vol de **tickets**, griefing des **limites RG**, défacement de **profil** pour un wallet *revendiqué*. La défense d'origine ci-dessus ferme le vecteur navigateur. **Reste** le vecteur *script hors-navigateur* (qui peut forger l'`Origin`) — sa fermeture demande une **attestation d'origine MiniPay inforgeable**, capacité **dépendante de la plateforme MiniPay → action humaine**.
+
+## Actions purement humaines (je ne peux que préparer — non exécutables en code)
+
+Ces points ne sont pas fermables par du code dans ce dépôt ; ils exigent des clés, des tiers, ou du jugement légal :
+
+1. **Re-déploiement des contrats durcis** (R-ESCROW-1 + escrowN post-C3) sur Sepolia puis mainnet — exige `DEPLOYER_PRIVATE_KEY` + autorisation nommée. **À coordonner avec G-2** (mettre à jour `ESCROW_ADDRESS`/`ESCROW_N_ADDRESS` **et** rebuild du web ensemble, sinon la garde de concordance refusera les dépôts — ce qui est le comportement voulu).
+2. **Custody de la clé arbitre** (R-KEY-1) — runbook complet écrit : [docs/KEY_CUSTODY.md](docs/KEY_CUSTODY.md) (split signataire/soumetteur + KMS). Le contrat supporte le split sans changement ; l'intégration KMS est une PR dédiée + l'ops KMS.
+3. **`BLOCKED_COUNTRIES` légal + `TRUSTED_EDGE_SECRET`** — la liste est juridique ; l'edge de confiance est de l'infra. Le code fail-closed est prêt (G-6).
+4. **`MINIPAY_ALLOWED_ORIGINS` + attestation MiniPay** — l'allowlist est prête ; l'attestation inforgeable dépend de la plateforme.
+5. **Décision de conformité sur la valeur de la limite par défaut** — le code est désormais source-unique à **500** (la valeur déclarée partout) ; si le juridique veut un défaut plus strict (p.ex. 200), changer **la seule constante** `DEFAULT_DAILY_STAKE_LIMIT_CENTS`.
+6. **Audit externe des contrats**, **certification RNG** (labo accrédité type iTech/GLI), **bêta fermée MiniPay** sur Sepolia, **soak 24 h** sur hôte dédié, **validation juridique par pays** — tous humains/tiers, inchangés.
+
+**Verdict argent réel : toujours NO-GO**, mais désormais **aucun bloquant code** et les durcissements code-actionnables sont faits + testés. Ce qui reste est **exclusivement humain/ops**, et chaque point a son code prêt à être activé (envs, fail-closed, allowlist, runbook).

@@ -23,10 +23,28 @@ describe('dice RNG statistics (R-DICE-2)', () => {
   const CHI2_CRIT_DF5 = 15.0863; // goodness-of-fit, 6 faces → df = 5
   const CHI2_CRIT_DF25 = 44.3141; // 6x6 independence table → df = 25
 
+  // Seeds are DETERMINISTIC by default so the test never flakes: at alpha=0.01 a
+  // random-seed run false-fails ~1% of the time (two tests → ~2% per CI run), which
+  // in a CI gate trains everyone to ignore a red. A fixed "nothing-up-my-sleeve"
+  // seed (sha256 of a fixed label, not chosen to hide bias) makes a red a REAL,
+  // reproducible bug. The RNG is a SHA-256 keyed stream, so any seed validates the
+  // algorithm's uniformity; set DICE_STATS_RANDOM=1 locally to fuzz random seeds.
+  const RANDOM = process.env.DICE_STATS_RANDOM === '1';
+  function seedHex(label: string, bytes: number): string {
+    if (RANDOM) return randomBytes(bytes).toString('hex');
+    // Expand the label deterministically to `bytes` via chained SHA-256.
+    let out = '';
+    let cur = label;
+    while (out.length < bytes * 2) {
+      cur = sha256Hex(cur);
+      out += cur;
+    }
+    return out.slice(0, bytes * 2);
+  }
   function fairness(): Fairness {
-    const seed = randomBytes(32).toString('hex');
-    const eA = randomBytes(16).toString('hex');
-    const eB = randomBytes(16).toString('hex');
+    const seed = seedHex('ludo-arena/R-DICE-2/serverSeed', 32);
+    const eA = seedHex('ludo-arena/R-DICE-2/entropyA', 16);
+    const eB = seedHex('ludo-arena/R-DICE-2/entropyB', 16);
     return finalizeFairness(seed, '', eA, eB);
   }
 

@@ -49,6 +49,8 @@ import { Room, type Client } from './room.js';
 import { createFairness, createFairness4, createSeed4Commit, createSeedCommit, finalizeFairness, finalizeFairness4, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { sameDepositors } from './depositors.js';
+import { countryOf as geoCountryOf, isGeoBlocked as geoIsBlocked } from './geo.js';
+import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
@@ -110,19 +112,30 @@ interface Session extends Client {
   /** Running inside MiniPay: the auto-connected address is trusted, so ownership
    *  is accepted WITHOUT a SIWE signature (MiniPay can't personal_sign). */
   miniPay?: boolean;
+  /** Whether this connection's WS Origin may auto-prove a MiniPay wallet (R-AUTH-1).
+   *  false ⇒ a MiniPay claim is NOT auto-proven (off a trusted origin). Undefined in
+   *  dev/testnet (no allowlist configured) ⇒ treated as allowed. */
+  miniPayOriginOk?: boolean;
 }
 
 // Geo-gating (E5.4): ISO country codes where staked play is disabled.
 const BLOCKED_COUNTRIES = new Set(
   (process.env.BLOCKED_COUNTRIES ?? '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean),
 );
-function countryOf(headers: Record<string, string | string[] | undefined>): string | undefined {
-  const c = headers['cf-ipcountry'] ?? headers['x-vercel-ip-country'] ?? headers['x-country'];
-  return typeof c === 'string' && c.length === 2 ? c.toUpperCase() : undefined;
-}
-function isGeoBlocked(country: string | undefined): boolean {
-  return country !== undefined && BLOCKED_COUNTRIES.has(country);
-}
+// Shared secret proving a request came through the trusted edge (Cloudflare/Vercel/
+// Fly proxy) that sets the geo header. The Fly server is directly reachable over
+// WS, so cf-ipcountry & friends are client-forgeable unless the edge authenticates
+// itself — the edge must set `x-edge-secret: <this>` alongside the country header.
+const TRUSTED_EDGE_SECRET = (process.env.TRUSTED_EDGE_SECRET ?? '').trim();
+// Origins allowed to auto-prove a MiniPay wallet (R-AUTH-1 defence-in-depth). Empty
+// = dev/testnet behaviour (any origin). Set to the MiniPay webview origin in prod.
+const MINIPAY_ALLOWED_ORIGINS = new Set(
+  (process.env.MINIPAY_ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean),
+);
+// Thin wrappers over the pure, unit-tested geo helpers (see geo.ts).
+const countryOf = (headers: Record<string, string | string[] | undefined>): string | undefined =>
+  geoCountryOf(headers, TRUSTED_EDGE_SECRET);
+const isGeoBlocked = (country: string | undefined): boolean => geoIsBlocked(country, BLOCKED_COUNTRIES);
 
 const store = await createStore();
 /** Secret gate for QA test traffic (e2e runs against production). A session
@@ -328,6 +341,11 @@ if (cosmeticsVerifier) console.log(`[ludo-server] cUSD cosmetics enabled — Cos
 // the country header is only trustworthy behind a trusted edge (Cloudflare/Vercel).
 if (arbiter && BLOCKED_COUNTRIES.size === 0) {
   console.warn('[compliance] settlement is ENABLED but BLOCKED_COUNTRIES is empty — staked play is allowed in every region. Set a legal-reviewed deny list and enforce the country header behind a trusted edge before real-money launch.');
+} else if (arbiter && !TRUSTED_EDGE_SECRET) {
+  // A deny list is set but the country header is not authenticated: geo now fails
+  // CLOSED (unknown region ⇒ no staked play), so legit players will be refused
+  // until the edge sets x-edge-secret. Loud, because it blocks real-money play.
+  console.warn('[compliance] BLOCKED_COUNTRIES is set but TRUSTED_EDGE_SECRET is NOT — the geo header is spoofable, so staked play FAILS CLOSED for every unverified region. Configure the trusted edge to set `x-edge-secret` + the country header before launch.');
 }
 else console.warn('[ludo-server] settlement disabled (no ARBITER_PRIVATE_KEY)');
 
@@ -797,6 +815,10 @@ let connSeq = 0;
 wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress ?? 'unknown';
   const country = countryOf(req.headers);
+  // WS Origin (browsers set it and forbid JS from overriding it) → whether a
+  // MiniPay auto-prove may be trusted on this connection (R-AUTH-1 defence).
+  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+  const miniPayOriginOk = miniPayOriginTrusted(origin, MINIPAY_ALLOWED_ORIGINS);
   let qaConn = false;
   if (QA_KEY !== '') {
     try {
@@ -869,6 +891,7 @@ wss.on('connection', (ws, req) => {
         resumedSession.country = country;
         resumedSession.ip = ip;
         resumedSession.miniPay = msg.miniPay === true;
+        resumedSession.miniPayOriginOk = miniPayOriginOk;
         if (msg.frame !== undefined) resumedSession.frame = msg.frame;
         if (msg.avatar !== undefined) resumedSession.avatar = msg.avatar;
         // Profile edit on a resumed session: apply the sanitized custom identity
@@ -965,6 +988,7 @@ wss.on('connection', (ws, req) => {
       }
       session.ip = ip;
       session.miniPay = msg.miniPay === true; // trusted address, no SIWE (before issueWalletNonce)
+      session.miniPayOriginOk = miniPayOriginOk; // origin gate for the auto-prove (R-AUTH-1)
       session.frame = msg.frame; // cosmetic; validated to AVATAR_FRAMES in parse
       session.avatar = msg.avatar; // cosmetic; validated to AVATARS in parse
       sessions.set(id, session);
@@ -1659,7 +1683,12 @@ function issueWalletNonce(session: Session): { walletNonce?: string; walletProve
   if (!session.wallet) return {};
   // MiniPay: the wallet is auto-connected + trusted and cannot personal_sign, so
   // accept the address as proven with NO nonce/signature (the required model).
-  if (session.miniPay) {
+  // MiniPay auto-prove, but only from a trusted Origin (R-AUTH-1 defence-in-depth):
+  // a malicious website cannot forge the WS Origin, so it can no longer claim a
+  // victim's wallet as proven. Off-origin (or origin not on the allowlist) falls
+  // through to the unproven path — MiniPay can't sign, so such a session simply
+  // stays unproven and walletKeyedWriteBlocked keeps it out of wallet-keyed writes.
+  if (session.miniPay && session.miniPayOriginOk !== false) {
     session.walletProven = true;
     return { walletProven: true };
   }
