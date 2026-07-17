@@ -389,6 +389,18 @@ export interface ResumedGame {
   fairnessCommit: string;
 }
 
+/** The on-chain settlement contracts the server is configured to settle against,
+ *  advertised in hello.ok so the client can verify its own bundled addresses match
+ *  before locking any real stake (guards a server/client address drift, e.g. after
+ *  a contract redeploy). Addresses are lowercase-comparable hex strings. */
+export interface SettlementContracts {
+  chainId: number;
+  /** LudoEscrow (1v1); absent if the 1v1 arbiter is not configured. */
+  escrow?: string;
+  /** LudoEscrowN (4-player); absent if the N-player arbiter is not configured. */
+  escrowN?: string;
+}
+
 export type ServerMsg =
   | {
       t: 'hello.ok';
@@ -420,6 +432,14 @@ export type ServerMsg =
       // The ToS version the server has on record as accepted for this player (so
       // the client knows whether it must re-prompt before staked play).
       consentTosVersion?: string;
+      // The on-chain contracts the SERVER will settle against. The client MUST
+      // refuse to deposit into any escrow whose address (or chain) differs from
+      // these: the server resolves its escrow from a Fly secret while the client
+      // resolves it from a copy vendored into its own bundle, so a redeploy that
+      // updates one but not the other would send the stake to an escrow the server
+      // never settles — funds stuck until the 24 h refundActive. Present only when
+      // settlement is armed (an arbiter is configured). See SettlementContracts.
+      contracts?: SettlementContracts;
     }
   | { t: 'queue.ok'; position: number }
   // Your last opponent clicked Rematch and is waiting; `name` is their display

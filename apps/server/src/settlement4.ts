@@ -64,7 +64,7 @@ export class ArbiterN {
   readonly address: Address;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
-  private readonly escrow: Address;
+  readonly escrow: Address;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
   private readonly walletClient: ReturnType<typeof createWalletClient>;
 

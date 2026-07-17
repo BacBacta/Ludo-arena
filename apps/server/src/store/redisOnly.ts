@@ -7,7 +7,7 @@
  */
 import { Redis } from 'ioredis';
 import { MemoryStore } from './memory.js';
-import type { RoomSnapshot, SessionRecord } from './types.js';
+import type { Room4Snapshot, RoomSnapshot, SessionRecord } from './types.js';
 import { ALLOWED_STAKES_CENTS, type StakeCents } from '@ludo/shared';
 
 const SESSION_TTL_S = 24 * 3600;
@@ -57,6 +57,26 @@ export class RedisOnlyStore extends MemoryStore {
   }
   override async deleteRoom(gameId: string): Promise<void> {
     await this.redis.multi().del(`room:${gameId}`).srem('rooms', gameId).exec();
+  }
+  // 4-player rooms (G-5): MUST override MemoryStore's in-memory versions, or a
+  // staked 4p game would live only in this process and vanish on restart —
+  // stranding 4 real deposits with no record to settle or refund.
+  override async saveRoom4(snap: Room4Snapshot): Promise<void> {
+    await this.redis.multi().set(`room4:${snap.gameId}`, JSON.stringify(snap)).sadd('rooms4', snap.gameId).exec();
+  }
+  override async loadRooms4(): Promise<Room4Snapshot[]> {
+    const ids = await this.redis.smembers('rooms4');
+    if (ids.length === 0) return [];
+    const raws = await this.redis.mget(ids.map((id) => `room4:${id}`));
+    const snaps: Room4Snapshot[] = [];
+    for (const [i, raw] of raws.entries()) {
+      if (raw) snaps.push(JSON.parse(raw) as Room4Snapshot);
+      else await this.redis.srem('rooms4', ids[i]!);
+    }
+    return snaps;
+  }
+  override async deleteRoom4(gameId: string): Promise<void> {
+    await this.redis.multi().del(`room4:${gameId}`).srem('rooms4', gameId).exec();
   }
 
   // ---------- queues ----------

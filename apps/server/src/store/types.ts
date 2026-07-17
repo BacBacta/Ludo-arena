@@ -5,7 +5,7 @@
  * in Postgres. MemoryStore keeps dev zero-config (no restart survival).
  */
 import { createHmac } from 'node:crypto';
-import type { GameState, Seat } from '@ludo/game-engine';
+import type { Game4, GameState, Seat } from '@ludo/game-engine';
 import type { ChallengeState, GameOverReason, LeagueState, LimitsState, StakeCents, StreakState } from '@ludo/shared';
 
 /** Serializable part of a Session (the ws handle and Room ref are rebuilt live). */
@@ -19,6 +19,10 @@ export interface SessionRecord {
   stake: StakeCents | null;
   gameId: string | null;
   seat: Seat | null;
+  /** 4-player room membership (mutually exclusive with gameId/seat in practice),
+   *  persisted so a reconnect after a restart can reattach to the restored Room4. */
+  room4Id?: string | null;
+  seat4?: number | null;
 }
 
 export interface RoomPlayer {
@@ -43,6 +47,41 @@ export interface RoomSnapshot {
   over?: boolean;
   /** Ticket-gated freeroll game (winner gets the ticket prize on finish). */
   freeroll?: boolean;
+}
+
+/** One seat of a persisted 4-player room. Bots and the (possibly detached) human
+ *  identity are captured so the game restores and reattaches after a restart. */
+export interface Room4Player {
+  /** Owning session id (empty for a bot seat) — reattach + reconcile key. */
+  sessionId: string;
+  /** Depositor wallet for a staked seat (settlement reconcile); absent otherwise. */
+  wallet?: string;
+  name: string;
+  flag: string;
+  bot: boolean;
+  pid?: string;
+  frame?: string;
+  avatar?: string;
+}
+
+/** A 4-player room snapshot (G-5). Staked 4p carries real on-chain money, so —
+ *  like the 1v1 RoomSnapshot — it must survive a restart: without it an
+ *  in-flight staked table strands 4 deposits with no server record to settle or
+ *  refund them (funds stuck until the contract's 24 h refundActive). */
+export interface Room4Snapshot {
+  gameId: string;
+  state: Game4;
+  diceIndex: number;
+  autoStreak: number[];
+  fairness: { serverSeed: string; commit: string; seeds: string[] };
+  seats: Room4Player[];
+  entryTickets: number;
+  prizeTickets: number;
+  /** cUSD payout to the winner + rake (0 for free/ticket tables). >0 ⇒ staked. */
+  payoutCents: number;
+  rakeCents: number;
+  /** Terminal flag: a snapshot taken after the winning move must NOT restore live. */
+  over?: boolean;
 }
 
 export interface GameRecord {
@@ -90,6 +129,9 @@ export interface Store {
   // Rooms (hot)
   saveRoom(snap: RoomSnapshot): Promise<void>;
   loadRooms(): Promise<RoomSnapshot[]>;
+  saveRoom4(snap: Room4Snapshot): Promise<void>;
+  loadRooms4(): Promise<Room4Snapshot[]>;
+  deleteRoom4(gameId: string): Promise<void>;
   deleteRoom(gameId: string): Promise<void>;
 
   // Queues (hot; membership only — pairing needs a live socket, so queues

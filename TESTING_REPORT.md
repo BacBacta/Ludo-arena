@@ -529,3 +529,41 @@ Le serveur tient son rôle d'autorité (dés, coups, victoire, payouts inviolabl
 10. Audit externe des contrats, certification RNG (labo accrédité), bêta fermée MiniPay sur Sepolia, soak 24 h sur hôte dédié, validation juridique par pays.
 
 **Résumé :** le code 1v1 est proche de la cible (bloquants code corrigés ; ne restent que des actions humaines) ; le code 4p a besoin de G-5 avant tout argent réel. Aucun lancement tant que les actions humaines/ops ci-dessus ne sont pas levées.
+
+---
+
+# Phase 8 (suite) — Bloquants code de la revue : tous résolus
+
+Les trois bloquants code que la revue adversariale avait laissés « documentés » sont désormais **corrigés et validés**. La liste bloquante argent réel ne contient plus que des **actions humaines/ops**.
+
+## G-2 — concordance escrow serveur/client (résolu)
+
+Le serveur **annonce** dans `hello.ok` les contrats qu'il réglera (`contracts: { chainId, escrow, escrowN }`), et le client **refuse de déposer** si l'escrow de son bundle diverge — le dépôt lève avant tout mouvement de fonds.
+
+- Protocole : `SettlementContracts` + champ `contracts` sur `hello.ok`.
+- Serveur : construit depuis `arbiter.escrow`/`arbiterN.escrow` (exposés). **Prouvé** : une sonde `hello.ok` sur un serveur armé renvoie `{ chainId: 11142220, escrow, escrowN }`.
+- Client : [settlementGuard.ts](apps/web/src/lib/settlementGuard.ts) mémorise l'annonce et `assertServerEscrow` garde `lockStake`/`lockStake4`. **6 tests** (match, divergence d'adresse, divergence de chaîne, non-armé, 4p sans escrowN).
+- Effet : un bundle dont l'escrow a dérivé (re-déploiement) ne peut plus envoyer de fonds à un escrow non réglé.
+
+## G-5 — persistance Room4 (résolu, en miroir du 1v1)
+
+La Room4 se snapshotte à chaque transition et se restaure au boot ; une partie 4p misée survit désormais à un restart.
+
+- Store : `Room4Snapshot` + `saveRoom4`/`loadRooms4`/`deleteRoom4` sur les **trois** stores (mémoire, RedisOnly, Postgres).
+- Room4 : `toSnapshot`/`fromSnapshot`, hook `onChange`, `resume()` ; sièges enrichis de `sessionId`+`wallet` (règlement restart-safe, sans la closure `p.humans` perdue au restart).
+- index.ts : `persistRoom4`, câblage `wireStakedRoom4` (persistance + règlement/stats depuis les sièges + nettoyage), boucle de restauration au boot + **réconciliation R-SETTLE-2 pour le 4p** (ré-enfile un règlement terminal orphelin), reattach par `rooms4`, `room4Id`/`seat4` persistés dans la session.
+- **Prouvé end-to-end** : sur serveur Redis-adossé, une partie 4p écrit `room4:<id>` dans Redis ; après restart, le boot log affiche `restored 4p game <id>`. **3 tests** de round-trip/reprise (serveur 9 tests room4).
+- **Bug attrapé dans mon propre correctif** : `RedisOnlyStore extends MemoryStore` et n'overridait pas `saveRoom4` → le 4p partait en Map mémoire (perdu au restart) — exactement le bug G-5 sous une autre forme. La preuve Redis l'a révélé ; override ajouté.
+
+## G-4 — contrôle des déposants 4p (résolu + testé)
+
+La comparaison bug-prone (casse/ordre/longueur/squatter) est extraite en helper pur partagé 1v1+4p et testée.
+
+- [depositors.ts](apps/server/src/depositors.ts) : `sameDepositors(expected, onChain)` — utilisé par le gate 1v1 (R-SETTLE-3) **et** 4p (G-4). **6 tests** dont l'attaque du squatter et le cas dupliqué (`[A,B]` vs `[A,A]` → refusé).
+- Issue on-chain (void rembourse tous les déposants) : couverte par `AdversarialN.t.sol` (contrat, 5/5), mon test de void `settlement4.test.ts` (G-3) et `sim:flow`.
+
+## État après ces correctifs
+
+Suites : **serveur 119 tests** (+ depositors 6, room4 +3), **web 28** (+ settlementGuard 6), **contrats Foundry tous verts** (dont AdversarialN void), **`sim:flow` 35 assertions**, typecheck + lint propres.
+
+**Verdict argent réel : toujours NO-GO, mais plus aucun bloquant *code* ne subsiste.** Les bloquants restants sont **exclusivement humains/ops** : re-déploiement des contrats durcis (à coordonner avec G-2), custody de la clé arbitre, R-AUTH-1 (attestation d'origine MiniPay), `BLOCKED_COUNTRIES` + edge de confiance (G-6), décision de conformité sur la limite par défaut (2 $ vs 5 $), store Postgres à intégrer en CI, audit externe des contrats, certification RNG, bêta fermée, soak 24 h, validation juridique. Le périmètre 1v1-first reste recommandé, mais le 4p misé n'est plus bloqué *par le code* (persistance + refund-Active + déposants tous fermés) — il reste soumis aux mêmes actions humaines et à l'audit.

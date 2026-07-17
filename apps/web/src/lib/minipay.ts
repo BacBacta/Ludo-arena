@@ -14,6 +14,7 @@ import {
 } from 'viem';
 import { activeChain } from './chains';
 import { deploymentForChain } from './deployments';
+import { assertServerEscrow } from './settlementGuard';
 import { buyCosmeticCusd, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
 import type { Hex } from 'viem';
 
@@ -81,6 +82,8 @@ export async function lockStake(
   const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
   const dep = deploymentForChain(chainId);
   if (!dep) throw new Error(`No LudoEscrow deployment for chain ${chainId}`);
+  // Refuse to deposit into an escrow the server will not settle (G-2).
+  assertServerEscrow(chainId, dep.escrow, '1v1');
   await stakeInEscrow({
     walletClient: wallet.walletClient,
     publicClient: wallet.publicClient,
@@ -109,6 +112,8 @@ export async function lockStake4(
   const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
   const dep = deploymentForChain(chainId);
   if (!dep?.escrowN) throw new Error(`No LudoEscrowN deployment for chain ${chainId}`);
+  // Refuse to deposit into an escrow the server will not settle (G-2).
+  assertServerEscrow(chainId, dep.escrowN, '4p');
   await stakeInEscrowN({
     walletClient: wallet.walletClient,
     publicClient: wallet.publicClient,

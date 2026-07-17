@@ -9,7 +9,7 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import { pidFor } from './types.js';
-import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
+import type { GameRecord, Room4Snapshot, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ALLOWED_STAKES_CENTS,
   ANTI_TILT,
@@ -202,6 +202,27 @@ export class PersistentStore implements Store {
   }
   async deleteRoom(gameId: string): Promise<void> {
     await this.redis.multi().del(`room:${gameId}`).srem('rooms', gameId).exec();
+  }
+  async saveRoom4(snap: Room4Snapshot): Promise<void> {
+    await this.redis
+      .multi()
+      .set(`room4:${snap.gameId}`, JSON.stringify(snap))
+      .sadd('rooms4', snap.gameId)
+      .exec();
+  }
+  async loadRooms4(): Promise<Room4Snapshot[]> {
+    const ids = await this.redis.smembers('rooms4');
+    if (ids.length === 0) return [];
+    const raws = await this.redis.mget(ids.map((id) => `room4:${id}`));
+    const snaps: Room4Snapshot[] = [];
+    for (const [i, raw] of raws.entries()) {
+      if (raw) snaps.push(JSON.parse(raw) as Room4Snapshot);
+      else await this.redis.srem('rooms4', ids[i]!); // stale index entry
+    }
+    return snaps;
+  }
+  async deleteRoom4(gameId: string): Promise<void> {
+    await this.redis.multi().del(`room4:${gameId}`).srem('rooms4', gameId).exec();
   }
 
   // ---------- queues ----------

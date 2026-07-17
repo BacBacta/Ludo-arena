@@ -28,6 +28,7 @@ import {
   type Player4Info,
   type ResumedGame,
   type ServerMsg,
+  type SettlementContracts,
   type StakeCents,
 } from '@ludo/shared';
 
@@ -47,6 +48,7 @@ import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
 import { createFairness, createFairness4, createSeed4Commit, createSeedCommit, finalizeFairness, finalizeFairness4, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
+import { sameDepositors } from './depositors.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
@@ -251,6 +253,18 @@ const cosmeticsVerifier = createCosmeticsVerifier();
 // N-player settlement for staked 4-player games (LudoEscrowN). null unless staking
 // is armed AND the N-player escrow is deployed + configured.
 const arbiterN = stakingEnabled ? createArbiterN() : null;
+// The escrow addresses the server will SETTLE against, advertised to the client in
+// hello.ok so it can refuse to deposit into a mismatched escrow (server resolves
+// from a Fly secret, client from a bundled copy — a redeploy could drift them).
+// Present only when an arbiter is armed; both arbiters share one chain (CHAIN env).
+const settlementContracts: SettlementContracts | undefined =
+  arbiter || arbiterN
+    ? {
+        chainId: (arbiter ?? arbiterN)!.chainId,
+        escrow: arbiter?.escrow.toLowerCase(),
+        escrowN: arbiterN?.escrow.toLowerCase(),
+      }
+    : undefined;
 // gameId → who to notify with game.settled once the payout tx is mined.
 const settlementNotify = new Map<string, { sessionIds: [string, string]; winner: Seat }>();
 const settlementQueue = arbiter
@@ -396,6 +410,8 @@ function toRecord(s: Session): SessionRecord {
     stake: s.stake,
     gameId: s.room?.gameId ?? null,
     seat: s.seat,
+    room4Id: s.room4?.gameId ?? null,
+    seat4: s.seat4 ?? null,
   };
 }
 
@@ -410,6 +426,70 @@ function persistRoom(room: Room): void {
     room.gameId,
     prev.then(() => store.saveRoom(snap)).catch((e) => console.error('[store] saveRoom', e)),
   );
+}
+
+/** Snapshot a 4-player room after every transition (G-5). Serialized per gameId so
+ *  writes never race. Staked 4p carries real money, so — like the 1v1 room — its
+ *  in-flight state must survive a restart or 4 deposits strand with no record. */
+function persistRoom4(room: Room4): void {
+  const snap = room.toSnapshot();
+  const prev = roomWrites.get(room.gameId) ?? Promise.resolve();
+  roomWrites.set(
+    room.gameId,
+    prev.then(() => store.saveRoom4(snap)).catch((e) => console.error('[store] saveRoom4', e)),
+  );
+}
+
+/** Settle a finished staked 4p game from the ROOM SEATS (not a live-session
+ *  closure), so it works for a game restored after a restart too. The seats carry
+ *  the depositor wallet + owning session id since G-5. */
+function settleStaked4FromSeats(gameId: string, seats: Seat4[], winnerSeat: number): void {
+  const winnerWallet = seats[winnerSeat]?.wallet;
+  if (!winnerWallet || !settlementQueue4) return;
+  settlement4Notify.set(gameId, { sessionIds: seats.map((s) => s.sessionId ?? ''), winnerSeat });
+  settlementQueue4.enqueue(gameId, getAddress(winnerWallet)).catch((e) => console.error('[settlement4] enqueue', e));
+}
+
+/** Best-effort player stats (played/win) for a finished 4p game, from the seats. */
+function recordRoom4StatsFromSeats(seats: Seat4[], winnerSeat: number): void {
+  seats.forEach((s, seat) => {
+    if (s.bot || !s.sessionId) return;
+    const pid = playerId(s.wallet, s.sessionId);
+    store.recordPlayed(pid).catch((e) => console.error('[profile] recordPlayed4', e));
+    if (seat === winnerSeat) store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
+  });
+}
+
+/** Wire a staked 4p room's lifecycle so it is restart-safe: persist on every
+ *  change, settle + record from the seats on finish, and clean up on end. Used by
+ *  both a freshly started room and one restored from a snapshot at boot. */
+function wireStakedRoom4(room: Room4): void {
+  room.onChange = persistRoom4;
+  room.onResult = (r) => {
+    recordRoom4StatsFromSeats(r.seats, r.winnerSeat);
+    settleStaked4FromSeats(r.gameId, r.seats, r.winnerSeat);
+  };
+  room.onEnd = () => {
+    rooms4.delete(room.gameId);
+    detachSessionsFromRoom4(room);
+    // The terminal snapshot is dropped once settlement is safely enqueued (durable
+    // job); the queue's own record + resumePending then own recovery. Delete after
+    // a tick so a same-turn crash still leaves the over=true snapshot to reconcile.
+    void store.deleteRoom4(room.gameId).catch((e) => console.error('[store] deleteRoom4', e));
+  };
+}
+
+/** Clear the 4p room membership from every seat's session and persist it, so a
+ *  reconnect after the game ends does not try to reattach to a dead room. */
+function detachSessionsFromRoom4(room: Room4): void {
+  for (const s of room.seatSessions()) {
+    const sess = sessions.get(s);
+    if (sess && sess.room4 === room) {
+      sess.room4 = null;
+      sess.seat4 = null;
+      persistSession(sess);
+    }
+  }
 }
 
 function makeSession(id: string, ws: WebSocket | null, rec: Omit<SessionRecord, 'gameId' | 'seat'>): Session {
@@ -563,6 +643,27 @@ for (const snap of await store.loadRooms()) {
       settlementNotify.set(snap.gameId, { sessionIds: [snap.players[0].sessionId, snap.players[1].sessionId], winner: winnerSeat });
       await settlementQueue.enqueue(snap.gameId, winnerWallet).catch((e) => console.error('[settlement] boot re-enqueue', e));
       console.warn(`[settlement] re-enqueued orphaned staked game ${snap.gameId} (crash between game-over and settlement)`);
+    }
+  }
+}
+// Restore in-progress 4-player games (G-5). Staked 4p carries real money, so a
+// restart must not drop the game: an unrestored table strands 4 deposits with no
+// server record to settle or refund them.
+for (const snap of await store.loadRooms4()) {
+  const room = Room4.fromSnapshot(snap);
+  wireStakedRoom4(room); // persistence + settle/record-from-seats + cleanup (safe for free tables too: no wallet ⇒ settle no-ops)
+  rooms4.set(snap.gameId, room);
+  room.resume(); // restart the clock so bots/auto-play drive it to a finish even if nobody reconnects
+  console.log(`[ludo-server] restored 4p game ${snap.gameId} (payout ${snap.payoutCents}c)`);
+  // R-SETTLE-2 (4p): a staked game can persist its terminal snapshot then crash
+  // before settle enqueues. Re-enqueue any finished staked 4p with no record yet.
+  const winnerSeat = snap.over ? snap.state.winner : null;
+  if (settlementQueue4 && snap.payoutCents > 0 && winnerSeat != null) {
+    const winnerWallet = snap.seats[winnerSeat]?.wallet;
+    if (winnerWallet && !(await store.hasSettlement(snap.gameId))) {
+      settlement4Notify.set(snap.gameId, { sessionIds: snap.seats.map((s) => s.sessionId), winnerSeat });
+      await settlementQueue4.enqueue(snap.gameId, getAddress(winnerWallet)).catch((e) => console.error('[settlement4] boot re-enqueue', e));
+      console.warn(`[settlement4] re-enqueued orphaned staked 4p game ${snap.gameId} (crash between game-over and settlement)`);
     }
   }
 }
@@ -787,6 +888,7 @@ wss.on('connection', (ws, req) => {
         send(ws, {
           t: 'hello.ok',
           sessionToken: resumedSession.id,
+          contracts: settlementContracts,
           elo: resumedSession.elo,
           name: resumedSession.name,
           flag: resumedSession.flag,
@@ -884,6 +986,7 @@ wss.on('connection', (ws, req) => {
       send(ws, {
         t: 'hello.ok',
         sessionToken: id,
+        contracts: settlementContracts,
         elo,
         name,
         flag,
@@ -1651,7 +1754,17 @@ async function resumeSession(token: string, ws: WebSocket, wallet: string | unde
       room.attach(rec.seat, session);
     }
   }
-  const inGame = !!session.room && !session.room.isOver();
+  // 4-player reattach (G-5): rebind to a Room4 restored from a snapshot at boot.
+  if (rec.room4Id && rec.seat4 != null) {
+    const room4 = rooms4.get(rec.room4Id);
+    if (room4 && !room4.isOver()) {
+      session.room4 = room4;
+      session.seat4 = rec.seat4;
+      room4.attach(rec.seat4, session);
+    }
+  }
+  const inGame =
+    (!!session.room && !session.room.isOver()) || (!!session.room4 && !session.room4.isOver());
   if (!inGame && !walletsMatch(session.wallet, wallet)) return null; // wallet changed → fresh session
   sessions.set(rec.id, session);
   if (rec.gameId && (!session.room || session.room.isOver())) persistSession(session); // game ended while away
@@ -1945,9 +2058,9 @@ function pollStakeLock(p: PendingReveal, attempt: number): void {
         // clients, so a stranger who learns it could fill the second seat. Before
         // starting, verify the on-chain depositors ARE the two matched players —
         // otherwise void both deposits and cancel, never play a mismatched escrow.
-        const want = [p.a.wallet!.toLowerCase(), p.b.wallet!.toLowerCase()].sort();
-        const got = [playerA.toLowerCase(), playerB.toLowerCase()].sort();
-        if (want[0] !== got[0] || want[1] !== got[1]) {
+        const want = [p.a.wallet!, p.b.wallet!];
+        const got = [playerA, playerB];
+        if (!sameDepositors(want, got)) {
           abortPendingStaked(
             p,
             'Stake verification failed — match cancelled. Any locked stake is refunded shortly.',
@@ -2061,7 +2174,7 @@ function startRoom4(humans: Session[]): void {
     if (h) {
       const name = uniqueAtTable(h.name, taken);
       taken.add(name.toLowerCase());
-      seats.push({ client: h, bot: false, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
+      seats.push({ client: h, bot: false, sessionId: h.id, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
       const bot = pickBot4(taken, i);
@@ -2072,8 +2185,13 @@ function startRoom4(humans: Session[]): void {
   }
   const fairness = createFairness4(seatSeeds);
   const room = new Room4(gameId, seats, fairness, 0, 0); // free table: no tickets, no cUSD
+  room.onChange = persistRoom4; // survive a restart like every other game (G-5)
   room.onResult = (r) => recordRoom4Stats(humans, r.winnerSeat, r.seats);
-  room.onEnd = () => rooms4.delete(gameId);
+  room.onEnd = () => {
+    rooms4.delete(gameId);
+    detachSessionsFromRoom4(room);
+    void store.deleteRoom4(gameId).catch((e) => console.error('[store] deleteRoom4', e));
+  };
   rooms4.set(gameId, room);
   const players = room.players();
   humans.forEach((h, seat) => {
@@ -2199,10 +2317,9 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
         // the gameId could have deposited into a seat. Play a mismatched escrow and
         // the winner may not be an on-chain seat (settle reverts) — funds stuck.
         // On mismatch: void (refund every depositor, squatter included) and cancel.
-        const want = p.humans.map((h) => h.wallet!.toLowerCase()).sort();
-        const seats = (await arbiterN!.seatsOf(gameId)).map((s) => s.toLowerCase()).sort();
-        const mismatch = want.length !== seats.length || want.some((w, i) => w !== seats[i]);
-        if (mismatch) {
+        const want = p.humans.map((h) => h.wallet!);
+        const seats = await arbiterN!.seatsOf(gameId);
+        if (!sameDepositors(want, seats)) {
           if (pendingStaked4.get(gameId) !== p) return; // lost the race to another tick
           pendingStaked4.delete(gameId);
           for (const h of p.humans) {
@@ -2251,13 +2368,11 @@ function startStaked4Room(p: PendingStaked4): void {
   // Bind the committed seed to the now-revealed raw seat seeds. allRevealed4 gated
   // this call, so every reveal is present; `?? ''` only satisfies the type.
   const fairness = finalizeFairness4(p.serverSeed, p.commit, p.reveals.map((r) => r ?? ''));
-  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
+  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, sessionId: h.id, wallet: h.wallet, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
   const room = new Room4(p.gameId, seats, fairness, 0, 0, p.pot, p.rake);
-  room.onResult = (r) => {
-    recordRoom4Stats(p.humans, r.winnerSeat, r.seats);
-    settleStaked4(p, r.winnerSeat);
-  };
-  room.onEnd = () => rooms4.delete(p.gameId);
+  // Restart-safe lifecycle: persist on every change, settle + record from the seats
+  // (not the p.humans closure, which a restart loses) on finish (G-5).
+  wireStakedRoom4(room);
   rooms4.set(p.gameId, room);
   p.humans.forEach((h, seat) => {
     h.pendingGameId = undefined;
@@ -2265,17 +2380,6 @@ function startStaked4Room(p: PendingStaked4): void {
     h.seat4 = seat;
   });
   room.start();
-}
-
-/** Winner decided → durably settle the payout on LudoEscrowN. The job is
- *  persisted and resumed at boot, so a crash before the tx mines never loses it. */
-function settleStaked4(p: PendingStaked4, winnerSeat: number): void {
-  const winner = p.humans[winnerSeat];
-  if (!winner?.wallet || !settlementQueue4) return;
-  settlement4Notify.set(p.gameId, { sessionIds: p.humans.map((h) => h.id), winnerSeat });
-  settlementQueue4
-    .enqueue(p.gameId, getAddress(winner.wallet))
-    .catch((e) => console.error('[settlement4] enqueue', e));
 }
 
 /** Refund every depositor of a table that never filled. Durable: the queue waits

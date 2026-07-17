@@ -10,6 +10,7 @@ import {
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
 import { deviceFingerprint } from './fingerprint';
+import { setServerContracts } from './settlementGuard';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
 import { loadAvatarId } from './avatars';
@@ -877,6 +878,9 @@ export class RemoteSession implements GameSession {
           if (id.name) this.ev.onProfile({ name: id.name, flag: id.flag });
         }
         if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
+        // Record the escrow addresses the server settles against, so a stake can
+        // be refused before deposit if this bundle's addresses drifted (G-2).
+        setServerContracts(msg.contracts);
         if (msg.resumed) {
           this.inGame = true;
           this.ev.onResumed(msg.resumed, msg.resumed.state);

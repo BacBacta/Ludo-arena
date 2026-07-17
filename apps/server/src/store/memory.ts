@@ -4,7 +4,7 @@
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
 import { pidFor } from './types.js';
-import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
+import type { GameRecord, Room4Snapshot, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ANTI_TILT,
   DAILY_CHALLENGE,
@@ -56,6 +56,7 @@ interface PlayerRow {
 export class MemoryStore implements Store {
   private sessions = new Map<string, SessionRecord>();
   private rooms = new Map<string, RoomSnapshot>();
+  private rooms4 = new Map<string, Room4Snapshot>();
   private queues = new Map<StakeCents, string[]>();
   private players = new Map<string, PlayerRow>();
   private games = new Map<string, GameRecord>();
@@ -90,6 +91,15 @@ export class MemoryStore implements Store {
   }
   async deleteRoom(gameId: string): Promise<void> {
     this.rooms.delete(gameId);
+  }
+  async saveRoom4(snap: Room4Snapshot): Promise<void> {
+    this.rooms4.set(snap.gameId, structuredClone(snap));
+  }
+  async loadRooms4(): Promise<Room4Snapshot[]> {
+    return [...this.rooms4.values()].map((s) => structuredClone(s));
+  }
+  async deleteRoom4(gameId: string): Promise<void> {
+    this.rooms4.delete(gameId);
   }
 
   async queuePush(stake: StakeCents, sessionId: string): Promise<void> {
