@@ -102,11 +102,13 @@ export async function playRationalGame(idx, stratA, stratB) {
       const prev = bot.onMessage;
       bot.onMessage = (m) => {
         prev?.(m);
-        if (m.t === 'game.dice') lastDie[m.seat] = m.value;
-        // check invariants + record on ONE stream (host) — both see the same
-        // server-authoritative broadcast, so recording both would double every die.
+        // Record, track the die AND check invariants on ONE stream (the host).
+        // Both sockets receive the same authoritative broadcasts independently, so
+        // anything shared (rec.dice, lastDie) must be written from a SINGLE stream:
+        // the guest's copy of an older frame can land after the host's newer one and
+        // clobber it, which made checkMove compare a move against a stale die.
         if (bot === host) {
-          if (m.t === 'game.dice') rec.dice.push({ index: m.index, value: m.value, seat: m.seat });
+          if (m.t === 'game.dice') { rec.dice.push({ index: m.index, value: m.value, seat: m.seat }); lastDie[m.seat] = m.value; }
           if (m.t === 'game.state') checkAndRecord(m.state);
           if (m.t === 'game.moved') checkAndRecord(m.state, m.seat, m.token, m.capture);
           if (m.t === 'game.over') { rec.over = true; rec.winner = m.winner; rec.reveal = m.fairnessReveal; rec.finalPositions = prevState?.positions; }
