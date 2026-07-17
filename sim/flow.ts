@@ -43,6 +43,7 @@ const [deployer, p1, p2, p3, p4] = PK.map((pk) => privateKeyToAccount(pk as Hex)
 
 interface Finding { scenario: string; detail: string }
 const findings: Finding[] = [];
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 let checks = 0;
 function ok(cond: boolean, scenario: string, detail: string): void { checks++; if (!cond) findings.push({ scenario, detail }); }
 function eqBig(a: bigint, b: bigint, scenario: string, detail: string): void { ok(a === b, scenario, `${detail}: got ${a}, expected ${b}`); }
@@ -239,8 +240,15 @@ async function main(): Promise<void> {
       if (die === undefined) { ok(false, 'behaviour-normal', 'room did not reveal a die on roll'); break; }
       const rolled = applyRoll(cur, die);
       if (rolled.phase === 'awaiting-move') {
-        if (rolled.legal.length === 1) { cur = applyMove(rolled, rolled.legal[0]!).state; } // room auto-played
-        else { const tok = rolled.legal[0]!; room.move(turn, tok); cur = applyMove(rolled, tok).state; }
+        if (rolled.legal.length === 1) {
+          // The room plays a FORCED move itself, but only after DIE_SETTLE_MS (a
+          // setTimeout). Our mirror must not race ahead of it: yield so that timer
+          // fires before the next roll, or the room's turn and `cur` diverge and
+          // every later roll is refused (NOT_YOUR_TURN → no die). The npm script
+          // runs with DIE_SETTLE_MS=0, so one macrotask is enough.
+          cur = applyMove(rolled, rolled.legal[0]!).state; // room auto-played
+          await sleep(Number(process.env.DIE_SETTLE_MS ?? 900) + 5);
+        } else { const tok = rolled.legal[0]!; room.move(turn, tok); cur = applyMove(rolled, tok).state; }
       } else { cur = rolled; } // engine passed the turn
     }
     ok(ca.over !== undefined, 'behaviour-normal', 'normal game reached game-over');

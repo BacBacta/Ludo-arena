@@ -257,3 +257,44 @@ Les deux sondes sont enregistrées dans `run-all.mjs`.
 ## Bilan Phase 3
 
 **GO.** Intégration wallet couverte de bout en bout au niveau approprié : **transactions + refus** déterministes en CI (12 tests vitest), **détection/refus/absence** du provider MiniPay mocké + **viewport mobile Android** (Playwright, 16 checks exécutés verts). Suite web : **22 tests** vitest (10 → +12). Le happy-path staké **on-chain réel** (mise+gain) reste manuel sur Celo Sepolia (`e2e/staked/`), conformément au plan.
+
+---
+
+# Phase 5 — Concurrence, désynchronisation & chaos réseau
+
+Rapport détaillé : [simulation/RESULTS-phase5.md](simulation/RESULTS-phase5.md). **12/12 scénarios** atteignent un comportement défini et cohérent (`npm run sim:chaos-net`).
+
+## Race conditions (vraie couche WS)
+
+- **Actions simultanées à la même milliseconde** (les deux joueurs tirent roll+move en boucle) → état légal des deux côtés, **0 divergence**, convergence sur un board unique.
+- **Coup tiré pile à l'expiration de l'horloge de tour** → **exactement 1 coup appliqué** (jamais celui du joueur *et* celui de l'horloge). Test rendu **non-vacu** : on atteint d'abord un `awaiting-move` **multi-choix** (qui arme l'horloge 15s au lieu d'auto-settle), on lit le vrai `deadlineTs`, on tire sur la frontière → `moved events = 1`.
+- **Double connexion du même compte** puis fermeture de l'onglet périmé → la session vivante survit (régression R-RT-1 au niveau partie).
+- **Capture/jeu pendant la déconnexion de l'adversaire** → board légal, la partie progresse.
+
+## Chaos réseau — `simulation/netproxy.mjs` (équivalent Toxiproxy)
+
+Toxiproxy n'est pas disponible ici → proxy WS Node maison injectant **latence, perte, désordre, coupure brutale**, tunable à chaud par direction.
+
+| Injection | Comportement défini observé |
+|---|---|
+| Coupure brutale **pendant un lancer de dé** | client survivant garde un board légal ; l'horloge serveur porte le siège absent (déco ≠ forfait) |
+| **Reconnexion avec état périmé** | le serveur **resynchronise** le client |
+| **Latence asymétrique 50 ms vs 2000 ms** | boards légaux ; les deux clients convergent sur le **même résultat final au repos** |
+| **Messages hors-ordre** (30%) | board client reste légal |
+| **20 % de perte de paquets** | la partie **progresse quand même** (dés 0→73) ; board légal |
+
+**Synchronisation d'état** : un client lent qui *lag* en cours de partie est attendu (pas un bug) ; seule une **divergence au repos** en serait une — aucune observée.
+
+## Remboursement automatique par scénario d'interruption
+
+Matrice complète dans le rapport (§D). Chaque interruption → comportement défini → voie de remboursement, prouvée **on-chain sur anvil avec les vrais contrats** (`npm run sim:flow` : **35 assertions, 9 scénarios, fonds conservés, rien de bloqué**) et au niveau file de règlement (`settlement.test.ts`) : no-show→`refundExpired`, déco pré-Room→auto-refund (void/refundExpired), épuisement RPC→auto-refund, `gameId` squatté→`voidGame`, drop mid-game→settle ou void, clé perdue→`refundActive` 24h, 4p non rempli→`refundUnfilled`, crash post-partie→ré-enfilement au boot.
+
+*Note de périmètre honnête* : le staking **over-WS** n'est pas pilotable ici (`stakeBlock` exige `settlementDurable()`/Postgres, non lancé) — les remboursements sont donc prouvés là où ils s'exécutent réellement (on-chain + file), et le chaos réseau prouve le comportement d'**interruption** sur parties gratuites.
+
+## Bug de harnais trouvé & corrigé
+
+**`sim/flow.ts` (pré-existant, pas un bug produit)** : son scénario `behaviour-normal` mirait le moteur **synchroniquement** alors que la Room joue un coup forcé sur un timer `DIE_SETTLE_MS` → le miroir prenait de l'avance, le tour divergeait, et tous les lancers suivants étaient refusés. **2 assertions ne tournaient pas silencieusement.** Caractère pré-existant **prouvé** en rejouant contre le `room.ts` d'avant la Phase 4 (findings identiques). Corrigé → `sim:flow` passe de 33 à **35 assertions, toutes vertes**.
+
+## Bilan Phase 5
+
+**GO.** Aucune race condition ne produit d'état non-unique ou illégal ; aucune désync au repos sous latence 40×, désordre ou 20 % de perte ; chaque interruption atteint un comportement défini et chaque interruption stakée dispose d'une voie de remboursement automatique vérifiée on-chain. Charge/soak à l'échelle = Phase 6.
