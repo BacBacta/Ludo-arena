@@ -108,3 +108,54 @@ build time):
 Deploy the server first, confirm `https://ludo-arena-server.fly.dev/health`
 returns `{ "ok": true }`, then deploy the frontend (its build points at that
 URL). For MiniPay, submit the Vercel production URL (BACKLOG E7).
+
+## 3. Redeploying the hardened contracts (R-DEPLOY-1 + G-2 coordination)
+
+The R-ESCROW-1 pull-payment `LudoEscrow` and the post-C3 `LudoEscrowN` are in the
+source but the LIVE Celo Sepolia deployment still runs the older bytecode. This is
+the procedure to redeploy them. **Testnet only — never mainnet; use a Celo Sepolia
+deployer key funded from a faucet, never a real-funds key.**
+
+> Rehearsed on a local anvil: `NETWORK=localhost npm run deploy` deployed the
+> hardened contracts (the deployed `LudoEscrow` answers `withdraw()` with the
+> `NothingToWithdraw` custom error `0xd0d04f60` — proof the pull-payment is
+> present) and wrote BOTH `packages/contracts/deployments.json` and the vendored
+> `apps/web/src/deployments.json` to the same new addresses.
+
+### The G-2 trap this order avoids
+
+`deploy.ts` auto-syncs the **client** bundle copy (`apps/web/src/deployments.json`),
+but the **server** in production reads its escrow from the `ESCROW_ADDRESS` /
+`ESCROW_N_ADDRESS` **Fly secrets**, NOT from `deployments.json`. So after a
+redeploy the client bundle points at the NEW escrow while the server still settles
+the OLD one until you update the Fly secrets. The G-2 guard makes this fail SAFE
+(the client refuses to deposit into an escrow the server won't settle), but you
+must land BOTH updates to actually take stakes.
+
+### Steps (in this order)
+
+```bash
+# 1. Deploy the hardened contracts to Celo Sepolia (writes both deployments.json).
+cd packages/contracts
+NETWORK=celo-sepolia DEPLOYER_PRIVATE_KEY="0x<faucet-funded-testnet-key>" npm run deploy
+#   → note the printed LudoEscrow + LudoEscrowN addresses.
+
+# 2. Verify on Celoscan that each is verified + the hardened one (has withdraw()).
+
+# 3. Point the SERVER at the new escrows (Fly secret — the manual step G-2 guards).
+flyctl secrets set \
+  ESCROW_ADDRESS="0x<new LudoEscrow>" \
+  ESCROW_N_ADDRESS="0x<new LudoEscrowN>"
+
+# 4. Commit the regenerated deployments.json (both files) and REDEPLOY THE WEB so
+#    the client bundle ships the new addresses (deploy.ts already updated the file).
+git add packages/contracts/deployments.json apps/web/src/deployments.json
+git commit -m "chore: redeploy hardened escrows on Celo Sepolia"
+#    → Vercel rebuilds the web with the new bundled addresses.
+
+# 5. Confirm concordance: a hello.ok from the server now advertises the new escrow,
+#    and the client bundle matches → deposits are accepted. If step 3 or 4 is
+#    missed, staking is refused (G-2) rather than sending funds to a dead escrow.
+```
+
+Only after this, and the other launch-gate items above, flip `STAKING_ENABLED="true"`.
