@@ -120,7 +120,7 @@ export function GameScreen({
   /** Tap the opponent's avatar → their public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn, profile, avatarFrame, avatar, botMode } =
+  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, activeTurn, balanceCents, soundOn, profile, avatarFrame, avatar, botMode, pendingAction } =
     useAppState();
   const dispatch = useAppDispatch();
   const skin = skinById(diceSkin);
@@ -176,8 +176,12 @@ export function GameScreen({
 
   // The HUD follows activeTurn (deferred until a move finishes animating), while
   // roll validity still checks the authoritative game.turn.
+  // An action we've sent to the server and are awaiting the echo for: the die and
+  // the movable pawns lock until it resolves, so a slow RTT can't be re-tapped into
+  // a duplicate intent. (Always null for the local bot — it resolves synchronously.)
+  const locked = pendingAction !== null;
   const myTurn = activeTurn === mySeat;
-  const canRoll = myTurn && game.turn === mySeat && game.phase === 'awaiting-roll';
+  const canRoll = myTurn && game.turn === mySeat && game.phase === 'awaiting-roll' && !locked;
   const needPick = myTurn && game.turn === mySeat && game.phase === 'awaiting-move' && game.legal.length > 1;
   // hand-off window: my move is still animating but the engine turn already flipped
   const handoff = myTurn && game.turn !== mySeat;
@@ -251,6 +255,7 @@ export function GameScreen({
           game={game}
           mySeat={mySeat}
           onTokenTap={onMove}
+          locked={locked}
           // Name banners follow the REAL seats. The board never rotates (seat 0 is
           // always bottom-left/blue, seat 1 top-right/green), and the joining
           // player is seat 1 — so hardcoding "me" to seat 0 mislabelled every

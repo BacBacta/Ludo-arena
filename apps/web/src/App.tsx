@@ -19,12 +19,37 @@ import { DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletShee
 import { sendLimits, buySkin, claimCosmetic, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
+import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
 import { recordGameResult } from './lib/diceSkins';
 import { t } from './lib/i18n';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
+/** Failsafe for the in-flight action lock: if the server never echoes a roll/move
+ *  (packet loss before the reconnect path kicks in) the UI must not wedge locked.
+ *  Comfortably longer than any real RTT; the reconnect/resume flow clears it first
+ *  in practice. */
+const PENDING_TIMEOUT_MS = 5_000;
+
+/** Longest forward walk (in cells) between two position grids — how far the pawn
+ *  that just moved travels. Only one token advances per move, so the max positive
+ *  delta IS that walk; captures send a token to base (delta < 0) and are ignored.
+ *  Mirrors LocalBotSession's per-move animMs so online hand-offs pace identically. */
+function walkSteps(prev: number[][], next: number[][]): number {
+  let steps = 1; // entering from base is a single hop; never pace shorter than 1
+  for (let seat = 0; seat < next.length; seat++) {
+    const prevRow = prev[seat];
+    const nextRow = next[seat];
+    if (!prevRow || !nextRow) continue;
+    for (let k = 0; k < nextRow.length; k++) {
+      const o = prevRow[k];
+      const n = nextRow[k];
+      if (o !== undefined && n !== undefined && o >= 0 && n > o) steps = Math.max(steps, n - o);
+    }
+  }
+  return steps;
+}
 /** Responsible-gaming reality check cadence — remind an actively-staking player. */
 const REALITY_CHECK_MS = 20 * 60_000;
 /** Free 1v1: LAST-RESORT wait before auto-falling back to a bot. Kept long so the
@@ -53,6 +78,28 @@ export default function App() {
   const lastDiceRef = useRef<{ seat: number; value: number } | null>(null);
   const movedSinceDiceRef = useRef(true);
   const sixRunRef = useRef<{ seat: number; run: number }>({ seat: -1, run: 0 });
+  // In-flight action lock (Fix 1): failsafe timer that releases the lock if the
+  // server never echoes the roll/move.
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearPendingTimer = useCallback(() => {
+    if (pendingTimer.current) {
+      clearTimeout(pendingTimer.current);
+      pendingTimer.current = null;
+    }
+  }, []);
+  // Deferred turn hand-off (Fix 2): the last known board positions (to measure a
+  // move's walk length), the wall-clock time that walk finishes, and the timer
+  // holding back the HUD turn flip until then — so activeTurn lags game.turn for
+  // the exact duration of the pawn animation, like the local bot already paces.
+  const prevPositionsRef = useRef<number[][] | null>(null);
+  const animUntilRef = useRef(0);
+  const turnDeferTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTurnDefer = useCallback(() => {
+    if (turnDeferTimer.current) {
+      clearTimeout(turnDeferTimer.current);
+      turnDeferTimer.current = null;
+    }
+  }, []);
 
   // Persist the latest retention state so the lobby shows it before reconnecting.
   // Audio logo "on app open": browsers gate audio behind the first user
@@ -177,11 +224,25 @@ export default function App() {
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };
+        // Fresh match: drop any stale in-flight lock / turn-defer carried over.
+        clearPendingTimer();
+        clearTurnDefer();
+        prevPositionsRef.current = null;
+        animUntilRef.current = 0;
         dispatch({ type: 'MATCH_FOUND', match });
         if (match.stakeCents > 0) void stakeForMatch(match.gameId, match.stakeCents, match.fairnessCommit);
       },
-      onState: (game) => dispatch({ type: 'GAME_STATE', game }),
+      onState: (game) => {
+        // Keep the walk-length baseline current: the pre-move awaiting-move state
+        // carries the same positions as before the move, so the next onMoved diff
+        // measures exactly the pawn that advances.
+        prevPositionsRef.current = game.positions;
+        dispatch({ type: 'GAME_STATE', game });
+      },
       onDice: (value, index, seat) => {
+        // The authoritative roll arrived → the roll lock is released by the DICE
+        // reducer; cancel its failsafe so it can't fire a stray release later.
+        clearPendingTimer();
         // own rolls already played the rattle on button press (no RTT lag)
         if (seat !== matchSeatRef.current) playDice();
         // consecutive-6 run per roller (three 6s burn the turn — Ludo Club rule)
@@ -195,6 +256,16 @@ export default function App() {
       },
       onMoved: (game, capture) => {
         movedSinceDiceRef.current = true;
+        // The authoritative move arrived → the move lock is released by the MOVED
+        // reducer; cancel its failsafe.
+        clearPendingTimer();
+        // Measure how long this pawn will walk so the next turn hand-off (Fix 2)
+        // waits for the animation to finish before the HUD flips, matching the
+        // local bot's pacing. The Board animates the same prev→next delta.
+        const prev = prevPositionsRef.current;
+        const steps = prev ? walkSteps(prev, game.positions) : 1;
+        animUntilRef.current = Date.now() + steps * WALK_STEP_MS + WALK_TWEEN_MS;
+        prevPositionsRef.current = game.positions;
         if (capture) playCapture();
         dispatch({ type: 'MOVED', game, capture });
       },
@@ -210,7 +281,24 @@ export default function App() {
           }
           lastDiceRef.current = null;
         }
-        dispatch({ type: 'TURN', seat, deadlineTs });
+        // Fix 2 — pace the hand-off: the server fires game.moved and game.turn in
+        // one burst, so applying the turn now would flip the HUD (and pull the die)
+        // while the pawn is still mid-walk. Hold the activeTurn/deadline update
+        // until the walk finishes; game.turn (roll validity) already updated via
+        // MOVED, so `handoff` covers the gap exactly as designed. A no-move roll
+        // has animUntil in the past → applies immediately. The local bot already
+        // announces its turn post-animation, so this is a no-op there.
+        clearTurnDefer();
+        const applyTurn = (): void => dispatch({ type: 'TURN', seat, deadlineTs });
+        const remaining = animUntilRef.current - Date.now();
+        if (remaining > 0) {
+          turnDeferTimer.current = setTimeout(() => {
+            turnDeferTimer.current = null;
+            applyTurn();
+          }, remaining);
+        } else {
+          applyTurn();
+        }
       },
       onAutoPlayed: (seat, count, max) => {
         const key = seat === matchSeatRef.current ? 'autoPlayedYou' : 'autoPlayedOpp';
@@ -219,13 +307,28 @@ export default function App() {
       onEmote: (seat, id) => dispatch({ type: 'EMOTE', seat, id }),
       onGift: (from, to, id) => dispatch({ type: 'GIFT', from, to, id }), // GiftFlight plays the chime
       onOver: (result) => {
+        clearPendingTimer();
+        clearTurnDefer();
         const won = result.winner === (matchSeatRef.current ?? 0);
         if (won) playWin();
         recordGameResult(won); // local stats feed the dice-skin unlocks
         dispatch({ type: 'GAME_OVER', result });
         if (walletRef.current) void refreshBalance(walletRef.current);
       },
-      onInfo: (message) => dispatch({ type: 'TOAST', message }),
+      onInfo: (message, code) => {
+        // Any server notice releases the input lock so the player can act again
+        // instead of being stuck behind a dead pending action.
+        clearPendingTimer();
+        dispatch({ type: 'PENDING', action: null });
+        // Fix 4 — swallow the toast for benign gameplay races: a duplicate or stale
+        // roll/move that the server's authoritative state already superseded (the
+        // common case when the client lock is bypassed by the failsafe or a
+        // reconnect). The server still rejects it authoritatively (anti-cheat
+        // contract intact) and the board is resynced by broadcasts — nagging the
+        // player with "not your turn" for their own double-tap only reads as jank.
+        if (code === 'NOT_YOUR_TURN' || code === 'ILLEGAL_MOVE') return;
+        dispatch({ type: 'TOAST', message });
+      },
       onChallenge: (challenge) => dispatch({ type: 'CHALLENGE_UPDATE', challenge }),
       onLeague: (league) => dispatch({ type: 'LEAGUE_UPDATE', league }),
       onStreak: (streak) => {
@@ -261,10 +364,18 @@ export default function App() {
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };
+        // Resync baselines: drop any in-flight lock / deferred turn from before the
+        // drop and re-anchor the walk baseline to the authoritative resumed board.
+        clearPendingTimer();
+        clearTurnDefer();
+        prevPositionsRef.current = game.positions;
+        animUntilRef.current = 0;
         dispatch({ type: 'RESUME', match, game });
       },
       onGone: () => {
         clearFreeFallback();
+        clearPendingTimer();
+        clearTurnDefer();
         dispatch({ type: 'TOAST', message: t('connectionLost') });
         dispatch({ type: 'GO_LOBBY' });
       },
@@ -277,7 +388,7 @@ export default function App() {
         dispatch({ type: 'GO_LOBBY' });
       },
     };
-  }, [dispatch, stakeForMatch, refreshBalance, clearFreeFallback]);
+  }, [dispatch, stakeForMatch, refreshBalance, clearFreeFallback, clearPendingTimer, clearTurnDefer]);
 
   // Consent (18+/ToS) + wallet signer for staked play: consent goes in hello and
   // the signer answers the server's wallet-ownership nonce (SIWE). Both are read
@@ -497,8 +608,36 @@ export default function App() {
     [dispatch],
   );
 
-  const roll = useCallback(() => sessionRef.current?.roll(), []);
-  const move = useCallback((token: number) => sessionRef.current?.move(token), []);
+  // Fix 1 — optimistic input lock: mark the intent in-flight BEFORE sending, so the
+  // die/pawns lock for the RTT and a slow link can't be re-tapped into a duplicate
+  // intent (which the server rejects with an error toast). The authoritative echo
+  // (DICE/MOVED) clears the lock; a failsafe timer guarantees it never wedges. The
+  // local bot resolves synchronously, so the lock is set and cleared in one batched
+  // render and never visibly blocks anything.
+  const armPending = useCallback(
+    (action: 'roll' | 'move') => {
+      clearPendingTimer();
+      dispatch({ type: 'PENDING', action });
+      pendingTimer.current = setTimeout(() => {
+        pendingTimer.current = null;
+        dispatch({ type: 'PENDING', action: null });
+      }, PENDING_TIMEOUT_MS);
+    },
+    [dispatch, clearPendingTimer],
+  );
+  const roll = useCallback(() => {
+    if (!sessionRef.current) return;
+    armPending('roll');
+    sessionRef.current.roll();
+  }, [armPending]);
+  const move = useCallback(
+    (token: number) => {
+      if (!sessionRef.current) return;
+      armPending('move');
+      sessionRef.current.move(token);
+    },
+    [armPending],
+  );
   // True direct rematch: reuse the still-open session so the server can re-pair
   // the same opponent (it re-queues if they didn't ask / the cap is hit). Falls
   // back to a fresh session (local bot, or a dropped socket).

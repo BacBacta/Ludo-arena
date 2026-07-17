@@ -240,17 +240,20 @@ export interface BoardProps {
   game: GameState;
   mySeat: Seat;
   onTokenTap(token: number): void;
+  /** A move intent is in flight (awaiting the server echo): suppress token taps
+   *  and the movable pulse so a slow RTT can't be re-tapped into a duplicate move. */
+  locked?: boolean;
   /** Name banners drawn on each seat's quadrant (Ludo-Club style). */
   banners?: PlayerBanner[];
 }
 
-export function Board({ game, mySeat, onTokenTap, banners }: BoardProps) {
+export function Board({ game, mySeat, onTokenTap, locked, banners }: BoardProps) {
   // The two seats sit DIAGONALLY (0 = bottom-left, 1 = top-right) and the geometry
   // is fixed, so seat 1 would play from the far corner with the opponent sitting in
   // "their" place — the board read upside-down and every tap felt wrong. Mirror the
   // whole board 180° for seat 1 so YOU are always at the bottom, like any Ludo.
   const flip = mySeat === 1;
-  const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
+  const movable = !locked && game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
   const positions = useAnimatedPositions(game.positions);
 
   // Fan out every token sharing a TRACK cell (both colours) so none is hidden.

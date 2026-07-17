@@ -177,6 +177,13 @@ export interface AppState {
    *  move finishes animating), so the indicator lags game.turn during a walk. */
   activeTurn: Seat;
   result: GameResult | null;
+  /** An action the local player sent to the server and is awaiting the
+   *  authoritative echo for (roll → game.dice, move → game.moved). While set,
+   *  the die and the movable pawns are locked so a slow RTT can't be re-tapped
+   *  into duplicate intents (which the server rejects with an error toast). Only
+   *  ever set for RemoteSession — the local bot resolves synchronously, so it is
+   *  cleared in the same batched render and never visibly locks anything. */
+  pendingAction: 'roll' | 'move' | null;
   /** On-chain payout tx hash once the arbiter settle() is mined (E3.3). */
   settleTxHash: string | null;
   /** True + tx hash when the stake was refunded (opponent never joined, E3.4). */
@@ -282,6 +289,7 @@ export const initialState: AppState = {
   turnDeadlineTs: null,
   activeTurn: 0,
   result: null,
+  pendingAction: null,
   settleTxHash: null,
   refunded: false,
   botMode: false,
@@ -320,6 +328,7 @@ export type Action =
   | { type: 'GIFT'; from: number; to: number; id: string }
   | { type: 'CLEAR_EMOTES' }
   | { type: 'MOVED'; game: GameState; capture: boolean }
+  | { type: 'PENDING'; action: 'roll' | 'move' | null }
   | { type: 'TURN'; seat: Seat; deadlineTs: number }
   | { type: 'GAME_OVER'; result: GameResult }
   | { type: 'RECONNECTING' }
@@ -387,6 +396,7 @@ export function reducer(s: AppState, a: Action): AppState {
         diceHistory: [],
         activeTurn: 0,
         turnDeadlineTs: null,
+        pendingAction: null,
         staking: 'idle',
         privateCode: null,
       };
@@ -403,6 +413,8 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'DICE':
       return {
         ...s,
+        // The authoritative roll landed → release any local roll lock.
+        pendingAction: null,
         lastDice: { value: a.value, index: a.index, seat: a.seat },
         diceHistory: [...s.diceHistory, { index: a.index, value: a.value, seat: a.seat }],
       };
@@ -419,13 +431,18 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, emotes: {}, giftFlight: null };
     case 'MOVED':
       // Challenge progress is server-authoritative (CHALLENGE_UPDATE), not derived here.
-      return { ...s, game: a.game };
+      // The authoritative move landed → release any local move lock.
+      return { ...s, game: a.game, pendingAction: null };
+    case 'PENDING':
+      return { ...s, pendingAction: a.action };
     case 'TURN':
-      return { ...s, turnDeadlineTs: a.deadlineTs, activeTurn: a.seat };
+      // A turn hand-off is a terminal server ack too (e.g. a no-legal-move roll
+      // passes the turn without a game.moved) → clear the lock as a backstop.
+      return { ...s, turnDeadlineTs: a.deadlineTs, activeTurn: a.seat, pendingAction: null };
     case 'GAME_OVER': {
       // On-chain payout is settled by the arbiter (E3.3) and reflected via
       // SET_BALANCE — no simulated credit (staked play requires a wallet).
-      const base = { ...s, screen: 'end' as const, result: a.result, settleTxHash: null, refunded: false, reconnecting: false, staking: 'idle' as const };
+      const base = { ...s, screen: 'end' as const, result: a.result, pendingAction: null, settleTxHash: null, refunded: false, reconnecting: false, staking: 'idle' as const };
       // Remember a REAL 1v1 opponent (pid present) + my result — the rivalry
       // ledger. Bots (no pid) and 4-player games are skipped.
       const opp = s.match?.opponent;
@@ -501,6 +518,7 @@ export function reducer(s: AppState, a: Action): AppState {
         activeTurn: a.game.turn,
         turnDeadlineTs: null,
         lastDice: null,
+        pendingAction: null,
         reconnecting: false,
       };
     case 'STAKING':

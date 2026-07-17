@@ -28,6 +28,7 @@ import {
   RAKE_BPS,
   walletProofMessage,
   type ChallengeState,
+  type ErrorCode,
   type GameOverReason,
   type OpponentInfo,
   type LeagueState,
@@ -102,7 +103,12 @@ export interface SessionEvents {
   /** A gift was sent from one seat to another (id in GIFTS). */
   onGift(from: number, to: number, id: string): void;
   onOver(result: GameResult): void;
-  onInfo(message: string): void;
+  /** A server-side notice. `code` is the machine-readable reason when it came from
+   *  an `error` message: benign gameplay races (NOT_YOUR_TURN / ILLEGAL_MOVE — a
+   *  duplicate or stale intent the authoritative state already superseded) carry it
+   *  so the UI can release the input lock WITHOUT a nagging toast, while real errors
+   *  (limits, bad state, …) still surface. Absent for purely informational notices. */
+  onInfo(message: string, code?: ErrorCode): void;
   /** On-chain settlement confirmed (E3.3): the payout tx is mined. */
   onSettled(txHash: string): void;
   /** Stake refunded on-chain (E3.4): the opponent never joined. */
@@ -981,7 +987,7 @@ export class RemoteSession implements GameSession {
         this.ev.onRematchCancelled(msg.reason);
         break;
       case 'error':
-        this.ev.onInfo(msg.message);
+        this.ev.onInfo(msg.message, msg.code);
         break;
       default:
         break;
