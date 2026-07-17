@@ -22,7 +22,11 @@ const nextError = (bot, from, ms = 5000) =>
   bot.send({ t: 'queue.join', stake: 25 });
   const err = await nextError(bot, mark);
   t.check('M3 staked queue refused without consent/wallet', !!err, err?.message);
-  t.check('M3 refusal names the actual gate', /terms|18|wallet|region|unavailable/i.test(err?.message ?? ''), err?.message);
+  // `QA sessions cannot join staked queues` is a legitimate gate too, and with a
+  // QA_KEY in SRV (how this harness runs against a shared server) it is the FIRST
+  // one reached — the consent/wallet gate below it is then unreachable, so the
+  // check failed for the harness's own reason rather than a server one.
+  t.check('M3 refusal names the actual gate', /terms|18|wallet|region|unavailable|qa/i.test(err?.message ?? ''), err?.message);
   mark = bot.mark();
   bot.send({ t: 'queue.join', stake: 0 });
   const ok = await bot.awaitFrom(mark, (m) => m.t === 'queue.ok', 5000, 'queue.ok').catch(() => null);

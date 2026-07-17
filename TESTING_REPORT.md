@@ -132,7 +132,7 @@
 | R-CONTRACT-1 | 🟠 | ✅ Mitigé (gate déposants R-SETTLE-3) |
 | R-DICE-1 | 🟠 | ✅ Corrigé (+ tests) |
 | R-DICE-2 | 🟠 | ⬜ Phase 1 (test chi-carré des dés) |
-| R-AUTH-1 | 🟠 | 🟡 Mitigé (résiduel : origine MiniPay) |
+| R-AUTH-1 | 🔴 **relevé en Phase 7** | ❌ **Ouvert — BLOQUANT argent réel** (cf. Phase 7) |
 | R-AUTH-2 | 🟠 | ✅ Corrigé (+ test wire) |
 | R-RT-1 | 🟠 | ✅ Corrigé (+ test wire) |
 | R-WEB-2 | 🟠 | ✅ Corrigé |
@@ -156,7 +156,7 @@
 2. **Custody de la clé arbitre** (R-KEY-1/R-DEPLOY-2) — KMS/secret manager + split signataire/soumetteur avant mainnet.
 3. **`BLOCKED_COUNTRIES`** (R-COMP-1) — liste légale validée avant `STAKING_ENABLED=true`.
 4. **E7 listing MiniPay** (R-COMP-3) — pages ToS/confidentialité + soumission.
-5. **R-AUTH-1** — attestation d'origine du webview MiniPay (dépend de garanties plateforme) pour fermer le contournement des limites RG par session.
+5. **R-AUTH-1 — attestation d'origine du webview MiniPay.** ⚠️ **Relevé de 🟠 résiduel à 🔴 bloquant par la Phase 7** : l'audit ASVS a mesuré son rayon d'action réel. `miniPay:true` étant fourni par le client et auto-accordant `walletProven`, **l'identité du joueur n'est pas authentifiée du tout** et toute barrière wallet-keyée (plafond de mise, auto-exclusion, tickets, cosmétiques) est contournable par session. Les fonds et les décisions de jeu restent hors d'atteinte, mais les garde-fous de jeu responsable sont une **exigence réglementaire**. Dépend de garanties de la plateforme MiniPay → action humaine. Voir la Phase 7 pour le détail et les findings qu'il subsume.
 6. Rappel plan de test : audit externe des contrats, certification RNG (labo accrédité), bêta fermée MiniPay, validation juridique par pays — inchangés, humains.
 
 ---
@@ -360,3 +360,86 @@ Serveur **frais**, 40 000 parties continues à 25–43 parties/s (~50–86 sessi
 **GO.** Charge (p95 15 ms / 138 ms), budgets client (201 Ko / 3,95 s) et endurance (plateau mémoire **prouvé plat sur 1 h**, 0 fuite FD, 0 zombie) tous verts.
 
 **Résiduel humain/ops** : le **soak 24 h sur hôte dédié** reste le sign-off formel, mais il est désormais **bien dé-risqué** (plateau prouvé plat sur une heure, pas seulement au-delà de l'horizon) — et une fuite lente qu'il aurait révélée a été trouvée et corrigée en amont. **Note de dimensionnement** : RSS en régime ≈ **1,06 Go** au débit testé → dimensionner l'instance Fly sur le **plateau**, pas sur la baseline (~330 Mo à froid / 172 Mo au repos réel).
+
+---
+
+# Phase 7 — Sécurité applicative & anti-triche (OWASP ASVS L2)
+
+Méthode : revue **ASVS L2 par chapitre** (V2 authentification, V3 sessions, V4 contrôle d'accès, V5 validation, V7 erreurs/logs, V11+V13 logique métier/API), chaque finding passant ensuite par une **vérification adversariale indépendante** (consigne : réfuter par défaut, ne confirmer que si chaque affirmation porteuse tient ligne à ligne). **18 findings confirmés, 1 réfuté.** Les trois HIGH ont ensuite été **re-vérifiés à la main** avant toute correction — la Phase 0 avait produit un « CRITIQUE » de relecteur qui s'était révélé faux, et un rapport d'audit ne vaut que ce que vaut sa vérification.
+
+## Le résultat qui compte : `walletProven` est falsifiable (R-AUTH-1)
+
+L'audit a mesuré le rayon d'action réel d'un risque déjà connu depuis la Phase 0. Le flag `miniPay:true` est **fourni par le client** ([index.ts:853](apps/server/src/index.ts#L853)) et `issueWalletNonce` accorde alors `walletProven = true` **sans aucune signature** ([index.ts:1542](apps/server/src/index.ts#L1542)) — aucun contrôle d'origine côté serveur. MiniPay ne peut pas `personal_sign` (contrainte plateforme), d'où l'exemption.
+
+**Conséquence à énoncer sans détour : la barrière `walletKeyedWriteBlocked` est décorative face à un client scripté.** Un attaquant envoie `miniPay: true` et traverse *toutes* les portes wallet-keyées (limites RG, auto-exclusion, tickets, cosmétiques, accès au jeu misé). C'est pourquoi **durcir les gates d'identité n'apporterait aucun gain de sécurité réel** tant que R-AUTH-1 est ouvert — le vérificateur adversarial est arrivé indépendamment à la même conclusion (« nécessaire mais pas suffisant »). Ce qui **reste hors d'atteinte** : le vol de payout (réconciliation du déposant on-chain, [settlement.ts:296](apps/server/src/settlement.ts#L296)) et les décisions de jeu (serveur autoritaire, cf. anti-triche ci-dessous).
+
+**R-AUTH-1 devient l'élément bloquant du GO/NO-GO argent réel**, pas un résiduel 🔵. Sa fermeture demande une attestation d'origine du webview MiniPay et dépend de garanties de la plateforme → **action humaine**.
+
+## Corrigés (avec vérification)
+
+Les deux HIGH corrigés ci-dessous sont **indépendants de l'identité** : ils fonctionnent avec une authentification parfaite. C'est ce qui en fait les correctifs à valeur réelle de cette phase.
+
+### 1. HIGH — un adversaire qui ne dépose rien prive sa victime de jeu misé pour la journée
+
+`addDailyStake` est le **seul** écrivain du compteur de mise journalière : **aucune API de décrément n'existe** dans le code ([types.ts:167](apps/server/src/store/types.ts#L167)). Or le débit avait lieu dans `startGame`, **avant** que `pollStakeLock` n'ait confirmé le moindre dépôt on-chain. Chaque voie d'abandon (`abortPendingStaked`) rembourse bien l'escrow mais **ne restaure jamais le compteur**.
+
+**Repro :** rejoindre la file à 500¢ → être apparié à une victime → ne jamais envoyer le dépôt. Au bout de ~2 min `pollStakeLock` épuise `MAX_LOCK_POLLS`, annule et rembourse — mais le `stakedTodayCents` de la victime vaut désormais 500¢, soit le plafond par défaut **et maximum** ([protocol.ts:200-201](packages/shared/src/protocol.ts#L200-L201)). `stakeBlock` lui refuse alors tout jeu misé jusqu'à minuit UTC. **Une seule partie avortée suffit, et l'attaquant ne dépense rien.** Le chemin 4 joueurs était pire : un seul absent brûlait le quota des **trois** autres.
+
+**Correctif :** le débit (et le compteur de paires E5.3) quitte l'appariement pour `startRoom` / `startStaked4Room` — les points uniques atteints seulement une fois l'escrow `Active`. Un appariement qui n'aboutit pas ne consomme plus rien.
+
+### 2. HIGH — plusieurs entrées de file simultanées contournaient la limite RG
+
+Le contrôle de limite lit un compteur qui n'est débité qu'au démarrage du jeu, et le garde anti-doublon de `queue.join` ne regardait **qu'une seule file** (`position(msg.stake, …)`). Être présent en 25¢, 100¢ et 500¢ à la fois faisait donc passer les trois contrôles (chacun lisant un total encore à zéro). `game.rematch` était pire : **aucun** garde anti-doublon, soit ~30 entrées/s autorisées par le token bucket.
+
+**Correctif :** `Matchmaker.isQueued(session)` balaye **toutes** les files ; appliqué à `queue.join` **et** `game.rematch`. Plus un garde-fou de dernier recours en tête de `startGame` (le balayage périodique y entre sans repasser par les gardes). **6 tests de régression** ([matchmaking.test.ts](apps/server/test/matchmaking.test.ts)), dont celui qui fige l'écart : `position(100, alice)` reste aveugle là où `isQueued(alice)` voit.
+
+### 3. MEDIUM — fuite d'une Session par `hello` répété
+
+Le client re-dit légitimement `hello` sur la même socket (édition de profil, connexion du wallet — [session.ts:427](apps/web/src/lib/session.ts#L427)), et chaque `hello` frappait une **nouvelle** Session dans la map globale. Seule la variable de closure était rebindée : la fermeture n'expire donc que la **dernière**, et chaque `hello` supplémentaire laissait un enregistrement pour la vie du process (plus 4-6 requêtes Postgres à chaque fois).
+
+**Nuance importante vis-à-vis de la Phase 6 :** mon soak d'1 h concluait « aucune fuite » — c'était exact **pour des clients corrects**, qui disent `hello` une fois. Cette fuite-ci demande un client qui le répète, et le soak ne pouvait pas la voir. **Correctif :** l'enregistrement remplacé est retiré de la map ; une session en cours de partie/mise est épargnée (sa Room la référence encore, et ce cas est borné par les parties réelles, pas par le nombre de messages).
+
+### 4. MEDIUM — une exception dans un timer tuait toutes les parties
+
+Aucun `uncaughtException` / `unhandledRejection` n'était enregistré. Or la machine à états s'auto-pilote par timers (horloge de coup, auto-play, timeout de révélation) qui se déclenchent **hors** du seul `try/catch` du chemin de requête (celui de la boucle de messages). Un unique `throw` dans le timer d'**une** partie emportait le process et **toutes** les parties concurrentes, misées comprises.
+
+**Correctif :** filet de dernier recours qui trace avec contexte, alerte l'ops, vide les snapshots de Room puis sort en code non-nul pour laisser le superviseur redémarrer. **Validé empiriquement par accident** : une seconde instance lancée sur un port déjà pris a produit `[fatal] uncaughtException: EADDRINUSE` avec sa pile, puis l'arrêt propre attendu.
+
+### 5. LOW — clé de base de données choisie par le client
+
+[index.ts:858/861](apps/server/src/index.ts#L858) dérivait la clé durable de `msg.wallet` **brut** là où [:822](apps/server/src/index.ts#L822) utilisait la version normalisée. Une adresse invalide (que `normalizeWallet` mappe à `undefined`) devenait donc une clé arbitraire : le joueur se scindait en **deux identités divergentes** (`anon:<id>` pour le profil, la chaîne brute pour challenge/streak/ligue/limites), et n'importe quel client pouvait semer des lignes sous la clé de son choix. **Correctif :** clé normalisée partout.
+
+## Documentés, non corrigés (et pourquoi)
+
+| Finding | Sév. | Décision |
+|---|---|---|
+| `unproven-wallet-durable-write`, `hello-unproven-wallet-idor`, `wallet-claim-info-disclosure` | 🟠 | **Subsumés par R-AUTH-1.** Écrire le profil / streak / consentement d'un wallet seulement *revendiqué* est réel, mais gater ces écritures n'apporte rien tant que `miniPay:true` auto-prouve. À traiter **avec** R-AUTH-1, en un seul lot. |
+| `public-queue-missing-collusion-authz` | 🟠 | `collusionBlock` n'est pas appliqué sur la file publique (seulement en rematch/table privée). À corriger au lot anti-collusion ; sans impact sur l'intégrité des fonds. |
+| `qa-staked-game-strands-escrow` | 🟠 | La porte QA rate les tables privées. **Ops** : ne jamais configurer d'arbitre sur un environnement QA (déjà le cas). |
+| `siwe-message-binding` | 🔵 | Le message de preuve omet adresse/domaine/chaîne/expiration (EIP-4361). Sans objet tant que R-AUTH-1 rend la preuve contournable ; à reprendre dans le même lot. |
+| `no-idle-or-absolute-session-timeout`, `parse-untyped-fields`, `gift-to-non-integer`, `auth-decisions-not-logged`, `cosmetic-claim-rpc-amplification`, `qa-key-in-websocket-url`, `pending-game-id-not-cleared-on-own-disconnect` | 🔵 | Backlog de durcissement. Aucun n'ouvre de voie vers les fonds ni vers une décision de jeu. |
+| `in-memory-session-record-leak` | — | **RÉFUTÉ** par la vérification adversariale : le finding inversait la causalité (`onEnd` met `s.room` à `null` **avant** que le timer de 10 min ne se déclenche, donc la suppression a bien lieu). Bon exemple de faux positif écarté. |
+
+## Vérifications mécaniques
+
+| Contrôle | Résultat |
+|---|---|
+| `npm audit` (prod) | **0 vulnérabilité**. Les 22 restantes (2 critiques, 4 hautes) sont **dev-only** — vitest/vite, jamais embarqués. |
+| Secrets en clair | **Aucun.** Seule `LOCAL_DEV_KEY` est présente = clé Anvil **publique**, gatée à localhost ([deploy.ts:109](packages/contracts/script/deploy.ts#L109)). Seul `.env.example` est suivi ; `.env*` gitignorés. |
+| Rate limiting | Appliqué à **chaque message client** (token bucket, entrée du handler [index.ts:735](apps/server/src/index.ts#L735)) + cap de connexions par IP + ban. 7 tests + `abuseTest.ts`. |
+
+## Anti-triche — le client ne peut ni voir, ni choisir, ni décider (`e2e/wire-anticheat.mjs`, 7/7 ✅)
+
+Un client **modifié** tente les trois triches du cahier des charges :
+
+1. **Voir/choisir/prédire les dés** → la graine serveur qui détermine chaque lancer n'est **jamais** émise avant `game.over` (dés imprévisibles) ; injecter `{value:6}` dans `game.roll` est ignoré (les lancers restent ~uniformes, sixRate 0.15).
+2. **Jouer pour un autre** → `game.move`/`game.roll` n'ont pas de champ siège : le serveur le dérive de la session → `NOT_YOUR_TURN`, sans fuite de dés ni coup appliqué. `game.resign` ne fait perdre que **l'émetteur**.
+3. **Déclarer sa victoire** → les trames serveur→client forgées (`game.over`/`game.state`/`game.moved`) sont rejetées `BAD_MESSAGE` ; aucun `game.over` n'est produit et la partie réelle continue.
+
+## Bilan Phase 7
+
+Suites après correctifs : **109 tests unitaires serveur** (+6), **wire-regression 19/19**, **wire-4p 4/4**, **wire-gates 12/12**, **wire-security 7/7**, **wire-anticheat 7/7**.
+
+**NO-GO argent réel en l'état — un seul bloquant : R-AUTH-1.** Le serveur tient bien son rôle d'autorité (dés, coups, victoire, payouts inviolables), et les deux attaques HIGH indépendantes de l'identité sont fermées et testées. Mais tant que `miniPay:true` auto-prouve n'importe quel wallet, **l'identité du joueur n'est pas authentifiée** et les garde-fous de jeu responsable (plafond, auto-exclusion) — exigences réglementaires, pas confort — restent contournables par session. Fermeture = attestation d'origine MiniPay (**action humaine**, dépend de la plateforme).
+
+**Un correctif de test au passage :** `wire-gates` échouait sur `M3 refusal names the actual gate` — **prouvé pré-existant** en rejouant contre le code d'avant la Phase 7 (échec identique). Artefact du harnais : avec `?qa=`, la porte QA se déclenche avant celle du consentement, rendant le message recherché inatteignable. Le check accepte désormais la porte QA → 12/12.

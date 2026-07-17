@@ -815,6 +815,18 @@ wss.on('connection', (ws, req) => {
         }
         return;
       }
+      // A socket may legitimately re-hello (the web client does it on profile edit
+      // and on wallet-connect-after-load), and each one mints a fresh Session below.
+      // Only the closure `session` was rebound, so the PREVIOUS record stayed in the
+      // global `sessions` map for the process lifetime — the close handler expires
+      // the last session only. That leaked one Session per extra hello, unbounded.
+      // Drop the superseded record here: one socket owns at most one idle session.
+      // A session that is mid-game / mid-stake is left alone — its Room still points
+      // at it, and killing it would strand a live (possibly staked) game; that case
+      // is bounded by real games, not by message count.
+      if (session && session.ws === ws && !session.room && !session.room4 && !session.pendingGameId) {
+        sessions.delete(session.id);
+      }
       const id = randomBytes(16).toString('hex');
       // `wallet` was normalized at the top of the hello handler. Identity is
       // DERIVED from the stable key (wallet → same name/flag every session),
@@ -855,10 +867,15 @@ wss.on('connection', (ws, req) => {
       session.avatar = msg.avatar; // cosmetic; validated to AVATARS in parse
       sessions.set(id, session);
       persistSession(session);
-      const pid = playerId(msg.wallet, id);
+      // Key off the NORMALIZED wallet — never raw msg.wallet. normalizeWallet maps a
+      // non-address to undefined, so raw input here made a client-chosen string the
+      // durable key: it both diverged from idKey (:822, normalized → `anon:<id>`),
+      // splitting one player across two identities, and let any client write junk
+      // rows under an arbitrary key of its choosing.
+      const pid = playerId(wallet, id);
       const challenge = await store.getChallenge(pid, utcToday());
       // Streak is persisted only for wallet-linked players (anon rows are ephemeral).
-      const streak = msg.wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
+      const streak = wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
       const league = await store.getLeague(pid);
       const limits = await store.getLimits(pid, utcToday());
       const ownedSkins = await store.getOwnedSkins(pid);
@@ -925,8 +942,12 @@ wss.on('connection', (ws, req) => {
           break;
         }
         // Reject a duplicate join from a session that's already queued (a double
-        // queue.join must not create two entries / self-pair).
-        if (matchmaker.position(msg.stake, session) > 0 || freerollMatchmaker.position(0, session) > 0) {
+        // queue.join must not create two entries / self-pair). Checked across ALL
+        // stakes, not just the requested one: the daily-limit check below reads a
+        // counter that is only debited when a game starts, so one session holding
+        // entries in several stake queues could pass every check and then exceed
+        // the limit as each entry pairs.
+        if (matchmaker.isQueued(session) || freerollMatchmaker.isQueued(session)) {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in the queue.' });
           break;
         }
@@ -1291,6 +1312,12 @@ wss.on('connection', (ws, req) => {
 
       case 'game.rematch': {
         if (session.room || session.pendingGameId) break;
+        // A repeated game.rematch must not stack queue entries: it falls through to
+        // matchmaker.join below, which (unlike queue.join) had no dedupe guard, so
+        // the token bucket alone allowed ~30 entries/s for one session — each one
+        // pairing into its own staked game past a daily-limit check that reads the
+        // still-undebited counter.
+        if (matchmaker.isQueued(session) || freerollMatchmaker.isQueued(session)) break;
         // Fresh per-game entropy commit (fairness): rebind BEFORE pairing/seeding so
         // the server commits its next seed without ever knowing this game's raw
         // entropy — the client reveals it later on match.found. Without this, a
@@ -1658,6 +1685,18 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
 }
 
 async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = false, fromTable = false): Promise<void> {
+  // Last-resort guard: never start a game for a seat that is already playing or
+  // already staking another one. The 1 s matchmaker sweep calls straight in here
+  // without re-running the queue guards, so a stale entry (or a second entry that
+  // slipped in) must not open a concurrent staked game — that is how the daily
+  // limit gets bypassed, since its counter is only debited once a game starts.
+  // Both seats were already spliced out of the queue by the caller, so refusing is
+  // enough — do NOT leaveAll() here, that would also drop the innocent seat's other
+  // legitimate waits. The queue guards make this unreachable; log if it ever fires.
+  if (a.room || b.room || a.pendingGameId || b.pendingGameId) {
+    console.warn(`[matchmaking] refused a pairing for a busy seat (a=${!!(a.room || a.pendingGameId)} b=${!!(b.room || b.pendingGameId)})`);
+    return;
+  }
   // Mark private-table origin so a later rematch re-pairs the same friend rather
   // than re-queueing publicly (both seats share the origin).
   a.lastGamePrivate = fromTable;
@@ -1689,14 +1728,13 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
     store.getOrCreatePlayer(idA, { wallet: a.wallet, name: a.name, flag: a.flag }),
     store.getOrCreatePlayer(idB, { wallet: b.wallet, name: b.name, flag: b.flag }),
   ]);
-  // Count the stake toward each player's daily total (E5.2) and the pair count (E5.3).
-  if (stake > 0) {
-    await Promise.all([
-      store.addDailyStake(idA, utcToday(), stake),
-      store.addDailyStake(idB, utcToday(), stake),
-    ]);
-    if (a.wallet && b.wallet) await store.bumpPairGame(idA, idB, utcToday());
-  }
+  // NOTE: the daily-stake debit (E5.2) and the pair count (E5.3) are NOT applied
+  // here. A match that never becomes Active (the opponent simply never deposits)
+  // is aborted+refunded by abortPendingStaked, and `addDailyStake` has no inverse
+  // in the Store — so debiting at match time irreversibly consumed the *victim's*
+  // daily limit for a game that never happened, letting an attacker who spends
+  // nothing lock a victim out of staked play for the rest of the UTC day.
+  // Both are applied in startRoom(), which runs only once the escrow is Active.
   // Anti-grinding: if both clients sent an entropy COMMIT, the server commits its
   // seed now (knowing only the hashes), announces the match, and waits for both to
   // reveal their raw entropy before finalizing the dice. Only free/practice games
@@ -1785,6 +1823,20 @@ function matchFoundMsg(gameId: string, seat: Seat, me: Session, opp: Session, st
 
 /** Create the Room from a finalized fairness and start it (match.found already sent). */
 function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fairness: Fairness, freeroll = false): void {
+  // Count the stake toward each player's daily total (E5.2) and the pair count
+  // (E5.3) HERE — the game is now really starting. Debiting at match time instead
+  // was irreversible (the Store has no decrement) and every abort path refunds the
+  // escrow without restoring the counter, so a non-depositing opponent could burn
+  // a victim's whole daily limit on a game that never ran. See startGame().
+  if (stake > 0) {
+    const idA = playerId(a.wallet, a.id);
+    const idB = playerId(b.wallet, b.id);
+    void Promise.all([
+      store.addDailyStake(idA, utcToday(), stake),
+      store.addDailyStake(idB, utcToday(), stake),
+      a.wallet && b.wallet ? store.bumpPairGame(idA, idB, utcToday()) : Promise.resolve(),
+    ]).catch((e) => console.error('[rg] dailyStake', e));
+  }
   const room = new Room(gameId, stake, a, b, fairness);
   room.qa = !!a.qa || !!b.qa;
   room.freeroll = freeroll;
@@ -2080,8 +2132,11 @@ function startStakedRoom4(humans: Session[], stake: number): void {
   const seatCommits = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
   const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
   pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, serverSeed, commit, seatCommits, reveals: humans.map(() => null) });
-  // count each seat's stake toward the daily limit (E5.2)
-  void Promise.all(humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), stake))).catch((e) => console.error('[4p] dailyStake', e));
+  // NOTE: the daily-limit debit (E5.2) is applied in startStaked4Room, once all
+  // four stakes are Active — not here. A table that never fills (any seat simply
+  // never deposits) is cancelled + refunded, and addDailyStake has no inverse, so
+  // debiting at match time burned all four players' daily limits for a game that
+  // never ran — one no-show could lock three victims out for the UTC day.
   humans.forEach((h, seat) => {
     h.pendingGameId = gameId; // block other joins while staking
     h.send({ t: 'match.found4', gameId, seat, players, entryTickets: 0, prizeTickets: 0, stakeCents: stake, potCents: pot, fairnessCommit: commit });
@@ -2146,6 +2201,12 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
  *  (R-DICE-3) and start the Room4, settling the winner on win. */
 function startStaked4Room(p: PendingStaked4): void {
   pendingStaked4.delete(p.gameId);
+  // Count each seat's stake toward the daily limit (E5.2) — here, where the game
+  // really starts (all 4 stakes Active), never at match time. See startStakedRoom4.
+  if (p.stake > 0) {
+    void Promise.all(p.humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), p.stake)))
+      .catch((e) => console.error('[4p] dailyStake', e));
+  }
   // Bind the committed seed to the now-revealed raw seat seeds. allRevealed4 gated
   // this call, so every reveal is present; `?? ''` only satisfies the type.
   const fairness = finalizeFairness4(p.serverSeed, p.commit, p.reveals.map((r) => r ?? ''));
@@ -2213,3 +2274,29 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       .finally(() => process.exit(0));
   });
 }
+
+/**
+ * Last-resort handlers. The authoritative state machine drives itself from timers
+ * (Room's move clock and auto-play, Room4's equivalents, the reveal timeout) that
+ * fire OUTSIDE the try/catch around the message loop — the only one on the request
+ * path. Without these, a single throw in one game's timer took the whole process
+ * down with it, dropping every concurrent game, staked ones included.
+ *
+ * A crashed process is still the safest end state (state is written through to the
+ * store, so the supervisor restarts and games resume) — but exit only AFTER the
+ * room snapshots are flushed, and never on an error we can survive.
+ */
+let crashing = false;
+function lastResort(kind: string, err: unknown): void {
+  console.error(`[fatal] ${kind}:`, err instanceof Error ? (err.stack ?? err.message) : err);
+  postOpsAlert(`[fatal] ${kind}: ${err instanceof Error ? err.message : String(err)}`);
+  if (crashing) return; // a throw while shutting down must not re-enter
+  crashing = true;
+  for (const room of rooms.values()) room.suspend();
+  settlementQueue?.stop();
+  void Promise.allSettled([...roomWrites.values()])
+    .then(() => store.close())
+    .finally(() => process.exit(1)); // non-zero: let the supervisor restart us
+}
+process.on('uncaughtException', (err) => lastResort('uncaughtException', err));
+process.on('unhandledRejection', (reason) => lastResort('unhandledRejection', reason));
