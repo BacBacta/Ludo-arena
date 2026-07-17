@@ -1775,6 +1775,10 @@ small.muted { font-size: 12px; }
    an interval); here we only swap the timing to LINEAR so the chained tumbles read
    as one continuous spin instead of pulsing with the settle easing. */
 .die3d--spinning { transition-timing-function: linear; }
+/* Quick, decisive settle straight out of a spin (~0.32s) so the rolled number reads
+   almost immediately once the server value lands, instead of a second full 0.7s
+   tumble stacked on top of the RTT the die already spun through. */
+.die3d--landing { transition: transform 0.32s cubic-bezier(0.2, 0.85, 0.25, 1); }
 /* each face: rounded plastic tile — top-lit edge (bright top / dark bottom) so
    it reads as a lit rounded solid, plus a specular sweep for wet-plastic gloss */
 .die3d__face {

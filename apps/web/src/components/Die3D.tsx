@@ -55,6 +55,12 @@ export function Die3D({ value, rollKey, skin, spinning }: Die3DProps) {
   const turns = useRef({ x: 0, y: 0 });
   const lastKey = useRef<number | null>(null);
   const [rolling, setRolling] = useState(false);
+  // A short, decisive settle after an optimistic spin (vs the full 700ms tumble):
+  // the die was already spinning through the RTT, so once the server value lands it
+  // just needs to snap onto the face — a fresh full tumble made the result take ~1s
+  // extra to read on a laggy link.
+  const [landing, setLanding] = useState(false);
+  const justSpun = useRef(false);
   const [rot, setRot] = useState<[number, number]>(() => REST[value] ?? [0, 0]);
   // Latest value for the spin interval (avoids a stale closure without re-arming it).
   const valueRef = useRef(value);
@@ -82,6 +88,22 @@ export function Die3D({ value, rollKey, skin, spinning }: Die3DProps) {
     }
     if (rollKey === lastKey.current) return; // same roll, nothing new
     lastKey.current = rollKey;
+    if (justSpun.current) {
+      // Coming out of an optimistic spin: the die is already mid-tumble, so a full
+      // fresh tumble just delays the result. Snap forward one turn onto the face
+      // with the short .die3d--landing transition → the number reads almost at once.
+      justSpun.current = false;
+      turns.current.x += 1;
+      turns.current.y += 1;
+      setLanding(true);
+      setRolling(true);
+      setRot([base[0] + 360 * turns.current.x, base[1] + 360 * turns.current.y]);
+      const id = setTimeout(() => {
+        setLanding(false);
+        setRolling(false);
+      }, 320);
+      return () => clearTimeout(id);
+    }
     // wind forward by unequal whole turns, then land on the value's rest angle
     turns.current.x += 4;
     turns.current.y += 3;
@@ -113,7 +135,13 @@ export function Die3D({ value, rollKey, skin, spinning }: Die3DProps) {
     // Interval a touch under the 0.7s transition so each tumble retargets before it
     // settles → continuous motion (with the linear timing set by .die3d--spinning).
     const id = setInterval(wind, 640);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      // Tell the rollKey settle that this landing follows a spin → snap, don't
+      // re-tumble. Cleanup runs just before the rollKey effect on the same commit
+      // where spinning flips false and the value arrives.
+      justSpun.current = true;
+    };
   }, [spinning]);
 
   // The cube is ALWAYS mounted so the CSS transition can animate the tumble (a
@@ -124,7 +152,7 @@ export function Die3D({ value, rollKey, skin, spinning }: Die3DProps) {
   return (
     <div className="die3d-stage">
       <div className={`die3d-lift${rolling || spinning ? ' die3d-lift--rolling' : ''}`}>
-        <div className={`die3d${spinning ? ' die3d--spinning' : ''}`} style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
+        <div className={`die3d${spinning ? ' die3d--spinning' : ''}${landing ? ' die3d--landing' : ''}`} style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
           {FACES.map((f) => (
             <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
               <DieFace value={f.v} skin={skin} />
