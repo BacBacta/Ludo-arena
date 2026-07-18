@@ -11,6 +11,7 @@ import { getAddress, isAddress, recoverMessageAddress, type Address, type Hex } 
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
   FREEROLL,
+  SEASON_PREMIUM,
   TABLE4,
   PREMIUM_SKINS,
   isoWeek,
@@ -54,7 +55,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { awardGameCrowns, buildSeasonState, claimSeasonTier } from './season.js';
+import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
 import { telemetry, tpid } from './telemetry.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
@@ -1517,6 +1518,45 @@ wss.on('connection', (ws, req) => {
         }
         telemetry('season.claim', { pid: tpid(clpid), tier: msg.tier, lane: msg.lane, reward: res.reward?.kind, tickets: res.ticketsGranted ?? 0 });
         session.send({ t: 'season.state', season: await buildSeasonState(store, clpid, new Date().toISOString()) });
+        break;
+      }
+
+      case 'season.buyPremium': {
+        // Premium is a USDT purchase → it must credit a proven wallet (the same
+        // verified-buyer model as cosmetic.claim). No anon premium.
+        if (!cosmeticsVerifier) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'The premium pass is not available yet.' });
+          break;
+        }
+        if (!session.wallet) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to buy the premium pass.' });
+          break;
+        }
+        const bpid = playerId(session.wallet, session.id);
+        const buyerWallet = session.wallet as Address;
+        const res = await buySeasonPremium(
+          store,
+          (txHash) => cosmeticsVerifier.verifyPurchase(txHash as Hex, buyerWallet, SEASON_PREMIUM.itemId),
+          bpid,
+          msg.txHash,
+        );
+        if (!res.ok) {
+          const message =
+            res.error === 'already' ? 'You already own the premium pass this season.'
+            : res.error === 'replay' ? 'That purchase was already used.'
+            : 'Could not verify that USDT purchase.';
+          session.send({ t: 'error', code: res.error === 'already' ? 'BAD_STATE' : 'BAD_MESSAGE', message });
+          break;
+        }
+        // Retroactive tickets surface in the ticket UI; a fresh season.state flips
+        // the premium lane on + marks the auto-unlocked tiers claimed.
+        if (res.ticketsGranted && res.ticketsGranted > 0) {
+          const total = (await store.getChallenge(bpid, utcToday())).tickets;
+          session.send({ t: 'tickets.grant', granted: res.ticketsGranted, total, reason: 'sync' });
+          telemetry('tickets', { pid: tpid(bpid), delta: res.ticketsGranted, reason: 'season-premium-retro', total });
+        }
+        telemetry('season.premium', { pid: tpid(bpid), unlocked: res.unlockedTiers?.length ?? 0, tickets: res.ticketsGranted ?? 0 });
+        session.send({ t: 'season.state', season: await buildSeasonState(store, bpid, new Date().toISOString()) });
         break;
       }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/store/memory.js';
-import { awardGameCrowns, baseCrowns, buildSeasonState, claimSeasonTier } from '../src/season.js';
+import { awardGameCrowns, baseCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from '../src/season.js';
 import { FREEROLL, SEASON, crownsForTier, seasonTiers, tierFromCrowns } from '@ludo/shared';
 
 const NOW = '2026-07-18T00:00:00.000Z';
@@ -99,6 +99,55 @@ describe('claimSeasonTier', () => {
     // tier 3 premium is a crown boost → it takes effect immediately
     expect(r.reward).toMatchObject({ kind: 'crownBoost' });
     expect((await store.getSeasonProgress('anon:s1')).crownBoost).toBeGreaterThan(1);
+  });
+});
+
+describe('buySeasonPremium', () => {
+  const TX = '0x' + 'a'.repeat(64);
+  const ok = async () => true;
+  const fail = async () => false;
+
+  it('rejects an unverifiable purchase and never flips premium', async () => {
+    const store = await freshStore();
+    const r = await buySeasonPremium(store, fail, 'anon:s1', TX);
+    expect(r).toMatchObject({ ok: false, error: 'unverified' });
+    expect((await store.getSeasonProgress('anon:s1')).premium).toBe(false);
+  });
+
+  it('unlocks premium and cannot be replayed with the same tx', async () => {
+    const store = await freshStore();
+    const first = await buySeasonPremium(store, ok, 'anon:s1', TX);
+    expect(first.ok).toBe(true);
+    expect((await store.getSeasonProgress('anon:s1')).premium).toBe(true);
+    // already premium → idempotent 'already' (before the tx is even re-checked)
+    expect(await buySeasonPremium(store, ok, 'anon:s1', TX)).toMatchObject({ ok: false, error: 'already' });
+  });
+
+  it('cannot reuse one purchase tx to unlock a different player', async () => {
+    const store = await freshStore();
+    await store.getOrCreatePlayer('anon:s2', { name: 'Q', flag: '🌍' });
+    expect((await buySeasonPremium(store, ok, 'anon:s1', TX)).ok).toBe(true);
+    // same tx, different player → the global single-use guard rejects as replay
+    expect(await buySeasonPremium(store, ok, 'anon:s2', TX)).toMatchObject({ ok: false, error: 'replay' });
+  });
+
+  it('retroactively grants every reached premium tier on purchase', async () => {
+    const store = await freshStore();
+    await store.addCrowns('anon:s1', crownsForTier(3), DAY); // reach tier 3 (incl. the crownBoost tier)
+    const r = await buySeasonPremium(store, ok, 'anon:s1', TX);
+    expect(r.ok).toBe(true);
+    expect(r.unlockedTiers).toEqual([1, 2, 3]);
+    const p = await store.getSeasonProgress('anon:s1');
+    expect([...p.claimedPrem].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    // tier 3 premium is a crown boost → applied immediately
+    expect(p.crownBoost).toBeGreaterThan(1);
+  });
+
+  it('grants nothing retroactively when no tier is reached yet', async () => {
+    const store = await freshStore();
+    const r = await buySeasonPremium(store, ok, 'anon:s1', TX);
+    expect(r).toMatchObject({ ok: true, unlockedTiers: [], ticketsGranted: 0 });
+    expect((await store.getSeasonProgress('anon:s1')).premium).toBe(true);
   });
 });
 

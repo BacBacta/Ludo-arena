@@ -91,15 +91,69 @@ export async function claimSeasonTier(
   const newlyClaimed = await store.claimSeasonTier(playerId, tier, lane);
   if (!newlyClaimed) return { ok: false, error: 'already' };
 
-  let ticketsGranted = 0;
-  if (reward.kind === 'tickets' && reward.amount && reward.amount > 0) {
-    await store.grantTickets(playerId, reward.amount);
-    ticketsGranted = reward.amount;
-  } else if (reward.kind === 'crownBoost' && reward.amount && reward.amount > 0) {
-    await store.setSeasonCrownBoost(playerId, 1 + reward.amount / 100);
-  }
-  // cosmetic / streakFreeze / title: recorded as claimed; the functional grant
-  // (real cosmetic art, streak-freeze inventory) lands with the content pipeline.
+  const ticketsGranted = await grantReward(store, playerId, reward);
   void today;
   return { ok: true, reward, ticketsGranted };
+}
+
+/** Apply a reward's functional effect. Ticket rewards credit a balance (returned);
+ *  a crownBoost applies immediately so a premium buyer earns faster for the rest of
+ *  the season; cosmetic/streakFreeze/title are recorded-only until the content
+ *  pipeline lands. Idempotency is the caller's job (claim/retro-unlock guards). */
+async function grantReward(store: Store, playerId: string, reward: Reward): Promise<number> {
+  if (reward.kind === 'tickets' && reward.amount && reward.amount > 0) {
+    await store.grantTickets(playerId, reward.amount);
+    return reward.amount;
+  }
+  if (reward.kind === 'crownBoost' && reward.amount && reward.amount > 0) {
+    await store.setSeasonCrownBoost(playerId, 1 + reward.amount / 100);
+  }
+  return 0;
+}
+
+export interface BuyPremiumResult {
+  ok: boolean;
+  error?: 'already' | 'unverified' | 'replay';
+  /** Premium-lane tiers auto-granted by the retroactive unlock. */
+  unlockedTiers?: number[];
+  /** Freeroll tickets credited by those retroactive rewards. */
+  ticketsGranted?: number;
+}
+
+/**
+ * Unlock the premium pass for the current season after verifying the USDT purchase.
+ * Server-authoritative + replay-safe:
+ *  • the tx must be a real CosmeticsStore Purchase by THIS wallet — else 'unverified';
+ *  • each purchase tx is single-use globally — a replay is 'replay' (can't reuse an
+ *    old season's tx to unlock a later one, since the on-chain item is season-agnostic);
+ *  • already-premium is idempotent → 'already'.
+ * On success it flips premium on and RETROACTIVELY grants every premium reward for
+ * tiers already reached (§4: reduces buyer's remorse, boosts late conversion).
+ */
+export async function buySeasonPremium(
+  store: Store,
+  verify: (txHash: string) => Promise<boolean>,
+  playerId: string,
+  txHash: string,
+): Promise<BuyPremiumResult> {
+  const p = await store.getSeasonProgress(playerId);
+  if (p.premium) return { ok: false, error: 'already' };
+  if (!(await verify(txHash))) return { ok: false, error: 'unverified' };
+  // Consume the tx BEFORE granting so a verified-but-replayed tx can never double-unlock.
+  if (!(await store.consumePremiumTx(txHash, playerId, p.seasonId))) return { ok: false, error: 'replay' };
+
+  await store.setSeasonPremium(playerId);
+
+  // Retroactive unlock: auto-claim every premium reward for a reached tier.
+  const reached = tierFromCrowns(p.crowns);
+  const tiers = seasonTiers();
+  const unlockedTiers: number[] = [];
+  let ticketsGranted = 0;
+  for (let t = 1; t <= reached; t++) {
+    if (p.claimedPrem.includes(t)) continue;
+    if (!(await store.claimSeasonTier(playerId, t, 'premium'))) continue; // already claimed (race)
+    ticketsGranted += await grantReward(store, playerId, tiers[t - 1]!.premium);
+    unlockedTiers.push(t);
+  }
+  return { ok: true, unlockedTiers, ticketsGranted };
 }

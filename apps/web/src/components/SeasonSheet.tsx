@@ -3,8 +3,9 @@
  *  the player claim a reached free reward. The premium lane is visible but locked
  *  until the pass ships (Phase 2). */
 import { useFocusTrap } from './useFocusTrap';
-import { useAppDispatch, useAppState } from '../state/store';
-import { crownsForTier, type Reward, type TierDef } from '@ludo/shared';
+import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
+import { crownsForTier, SEASON_PREMIUM, type Reward, type TierDef } from '@ludo/shared';
+import { cosmeticsCusdAvailable } from '../lib/deployments';
 import { t } from '../lib/i18n';
 
 function rewardLabel(r: Reward): string {
@@ -29,7 +30,7 @@ function daysLeft(endsAt: string): number {
   return Math.max(0, Math.ceil(ms / 86_400_000));
 }
 
-export function SeasonSheet({ onClaim }: { onClaim(tier: number, lane: 'free' | 'premium'): void }) {
+export function SeasonSheet({ onClaim, onBuyPremium }: { onClaim(tier: number, lane: 'free' | 'premium'): void; onBuyPremium(): void }) {
   const { seasonOpen, season } = useAppState();
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'SEASON_MODAL', open: false });
@@ -62,6 +63,23 @@ export function SeasonSheet({ onClaim }: { onClaim(tier: number, lane: 'free' | 
           </div>
           <div className="seasonbar__track"><span className="seasonbar__fill" style={{ width: `${pct}%` }} /></div>
         </div>
+
+        {/* Premium pass: a $1.50 USDT unlock of the premium lane + retroactive
+            grants. Hidden once owned; shown only when the USDT rail is live. */}
+        {!season.premium && cosmeticsCusdAvailable && (
+          <button className="seasonpremium" onClick={onBuyPremium}>
+            <div className="seasonpremium__txt">
+              <b>👑 {t('seasonPremiumTitle')}</b>
+              <small>{t('seasonPremiumBlurb')}</small>
+            </div>
+            <span className="seasonpremium__cta">{fmtUsd(SEASON_PREMIUM.cents)}</span>
+          </button>
+        )}
+        {season.premium && (
+          <div className="seasonpremium seasonpremium--owned">
+            <b>👑 {t('seasonPremiumOwned')}</b>
+          </div>
+        )}
 
         <div className="seasontiers">
           {season.tiers.map((def: TierDef) => {

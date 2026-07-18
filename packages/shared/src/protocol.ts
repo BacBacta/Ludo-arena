@@ -113,6 +113,13 @@ export const SEASON = {
   laterCost: 55,
 } as const;
 
+/** Premium season pass (Phase 2): a one-time-per-season USDT purchase that unlocks
+ *  the premium reward lane. Bought through the existing CosmeticsStore rail — the
+ *  server verifies the on-chain Purchased(buyer, keccak(itemId)) like a cosmetic.
+ *  `itemId` is the store catalogue key; `cents` is the price ($1.50 = a conversion
+ *  loss-leader, see docs/SEASON_PASS_SPEC.md §4). */
+export const SEASON_PREMIUM = { itemId: 'season-premium', cents: 150 } as const;
+
 /** Cumulative crowns needed to REACH tier t (1..tierCount). */
 export function crownsForTier(t: number): number {
   if (t <= 0) return 0;
@@ -434,6 +441,10 @@ export type ClientMsg =
   // the tier is unlocked (crowns) and — for 'premium' — that the pass is owned,
   // then grants the reward idempotently and pushes back a fresh season.state.
   | { t: 'season.claim'; tier: number; lane: 'free' | 'premium' }
+  // Unlock the premium pass for the current season: the server verifies the USDT
+  // purchase tx (Purchased(buyer, keccak(SEASON_PREMIUM.itemId)) on the
+  // CosmeticsStore) like cosmetic.claim, then flips premium on + retro-unlocks.
+  | { t: 'season.buyPremium'; txHash: string }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -709,6 +720,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) && typeof m.id === 'string' && cosmeticById(m.id) !== undefined ? m : null;
     case 'season.claim':
       return Number.isInteger(m.tier) && m.tier >= 1 && m.tier <= SEASON.tierCount && (m.lane === 'free' || m.lane === 'premium') ? m : null;
+    case 'season.buyPremium':
+      return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) ? m : null;
     case 'emote':
       return typeof m.id === 'string' && ((EMOTES as readonly string[]).includes(m.id) || isQuickChat(m.id)) ? m : null;
     case 'gift':

@@ -161,6 +161,16 @@ CREATE TABLE IF NOT EXISTS season_progress (
   daily_games INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (player_id, season_id)
 );
+
+-- Premium-pass purchases: the tx hash is the PRIMARY KEY so each on-chain payment
+-- unlocks premium exactly once — an old purchase tx can't be replayed to unlock a
+-- later season for free (the on-chain item id is season-agnostic).
+CREATE TABLE IF NOT EXISTS premium_purchases (
+  tx_hash    TEXT PRIMARY KEY,
+  player_id  TEXT NOT NULL,
+  season_id  INTEGER NOT NULL,
+  at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `;
 
 export class PersistentStore implements Store {
@@ -800,6 +810,15 @@ export class PersistentStore implements Store {
        ON CONFLICT (player_id, season_id) DO UPDATE SET crown_boost = $3`,
       [playerId, sid, multiplier],
     );
+  }
+  async consumePremiumTx(txHash: string, playerId: string, seasonId: number): Promise<boolean> {
+    // ON CONFLICT DO NOTHING + rowCount tells us if THIS call was the first to use it.
+    const res = await this.pool.query(
+      `INSERT INTO premium_purchases (tx_hash, player_id, season_id) VALUES ($1, $2, $3)
+       ON CONFLICT (tx_hash) DO NOTHING`,
+      [txHash.toLowerCase(), playerId, seasonId],
+    );
+    return (res.rowCount ?? 0) > 0;
   }
   async rolloverSeason(nowIso: string): Promise<boolean> {
     const s = await this.getSeason(nowIso);

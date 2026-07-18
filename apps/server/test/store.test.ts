@@ -415,6 +415,25 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
+    it('consumes a premium-purchase tx hash exactly once (no cross-season replay)', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'P', flag: '🌍' });
+      const tx = '0x' + Math.random().toString(16).slice(2).padEnd(64, '0').slice(0, 64);
+
+      expect(await store.consumePremiumTx(tx, id, 1)).toBe(true); // first use unlocks
+      expect(await store.consumePremiumTx(tx, id, 1)).toBe(false); // replay same season
+      expect(await store.consumePremiumTx(tx, id, 2)).toBe(false); // replay a LATER season
+      // case-insensitive (tx hashes may arrive mixed-case)
+      expect(await store.consumePremiumTx(tx.toUpperCase(), id, 2)).toBe(false);
+      // a different tx is independent
+      const tx2 = '0x' + Math.random().toString(16).slice(2).padEnd(64, '1').slice(0, 64);
+      expect(await store.consumePremiumTx(tx2, id, 1)).toBe(true);
+
+      await store.close();
+    });
+
     it('rolls the season over only past its end, resetting per-player progress', async () => {
       const store = make();
       await store.init();

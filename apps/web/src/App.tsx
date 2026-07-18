@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { applyMove } from '@ludo/game-engine';
 import type { GameState } from '@ludo/game-engine';
-import { TOS_VERSION, cosmeticCents, type StakeCents } from '@ludo/shared';
+import { TOS_VERSION, cosmeticCents, SEASON_PREMIUM, type StakeCents } from '@ludo/shared';
 import { syncLobby,
   LocalBotSession,
   RemoteSession,
@@ -19,7 +19,7 @@ import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
-import { sendLimits, buySkin, claimCosmetic, claimSeasonReward, fetchProfile, pushIdentity } from './lib/session';
+import { sendLimits, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
@@ -855,6 +855,37 @@ export default function App() {
     [dispatch, refreshBalance],
   );
 
+  // Buy the premium season pass with USDT (Phase 2): pay $1.50 on-chain via the
+  // CosmeticsStore (same rail as cosmetics), then hand the tx to the server to
+  // flip premium on + retro-unlock reached tiers. Gated on cosmeticsCusdAvailable.
+  const purchasePremium = useCallback(
+    async () => {
+      try {
+        const wallet = walletRef.current ?? (await connectWallet());
+        if (!wallet) {
+          dispatch({ type: 'TOAST', message: t('offline') });
+          return;
+        }
+        walletRef.current = wallet;
+        dispatch({ type: 'STAKING', status: 'joining' });
+        const { buyTxHash } = await buyCosmetic(wallet, SEASON_PREMIUM.itemId, SEASON_PREMIUM.cents);
+        dispatch({ type: 'STAKING', status: 'idle' });
+        const season = await buySeasonPremium(SERVER_URL, buyTxHash, wallet.address);
+        if (season) {
+          dispatch({ type: 'SEASON_STATE', season });
+          dispatch({ type: 'TOAST', message: t('seasonPremiumUnlocked') });
+          void refreshBalance(wallet);
+        } else {
+          dispatch({ type: 'TOAST', message: t('offline') });
+        }
+      } catch {
+        dispatch({ type: 'STAKING', status: 'idle' });
+        dispatch({ type: 'TOAST', message: t('offline') });
+      }
+    },
+    [dispatch, refreshBalance],
+  );
+
   const applyLimits = useCallback(
     async (payload: { dailyLimitCents?: number; selfExcludeDays?: number }) => {
       const limits = await sendLimits(SERVER_URL, payload, walletRef.current?.address);
@@ -933,7 +964,7 @@ export default function App() {
       />
       <NoWalletSheet />
       <HelpModal />
-      <SeasonSheet onClaim={claimSeason} />
+      <SeasonSheet onClaim={claimSeason} onBuyPremium={purchasePremium} />
       <DocModal />
       <Toast />
     </>

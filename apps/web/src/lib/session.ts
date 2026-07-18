@@ -774,6 +774,69 @@ export function claimSeasonReward(
     };
   });
 }
+/**
+ * One-shot: unlock the premium season pass. Sends the verified USDT purchase tx;
+ * the server confirms it on-chain (like cosmetic.claim), flips premium on, and
+ * retro-unlocks reached tiers, then pushes the fresh SeasonState we resolve with.
+ */
+export function buySeasonPremium(
+  serverUrl: string,
+  txHash: string,
+  walletAddress?: string,
+): Promise<SeasonState | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: SeasonState | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 20000); // chain read can be slow
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'season.buyPremium', txHash }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'season.state') {
+        clearTimeout(timer);
+        done(msg.season);
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
 /** The INITIAL connection is retried this many times before we declare the server

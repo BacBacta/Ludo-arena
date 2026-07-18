@@ -214,6 +214,10 @@ export interface Store {
   claimSeasonTier(playerId: string, tier: number, lane: 'free' | 'premium'): Promise<boolean>;
   setSeasonPremium(playerId: string): Promise<void>;
   setSeasonCrownBoost(playerId: string, multiplier: number): Promise<void>;
+  /** Consume a premium-purchase tx hash: true the FIRST time, false if already
+   *  used. Single-use GLOBALLY, so an old purchase tx can't be replayed to unlock
+   *  premium again in a later season. */
+  consumePremiumTx(txHash: string, playerId: string, seasonId: number): Promise<boolean>;
   /** If now is past the season end, start the next season; returns true if it did. */
   rolloverSeason(nowIso: string): Promise<boolean>;
 

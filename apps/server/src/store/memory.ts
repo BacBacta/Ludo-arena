@@ -65,6 +65,7 @@ export class MemoryStore implements Store {
   private meta = new Map<string, string>();
   private season: SeasonMeta | null = null;
   private seasonProg = new Map<string, SeasonProgress>();
+  private premiumTx = new Set<string>();
   private pairGames = new Map<string, number>();
 
   async init(): Promise<void> {}
@@ -271,6 +272,12 @@ export class MemoryStore implements Store {
   }
   async setSeasonCrownBoost(playerId: string, multiplier: number): Promise<void> {
     this.prog(playerId).crownBoost = multiplier;
+  }
+  async consumePremiumTx(txHash: string, _playerId: string, _seasonId: number): Promise<boolean> {
+    const key = txHash.toLowerCase();
+    if (this.premiumTx.has(key)) return false;
+    this.premiumTx.add(key);
+    return true;
   }
   async rolloverSeason(nowIso: string): Promise<boolean> {
     const s = await this.getSeason(nowIso);

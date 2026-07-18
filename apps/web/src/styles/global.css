@@ -2045,6 +2045,23 @@ small.muted { font-size: 12px; }
 .seasonreward--prem { background: rgba(122, 61, 18, 0.06); }
 .seasonreward:disabled { cursor: default; }
 
+/* premium pass CTA inside the season sheet: a gold gradient banner */
+.seasonpremium {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  background: linear-gradient(100deg, rgba(245, 179, 1, 0.16), rgba(255, 202, 58, 0.28));
+  border: 1px solid var(--accent); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px;
+  text-align: left; cursor: pointer;
+}
+.seasonpremium__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.seasonpremium__txt b { font-family: var(--font-display); font-size: 15px; }
+.seasonpremium__txt small { font-size: 11.5px; color: var(--muted); }
+.seasonpremium__cta {
+  flex: 0 0 auto; font-family: var(--font-display); font-weight: 800; font-size: 15px;
+  color: #5d4300; background: var(--accent); border-radius: 999px; padding: 8px 16px; white-space: nowrap;
+}
+.seasonpremium--owned { justify-content: center; cursor: default; }
+.seasonpremium--owned b { color: var(--accent-2); }
+
 /* end-screen crown-gain feedback: a gold chip that pops in after a game */
 .crowngain {
   margin-top: 6px; font-family: var(--font-display); font-weight: 800; font-size: 15px;
