@@ -1559,6 +1559,36 @@ small.muted { font-size: 12px; }
   color: #fff2c2;
   text-shadow: 0 0 6px rgba(245, 179, 1, 0.9);
 }
+/* Progression entry: a distinct accent pill (never a bare toggle) that shows the
+   live streak and a nudge dot when there's a daily task, so users don't miss it. */
+.progbtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(46, 158, 107, 0.16);
+  border: 1px solid rgba(46, 158, 107, 0.5);
+  color: var(--me);
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 0;
+}
+.progbtn:active { transform: scale(0.94); }
+.progbtn .icon { width: 18px; height: 18px; }
+.progbtn__streak { font-size: 12px; font-weight: 800; line-height: 1; color: var(--opp); white-space: nowrap; }
+.progbtn__dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: progpulse 1.8s ease-in-out infinite;
+}
+@keyframes progpulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: 0.7; } }
 .verify {
   margin: 10px 0;
   padding: 8px;
