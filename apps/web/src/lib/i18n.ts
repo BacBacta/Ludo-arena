@@ -1352,6 +1352,10 @@ function resolveLang(): Lang {
 
 export const lang: Lang = resolveLang();
 
+// Keep the document language in sync with the resolved locale (screen readers,
+// translation prompts, search engines). index.html ships lang="en" statically.
+if (typeof document !== 'undefined') document.documentElement.lang = lang;
+
 export function t(key: TKey): string {
   return dict[lang][key] ?? en[key];
 }
