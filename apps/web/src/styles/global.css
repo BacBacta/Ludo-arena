@@ -2063,6 +2063,10 @@ small.muted { font-size: 12px; }
 .seasoncard__claim { font-size: 12.5px; font-weight: 800; color: #5d4300; background: var(--accent); border-radius: 999px; padding: 4px 12px; }
 .seasoncard__prem { font-size: 12px; font-weight: 700; color: var(--accent); background: rgba(245, 179, 1, 0.14); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
 
+/* Progression sheet (daily loop + rivals) opened from the top bar */
+.progressionsheet { max-width: 440px; }
+.progressionsheet .seclabel:first-of-type { margin-top: 4px; }
+
 /* streak-freeze: a compact chip in the daily card footer (not a menu row) */
 .daily__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 4px 14px; }
 .daily__foot .daily__hint { margin: 0; flex: 1; min-width: 140px; }

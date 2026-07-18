@@ -19,6 +19,7 @@ import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { ComebackModal, DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
+import { ProgressionSheet } from './components/ProgressionSheet';
 import { sendLimits, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
@@ -919,7 +920,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onViewProfile={onViewProfile} onBuyFreeze={buyFreeze} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
@@ -982,6 +983,7 @@ export default function App() {
       <NoWalletSheet />
       <HelpModal />
       <ComebackModal />
+      <ProgressionSheet onViewProfile={onViewProfile} onBuyFreeze={buyFreeze} />
       <SeasonSheet onClaim={claimSeason} onBuyPremium={purchasePremium} />
       <DocModal />
       <Toast />

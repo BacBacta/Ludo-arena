@@ -160,6 +160,8 @@ export interface AppState {
   season: SeasonState | null;
   /** Season track sheet open state. */
   seasonOpen: boolean;
+  /** Progression sheet (daily loop + rivals) open state. */
+  progressionOpen: boolean;
   /** Transient crown-gain feedback after a game (`n` re-triggers the animation). */
   crownGain: { gained: number; tier: number; n: number } | null;
   /** Win-back offer surfaced on return after an absence (Phase 3); null = none. */
@@ -290,6 +292,7 @@ export const initialState: AppState = {
   ownedSkins: loadRetention().ownedSkins,
   season: loadRetention().season,
   seasonOpen: false,
+  progressionOpen: false,
   crownGain: null,
   comeback: null,
   profile: loadRetention().profile,
@@ -365,6 +368,7 @@ export type Action =
   | { type: 'SEASON_STATE'; season: SeasonState }
   | { type: 'SEASON_PROGRESS'; crowns: number; tier: number; gained: number }
   | { type: 'SEASON_MODAL'; open: boolean }
+  | { type: 'PROGRESSION_MODAL'; open: boolean }
   | { type: 'CLEAR_CROWN_GAIN' }
   | { type: 'COMEBACK'; comeback: Comeback }
   | { type: 'COMEBACK_CLEAR' }
@@ -516,6 +520,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, comeback: null };
     case 'SEASON_MODAL':
       return { ...s, seasonOpen: a.open };
+    case 'PROGRESSION_MODAL':
+      return { ...s, progressionOpen: a.open };
     case 'PROFILE': {
       // Merge only defined fields. (The session layer already suppresses profile
       // updates from wallet-less connections, so this never gets anon 0/0 data.)

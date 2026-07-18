@@ -15,8 +15,6 @@ import {
   STREAK_FREEZE,
   TABLE4,
   PREMIUM_SKINS,
-  isoWeek,
-  leaguePointsForWin,
   MAX_DAILY_GAMES_VS_SAME,
   parseClientMsg,
   PROFILE_NAME_MIN,
@@ -623,19 +621,16 @@ function wireRoom(room: Room): void {
       .then(() => store.deleteRoom(result.gameId))
       .catch((e) => console.error('[store] onResult', e));
 
-    // Weekly league: award the winner league points and push their standings (E4.3).
     const winnerId = result.winner === 0 ? idA : idB;
     const loserId = result.winner === 0 ? idB : idA;
     const winnerSession = sessions.get(result.players[result.winner].id);
     const loserSession = sessions.get(result.players[result.winner === 0 ? 1 : 0].id);
-    // QA games keep the audit trail (recordGame/ELO above) but must not touch
-    // the public ladder or grant rewards — test traffic polluted the league.
+    // QA games keep the audit trail (recordGame/ELO above) but must not grant
+    // rewards — test traffic must not touch the season/economy.
     if (room.qa) return;
-    store
-      .addLeaguePoints(winnerId, leaguePointsForWin(result.stakeCents))
-      .then((league) => winnerSession?.send({ t: 'league.update', league }))
-      .catch((e) => console.error('[league] addLeaguePoints', e));
     // Profile W/L: bump the winner's win count (games_played is bumped in updateElo).
+    // (The weekly league was retired — it duplicated the season pass's progression
+    //  role and its ticket rollover was an inflation faucet.)
     store.recordWin(winnerId).catch((e) => console.error('[profile] recordWin', e));
 
     // Season pass: every finished (non-QA) game earns crowns — the wealth-neutral
@@ -775,23 +770,10 @@ if (gasArbiter) {
   setInterval(() => void checkGas(), 5 * 60_000);
 }
 
-// Weekly league rollover (E4.3): runs when the ISO week changes (Mon 00:00 UTC).
-// Checked at boot and hourly so a restart never misses the boundary.
-async function maybeRolloverLeague(): Promise<void> {
-  const week = isoWeek(new Date());
-  const last = await store.getMeta('leagueWeek');
-  if (last === null) {
-    await store.setMeta('leagueWeek', week); // first boot: mark, don't roll over
-    return;
-  }
-  if (last !== week) {
-    const { promoted, relegated, ticketsAwarded } = await store.rolloverLeagues();
-    await store.setMeta('leagueWeek', week);
-    console.log(`[league] rollover ${last} → ${week}: ${promoted} promoted, ${relegated} relegated, ${ticketsAwarded} tickets awarded`);
-  }
-}
-await maybeRolloverLeague().catch((e) => console.error('[league] rollover', e));
-setInterval(() => void maybeRolloverLeague().catch((e) => console.error('[league] rollover', e)), 3_600_000);
+// The weekly league was retired: it duplicated the season pass's progression role
+// and its weekly ticket rollover was an inflation faucet the season economy is
+// designed to avoid. No points are awarded and no rollover runs; the season pass
+// is the single progression system. (Store league methods are kept but unused.)
 
 // Season pass rollover: the store starts the next season once the window ends
 // (and lazily resets per-player progress). Checked at boot and hourly so a restart
@@ -1002,7 +984,6 @@ wss.on('connection', (ws, req) => {
           resumed: resumedGame(resumedSession),
           challenge: rChallenge,
           streak: rStreak,
-          league: await store.getLeague(rpid),
           limits: rLimits,
           ownedSkins: await store.getOwnedSkins(rpid),
           season: await buildSeasonState(store, rpid, new Date().toISOString()),
@@ -1083,7 +1064,6 @@ wss.on('connection', (ws, req) => {
       let challenge = await store.getChallenge(pid, utcToday());
       // Streak is persisted only for wallet-linked players (anon rows are ephemeral).
       const streak = wallet ? await store.recordLogin(pid, utcToday(), utcYesterday(), utcTwoDaysAgo()) : undefined;
-      const league = await store.getLeague(pid);
       const limits = await store.getLimits(pid, utcToday());
       // Win-back: grant comeback tickets to a returning absent player (RG-gated).
       const comeback = wallet ? await applyWinback(pid, streak, limits) : undefined;
@@ -1106,7 +1086,6 @@ wss.on('connection', (ws, req) => {
         avatar: session.avatar,
         challenge,
         streak,
-        league,
         limits,
         ownedSkins,
         season,

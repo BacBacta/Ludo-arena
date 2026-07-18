@@ -56,6 +56,18 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
         LUDO <span>ARENA</span>
       </div>
       <div className="topbar__right">
+        {/* Progression: the daily loop + rivals moved off the landing so the home
+            screen stays focused on Play + Season. */}
+        <button
+          className="soundtoggle"
+          title={t('progressionTitle')}
+          aria-label={t('progressionTitle')}
+          onClick={() => dispatch({ type: 'PROGRESSION_MODAL', open: true })}
+        >
+          <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 20V10M10 20V4M16 20v-7M20 20H3" />
+          </svg>
+        </button>
         {/* Cosmetics shop entry — accent-tinted + a sparkle so it reads as a SHOP,
             not a settings toggle (it used to reuse .soundtoggle and vanish). */}
         <button
