@@ -54,6 +54,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
+import { awardGameCrowns, buildSeasonState, claimSeasonTier } from './season.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -470,6 +471,16 @@ function settleStaked4FromSeats(gameId: string, seats: Seat4[], winnerSeat: numb
   settlementQueue4.enqueue(gameId, getAddress(winnerWallet), reveal).catch((e) => console.error('[settlement4] enqueue', e));
 }
 
+/** Accrue a finished game's season crowns for one player and push the light
+ *  `season.progress` update if they're connected. Fire-and-forget: a crown-accrual
+ *  hiccup must never disrupt settlement, stats, or the next match. `session` may be
+ *  absent (a player who already disconnected) — the crowns are still recorded. */
+function awardSeasonCrowns(pid: string, session: Session | undefined, isWinner: boolean): void {
+  awardGameCrowns(store, pid, isWinner, utcToday())
+    .then((a) => session?.send({ t: 'season.progress', crowns: a.crowns, tier: a.tier, gained: a.gained, dailyGames: a.dailyGames }))
+    .catch((e) => console.error('[season] awardGameCrowns', e));
+}
+
 /** Best-effort player stats (played/win) for a finished 4p game, from the seats. */
 function recordRoom4StatsFromSeats(seats: Seat4[], winnerSeat: number): void {
   seats.forEach((s, seat) => {
@@ -477,6 +488,7 @@ function recordRoom4StatsFromSeats(seats: Seat4[], winnerSeat: number): void {
     const pid = playerId(s.wallet, s.sessionId);
     store.recordPlayed(pid).catch((e) => console.error('[profile] recordPlayed4', e));
     if (seat === winnerSeat) store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
+    awardSeasonCrowns(pid, sessions.get(s.sessionId), seat === winnerSeat);
   });
 }
 
@@ -596,6 +608,12 @@ function wireRoom(room: Room): void {
       .catch((e) => console.error('[league] addLeaguePoints', e));
     // Profile W/L: bump the winner's win count (games_played is bumped in updateElo).
     store.recordWin(winnerId).catch((e) => console.error('[profile] recordWin', e));
+
+    // Season pass: every finished (non-QA) game earns crowns — the wealth-neutral
+    // engagement sink that also drives retention. Both players earn; the winner
+    // gets the win bonus. Pushed live so the track fills on the end screen.
+    awardSeasonCrowns(winnerId, winnerSession, true);
+    awardSeasonCrowns(loserId, loserSession, false);
 
     // Freeroll prize: winner takes both entries plus the house bonus, in tickets.
     if (result.freeroll) {
@@ -740,6 +758,20 @@ async function maybeRolloverLeague(): Promise<void> {
 }
 await maybeRolloverLeague().catch((e) => console.error('[league] rollover', e));
 setInterval(() => void maybeRolloverLeague().catch((e) => console.error('[league] rollover', e)), 3_600_000);
+
+// Season pass rollover: the store starts the next season once the window ends
+// (and lazily resets per-player progress). Checked at boot and hourly so a restart
+// never leaves an expired season live. `getSeason` also seeds season 1 on first boot.
+async function maybeRolloverSeason(): Promise<void> {
+  const now = new Date().toISOString();
+  const before = await store.getSeason(now);
+  if (await store.rolloverSeason(now)) {
+    const after = await store.getSeason(now);
+    console.log(`[season] rollover ${before.id} → ${after.id} (ends ${after.endsAt})`);
+  }
+}
+await maybeRolloverSeason().catch((e) => console.error('[season] rollover', e));
+setInterval(() => void maybeRolloverSeason().catch((e) => console.error('[season] rollover', e)), 3_600_000);
 
 // ---------- http + ws ----------
 
@@ -933,6 +965,7 @@ wss.on('connection', (ws, req) => {
           league: await store.getLeague(rpid),
           limits: await store.getLimits(rpid, utcToday()),
           ownedSkins: await store.getOwnedSkins(rpid),
+          season: await buildSeasonState(store, rpid, new Date().toISOString()),
           stakingBlocked: isGeoBlocked(country),
           walletNonce: rProof.walletNonce,
           walletProven: rProof.walletProven,
@@ -1012,6 +1045,7 @@ wss.on('connection', (ws, req) => {
       const league = await store.getLeague(pid);
       const limits = await store.getLimits(pid, utcToday());
       const ownedSkins = await store.getOwnedSkins(pid);
+      const season = await buildSeasonState(store, pid, new Date().toISOString());
       await recordConsent(session, msg.consent);
       const proof = issueWalletNonce(session);
       send(ws, {
@@ -1031,6 +1065,7 @@ wss.on('connection', (ws, req) => {
         league,
         limits,
         ownedSkins,
+        season,
         stakingBlocked: isGeoBlocked(country),
         walletNonce: proof.walletNonce,
         walletProven: proof.walletProven,
@@ -1441,6 +1476,35 @@ wss.on('connection', (ws, req) => {
         const owned = await store.ownSkin(cpid, msg.id);
         const held = (await store.getChallenge(cpid, utcToday())).tickets;
         session.send({ t: 'skin.owned', ownedIds: owned, tickets: held });
+        break;
+      }
+
+      case 'season.claim': {
+        // Same trust model as skin.buy: an unproven wallet can't claim rewards that
+        // credit a durable balance to that address (anon sessions pass — their
+        // progress is ephemeral anyway).
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to claim season rewards.' });
+          break;
+        }
+        const clpid = playerId(session.wallet, session.id);
+        const res = await claimSeasonTier(store, clpid, msg.tier, msg.lane, utcToday());
+        if (!res.ok) {
+          const message =
+            res.error === 'locked' ? 'That tier is not unlocked yet.'
+            : res.error === 'not-premium' ? 'The premium track requires the season pass.'
+            : 'That reward was already claimed.';
+          const code = res.error === 'already' ? 'BAD_STATE' : 'LIMIT_REACHED';
+          session.send({ t: 'error', code, message });
+          break;
+        }
+        // A ticket reward surfaces in the ticket UI; then a fresh season.state marks
+        // the tier claimed (the client keeps the static reward table).
+        if (res.ticketsGranted && res.ticketsGranted > 0) {
+          const total = (await store.getChallenge(clpid, utcToday())).tickets;
+          session.send({ t: 'tickets.grant', granted: res.ticketsGranted, total, reason: 'sync' });
+        }
+        session.send({ t: 'season.state', season: await buildSeasonState(store, clpid, new Date().toISOString()) });
         break;
       }
 
@@ -2163,10 +2227,10 @@ function leave4(sessionParam: Session): void {
 function recordRoom4Stats(humans: Session[], winnerSeat: number, seats: Seat4[]): void {
   humans.forEach((h, seat) => {
     const pid = playerId(h.wallet, h.id);
+    const won = seat === winnerSeat && !seats[seat]?.bot;
     store.recordPlayed(pid).catch((e) => console.error('[profile] recordPlayed4', e));
-    if (seat === winnerSeat && !seats[seat]?.bot) {
-      store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
-    }
+    if (won) store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
+    awardSeasonCrowns(pid, h, won);
   });
 }
 

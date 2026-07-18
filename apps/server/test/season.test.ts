@@ -1,0 +1,106 @@
+import { describe, expect, it } from 'vitest';
+import { MemoryStore } from '../src/store/memory.js';
+import { awardGameCrowns, baseCrowns, buildSeasonState, claimSeasonTier } from '../src/season.js';
+import { SEASON, crownsForTier, seasonTiers, tierFromCrowns } from '@ludo/shared';
+
+const NOW = '2026-07-18T00:00:00.000Z';
+const DAY = '2026-07-18';
+
+async function freshStore(id = 'anon:s1'): Promise<MemoryStore> {
+  const store = new MemoryStore();
+  await store.init();
+  await store.getOrCreatePlayer(id, { name: 'P', flag: '🌍' });
+  await store.getSeason(NOW);
+  return store;
+}
+
+describe('baseCrowns (soft cap + win bonus)', () => {
+  it('pays the full rate up to the soft cap, then decays', () => {
+    expect(baseCrowns(1, false)).toBe(SEASON.crownPerGame);
+    expect(baseCrowns(SEASON.softCapGames, false)).toBe(SEASON.crownPerGame);
+    // one past the cap decays to the floor
+    expect(baseCrowns(SEASON.softCapGames + 1, false)).toBe(SEASON.softCapCrown);
+  });
+  it('adds the win bonus for the winner only', () => {
+    expect(baseCrowns(1, true)).toBe(SEASON.crownPerGame + SEASON.winBonus);
+    expect(baseCrowns(SEASON.softCapGames + 1, true)).toBe(SEASON.softCapCrown + SEASON.winBonus);
+  });
+});
+
+describe('awardGameCrowns', () => {
+  it('accrues per-game crowns and derives the reached tier', async () => {
+    const store = await freshStore();
+    const a = await awardGameCrowns(store, 'anon:s1', true, DAY);
+    expect(a.gained).toBe(SEASON.crownPerGame + SEASON.winBonus);
+    expect(a.crowns).toBe(a.gained);
+    expect(a.dailyGames).toBe(1);
+    expect(a.tier).toBe(tierFromCrowns(a.crowns));
+  });
+
+  it('applies the daily soft cap after softCapGames games', async () => {
+    const store = await freshStore();
+    let last = { crowns: 0, gained: 0 };
+    for (let i = 0; i < SEASON.softCapGames; i++) last = await awardGameCrowns(store, 'anon:s1', false, DAY);
+    expect(last.gained).toBe(SEASON.crownPerGame); // the softCapGames-th game still full
+    const over = await awardGameCrowns(store, 'anon:s1', false, DAY); // one past the cap
+    expect(over.gained).toBe(SEASON.softCapCrown);
+  });
+
+  it('multiplies by the premium crown boost', async () => {
+    const store = await freshStore();
+    await store.setSeasonCrownBoost('anon:s1', 1.25);
+    const a = await awardGameCrowns(store, 'anon:s1', false, DAY);
+    expect(a.gained).toBe(Math.round(SEASON.crownPerGame * 1.25));
+  });
+});
+
+describe('claimSeasonTier', () => {
+  it('rejects a tier that is not yet reached', async () => {
+    const store = await freshStore();
+    const r = await claimSeasonTier(store, 'anon:s1', 1, 'free', DAY);
+    expect(r).toMatchObject({ ok: false, error: 'locked' });
+  });
+
+  it('grants a reached free-tier reward once, then reports already-claimed', async () => {
+    const store = await freshStore();
+    await store.addCrowns('anon:s1', crownsForTier(1), DAY); // reach tier 1
+    const tier1Free = seasonTiers()[0]!.free;
+
+    const first = await claimSeasonTier(store, 'anon:s1', 1, 'free', DAY);
+    expect(first.ok).toBe(true);
+    expect(first.reward).toEqual(tier1Free);
+    if (tier1Free.kind === 'tickets') {
+      expect(first.ticketsGranted).toBe(tier1Free.amount);
+      expect((await store.getChallenge('anon:s1', DAY)).tickets).toBe(tier1Free.amount);
+    }
+
+    const again = await claimSeasonTier(store, 'anon:s1', 1, 'free', DAY);
+    expect(again).toMatchObject({ ok: false, error: 'already' });
+  });
+
+  it('blocks the premium lane without the pass, allows it with', async () => {
+    const store = await freshStore();
+    await store.addCrowns('anon:s1', crownsForTier(3), DAY); // reach the crownBoost tier (3)
+    expect(await claimSeasonTier(store, 'anon:s1', 3, 'premium', DAY)).toMatchObject({ ok: false, error: 'not-premium' });
+
+    await store.setSeasonPremium('anon:s1');
+    const r = await claimSeasonTier(store, 'anon:s1', 3, 'premium', DAY);
+    expect(r.ok).toBe(true);
+    // tier 3 premium is a crown boost → it takes effect immediately
+    expect(r.reward).toMatchObject({ kind: 'crownBoost' });
+    expect((await store.getSeasonProgress('anon:s1')).crownBoost).toBeGreaterThan(1);
+  });
+});
+
+describe('buildSeasonState', () => {
+  it('assembles crowns, reached tier, claims and the static reward table', async () => {
+    const store = await freshStore();
+    await store.addCrowns('anon:s1', crownsForTier(2), DAY);
+    await store.claimSeasonTier('anon:s1', 1, 'free');
+    const st = await buildSeasonState(store, 'anon:s1', NOW);
+    expect(st).toMatchObject({ tierCount: SEASON.tierCount, crowns: crownsForTier(2), tier: 2, premium: false });
+    expect(st.claimedFree).toEqual([1]);
+    expect(st.tiers).toHaveLength(SEASON.tierCount);
+    expect(st.tiers[0]).toMatchObject({ tier: 1 });
+  });
+});

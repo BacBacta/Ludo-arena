@@ -427,6 +427,10 @@ export type ClientMsg =
   // verifies the tx emitted Purchased(buyer=provenWallet, itemId=keccak(id))
   // before granting ownership. Dormant until the store is deployed (rec 6).
   | { t: 'cosmetic.claim'; txHash: string; id: string }
+  // Season pass: claim the reward for a REACHED tier on a lane. The server checks
+  // the tier is unlocked (crowns) and — for 'premium' — that the pass is owned,
+  // then grants the reward idempotently and pushes back a fresh season.state.
+  | { t: 'season.claim'; tier: number; lane: 'free' | 'premium' }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -501,6 +505,7 @@ export type ServerMsg =
       league?: LeagueState;
       limits?: LimitsState; // responsible-gaming state (E5.2)
       ownedSkins?: string[]; // premium skins the player has unlocked (server-authoritative)
+      season?: SeasonState; // current season pass state (crowns, tier, claims, reward table)
       stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
       // Wallet ownership proof (SIWE): if a wallet was supplied but isn't proven
       // yet, `walletNonce` is the string to sign; `walletProven` reflects state.
@@ -594,6 +599,13 @@ export type ServerMsg =
   | { t: 'skin.owned'; ownedIds: string[]; tickets: number }
   // Responsible-gaming state after hello or a limits.set (E5.2).
   | { t: 'limits.update'; limits: LimitsState }
+  // Full season pass state — sent on hello and after a season.claim (the reward
+  // table is static, so the client keeps `tiers` and only needs the light
+  // `season.progress` push mid-session).
+  | { t: 'season.state'; season: SeasonState }
+  // Lightweight per-game push: crowns earned (and the tier it unlocked). Lets the
+  // client animate the track filling without re-sending the whole reward table.
+  | { t: 'season.progress'; crowns: number; tier: number; gained: number; dailyGames: number }
   // ---- 4-player online (Game4 state; seats 0-3) ----
   | {
       t: 'match.found4';
@@ -692,6 +704,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof m.skinId === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.skinId) ? m : null;
     case 'cosmetic.claim':
       return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) && typeof m.id === 'string' && cosmeticById(m.id) !== undefined ? m : null;
+    case 'season.claim':
+      return Number.isInteger(m.tier) && m.tier >= 1 && m.tier <= SEASON.tierCount && (m.lane === 'free' || m.lane === 'premium') ? m : null;
     case 'emote':
       return typeof m.id === 'string' && ((EMOTES as readonly string[]).includes(m.id) || isQuickChat(m.id)) ? m : null;
     case 'gift':
