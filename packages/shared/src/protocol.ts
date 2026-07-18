@@ -248,13 +248,22 @@ export interface CosmeticItem {
 // Dice cosmetics ship first (full skin infra + rendering already exist). Board
 // themes are a planned `kind: 'board'` extension — deferred until the board can
 // be re-themed without touching gameplay-critical token/cell colours.
+//
+// TICKET prices follow the calibrated economy model (SEASON_PASS_SPEC §10:
+// Common 15 · Rare 50 · Epic 120 · Legendary 250). The catalog had shipped at
+// 5-15 tickets — 10-16× under calibration — while the season track alone
+// faucets ~98 tickets/season to an engaged player: the whole cosmetic sink was
+// exhaustible in days, re-creating the ticket glut the economy sim flagged.
+// cUSD `cents` are deliberately UNCHANGED: the on-chain CosmeticsStore listings
+// are the source of truth for that rail, and repricing it is a listing op, not
+// a protocol constant.
 export const PREMIUM_COSMETICS: readonly CosmeticItem[] = [
-  { id: 'obsidian', kind: 'dice', tickets: 5, cents: 100 },
-  { id: 'aurora', kind: 'dice', tickets: 10, cents: 200 },
+  { id: 'obsidian', kind: 'dice', tickets: 15, cents: 100 }, // common
+  { id: 'aurora', kind: 'dice', tickets: 120, cents: 200 }, // epic
   // Ultra-premium 3D-rendered dice (WebGL PBR materials + a dedicated roll sound).
-  { id: 'crystal', kind: 'dice', tickets: 10, cents: 200 },
-  { id: 'ember', kind: 'dice', tickets: 8, cents: 150 },
-  { id: 'gold', kind: 'dice', tickets: 15, cents: 300 },
+  { id: 'crystal', kind: 'dice', tickets: 120, cents: 200 }, // epic
+  { id: 'ember', kind: 'dice', tickets: 50, cents: 150 }, // rare
+  { id: 'gold', kind: 'dice', tickets: 250, cents: 300 }, // legendary
 ] as const;
 
 /** Ticket price map, derived for backward compatibility (server spend + skin.buy
