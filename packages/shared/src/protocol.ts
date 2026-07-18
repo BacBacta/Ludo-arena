@@ -91,6 +91,83 @@ export const ANTI_TILT = { losses: 3, rewardTickets: 1 } as const;
  *  winner takes both entries plus a house bonus. */
 export const FREEROLL = { entryTickets: 1, winnerTickets: 3 } as const;
 
+// ---- Season pass (anti-churn keystone) — see docs/SEASON_PASS_SPEC.md ---------
+/** Crowns are earned by playing and fill a ~28-day track of TIERS; each tier
+ *  grants a reward. Crowns never convert to money; the pass is the wealth-
+ *  proportional ticket sink AND the main retention driver. */
+export const SEASON = {
+  tierCount: 50,
+  durationDays: 28,
+  crownPerGame: 10,
+  winBonus: 5,
+  firstWinDaily: 15,   // first win of the UTC day
+  challengeDaily: 20,  // daily challenge completed
+  softCapGames: 10,    // beyond this many games/day, per-game crowns decay…
+  softCapCrown: 3,     // …to this (anti-grind, preserves 28-day pacing)
+  // front-loaded tier cost: first `frontTiers` cheap → fast early rewards (D1 hook)
+  frontTiers: 5,
+  frontCost: 30,
+  laterCost: 55,
+} as const;
+
+/** Cumulative crowns needed to REACH tier t (1..tierCount). */
+export function crownsForTier(t: number): number {
+  if (t <= 0) return 0;
+  const f = Math.min(t, SEASON.frontTiers);
+  const l = Math.max(0, t - SEASON.frontTiers);
+  return f * SEASON.frontCost + l * SEASON.laterCost;
+}
+/** The tier a player has REACHED with `crowns` (0..tierCount). */
+export function tierFromCrowns(crowns: number): number {
+  let t = 0;
+  while (t < SEASON.tierCount && crownsForTier(t + 1) <= crowns) t++;
+  return t;
+}
+
+export type RewardKind = 'tickets' | 'cosmetic' | 'streakFreeze' | 'crownBoost' | 'title';
+export interface Reward {
+  kind: RewardKind;
+  amount?: number; // tickets count, or boost % (e.g. 25)
+  id?: string;     // cosmetic / title id
+}
+export interface TierDef {
+  tier: number; // 1..tierCount
+  free: Reward;
+  premium: Reward;
+}
+export interface SeasonState {
+  id: number;
+  endsAt: string; // ISO
+  tierCount: number;
+  crowns: number; // THIS player's crowns this season
+  tier: number;   // reached tier (0..tierCount)
+  premium: boolean;
+  claimedFree: number[];
+  claimedPrem: number[];
+  tiers: TierDef[]; // the reward table (content)
+}
+
+/** The season reward table (content). MVP rhythm per docs/SEASON_PASS_SPEC.md §15:
+ *  no empty tier; free = tickets + a cosmetic every 10 + streak-freeze at 15/35;
+ *  premium = crown boost early, cosmetics at milestones (10/25/40), legendary
+ *  title at 50. Cosmetic ids are placeholders until the art content lands. */
+export function seasonTiers(): TierDef[] {
+  const tiers: TierDef[] = [];
+  for (let t = 1; t <= SEASON.tierCount; t++) {
+    const free: Reward =
+      t % 10 === 0 ? { kind: 'cosmetic', id: `s-free-${t}` }
+      : t === 15 || t === 35 ? { kind: 'streakFreeze', amount: 1 }
+      : { kind: 'tickets', amount: t % 5 === 0 ? 3 : 2 };
+    const premium: Reward =
+      t === 3 ? { kind: 'crownBoost', amount: 25 }
+      : t === SEASON.tierCount ? { kind: 'title', id: 'season-legend' }
+      : t === 10 || t === 25 || t === 40 ? { kind: 'cosmetic', id: `s-prem-${t}` }
+      : { kind: 'tickets', amount: t % 5 === 0 ? 5 : 3 };
+    tiers.push({ tier: t, free, premium });
+  }
+  return tiers;
+}
+
 /** 4-player table config. A FREE table fills empty seats with bots after
  *  `botFillMs`; a cUSD-STAKED table needs 4 real stakers (bots have no funds)
  *  and is cancelled + refunded if it doesn't fill within `stakedFillMs`. */

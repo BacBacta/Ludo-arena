@@ -8,6 +8,25 @@ import { createHmac } from 'node:crypto';
 import type { Game4, GameState, Seat } from '@ludo/game-engine';
 import type { ChallengeState, GameOverReason, LeagueState, LimitsState, StakeCents, StreakState } from '@ludo/shared';
 
+/** Global current-season window (stored in meta). */
+export interface SeasonMeta {
+  id: number;
+  startsAt: string; // ISO
+  endsAt: string; // ISO
+}
+
+/** A player's progress in the current season. Resets (via `seasonId`) at rollover. */
+export interface SeasonProgress {
+  seasonId: number;
+  crowns: number;
+  premium: boolean;
+  claimedFree: number[];
+  claimedPrem: number[];
+  crownBoost: number; // multiplier, e.g. 1.25 (from a premium reward)
+  dailyDate: string | null; // UTC day of the daily-games counter
+  dailyGames: number; // games counted today (soft cap)
+}
+
 /** Serializable part of a Session (the ws handle and Room ref are rebuilt live). */
 export interface SessionRecord {
   id: string;
@@ -182,6 +201,21 @@ export interface Store {
   // resets when the stored day differs. Tickets persist across days.
   getChallenge(playerId: string, today: string): Promise<ChallengeState>;
   addCapture(playerId: string, today: string): Promise<ChallengeState>;
+
+  // Season pass (anti-churn keystone — see docs/SEASON_PASS_SPEC.md). The current
+  // season is global (meta); per-player progress resets when the season rolls over.
+  /** Current season window; creates the first season on first call. */
+  getSeason(nowIso: string): Promise<SeasonMeta>;
+  /** This player's progress in the CURRENT season (fresh if their season differs). */
+  getSeasonProgress(playerId: string): Promise<SeasonProgress>;
+  /** Add crowns + count today's game (soft-cap tracking); returns the new totals. */
+  addCrowns(playerId: string, crowns: number, today: string): Promise<{ crowns: number; dailyGames: number }>;
+  /** Idempotently claim a tier on a lane; false if it was already claimed. */
+  claimSeasonTier(playerId: string, tier: number, lane: 'free' | 'premium'): Promise<boolean>;
+  setSeasonPremium(playerId: string): Promise<void>;
+  setSeasonCrownBoost(playerId: string, multiplier: number): Promise<void>;
+  /** If now is past the season end, start the next season; returns true if it did. */
+  rolloverSeason(nowIso: string): Promise<boolean>;
 
   // Login streak (E4.2). Once per UTC day: +1 if last login was `yesterday`,
   // reset to 1 otherwise; milestone rewards (STREAK_REWARDS) granted on the

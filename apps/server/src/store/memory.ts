@@ -4,10 +4,11 @@
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
 import { pidFor } from './types.js';
-import type { GameRecord, Room4Snapshot, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
+import type { GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ANTI_TILT,
   DAILY_CHALLENGE,
+  SEASON,
   DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   DIVISIONS,
@@ -62,6 +63,8 @@ export class MemoryStore implements Store {
   private games = new Map<string, GameRecord>();
   private settlements = new Map<string, SettlementJob>();
   private meta = new Map<string, string>();
+  private season: SeasonMeta | null = null;
+  private seasonProg = new Map<string, SeasonProgress>();
   private pairGames = new Map<string, number>();
 
   async init(): Promise<void> {}
@@ -226,6 +229,56 @@ export class MemoryStore implements Store {
       row.tickets += DAILY_CHALLENGE.rewardTickets;
     }
     return { progress: row.captures, target: DAILY_CHALLENGE.captures, completed: row.done, tickets: row.tickets };
+  }
+
+  // ---------- season pass ----------
+  async getSeason(nowIso: string): Promise<SeasonMeta> {
+    if (!this.season) {
+      const ends = new Date(new Date(nowIso).getTime() + SEASON.durationDays * 86_400_000).toISOString();
+      this.season = { id: 1, startsAt: nowIso, endsAt: ends };
+    }
+    return { ...this.season };
+  }
+  private prog(playerId: string): SeasonProgress {
+    const cur = this.season?.id ?? 1;
+    let p = this.seasonProg.get(playerId);
+    if (!p || p.seasonId !== cur) {
+      p = { seasonId: cur, crowns: 0, premium: false, claimedFree: [], claimedPrem: [], crownBoost: 1, dailyDate: null, dailyGames: 0 };
+      this.seasonProg.set(playerId, p);
+    }
+    return p;
+  }
+  async getSeasonProgress(playerId: string): Promise<SeasonProgress> {
+    const p = this.prog(playerId);
+    return { ...p, claimedFree: [...p.claimedFree], claimedPrem: [...p.claimedPrem] };
+  }
+  async addCrowns(playerId: string, crowns: number, today: string): Promise<{ crowns: number; dailyGames: number }> {
+    const p = this.prog(playerId);
+    if (p.dailyDate !== today) { p.dailyDate = today; p.dailyGames = 0; }
+    p.dailyGames += 1;
+    p.crowns += Math.max(0, Math.round(crowns));
+    return { crowns: p.crowns, dailyGames: p.dailyGames };
+  }
+  async claimSeasonTier(playerId: string, tier: number, lane: 'free' | 'premium'): Promise<boolean> {
+    const p = this.prog(playerId);
+    const arr = lane === 'free' ? p.claimedFree : p.claimedPrem;
+    if (arr.includes(tier)) return false;
+    arr.push(tier);
+    return true;
+  }
+  async setSeasonPremium(playerId: string): Promise<void> {
+    this.prog(playerId).premium = true;
+  }
+  async setSeasonCrownBoost(playerId: string, multiplier: number): Promise<void> {
+    this.prog(playerId).crownBoost = multiplier;
+  }
+  async rolloverSeason(nowIso: string): Promise<boolean> {
+    const s = await this.getSeason(nowIso);
+    if (new Date(nowIso).getTime() < new Date(s.endsAt).getTime()) return false;
+    const ends = new Date(new Date(nowIso).getTime() + SEASON.durationDays * 86_400_000).toISOString();
+    this.season = { id: s.id + 1, startsAt: nowIso, endsAt: ends };
+    // per-player progress resets lazily (prog() sees a new seasonId)
+    return true;
   }
 
   async recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState> {

@@ -9,11 +9,12 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import { pidFor } from './types.js';
-import type { GameRecord, Room4Snapshot, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
+import type { GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ALLOWED_STAKES_CENTS,
   ANTI_TILT,
   DAILY_CHALLENGE,
+  SEASON,
   DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   DIVISIONS,
@@ -144,6 +145,22 @@ CREATE INDEX IF NOT EXISTS settlements_pending_idx ON settlements(status) WHERE 
 -- queues each resume only their own pending jobs. Added via ALTER so existing
 -- databases migrate; legacy rows default to the 1v1 '2p' path.
 ALTER TABLE settlements ADD COLUMN IF NOT EXISTS variant TEXT NOT NULL DEFAULT '2p';
+
+-- Season pass (anti-churn keystone — docs/SEASON_PASS_SPEC.md). The current season
+-- window lives in meta (key 'season:current'); per-player rows are keyed by season
+-- so history is retained and a rollover just starts writing under a new season_id.
+CREATE TABLE IF NOT EXISTS season_progress (
+  player_id TEXT NOT NULL REFERENCES players(id),
+  season_id INTEGER NOT NULL,
+  crowns INTEGER NOT NULL DEFAULT 0,
+  premium BOOLEAN NOT NULL DEFAULT false,
+  claimed_free INTEGER[] NOT NULL DEFAULT '{}',
+  claimed_prem INTEGER[] NOT NULL DEFAULT '{}',
+  crown_boost REAL NOT NULL DEFAULT 1,
+  daily_date DATE,
+  daily_games INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (player_id, season_id)
+);
 `;
 
 export class PersistentStore implements Store {
@@ -693,6 +710,103 @@ export class PersistentStore implements Store {
       [a, b],
     );
     return { aWins: Number(res.rows[0]?.a_wins ?? 0), bWins: Number(res.rows[0]?.b_wins ?? 0) };
+  }
+
+  // ---------- season pass ----------
+  private freshProgress(seasonId: number): SeasonProgress {
+    return { seasonId, crowns: 0, premium: false, claimedFree: [], claimedPrem: [], crownBoost: 1, dailyDate: null, dailyGames: 0 };
+  }
+  async getSeason(nowIso: string): Promise<SeasonMeta> {
+    const raw = await this.getMeta('season:current');
+    if (raw) return JSON.parse(raw) as SeasonMeta;
+    const ends = new Date(new Date(nowIso).getTime() + SEASON.durationDays * 86_400_000).toISOString();
+    const meta: SeasonMeta = { id: 1, startsAt: nowIso, endsAt: ends };
+    await this.setMeta('season:current', JSON.stringify(meta));
+    return meta;
+  }
+  private async currentSeasonId(): Promise<number> {
+    const raw = await this.getMeta('season:current');
+    return raw ? (JSON.parse(raw) as SeasonMeta).id : 1;
+  }
+  async getSeasonProgress(playerId: string): Promise<SeasonProgress> {
+    const sid = await this.currentSeasonId();
+    const res = await this.pool.query<{
+      crowns: number; premium: boolean; claimed_free: number[]; claimed_prem: number[];
+      crown_boost: number; daily_date: string | null; daily_games: number;
+    }>(
+      `SELECT crowns, premium, claimed_free, claimed_prem, crown_boost,
+              to_char(daily_date, 'YYYY-MM-DD') AS daily_date, daily_games
+         FROM season_progress WHERE player_id = $1 AND season_id = $2`,
+      [playerId, sid],
+    );
+    const r = res.rows[0];
+    if (!r) return this.freshProgress(sid);
+    return {
+      seasonId: sid, crowns: r.crowns, premium: r.premium,
+      claimedFree: r.claimed_free ?? [], claimedPrem: r.claimed_prem ?? [],
+      crownBoost: r.crown_boost, dailyDate: r.daily_date, dailyGames: r.daily_games,
+    };
+  }
+  async addCrowns(playerId: string, crowns: number, today: string): Promise<{ crowns: number; dailyGames: number }> {
+    const sid = await this.currentSeasonId();
+    const add = Math.max(0, Math.round(crowns));
+    const res = await this.pool.query<{ crowns: number; daily_games: number }>(
+      `INSERT INTO season_progress (player_id, season_id, crowns, daily_date, daily_games)
+         VALUES ($1, $2, $3, $4::date, 1)
+       ON CONFLICT (player_id, season_id) DO UPDATE SET
+         crowns = season_progress.crowns + $3,
+         daily_games = CASE WHEN season_progress.daily_date = $4::date THEN season_progress.daily_games + 1 ELSE 1 END,
+         daily_date = $4::date
+       RETURNING crowns, daily_games`,
+      [playerId, sid, add, today],
+    );
+    const row = res.rows[0]!;
+    return { crowns: row.crowns, dailyGames: row.daily_games };
+  }
+  async claimSeasonTier(playerId: string, tier: number, lane: 'free' | 'premium'): Promise<boolean> {
+    const sid = await this.currentSeasonId();
+    const col = lane === 'free' ? 'claimed_free' : 'claimed_prem'; // controlled union, safe to interpolate
+    // `before` snapshots the pre-update row (CTEs read a consistent snapshot), so we
+    // report whether THIS call added the tier while the upsert idempotently appends it.
+    const res = await this.pool.query<{ newly: boolean }>(
+      `WITH before AS (
+         SELECT ${col} AS arr FROM season_progress WHERE player_id = $1 AND season_id = $2
+       ), up AS (
+         INSERT INTO season_progress (player_id, season_id, ${col})
+           VALUES ($1, $2, ARRAY[$3]::integer[])
+         ON CONFLICT (player_id, season_id) DO UPDATE SET
+           ${col} = CASE WHEN $3 = ANY(season_progress.${col}) THEN season_progress.${col}
+                         ELSE array_append(season_progress.${col}, $3) END
+         RETURNING 1
+       )
+       SELECT NOT COALESCE($3 = ANY(b.arr), false) AS newly
+         FROM up LEFT JOIN before b ON true`,
+      [playerId, sid, tier],
+    );
+    return res.rows[0]?.newly ?? true;
+  }
+  async setSeasonPremium(playerId: string): Promise<void> {
+    const sid = await this.currentSeasonId();
+    await this.pool.query(
+      `INSERT INTO season_progress (player_id, season_id, premium) VALUES ($1, $2, true)
+       ON CONFLICT (player_id, season_id) DO UPDATE SET premium = true`,
+      [playerId, sid],
+    );
+  }
+  async setSeasonCrownBoost(playerId: string, multiplier: number): Promise<void> {
+    const sid = await this.currentSeasonId();
+    await this.pool.query(
+      `INSERT INTO season_progress (player_id, season_id, crown_boost) VALUES ($1, $2, $3)
+       ON CONFLICT (player_id, season_id) DO UPDATE SET crown_boost = $3`,
+      [playerId, sid, multiplier],
+    );
+  }
+  async rolloverSeason(nowIso: string): Promise<boolean> {
+    const s = await this.getSeason(nowIso);
+    if (new Date(nowIso).getTime() < new Date(s.endsAt).getTime()) return false;
+    const ends = new Date(new Date(nowIso).getTime() + SEASON.durationDays * 86_400_000).toISOString();
+    await this.setMeta('season:current', JSON.stringify({ id: s.id + 1, startsAt: nowIso, endsAt: ends }));
+    return true;
   }
 
   async getMeta(key: string): Promise<string | null> {

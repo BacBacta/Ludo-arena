@@ -4,7 +4,7 @@ import { PersistentStore } from '../src/store/persistent.js';
 import { playerId, type SessionRecord, type Store } from '../src/store/types.js';
 import { Room, type Client } from '../src/room.js';
 import { createFairness } from '../src/fairness.js';
-import { ANTI_TILT, DEFAULT_DAILY_STAKE_LIMIT_CENTS, type ServerMsg } from '@ludo/shared';
+import { ANTI_TILT, DEFAULT_DAILY_STAKE_LIMIT_CENTS, SEASON, crownsForTier, type ServerMsg } from '@ludo/shared';
 
 function makeClient(id: string): Client & { inbox: ServerMsg[] } {
   const inbox: ServerMsg[] = [];
@@ -352,6 +352,92 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       expect(await store.getMeta('leagueWeek')).toBe('2026-W28');
       await store.setMeta('leagueWeek', '2026-W29');
       expect(await store.getMeta('leagueWeek')).toBe('2026-W29');
+      await store.close();
+    });
+
+    it('accrues season crowns, tracks daily games, and derives the tier', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'C', flag: '🌍' });
+      const now = '2026-07-18T00:00:00.000Z';
+      const day1 = '2026-07-18';
+      const day2 = '2026-07-19';
+
+      // the season is global + durable, so its id is whatever the store is on
+      // (fresh in-memory = 1; a durable Postgres may carry a later season) — assert
+      // the invariants (a 28-day window, fresh per-player progress), not the number.
+      const season = await store.getSeason(now);
+      expect(season.id).toBeGreaterThanOrEqual(1);
+      if (season.id === 1) {
+        expect(new Date(season.endsAt).getTime() - new Date(season.startsAt).getTime())
+          .toBe(SEASON.durationDays * 86_400_000);
+      }
+
+      // fresh progress: no crowns, tier 0, nothing claimed
+      const p0 = await store.getSeasonProgress(id);
+      expect(p0).toMatchObject({ seasonId: season.id, crowns: 0, premium: false, dailyGames: 0 });
+      expect(p0.claimedFree).toEqual([]);
+
+      // enough crowns to cross tier 1 (frontCost) with the daily counter incrementing
+      const a1 = await store.addCrowns(id, crownsForTier(1), day1);
+      expect(a1).toMatchObject({ crowns: crownsForTier(1), dailyGames: 1 });
+      const a2 = await store.addCrowns(id, 0, day1);
+      expect(a2.dailyGames).toBe(2);
+      // new day resets the daily counter but keeps crowns
+      const a3 = await store.addCrowns(id, 0, day2);
+      expect(a3).toMatchObject({ crowns: crownsForTier(1), dailyGames: 1 });
+
+      await store.close();
+    });
+
+    it('claims tiers idempotently per lane and toggles premium', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'K', flag: '🌍' });
+
+      expect(await store.claimSeasonTier(id, 1, 'free')).toBe(true);
+      expect(await store.claimSeasonTier(id, 1, 'free')).toBe(false); // already claimed
+      expect(await store.claimSeasonTier(id, 1, 'premium')).toBe(true); // separate lane
+      expect(await store.claimSeasonTier(id, 2, 'free')).toBe(true);
+
+      const p = await store.getSeasonProgress(id);
+      expect([...p.claimedFree].sort((a, b) => a - b)).toEqual([1, 2]);
+      expect(p.claimedPrem).toEqual([1]);
+
+      expect(p.premium).toBe(false);
+      await store.setSeasonPremium(id);
+      await store.setSeasonCrownBoost(id, 1.25);
+      const p2 = await store.getSeasonProgress(id);
+      expect(p2).toMatchObject({ premium: true, crownBoost: 1.25 });
+
+      await store.close();
+    });
+
+    it('rolls the season over only past its end, resetting per-player progress', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'R', flag: '🌍' });
+      const start = '2026-07-18T00:00:00.000Z';
+      const s1 = await store.getSeason(start);
+      await store.addCrowns(id, 100, '2026-07-18');
+      await store.setSeasonPremium(id);
+
+      // before the end: no rollover
+      const mid = new Date(new Date(s1.endsAt).getTime() - 1000).toISOString();
+      expect(await store.rolloverSeason(mid)).toBe(false);
+      expect((await store.getSeasonProgress(id)).crowns).toBe(100);
+
+      // past the end: rolls to the next season, progress resets to fresh
+      const after = new Date(new Date(s1.endsAt).getTime() + 1000).toISOString();
+      expect(await store.rolloverSeason(after)).toBe(true);
+      const s2 = await store.getSeason(after);
+      expect(s2.id).toBe(s1.id + 1);
+      const fresh = await store.getSeasonProgress(id);
+      expect(fresh).toMatchObject({ seasonId: s2.id, crowns: 0, premium: false });
+
       await store.close();
     });
   });
