@@ -106,9 +106,11 @@ export function Lobby({
   const [showStakes, setShowStakes] = useState(false);
   // Real-money tiers only (Free is the primary CTA, not a tile anymore).
   const stakedTiers = lobbyStakes.filter((s) => s > 0);
-  // Newcomer with nothing yet → show one incentive instead of a wall of zeros.
+  // PERSONAL history only — a brand-new visitor must not be shown a "Today 0/0/0"
+  // card just because the GLOBAL league happens to have other players in it. The
+  // league leaderboard renders on its own below (as social proof), decoupled.
   const hasHistory =
-    profile.games > 0 || streak.days > 0 || tickets > 0 || league.top.length > 0 || recentOpponents.length > 0;
+    profile.games > 0 || streak.days > 0 || tickets > 0 || recentOpponents.length > 0;
 
   /** Launch a staked 1v1 directly from a stake tile (guarded for wallet/limits). */
   const playStaked = (s: number): void => {
@@ -194,8 +196,16 @@ export function Lobby({
         </small>
       )}
 
-      {/* MODE MENU — promoted right under the hero (was buried below the cards).
-          The single scannable menu of everything you can play. */}
+      {/* The promise in three steps — right under the CTAs so a first-time visitor
+          understands the product (free-first, fair, seasonal rewards) before the
+          rest of the page. */}
+      <div className="howstrip">
+        <span><i>1</i>{t('howStep1')}</span>
+        <span><i>2</i>{t('howStep2')}</span>
+        <span><i>3</i>{t('howStep3')}</span>
+      </div>
+
+      {/* SEASON PASS — the progression hub (crowns → tiers → rewards). */}
       {season && (() => {
         const reached = season.tier;
         const maxed = reached >= season.tierCount;
@@ -265,13 +275,6 @@ export function Lobby({
         </button>
       </div>
 
-      {/* How it works — moved UP, right under the menu, for first-time visitors. */}
-      <div className="howstrip">
-        <span><i>1</i>{t('howStep1')}</span>
-        <span><i>2</i>{t('howStep2')}</span>
-        <span><i>3</i>{t('howStep3')}</span>
-      </div>
-
       {/* Identity + progression. Stats (ELO/W-L/division) are shown ONLY for a
           wallet-backed account: a guest carries default-looking numbers (Silver,
           1200, 0-0) that read as fake data — reported twice. Guests instead get
@@ -312,43 +315,49 @@ export function Lobby({
         </button>
       )}
 
-      {!hasHistory ? (
+      {/* A brand-new player (no personal history) gets ONE clear incentive instead
+          of a wall of zeros. Each progression block below shows on its own merit. */}
+      {!hasHistory && (
         <div className="card firstwin">
           <span className="chip-ic chip-ic--opp"><IconTrophy /></span>
           <span>{t('firstWin')}</span>
         </div>
-      ) : (
-        <>
-          {recentOpponents.length > 0 && (
-            <div className="card rivalscard">
-              <h3>
-                <span className="chip-ic chip-ic--opp"><IconUsers /></span>
-                {t('rivalsTitle')}
-              </h3>
-              <div className="rivalrow">
-                {recentOpponents.map((o, i) => {
-                  const rival = o.wins + o.losses >= RIVAL_GAMES;
-                  return (
-                    <button
-                      key={o.pid ?? i}
-                      className={`rival${rival ? ' rival--rival' : ''}`}
-                      disabled={!o.pid}
-                      onClick={() => o.pid && onViewProfile(o.pid)}
-                    >
-                      <span className={`rival__av ${frameClass(o.frame)}`} aria-hidden="true">{o.flag}</span>
-                      <b className="rival__name">{o.name}</b>
-                      <small className="rival__wl">
-                        <span className="profilecard__w">{o.wins}</span>–<span className="profilecard__l">{o.losses}</span>
-                      </small>
-                      {rival && <span className="rival__badge" aria-label={t('rivalBadge')}>⚔️</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+      )}
 
-          {/* TODAY — streak, daily challenge and tickets in one compact card. */}
+      {recentOpponents.length > 0 && (
+        <div className="card rivalscard">
+          <h3>
+            <span className="chip-ic chip-ic--opp"><IconUsers /></span>
+            {t('rivalsTitle')}
+          </h3>
+          <div className="rivalrow">
+            {recentOpponents.map((o, i) => {
+              const rival = o.wins + o.losses >= RIVAL_GAMES;
+              return (
+                <button
+                  key={o.pid ?? i}
+                  className={`rival${rival ? ' rival--rival' : ''}`}
+                  disabled={!o.pid}
+                  onClick={() => o.pid && onViewProfile(o.pid)}
+                >
+                  <span className={`rival__av ${frameClass(o.frame)}`} aria-hidden="true">{o.flag}</span>
+                  <b className="rival__name">{o.name}</b>
+                  <small className="rival__wl">
+                    <span className="profilecard__w">{o.wins}</span>–<span className="profilecard__l">{o.losses}</span>
+                  </small>
+                  {rival && <span className="rival__badge" aria-label={t('rivalBadge')}>⚔️</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* TODAY — streak, daily challenge and tickets (the daily loop that feeds the
+          season). Shown once the player has any personal history — never a 0/0/0
+          card to a first-time visitor. */}
+      {hasHistory && (
+        <>
           <div className="seclabel">{t('today')}</div>
           <div className="card daily">
             <div className="dstat">
@@ -367,58 +376,59 @@ export function Lobby({
               <small>{t('ticketsLabel')}</small>
             </div>
           </div>
-          <small className="daily__hint stagehint">
-            {challenge.completed ? t('challengeDone') : `${t('challengeDesc')} ${t('challengeReward')}`}
-          </small>
-
-          {/* Streak-freeze: protects the streak across one missed day (Phase 3). */}
-          {walletBacked && (
-            <button
-              className={`mrow mrow--freeze${tickets < STREAK_FREEZE.ticketCost || (streak.freezes ?? 0) >= STREAK_FREEZE.max ? ' mrow--dim' : ''}`}
-              onClick={() => {
-                playTap();
-                if ((streak.freezes ?? 0) >= STREAK_FREEZE.max) dispatch({ type: 'TOAST', message: t('freezeCapped') });
-                else if (tickets < STREAK_FREEZE.ticketCost) dispatch({ type: 'TOAST', message: t('freezeCantBuy') });
-                else onBuyFreeze();
-              }}
-            >
-              <span className="mrow__ic mrow__ic--gold">❄️</span>
-              <span className="mrow__txt">
-                <b>{t('freezeTitle')}</b>
-                <small>{t('freezeDesc')}</small>
-              </span>
-              <span className="mrow__badge">{streak.freezes ?? 0}/{STREAK_FREEZE.max} · {STREAK_FREEZE.ticketCost}🎟️</span>
-            </button>
-          )}
-
-          {(league.top.length > 0 || inLeague) && (
-            <div className="card">
-              <h3>
-                <span className="chip-ic"><IconTrophy /></span>
-                {DIVISIONS[league.division] ?? '—'} {t('league')}
-                {inLeague && (
-                  <span className="h3val">
-                    {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
-                  </span>
-                )}
-              </h3>
-              {league.top.length > 0 && (
-                <ol className="board">
-                  {league.top.map((e, i) => (
-                    <li key={i} className={e.pid ? 'board__row--tap' : undefined} onClick={() => e.pid && onViewProfile(e.pid)}>
-                      <span className="board__who">
-                        <i className={`board__rank${i < 3 ? ` board__rank--${i + 1}` : ''}`}>{i + 1}</i>
-                        {e.flag} {e.name}
-                      </span>
-                      <b>{e.points}</b>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              <small className="muted">{inLeague ? t('leagueHint') : t('leagueEmpty')}</small>
-            </div>
-          )}
+          <div className="daily__foot">
+            <small className="daily__hint">
+              {challenge.completed ? t('challengeDone') : `${t('challengeDesc')} ${t('challengeReward')}`}
+            </small>
+            {/* Streak-freeze: protects the streak across one missed day (Phase 3) —
+                a compact chip, not a competing menu row. */}
+            {walletBacked && (
+              <button
+                className="freezechip"
+                title={t('freezeDesc')}
+                onClick={() => {
+                  playTap();
+                  if ((streak.freezes ?? 0) >= STREAK_FREEZE.max) dispatch({ type: 'TOAST', message: t('freezeCapped') });
+                  else if (tickets < STREAK_FREEZE.ticketCost) dispatch({ type: 'TOAST', message: t('freezeCantBuy') });
+                  else onBuyFreeze();
+                }}
+              >
+                ❄️ {t('freezeTitle')} {streak.freezes ?? 0}/{STREAK_FREEZE.max}
+                <span className="freezechip__buy">+{STREAK_FREEZE.ticketCost}🎟️</span>
+              </button>
+            )}
+          </div>
         </>
+      )}
+
+      {/* LEAGUE — decoupled: a populated ladder shows as social proof even to a
+          brand-new visitor (real players are competing right now). */}
+      {(league.top.length > 0 || inLeague) && (
+        <div className="card">
+          <h3>
+            <span className="chip-ic"><IconTrophy /></span>
+            {DIVISIONS[league.division] ?? '—'} {t('league')}
+            {inLeague && (
+              <span className="h3val">
+                {league.rank > 0 ? `#${league.rank}` : '—'} · {league.points} {t('lp')}
+              </span>
+            )}
+          </h3>
+          {league.top.length > 0 && (
+            <ol className="board">
+              {league.top.map((e, i) => (
+                <li key={i} className={e.pid ? 'board__row--tap' : undefined} onClick={() => e.pid && onViewProfile(e.pid)}>
+                  <span className="board__who">
+                    <i className={`board__rank${i < 3 ? ` board__rank--${i + 1}` : ''}`}>{i + 1}</i>
+                    {e.flag} {e.name}
+                  </span>
+                  <b>{e.points}</b>
+                </li>
+              ))}
+            </ol>
+          )}
+          <small className="muted">{inLeague ? t('leagueHint') : t('leagueEmpty')}</small>
+        </div>
       )}
 
       <div className="fairnote">
