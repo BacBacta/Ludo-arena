@@ -22,14 +22,20 @@ export function countryOf(
 }
 
 /**
- * Is staked play geo-blocked for this country? FAILS CLOSED: when a deny list is
- * configured but the country is unknown (no authenticated edge / spoofed / absent
- * header), staked play is refused — we cannot prove the player is outside a blocked
- * region, and a legal restriction must not be bypassable by omitting the header.
- * With no deny list configured, nothing is blocked.
+ * Is staked play geo-blocked for this country? ALLOWLIST semantics (R-COMP-1):
+ * staked play is legal-by-exception, so the configured list names the countries
+ * where a legal review CLEARED it — everywhere else is blocked. The old deny-list
+ * shipped an empty default that allowed staking worldwide until someone remembered
+ * to block a country; a wagering product must carry the opposite posture.
+ *
+ * - `allowed === null` — not configured (dev/testnet): nothing is blocked, and
+ *   index.ts warns loudly at boot.
+ * - `allowed` is a set (even empty): only listed countries may stake, and an
+ *   unknown country (no authenticated edge / spoofed / absent header) FAILS
+ *   CLOSED — a legal restriction must not be bypassable by omitting the header.
  */
-export function isGeoBlocked(country: string | undefined, blocked: ReadonlySet<string>): boolean {
-  if (blocked.size === 0) return false;
+export function isGeoBlocked(country: string | undefined, allowed: ReadonlySet<string> | null): boolean {
+  if (allowed === null) return false;
   if (country === undefined) return true;
-  return blocked.has(country);
+  return !allowed.has(country);
 }

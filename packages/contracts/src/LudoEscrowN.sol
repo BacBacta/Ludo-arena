@@ -27,6 +27,9 @@ contract LudoEscrowN {
     // a redeploy, but never above 10%. Keep off-chain RAKE_BPS in step; both 900.
     uint256 public rakeBps; // e.g. 900 = 9%
     address public owner; // governance: setRakeBps / transferOwnership
+    // Degressive per-tier rake: (token, exact stake amount) → bps override of the
+    // global rakeBps (0 = unset → fall back). Same semantics as LudoEscrow.
+    mapping(address => mapping(uint96 => uint16)) public tierRakeBps;
 
     // ---------- State ----------
     enum Status {
@@ -73,6 +76,7 @@ contract LudoEscrowN {
     event Credited(bytes32 indexed gameId, address indexed account, address token, uint256 amount);
     event Withdrawn(address indexed account, address token, uint256 amount);
     event RakeChanged(uint256 oldBps, uint256 newBps);
+    event TierRakeChanged(address indexed token, uint96 stake, uint16 bps);
     event OwnershipTransferred(address indexed from, address indexed to);
     event TokenAllowed(address indexed token, bool allowed);
 
@@ -125,6 +129,13 @@ contract LudoEscrowN {
         emit TokenAllowed(token, allowed);
     }
 
+    /// @notice Governance: degressive per-tier rake — see LudoEscrow.setTierRakeBps.
+    function setTierRakeBps(address token, uint96 stake, uint16 bps) external onlyOwner {
+        require(bps <= MAX_RAKE_BPS, "rake > max");
+        tierRakeBps[token][stake] = bps;
+        emit TierRakeChanged(token, stake, bps);
+    }
+
     /// @dev SafeERC20: tolerates non-bool-returning tokens (canonical USDT).
     function _safeTransfer(address token, address to, uint256 value) internal {
         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, value));
@@ -172,7 +183,9 @@ contract LudoEscrowN {
             g.seatCount = seatCount;
             g.createdAt = uint40(block.timestamp);
             g.status = Status.Filling;
-            g.rakeBps = uint16(rakeBps); // snapshot the fee at creation
+            // snapshot the fee at creation: per-tier override first, else global
+            uint16 tierBps = tierRakeBps[token][stake];
+            g.rakeBps = tierBps != 0 ? tierBps : uint16(rakeBps);
             g.fairnessCommit = fairnessCommit; // fix the dice commit before play
         } else if (g.status == Status.Filling) {
             if (token != g.token || stake != g.stake || seatCount != g.seatCount) revert BadStake();

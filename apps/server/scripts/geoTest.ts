@@ -1,7 +1,8 @@
 /**
- * E5.4 acceptance: geo-gating. With BLOCKED_COUNTRIES=ZZ, a client whose CDN
- * country header is ZZ gets stakingBlocked=true in hello.ok, is refused a
- * staked queue.join (LIMIT_REACHED), but may still queue a free (stake 0) game.
+ * E5.4 acceptance: geo-gating (allowlist). With STAKING_ALLOWED_COUNTRIES=AA, a
+ * client whose CDN country header is ZZ (not on the allowlist) gets
+ * stakingBlocked=true in hello.ok, is refused a staked queue.join
+ * (LIMIT_REACHED), but may still queue a free (stake 0) game.
  * In-memory store. Run: npm run geo-test -w apps/server
  */
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -15,7 +16,7 @@ const URL = `ws://localhost:${PORT}`;
 
 function startServer(): ChildProcess {
   return spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
-    env: { ...process.env, PORT: String(PORT), REDIS_URL: '', DATABASE_URL: '', BLOCKED_COUNTRIES: 'ZZ' },
+    env: { ...process.env, PORT: String(PORT), REDIS_URL: '', DATABASE_URL: '', STAKING_ALLOWED_COUNTRIES: 'AA' },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
 }
