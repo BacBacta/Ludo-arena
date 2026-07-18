@@ -169,7 +169,7 @@ export const DICE_SKINS: DiceSkin[] = [
   // ---- Season-exclusive skins (Phase 4 content pool: SEASON_SKINS). Pass-only:
   // never progression-unlockable or purchasable → only granted by the season track.
   // Procedural (colour/material only), so new seasons add ids here with no art step.
-  { id: 'season-aurora', name: 'Aurora', body1: '#8ef0d0', body2: '#5a2fb0', pip: '#ffffff', stroke: '#2a1560', glow: 'rgba(140,240,210,.5)', material: 'irid', season: true, unlocked: () => false },
+  { id: 'season-aurora', name: 'Borealis', body1: '#8ef0d0', body2: '#5a2fb0', pip: '#ffffff', stroke: '#2a1560', glow: 'rgba(140,240,210,.5)', material: 'irid', season: true, unlocked: () => false },
   { id: 'season-crimson', name: 'Crimson', body1: '#ff8a7a', body2: '#8a0f24', pip: '#fff0ec', stroke: '#500810', glow: 'rgba(255,70,70,.5)', material: 'molten', season: true, unlocked: () => false },
   { id: 'season-abyss', name: 'Abyss', body1: '#5a7fb0', body2: '#0a1830', pip: '#cfe4ff', stroke: '#050c1a', glow: 'rgba(60,120,220,.45)', material: 'glass', season: true, unlocked: () => false },
   { id: 'season-verdant', name: 'Verdant', body1: '#a6f08a', body2: '#1c6a2e', pip: '#f0fff0', stroke: '#0d3316', glow: 'rgba(120,230,120,.45)', season: true, unlocked: () => false },

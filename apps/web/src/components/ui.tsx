@@ -59,7 +59,7 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
             <circle cx={15.6} cy={15.6} r={1.8} fill="#f5b301" />
           </svg>
         </i>
-        LUDO <span>ARENA</span>
+        <span className="topbar__word">LUDO <span>ARENA</span></span>
       </div>
       <div className="topbar__right">
         {/* Progression: the daily loop + rivals moved off the landing so the home
