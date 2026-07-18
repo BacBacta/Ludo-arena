@@ -359,8 +359,8 @@ export function isFlagEmoji(s: string): boolean {
 /** Responsible gaming (E5.2): default/max daily stake cap per player, in cents.
  *  Raised from $2 to $5 so the top ($5) tier is playable within a day's cap while
  *  still bounding exposure; a player may always lower their own cap in Settings. */
-export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 500;
-export const MAX_DAILY_STAKE_LIMIT_CENTS = 500;
+export const DEFAULT_DAILY_STAKE_LIMIT_CENTS = 1500;
+export const MAX_DAILY_STAKE_LIMIT_CENTS = 1500;
 
 /** Current Terms-of-Service / consent version. Bumped whenever the legal terms
  *  change so a stale acceptance no longer satisfies the staked-play gate; the

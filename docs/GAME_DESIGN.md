@@ -24,7 +24,7 @@
 
 - ELO matchmaking ± 100.
 - 3 consecutive staked losses → freeroll ticket(s) (anti-tilt; the earlier cash-cashback design was dropped — it created an unbacked liability).
-- Daily spend limit (default $2), self-exclusion, no casino mechanics.
+- Daily stake limit (default and max $15/day, self-lowerable in Settings), self-exclusion, no casino mechanics.
 - Disconnection ≠ loss (auto-move, 60 s reconnection).
 
 ## Business model (3-tier hybrid)

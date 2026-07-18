@@ -150,7 +150,9 @@ export function Toast() {
   );
 }
 
-const LIMIT_OPTIONS = [100, 200, 500];
+// Self-set daily stake caps offered in Settings; the top option equals
+// MAX_DAILY_STAKE_LIMIT_CENTS ($15) — the server clamps anything above it.
+const LIMIT_OPTIONS = [200, 500, 1500];
 const EXCLUDE_OPTIONS = [1, 7, 30];
 
 export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?: number; selfExcludeDays?: number }): void }) {
