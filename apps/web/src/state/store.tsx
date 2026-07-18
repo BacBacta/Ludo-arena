@@ -230,29 +230,11 @@ export interface AppState {
   /** Read-only Terms/Privacy viewer (outside the staking consent gate). */
   legalDoc: 'tos' | 'privacy' | null;
   profileEditOpen: boolean;
-  /** First-session welcome (E6.4): open until the player has been onboarded. */
-  onboardOpen: boolean;
   /** Age (18+) + Terms/Privacy consent, required once before staked play. */
   legalAccepted: boolean;
   legalOpen: boolean;
   /** Responsible-gaming reality check: periodic "you've been playing…" reminder. */
   realityOpen: boolean;
-}
-
-const ONBOARD_KEY = 'ludo.onboarded';
-function firstSession(): boolean {
-  try {
-    return localStorage.getItem(ONBOARD_KEY) !== '1';
-  } catch {
-    return false;
-  }
-}
-function markOnboarded(): void {
-  try {
-    localStorage.setItem(ONBOARD_KEY, '1');
-  } catch {
-    /* storage unavailable */
-  }
 }
 
 /** Age (18+) + Terms/Privacy consent, required once before any staked play. */
@@ -330,7 +312,6 @@ export const initialState: AppState = {
   avatarFrame: loadFrameId(),
   avatar: loadAvatarId(),
   diceModalOpen: false,
-  onboardOpen: firstSession(),
   legalAccepted: legalAcceptedInit(),
   legalOpen: false,
   realityOpen: false,
@@ -394,7 +375,6 @@ export type Action =
   | { type: 'DICE_MODAL'; open: boolean }
   | { type: 'TABLE4_MODAL'; open: boolean }
   | { type: 'PROFILE_EDIT'; open: boolean }
-  | { type: 'ONBOARD_DONE' }
   | { type: 'LEGAL_MODAL'; open: boolean }
   | { type: 'ACCEPT_LEGAL' }
   | { type: 'REALITY_CHECK'; open: boolean };
@@ -607,9 +587,6 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, table4Open: a.open };
     case 'PROFILE_EDIT':
       return { ...s, profileEditOpen: a.open };
-    case 'ONBOARD_DONE':
-      markOnboarded();
-      return { ...s, onboardOpen: false };
     case 'LEGAL_MODAL':
       return { ...s, legalOpen: a.open };
     case 'ACCEPT_LEGAL':

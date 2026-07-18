@@ -765,32 +765,6 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
   );
 }
 
-export function WelcomeModal({ onStartFree }: { onStartFree(): void }) {
-  const { onboardOpen } = useAppState();
-  const dispatch = useAppDispatch();
-  const doneOnboard = (): void => void dispatch({ type: 'ONBOARD_DONE' });
-  const trapRef = useFocusTrap<HTMLDivElement>(onboardOpen, doneOnboard);
-  if (!onboardOpen) return null;
-  return (
-    <div className="modal" onClick={() => dispatch({ type: 'ONBOARD_DONE' })}>
-      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-        <h3>{t('welcomeTitle')}</h3>
-        <p style={{ fontSize: 14, margin: '8px 0 14px' }}>{t('welcomeBody')}</p>
-        <button
-          className="btn"
-          onClick={() => {
-            dispatch({ type: 'ONBOARD_DONE' });
-            onStartFree();
-          }}
-        >
-          {t('welcomeCta')}
-        </button>
-        <CloseHint onClose={doneOnboard} />
-      </div>
-    </div>
-  );
-}
-
 export function StakingOverlay({ onCancel }: { onCancel?: () => void }) {
   const { staking, match } = useAppState();
   const active = staking === 'approving' || staking === 'joining';
