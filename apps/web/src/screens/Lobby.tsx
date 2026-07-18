@@ -198,8 +198,11 @@ export function Lobby({
         <span><i>3</i>{t('howStep3')}</span>
       </div>
 
-      {/* SEASON PASS — the progression hub (crowns → tiers → rewards). */}
-      {season && (() => {
+      {/* SEASON PASS — the progression hub (crowns → tiers → rewards). Hidden
+          until the player has SOME history: a first-time visitor must not face
+          "Tier 0/50 · 0/30" walls of zeros plus a $ purchase before their first
+          game (same principle as the guarded profile stats below). */}
+      {season && hasHistory && (() => {
         const reached = season.tier;
         const maxed = reached >= season.tierCount;
         const prevCost = crownsForTier(reached);

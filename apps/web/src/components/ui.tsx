@@ -40,11 +40,14 @@ function CloseHint({ onClose, top = 10 }: { onClose(): void; top?: number }) {
 }
 
 export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
-  const { balanceCents, walletBacked, soundOn, streak, challenge } = useAppState();
+  const { balanceCents, walletBacked, soundOn, streak, challenge, tickets, profile } = useAppState();
   const dispatch = useAppDispatch();
   // Draw the eye to Progression when there's something to do there: an unfinished
-  // daily challenge, or a live streak worth protecting.
-  const progNudge = !challenge.completed || streak.days > 0;
+  // daily challenge, or a live streak worth protecting. Only for a RETURNING
+  // player — `!challenge.completed` is true for everyone at first load, so
+  // without the history guard the red dot fires before the first game.
+  const returning = profile.games > 0 || streak.days > 0 || tickets > 0;
+  const progNudge = returning && (!challenge.completed || streak.days > 0);
   return (
     <div className="topbar">
       <div className="topbar__logo">
