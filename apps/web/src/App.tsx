@@ -470,7 +470,12 @@ export default function App() {
           { kind: 'queue' },
           makeAuth(),
         );
-        freeFallback.current = setTimeout(toBot, FREE_MATCH_TIMEOUT_MS); // no human → bot
+        // No human after the full wait → bot, SAID OUT LOUD: the lobby promises
+        // "vs a real player", so a silent swap would make that promise a lie.
+        freeFallback.current = setTimeout(() => {
+          dispatch({ type: 'TOAST', message: t('botFallback') });
+          toBot();
+        }, FREE_MATCH_TIMEOUT_MS);
         return;
       }
 
