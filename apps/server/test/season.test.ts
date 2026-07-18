@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/store/memory.js';
 import { awardGameCrowns, baseCrowns, buildSeasonState, claimSeasonTier } from '../src/season.js';
-import { SEASON, crownsForTier, seasonTiers, tierFromCrowns } from '@ludo/shared';
+import { FREEROLL, SEASON, crownsForTier, seasonTiers, tierFromCrowns } from '@ludo/shared';
 
 const NOW = '2026-07-18T00:00:00.000Z';
 const DAY = '2026-07-18';
@@ -13,6 +13,16 @@ async function freshStore(id = 'anon:s1'): Promise<MemoryStore> {
   await store.getSeason(NOW);
   return store;
 }
+
+describe('freeroll ticket economy (net sink, not a faucet)', () => {
+  it('removes at least as many tickets as it pays out per 2-player game', () => {
+    // 2 entries in, 1 prize out. A faucet here drove runaway ticket inflation in
+    // the economy sim — guard that the freeroll never becomes one again.
+    const ticketsIn = 2 * FREEROLL.entryTickets;
+    const ticketsOut = FREEROLL.winnerTickets;
+    expect(ticketsIn).toBeGreaterThanOrEqual(ticketsOut);
+  });
+});
 
 describe('baseCrowns (soft cap + win bonus)', () => {
   it('pays the full rate up to the soft cap, then decays', () => {

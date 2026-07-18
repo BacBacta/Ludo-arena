@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ALLOWED_STAKES_CENTS, DIVISIONS, potCents, type StakeCents } from '@ludo/shared';
+import { ALLOWED_STAKES_CENTS, DIVISIONS, FREEROLL, potCents, type StakeCents } from '@ludo/shared';
 import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { SUPPORT_EMAIL, TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconShield, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
@@ -234,10 +234,10 @@ export function Lobby({
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
         <button
-          className={`mrow${tickets < 1 ? ' mrow--dim' : ''}`}
+          className={`mrow${tickets < FREEROLL.entryTickets ? ' mrow--dim' : ''}`}
           onClick={() => {
             playTap();
-            if (tickets < 1) dispatch({ type: 'TOAST', message: t('freerollNeedTicket') });
+            if (tickets < FREEROLL.entryTickets) dispatch({ type: 'TOAST', message: t('freerollNeedTicket') });
             else onFreeroll();
           }}
         >

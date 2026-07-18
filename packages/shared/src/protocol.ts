@@ -87,9 +87,12 @@ export interface StreakState {
  *  unbacked cash liability (the old cents-cashback had no payout path). */
 export const ANTI_TILT = { losses: 3, rewardTickets: 1 } as const;
 
-/** Daily freeroll (v1): a ticket-gated free 1v1 — entry costs a ticket, the
- *  winner takes both entries plus a house bonus. */
-export const FREEROLL = { entryTickets: 1, winnerTickets: 3 } as const;
+/** Daily freeroll: a ticket-gated free 1v1. Net-neutral-leaning by design — each
+ *  of the 2 players stakes `entryTickets`, the winner takes `winnerTickets`
+ *  (2·2 = 4 in / 3 out = a slight SINK, not a faucet). This is deliberate: the
+ *  economy sim showed a house-bonus faucet here drives runaway ticket inflation,
+ *  so the freeroll now gently removes tickets from circulation instead. */
+export const FREEROLL = { entryTickets: 2, winnerTickets: 3 } as const;
 
 // ---- Season pass (anti-churn keystone) — see docs/SEASON_PASS_SPEC.md ---------
 /** Crowns are earned by playing and fill a ~28-day track of TIERS; each tier

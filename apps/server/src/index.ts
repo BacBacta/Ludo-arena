@@ -55,6 +55,7 @@ import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
 import { awardGameCrowns, buildSeasonState, claimSeasonTier } from './season.js';
+import { telemetry, tpid } from './telemetry.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -477,7 +478,10 @@ function settleStaked4FromSeats(gameId: string, seats: Seat4[], winnerSeat: numb
  *  absent (a player who already disconnected) — the crowns are still recorded. */
 function awardSeasonCrowns(pid: string, session: Session | undefined, isWinner: boolean): void {
   awardGameCrowns(store, pid, isWinner, utcToday())
-    .then((a) => session?.send({ t: 'season.progress', crowns: a.crowns, tier: a.tier, gained: a.gained, dailyGames: a.dailyGames }))
+    .then((a) => {
+      session?.send({ t: 'season.progress', crowns: a.crowns, tier: a.tier, gained: a.gained, dailyGames: a.dailyGames });
+      telemetry('season.crowns', { pid: tpid(pid), gained: a.gained, crowns: a.crowns, tier: a.tier, dailyGames: a.dailyGames, won: isWinner });
+    })
     .catch((e) => console.error('[season] awardGameCrowns', e));
 }
 
@@ -615,12 +619,17 @@ function wireRoom(room: Room): void {
     awardSeasonCrowns(winnerId, winnerSession, true);
     awardSeasonCrowns(loserId, loserSession, false);
 
-    // Freeroll prize: winner takes both entries plus the house bonus, in tickets.
+    // Participation (beta model: freeroll uptake, stake mix). Opaque pids only.
+    telemetry('game.end', { winner: tpid(winnerId), loser: tpid(loserId), stakeCents: result.stakeCents, freeroll: !!result.freeroll });
+
+    // Freeroll prize: winner takes the pot in tickets (a slight net sink vs the
+    // two entries — see FREEROLL). A faucet event for the ticket-inflation index.
     if (result.freeroll) {
       store
         .grantTickets(winnerId, FREEROLL.winnerTickets)
         .then((total) => {
           winnerSession?.send({ t: 'tickets.grant', granted: FREEROLL.winnerTickets, total, reason: 'freeroll-win' });
+          telemetry('tickets', { pid: tpid(winnerId), delta: FREEROLL.winnerTickets, reason: 'freeroll-win', total });
         })
         .catch((e) => console.error('[freeroll] prize', e));
     }
@@ -768,6 +777,7 @@ async function maybeRolloverSeason(): Promise<void> {
   if (await store.rolloverSeason(now)) {
     const after = await store.getSeason(now);
     console.log(`[season] rollover ${before.id} → ${after.id} (ends ${after.endsAt})`);
+    telemetry('season.rollover', { from: before.id, to: after.id, endsAt: after.endsAt });
   }
 }
 await maybeRolloverSeason().catch((e) => console.error('[season] rollover', e));
@@ -1503,7 +1513,9 @@ wss.on('connection', (ws, req) => {
         if (res.ticketsGranted && res.ticketsGranted > 0) {
           const total = (await store.getChallenge(clpid, utcToday())).tickets;
           session.send({ t: 'tickets.grant', granted: res.ticketsGranted, total, reason: 'sync' });
+          telemetry('tickets', { pid: tpid(clpid), delta: res.ticketsGranted, reason: 'season-claim', total });
         }
+        telemetry('season.claim', { pid: tpid(clpid), tier: msg.tier, lane: msg.lane, reward: res.reward?.kind, tickets: res.ticketsGranted ?? 0 });
         session.send({ t: 'season.state', season: await buildSeasonState(store, clpid, new Date().toISOString()) });
         break;
       }
@@ -1910,6 +1922,9 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
   }
   a.send({ t: 'tickets.grant', granted: 0, total: spentA, reason: 'freeroll-win' }); // sync new totals
   b.send({ t: 'tickets.grant', granted: 0, total: spentB, reason: 'freeroll-win' });
+  // Sink events for the ticket-inflation index (both entries left circulation).
+  telemetry('tickets', { pid: tpid(pidA), delta: -FREEROLL.entryTickets, reason: 'freeroll-entry', total: spentA });
+  telemetry('tickets', { pid: tpid(pidB), delta: -FREEROLL.entryTickets, reason: 'freeroll-entry', total: spentB });
   await startGame(0, a, b, true);
 }
 
