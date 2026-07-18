@@ -15,6 +15,7 @@ import {
   type StreakState,
   type PublicProfile,
   type SeasonState,
+  type Comeback,
 } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
@@ -161,6 +162,8 @@ export interface AppState {
   seasonOpen: boolean;
   /** Transient crown-gain feedback after a game (`n` re-triggers the animation). */
   crownGain: { gained: number; tier: number; n: number } | null;
+  /** Win-back offer surfaced on return after an absence (Phase 3); null = none. */
+  comeback: Comeback | null;
   /** Own stable profile (identity + ELO + W/L), cached for the lobby card. */
   profile: Profile;
   recentOpponents: RecentOpponent[];
@@ -288,6 +291,7 @@ export const initialState: AppState = {
   season: loadRetention().season,
   seasonOpen: false,
   crownGain: null,
+  comeback: null,
   profile: loadRetention().profile,
   viewProfile: null,
   recentOpponents: loadRecentOpponents(),
@@ -362,6 +366,8 @@ export type Action =
   | { type: 'SEASON_PROGRESS'; crowns: number; tier: number; gained: number }
   | { type: 'SEASON_MODAL'; open: boolean }
   | { type: 'CLEAR_CROWN_GAIN' }
+  | { type: 'COMEBACK'; comeback: Comeback }
+  | { type: 'COMEBACK_CLEAR' }
   | { type: 'PROFILE'; profile: Partial<Profile> }
   | { type: 'PROFILE_VIEW'; pid: string }
   | { type: 'PROFILE_INFO'; pid: string; profile: PublicProfile | null }
@@ -504,6 +510,10 @@ export function reducer(s: AppState, a: Action): AppState {
     }
     case 'CLEAR_CROWN_GAIN':
       return { ...s, crownGain: null };
+    case 'COMEBACK':
+      return { ...s, comeback: a.comeback };
+    case 'COMEBACK_CLEAR':
+      return { ...s, comeback: null };
     case 'SEASON_MODAL':
       return { ...s, seasonOpen: a.open };
     case 'PROFILE': {

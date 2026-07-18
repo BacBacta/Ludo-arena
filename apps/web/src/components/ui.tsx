@@ -214,6 +214,32 @@ export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: n
   );
 }
 
+/**
+ * Win-back "welcome back" modal (season Phase 3): shown on return after an absence,
+ * announcing the comeback tickets already credited. Purely celebratory — the grant
+ * happened server-side; this just surfaces it and nudges back into the season.
+ */
+export function ComebackModal() {
+  const { comeback } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'COMEBACK_CLEAR' });
+  const trapRef = useFocusTrap<HTMLDivElement>(!!comeback, close);
+  if (!comeback) return null;
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="end__emoji">👋</div>
+        <h3>{t('comebackTitle')}</h3>
+        <p className="muted" style={{ fontSize: 13 }}>
+          {t('comebackBody').replace('{d}', String(comeback.daysAway))}
+        </p>
+        <div className="crowngain" style={{ margin: '4px auto 12px' }}>+{comeback.tickets} 🎟️</div>
+        <button className="btn" onClick={close}>{t('comebackCta')}</button>
+      </div>
+    </div>
+  );
+}
+
 /** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
  *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
 export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {

@@ -108,6 +108,9 @@ async function grantReward(store: Store, playerId: string, reward: Reward): Prom
   if (reward.kind === 'crownBoost' && reward.amount && reward.amount > 0) {
     await store.setSeasonCrownBoost(playerId, 1 + reward.amount / 100);
   }
+  if (reward.kind === 'streakFreeze' && reward.amount && reward.amount > 0) {
+    await store.grantStreakFreeze(playerId, reward.amount);
+  }
   return 0;
 }
 

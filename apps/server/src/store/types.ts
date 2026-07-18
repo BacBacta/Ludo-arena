@@ -8,6 +8,11 @@ import { createHmac } from 'node:crypto';
 import type { Game4, GameState, Seat } from '@ludo/game-engine';
 import type { ChallengeState, GameOverReason, LeagueState, LimitsState, StakeCents, StreakState } from '@ludo/shared';
 
+/** Result of buying a streak-freeze: the new inventory + ticket balance, or why not. */
+export type BuyFreezeResult =
+  | { ok: true; freezes: number; tickets: number }
+  | { ok: false; reason: 'capped' | 'insufficient' };
+
 /** Global current-season window (stored in meta). */
 export interface SeasonMeta {
   id: number;
@@ -224,7 +229,15 @@ export interface Store {
   // Login streak (E4.2). Once per UTC day: +1 if last login was `yesterday`,
   // reset to 1 otherwise; milestone rewards (STREAK_REWARDS) granted on the
   // crossing login. No-op re-return if already logged in today.
-  recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState>;
+  recordLogin(playerId: string, today: string, yesterday: string, twoDaysAgo?: string): Promise<StreakState>;
+  /** Current streak state WITHOUT recording a login (for a mid-session refresh). */
+  getStreak(playerId: string): Promise<StreakState>;
+  /** Streak-freezes held (season Phase 3). */
+  getStreakFreezes(playerId: string): Promise<number>;
+  /** Grant `n` streak-freezes (capped at STREAK_FREEZE.max); returns the new total. */
+  grantStreakFreeze(playerId: string, n: number): Promise<number>;
+  /** Buy one streak-freeze with tickets (a sink); atomic spend+grant. */
+  buyStreakFreeze(playerId: string): Promise<BuyFreezeResult>;
 
   // Weekly league (E4.3). Points accumulate during the week; rolloverLeagues
   // (weekly cron) promotes/relegates and resets. getLeague includes the

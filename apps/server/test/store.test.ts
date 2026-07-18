@@ -4,7 +4,7 @@ import { PersistentStore } from '../src/store/persistent.js';
 import { playerId, type SessionRecord, type Store } from '../src/store/types.js';
 import { Room, type Client } from '../src/room.js';
 import { createFairness } from '../src/fairness.js';
-import { ANTI_TILT, DEFAULT_DAILY_STAKE_LIMIT_CENTS, SEASON, crownsForTier, type ServerMsg } from '@ludo/shared';
+import { ANTI_TILT, DEFAULT_DAILY_STAKE_LIMIT_CENTS, SEASON, STREAK_FREEZE, crownsForTier, type ServerMsg } from '@ludo/shared';
 
 function makeClient(id: string): Client & { inbox: ServerMsg[] } {
   const inbox: ServerMsg[] = [];
@@ -176,6 +176,60 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       // D3 gave +1, D7 gave +2 → 3 tickets total, streak 7
       expect(last).toMatchObject({ days: 7, rewardGranted: 2, tickets: 3 });
 
+      await store.close();
+    });
+
+    it('bridges a one-day gap with a streak-freeze, resets on a bigger gap', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'F', flag: '🌍' });
+
+      // build a streak to day 2, then MISS one day (login on the 4th)
+      await store.recordLogin(id, '2026-09-01', '2026-08-31', '2026-08-30');
+      await store.recordLogin(id, '2026-09-02', '2026-09-01', '2026-08-31');
+      // no freeze yet → the missed day resets the streak
+      const noFreeze = await store.recordLogin(id, '2026-09-04', '2026-09-03', '2026-09-02');
+      expect(noFreeze).toMatchObject({ days: 1, freezeUsed: false, daysAway: 2 });
+
+      // grant a freeze, rebuild to day 2, miss a day → the freeze BRIDGES it
+      expect(await store.grantStreakFreeze(id, 1)).toBe(1);
+      await store.recordLogin(id, '2026-09-05', '2026-09-04', '2026-09-03');
+      const bridged = await store.recordLogin(id, '2026-09-07', '2026-09-06', '2026-09-05');
+      expect(bridged).toMatchObject({ days: 3, freezeUsed: true, freezes: 0 });
+
+      // a TWO-day gap (missed two days) is too big for one freeze → reset
+      await store.grantStreakFreeze(id, 1);
+      const tooBig = await store.recordLogin(id, '2026-09-11', '2026-09-10', '2026-09-09');
+      expect(tooBig).toMatchObject({ days: 1, freezeUsed: false, daysAway: 4 });
+
+      await store.close();
+    });
+
+    it('buys streak-freezes with tickets, caps the inventory, refuses when broke', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'B', flag: '🌍' });
+
+      expect(await store.buyStreakFreeze(id)).toMatchObject({ ok: false, reason: 'insufficient' });
+      await store.grantTickets(id, 100);
+      const b1 = await store.buyStreakFreeze(id);
+      expect(b1).toMatchObject({ ok: true, freezes: 1, tickets: 100 - STREAK_FREEZE.ticketCost });
+      // buy up to the cap, then refuse as 'capped'
+      while ((await store.getStreakFreezes(id)) < STREAK_FREEZE.max) await store.buyStreakFreeze(id);
+      expect(await store.getStreakFreezes(id)).toBe(STREAK_FREEZE.max);
+      expect(await store.buyStreakFreeze(id)).toMatchObject({ ok: false, reason: 'capped' });
+
+      await store.close();
+    });
+
+    it('grantStreakFreeze never exceeds the cap', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'G', flag: '🌍' });
+      expect(await store.grantStreakFreeze(id, STREAK_FREEZE.max + 5)).toBe(STREAK_FREEZE.max);
       await store.close();
     });
 

@@ -2045,6 +2045,9 @@ small.muted { font-size: 12px; }
 .seasonreward--prem { background: rgba(122, 61, 18, 0.06); }
 .seasonreward:disabled { cursor: default; }
 
+/* streak-freeze buy row: icy tint on the leading icon */
+.mrow--freeze .mrow__ic--gold { background: rgba(90, 160, 220, 0.16); }
+
 /* premium pass CTA inside the season sheet: a gold gradient banner */
 .seasonpremium {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;

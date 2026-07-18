@@ -76,10 +76,35 @@ export interface ChallengeState {
 /** Login-streak milestones (E4.2): consecutive-day count → freeroll tickets. */
 export const STREAK_REWARDS: Record<number, number> = { 3: 1, 7: 2 };
 
+/** Streak-freeze (season Phase 3): a ticket-bought item that protects the login
+ *  streak across ONE missed day (loss-aversion retention + a ticket sink). Also
+ *  granted by the season track (streakFreeze reward). `max` caps hoarding. */
+export const STREAK_FREEZE = { ticketCost: 4, max: 3 } as const;
+
 export interface StreakState {
   days: number; // current consecutive-day streak
   tickets: number; // total freeroll tickets held (shared with the challenge)
   rewardGranted: number; // tickets granted by this login's milestone (0 if none)
+  freezes?: number; // streak-freezes held (inventory)
+  freezeUsed?: boolean; // a freeze was consumed on THIS login to bridge a missed day
+  daysAway?: number; // days since the previous login (for the win-back offer); 0/1 = active
+}
+
+/** Win-back / comeback offer (season Phase 3): returning after an absence grants
+ *  non-cashable tickets, tiered by days away. NEVER for self-excluded / limit-hit
+ *  players (RG). The stake-only credit tier (14-30d) is deferred — it needs a
+ *  non-withdrawable stake-credit primitive that doesn't exist yet. */
+export const WINBACK_TIERS: ReadonlyArray<{ minDaysAway: number; tickets: number }> = [
+  { minDaysAway: 7, tickets: 5 },
+  { minDaysAway: 3, tickets: 2 },
+];
+/** The comeback reward for `daysAway`, or null if below the first threshold. */
+export function winbackFor(daysAway: number): { minDaysAway: number; tickets: number } | null {
+  return WINBACK_TIERS.find((tier) => daysAway >= tier.minDaysAway) ?? null;
+}
+export interface Comeback {
+  daysAway: number;
+  tickets: number;
 }
 
 /** Anti-tilt bonus (E4.5): after N consecutive staked losses the player is
@@ -445,6 +470,8 @@ export type ClientMsg =
   // purchase tx (Purchased(buyer, keccak(SEASON_PREMIUM.itemId)) on the
   // CosmeticsStore) like cosmetic.claim, then flips premium on + retro-unlocks.
   | { t: 'season.buyPremium'; txHash: string }
+  // Buy one streak-freeze with tickets (season Phase 3 sink).
+  | { t: 'streak.buyFreeze' }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -520,6 +547,7 @@ export type ServerMsg =
       limits?: LimitsState; // responsible-gaming state (E5.2)
       ownedSkins?: string[]; // premium skins the player has unlocked (server-authoritative)
       season?: SeasonState; // current season pass state (crowns, tier, claims, reward table)
+      comeback?: Comeback; // win-back offer surfaced on return after an absence (Phase 3)
       stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
       // Wallet ownership proof (SIWE): if a wallet was supplied but isn't proven
       // yet, `walletNonce` is the string to sign; `walletProven` reflects state.
@@ -613,6 +641,8 @@ export type ServerMsg =
   | { t: 'skin.owned'; ownedIds: string[]; tickets: number }
   // Responsible-gaming state after hello or a limits.set (E5.2).
   | { t: 'limits.update'; limits: LimitsState }
+  // Login streak / streak-freeze state after a buyFreeze (season Phase 3).
+  | { t: 'streak.update'; streak: StreakState }
   // Full season pass state — sent on hello and after a season.claim (the reward
   // table is static, so the client keeps `tiers` and only needs the light
   // `season.progress` push mid-session).
@@ -751,6 +781,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'game.resign':
     case 'game.rematch':
     case 'rematch.decline':
+    case 'streak.buyFreeze':
     case 'ping':
       return m;
     default:

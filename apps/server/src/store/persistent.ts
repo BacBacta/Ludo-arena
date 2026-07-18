@@ -9,12 +9,13 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import { pidFor } from './types.js';
-import type { GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
+import type { BuyFreezeResult, GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ALLOWED_STAKES_CENTS,
   ANTI_TILT,
   DAILY_CHALLENGE,
   SEASON,
+  STREAK_FREEZE,
   DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   DIVISIONS,
@@ -96,6 +97,8 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_limit_cents INTEGER NOT NULL 
 -- (changing a player's already-set limit is a compliance action, not a migration).
 ALTER TABLE players ALTER COLUMN daily_limit_cents SET DEFAULT ${DEFAULT_DAILY_STAKE_LIMIT_CENTS};
 ALTER TABLE players ADD COLUMN IF NOT EXISTS self_excluded_until DATE;
+-- Streak-freeze inventory (season Phase 3). Added via ALTER so existing DBs migrate.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS streak_freezes INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
@@ -439,24 +442,74 @@ export class PersistentStore implements Store {
     return { progress: row.challenge_captures, target: DAILY_CHALLENGE.captures, completed: row.challenge_done, tickets: row.freeroll_tickets };
   }
 
-  async recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState> {
-    const cur = await this.pool.query<{ last_login: string | null; streak_days: number; freeroll_tickets: number }>(
-      `SELECT to_char(last_login, 'YYYY-MM-DD') AS last_login, streak_days, freeroll_tickets FROM players WHERE id = $1`,
+  async recordLogin(playerId: string, today: string, yesterday: string, twoDaysAgo?: string): Promise<StreakState> {
+    const cur = await this.pool.query<{ last_login: string | null; streak_days: number; freeroll_tickets: number; streak_freezes: number }>(
+      `SELECT to_char(last_login, 'YYYY-MM-DD') AS last_login, streak_days, freeroll_tickets, streak_freezes FROM players WHERE id = $1`,
       [playerId],
     );
     const row = cur.rows[0];
-    if (!row) return { days: 1, tickets: 0, rewardGranted: 0 };
+    if (!row) return { days: 1, tickets: 0, rewardGranted: 0, freezes: 0, daysAway: 0 };
     if (row.last_login === today) {
-      return { days: row.streak_days, tickets: row.freeroll_tickets, rewardGranted: 0 };
+      return { days: row.streak_days, tickets: row.freeroll_tickets, rewardGranted: 0, freezes: row.streak_freezes, daysAway: 0 };
     }
-    const days = row.last_login === yesterday ? row.streak_days + 1 : 1;
+    const daysAway = row.last_login ? Math.max(1, Math.round((Date.parse(today) - Date.parse(row.last_login)) / 86_400_000)) : 0;
+    let days: number;
+    let freezes = row.streak_freezes;
+    let freezeUsed = false;
+    if (row.last_login === yesterday) {
+      days = row.streak_days + 1;
+    } else if (twoDaysAgo && row.last_login === twoDaysAgo && row.streak_freezes > 0) {
+      // a streak-freeze bridges EXACTLY one missed day → the streak continues
+      days = row.streak_days + 1;
+      freezes = row.streak_freezes - 1;
+      freezeUsed = true;
+    } else {
+      days = 1;
+    }
     const rewardGranted = STREAK_REWARDS[days] ?? 0;
     const res = await this.pool.query<{ freeroll_tickets: number }>(
-      `UPDATE players SET last_login = $2::date, streak_days = $3, freeroll_tickets = freeroll_tickets + $4, updated_at = now()
+      `UPDATE players SET last_login = $2::date, streak_days = $3, streak_freezes = $4, freeroll_tickets = freeroll_tickets + $5, updated_at = now()
        WHERE id = $1 RETURNING freeroll_tickets`,
-      [playerId, today, days, rewardGranted],
+      [playerId, today, days, freezes, rewardGranted],
     );
-    return { days, tickets: res.rows[0]?.freeroll_tickets ?? row.freeroll_tickets, rewardGranted };
+    return { days, tickets: res.rows[0]?.freeroll_tickets ?? row.freeroll_tickets, rewardGranted, freezes, freezeUsed, daysAway };
+  }
+
+  async getStreak(playerId: string): Promise<StreakState> {
+    const res = await this.pool.query<{ streak_days: number; freeroll_tickets: number; streak_freezes: number }>(
+      `SELECT streak_days, freeroll_tickets, streak_freezes FROM players WHERE id = $1`,
+      [playerId],
+    );
+    const r = res.rows[0];
+    if (!r) return { days: 0, tickets: 0, rewardGranted: 0, freezes: 0 };
+    return { days: r.streak_days, tickets: r.freeroll_tickets, rewardGranted: 0, freezes: r.streak_freezes };
+  }
+  async getStreakFreezes(playerId: string): Promise<number> {
+    const res = await this.pool.query<{ streak_freezes: number }>(`SELECT streak_freezes FROM players WHERE id = $1`, [playerId]);
+    return res.rows[0]?.streak_freezes ?? 0;
+  }
+  async grantStreakFreeze(playerId: string, n: number): Promise<number> {
+    const res = await this.pool.query<{ streak_freezes: number }>(
+      `UPDATE players SET streak_freezes = LEAST($2, streak_freezes + $3), updated_at = now()
+       WHERE id = $1 RETURNING streak_freezes`,
+      [playerId, STREAK_FREEZE.max, Math.max(0, n)],
+    );
+    return res.rows[0]?.streak_freezes ?? 0;
+  }
+  async buyStreakFreeze(playerId: string): Promise<BuyFreezeResult> {
+    // Atomic: only spend + grant when under the cap AND affordable (both checked in
+    // the WHERE), so a row comes back exactly when the purchase succeeded.
+    const res = await this.pool.query<{ streak_freezes: number; freeroll_tickets: number }>(
+      `UPDATE players SET streak_freezes = streak_freezes + 1, freeroll_tickets = freeroll_tickets - $2, updated_at = now()
+       WHERE id = $1 AND streak_freezes < $3 AND freeroll_tickets >= $2
+       RETURNING streak_freezes, freeroll_tickets`,
+      [playerId, STREAK_FREEZE.ticketCost, STREAK_FREEZE.max],
+    );
+    const row = res.rows[0];
+    if (row) return { ok: true, freezes: row.streak_freezes, tickets: row.freeroll_tickets };
+    // distinguish capped vs insufficient for a precise client message
+    const at = await this.pool.query<{ streak_freezes: number }>(`SELECT streak_freezes FROM players WHERE id = $1`, [playerId]);
+    return { ok: false, reason: (at.rows[0]?.streak_freezes ?? 0) >= STREAK_FREEZE.max ? 'capped' : 'insufficient' };
   }
 
   private async leagueState(division: number, points: number): Promise<LeagueState> {

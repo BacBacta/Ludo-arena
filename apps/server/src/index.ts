@@ -12,6 +12,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import {
   FREEROLL,
   SEASON_PREMIUM,
+  STREAK_FREEZE,
   TABLE4,
   PREMIUM_SKINS,
   isoWeek,
@@ -26,6 +27,10 @@ import {
   TABLE_CODE_LEN,
   TOS_VERSION,
   walletProofMessage,
+  winbackFor,
+  type Comeback,
+  type LimitsState,
+  type StreakState,
   type Player4Info,
   type ResumedGame,
   type ServerMsg,
@@ -39,6 +44,9 @@ function utcToday(): string {
 }
 function utcYesterday(): string {
   return new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+}
+function utcTwoDaysAgo(): string {
+  return new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
 }
 function utcPlusDays(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
@@ -484,6 +492,22 @@ function awardSeasonCrowns(pid: string, session: Session | undefined, isWinner: 
       telemetry('season.crowns', { pid: tpid(pid), gained: a.gained, crowns: a.crowns, tier: a.tier, dailyGames: a.dailyGames, won: isWinner });
     })
     .catch((e) => console.error('[season] awardGameCrowns', e));
+}
+
+/** Win-back offer (season Phase 3): a returning wallet player, absent ≥3 days, is
+ *  granted non-cashable comeback tickets — UNLESS they're self-excluded (RG). Idempotent
+ *  per day: recordLogin reports daysAway only on the day-transition. Returns the
+ *  offer to surface in hello.ok (and mutates `streak` so its ticket total is fresh). */
+async function applyWinback(pid: string, streak: StreakState | undefined, limits: LimitsState): Promise<Comeback | undefined> {
+  if (!streak || streak.daysAway === undefined || streak.daysAway < 3) return undefined;
+  if (limits.selfExcludedUntil) return undefined; // RG: never re-engage a self-excluded player
+  const offer = winbackFor(streak.daysAway);
+  if (!offer) return undefined;
+  const total = await store.grantTickets(pid, offer.tickets);
+  streak.tickets = total; // keep the ticket count in hello.ok consistent with the grant
+  telemetry('winback', { pid: tpid(pid), daysAway: streak.daysAway, tickets: offer.tickets });
+  telemetry('tickets', { pid: tpid(pid), delta: offer.tickets, reason: 'winback', total });
+  return { daysAway: streak.daysAway, tickets: offer.tickets };
 }
 
 /** Best-effort player stats (played/win) for a finished 4p game, from the seats. */
@@ -958,6 +982,11 @@ wss.on('connection', (ws, req) => {
           : { gamesPlayed: 0, wins: 0, name: resumedSession.name, flag: resumedSession.flag };
         resumedSession.name = rStats.name;
         resumedSession.flag = rStats.flag;
+        let rChallenge = await store.getChallenge(rpid, utcToday());
+        const rStreak = resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday(), utcTwoDaysAgo()) : undefined;
+        const rLimits = await store.getLimits(rpid, utcToday());
+        const rComeback = resumedSession.wallet ? await applyWinback(rpid, rStreak, rLimits) : undefined;
+        if (rComeback) rChallenge = await store.getChallenge(rpid, utcToday()); // refresh ticket total
         send(ws, {
           t: 'hello.ok',
           sessionToken: resumedSession.id,
@@ -971,12 +1000,13 @@ wss.on('connection', (ws, req) => {
           frame: resumedSession.frame,
           avatar: resumedSession.avatar,
           resumed: resumedGame(resumedSession),
-          challenge: await store.getChallenge(rpid, utcToday()),
-          streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
+          challenge: rChallenge,
+          streak: rStreak,
           league: await store.getLeague(rpid),
-          limits: await store.getLimits(rpid, utcToday()),
+          limits: rLimits,
           ownedSkins: await store.getOwnedSkins(rpid),
           season: await buildSeasonState(store, rpid, new Date().toISOString()),
+          comeback: rComeback,
           stakingBlocked: isGeoBlocked(country),
           walletNonce: rProof.walletNonce,
           walletProven: rProof.walletProven,
@@ -1050,11 +1080,14 @@ wss.on('connection', (ws, req) => {
       // splitting one player across two identities, and let any client write junk
       // rows under an arbitrary key of its choosing.
       const pid = playerId(wallet, id);
-      const challenge = await store.getChallenge(pid, utcToday());
+      let challenge = await store.getChallenge(pid, utcToday());
       // Streak is persisted only for wallet-linked players (anon rows are ephemeral).
-      const streak = wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
+      const streak = wallet ? await store.recordLogin(pid, utcToday(), utcYesterday(), utcTwoDaysAgo()) : undefined;
       const league = await store.getLeague(pid);
       const limits = await store.getLimits(pid, utcToday());
+      // Win-back: grant comeback tickets to a returning absent player (RG-gated).
+      const comeback = wallet ? await applyWinback(pid, streak, limits) : undefined;
+      if (comeback) challenge = await store.getChallenge(pid, utcToday()); // refresh ticket total
       const ownedSkins = await store.getOwnedSkins(pid);
       const season = await buildSeasonState(store, pid, new Date().toISOString());
       await recordConsent(session, msg.consent);
@@ -1077,6 +1110,7 @@ wss.on('connection', (ws, req) => {
         limits,
         ownedSkins,
         season,
+        comeback,
         stakingBlocked: isGeoBlocked(country),
         walletNonce: proof.walletNonce,
         walletProven: proof.walletProven,
@@ -1517,6 +1551,8 @@ wss.on('connection', (ws, req) => {
           telemetry('tickets', { pid: tpid(clpid), delta: res.ticketsGranted, reason: 'season-claim', total });
         }
         telemetry('season.claim', { pid: tpid(clpid), tier: msg.tier, lane: msg.lane, reward: res.reward?.kind, tickets: res.ticketsGranted ?? 0 });
+        // A streak-freeze reward changed the inventory → refresh the streak UI too.
+        if (res.reward?.kind === 'streakFreeze') session.send({ t: 'streak.update', streak: await store.getStreak(clpid) });
         session.send({ t: 'season.state', season: await buildSeasonState(store, clpid, new Date().toISOString()) });
         break;
       }
@@ -1557,6 +1593,28 @@ wss.on('connection', (ws, req) => {
         }
         telemetry('season.premium', { pid: tpid(bpid), unlocked: res.unlockedTiers?.length ?? 0, tickets: res.ticketsGranted ?? 0 });
         session.send({ t: 'season.state', season: await buildSeasonState(store, bpid, new Date().toISOString()) });
+        break;
+      }
+
+      case 'streak.buyFreeze': {
+        // Buy one streak-freeze with tickets (a sink). Wallet-keyed like skin.buy —
+        // an unproven wallet can't spend a durable balance.
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to buy a streak-freeze.' });
+          break;
+        }
+        const sfpid = playerId(session.wallet, session.id);
+        const res = await store.buyStreakFreeze(sfpid);
+        if (!res.ok) {
+          session.send({
+            t: 'error',
+            code: 'LIMIT_REACHED',
+            message: res.reason === 'capped' ? 'You already hold the maximum streak-freezes.' : 'Not enough tickets for a streak-freeze.',
+          });
+          break;
+        }
+        telemetry('tickets', { pid: tpid(sfpid), delta: -STREAK_FREEZE.ticketCost, reason: 'streak-freeze', total: res.tickets });
+        session.send({ t: 'streak.update', streak: await store.getStreak(sfpid) });
         break;
       }
 

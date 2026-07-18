@@ -17,9 +17,9 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { ComebackModal, DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
-import { sendLimits, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, fetchProfile, pushIdentity } from './lib/session';
+import { sendLimits, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
@@ -356,13 +356,16 @@ export default function App() {
       onLeague: (league) => dispatch({ type: 'LEAGUE_UPDATE', league }),
       onStreak: (streak) => {
         dispatch({ type: 'STREAK_UPDATE', streak });
-        if (streak.rewardGranted > 0) {
+        if (streak.freezeUsed) {
+          dispatch({ type: 'TOAST', message: `❄️ ${t('freezeUsed')}` });
+        } else if (streak.rewardGranted > 0) {
           dispatch({
             type: 'TOAST',
             message: `🔥 ${streak.days} ${t('days')} — +${streak.rewardGranted} 🎟️`,
           });
         }
       },
+      onComeback: (comeback) => dispatch({ type: 'COMEBACK', comeback }),
       onSettled: (txHash) => dispatch({ type: 'SETTLED', txHash }),
       onTableCreated: (code) => dispatch({ type: 'TABLE_CREATED', code }),
       onTickets: (granted, total, reason) => {
@@ -886,6 +889,20 @@ export default function App() {
     [dispatch, refreshBalance],
   );
 
+  // Buy a streak-freeze with tickets (Phase 3 sink). One-shot from the lobby.
+  const buyFreeze = useCallback(
+    async () => {
+      const streak = await buyStreakFreeze(SERVER_URL, walletRef.current?.address);
+      if (streak) {
+        dispatch({ type: 'STREAK_UPDATE', streak });
+        dispatch({ type: 'TOAST', message: `❄️ ${t('freezeBought')}` });
+      } else {
+        dispatch({ type: 'TOAST', message: t('freezeCantBuy') });
+      }
+    },
+    [dispatch],
+  );
+
   const applyLimits = useCallback(
     async (payload: { dailyLimitCents?: number; selfExcludeDays?: number }) => {
       const limits = await sendLimits(SERVER_URL, payload, walletRef.current?.address);
@@ -902,7 +919,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onViewProfile={onViewProfile} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onViewProfile={onViewProfile} onBuyFreeze={buyFreeze} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
@@ -964,6 +981,7 @@ export default function App() {
       />
       <NoWalletSheet />
       <HelpModal />
+      <ComebackModal />
       <SeasonSheet onClaim={claimSeason} onBuyPremium={purchasePremium} />
       <DocModal />
       <Toast />

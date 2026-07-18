@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ALLOWED_STAKES_CENTS, DIVISIONS, FREEROLL, potCents, type StakeCents } from '@ludo/shared';
+import { ALLOWED_STAKES_CENTS, DIVISIONS, FREEROLL, STREAK_FREEZE, potCents, type StakeCents } from '@ludo/shared';
 import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { SUPPORT_EMAIL, TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconShield, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
@@ -25,6 +25,7 @@ export function Lobby({
   onPractice4,
   onConnectWallet,
   onViewProfile,
+  onBuyFreeze,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
@@ -36,6 +37,8 @@ export function Lobby({
   onConnectWallet(): Promise<boolean>;
   /** Tap a league row → open that player's public profile sheet. */
   onViewProfile(pid: string): void;
+  /** Buy a streak-freeze with tickets (Phase 3). */
+  onBuyFreeze(): void;
 }) {
   const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season } = useAppState();
   const dispatch = useAppDispatch();
@@ -355,6 +358,26 @@ export function Lobby({
           <small className="daily__hint stagehint">
             {challenge.completed ? t('challengeDone') : `${t('challengeDesc')} ${t('challengeReward')}`}
           </small>
+
+          {/* Streak-freeze: protects the streak across one missed day (Phase 3). */}
+          {walletBacked && (
+            <button
+              className={`mrow mrow--freeze${tickets < STREAK_FREEZE.ticketCost || (streak.freezes ?? 0) >= STREAK_FREEZE.max ? ' mrow--dim' : ''}`}
+              onClick={() => {
+                playTap();
+                if ((streak.freezes ?? 0) >= STREAK_FREEZE.max) dispatch({ type: 'TOAST', message: t('freezeCapped') });
+                else if (tickets < STREAK_FREEZE.ticketCost) dispatch({ type: 'TOAST', message: t('freezeCantBuy') });
+                else onBuyFreeze();
+              }}
+            >
+              <span className="mrow__ic mrow__ic--gold">❄️</span>
+              <span className="mrow__txt">
+                <b>{t('freezeTitle')}</b>
+                <small>{t('freezeDesc')}</small>
+              </span>
+              <span className="mrow__badge">{streak.freezes ?? 0}/{STREAK_FREEZE.max} · {STREAK_FREEZE.ticketCost}🎟️</span>
+            </button>
+          )}
 
           {(league.top.length > 0 || inLeague) && (
             <div className="card">

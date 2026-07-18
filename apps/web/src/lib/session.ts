@@ -33,6 +33,7 @@ import {
   type OpponentInfo,
   type LeagueState,
   type LimitsState,
+  type Comeback,
   type PublicProfile,
   type SeasonState,
   type ServerMsg,
@@ -126,6 +127,8 @@ export interface SessionEvents {
   onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win' | 'sync'): void;
   /** Premium dice skins the player owns (from hello.ok). */
   onSkins(ownedIds: string[]): void;
+  /** Win-back comeback offer surfaced on return after an absence (Phase 3). */
+  onComeback(c: Comeback): void;
   /** Full season pass state (hello.ok, or after a claim). */
   onSeasonState(season: SeasonState): void;
   /** Light per-game season push: crowns earned this game + the reached tier. */
@@ -837,6 +840,64 @@ export function buySeasonPremium(
     };
   });
 }
+/**
+ * One-shot: buy a streak-freeze with tickets. Resolves with the fresh StreakState
+ * (freezes + ticket total) the server pushes back, or null on error/timeout.
+ */
+export function buyStreakFreeze(serverUrl: string, walletAddress?: string): Promise<StreakState | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: StreakState | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 5000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'streak.buyFreeze' }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'streak.update') {
+        clearTimeout(timer);
+        done(msg.streak);
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
 /** The INITIAL connection is retried this many times before we declare the server
@@ -1029,6 +1090,7 @@ export class RemoteSession implements GameSession {
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
         if (msg.season) this.ev.onSeasonState(msg.season);
+        if (msg.comeback) this.ev.onComeback(msg.comeback);
         // Guests: pin the FIRST server-assigned identity (no-op once any name is
         // saved). Without this the server derives a NEW name per connection, so
         // friends saw a different name for the same player in every game.
@@ -1123,6 +1185,9 @@ export class RemoteSession implements GameSession {
         break;
       case 'limits.update':
         this.ev.onLimits(msg.limits);
+        break;
+      case 'streak.update':
+        this.ev.onStreak(msg.streak);
         break;
       case 'rematch.offer':
         this.ev.onRematchOffer(msg.name);

@@ -4,11 +4,12 @@
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
 import { pidFor } from './types.js';
-import type { GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
+import type { BuyFreezeResult, GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ANTI_TILT,
   DAILY_CHALLENGE,
   SEASON,
+  STREAK_FREEZE,
   DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   DIVISIONS,
@@ -42,6 +43,7 @@ interface PlayerRow {
   tickets: number;
   lastLogin?: string;
   streakDays: number;
+  streakFreezes: number;
   division: number;
   weeklyPoints: number;
   lossStreak: number;
@@ -156,6 +158,7 @@ export class MemoryStore implements Store {
       done: false,
       tickets: 0,
       streakDays: 0,
+      streakFreezes: 0,
       division: DEFAULT_DIVISION,
       weeklyPoints: 0,
       lossStreak: 0,
@@ -288,17 +291,52 @@ export class MemoryStore implements Store {
     return true;
   }
 
-  async recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState> {
+  async recordLogin(playerId: string, today: string, yesterday: string, twoDaysAgo?: string): Promise<StreakState> {
     const row = this.players.get(playerId);
-    if (!row) return { days: 1, tickets: 0, rewardGranted: 0 };
+    if (!row) return { days: 1, tickets: 0, rewardGranted: 0, freezes: 0, daysAway: 0 };
     if (row.lastLogin === today) {
-      return { days: row.streakDays, tickets: row.tickets, rewardGranted: 0 };
+      return { days: row.streakDays, tickets: row.tickets, rewardGranted: 0, freezes: row.streakFreezes, daysAway: 0 };
     }
-    row.streakDays = row.lastLogin === yesterday ? row.streakDays + 1 : 1;
+    const daysAway = row.lastLogin ? Math.max(1, Math.round((Date.parse(today) - Date.parse(row.lastLogin)) / 86_400_000)) : 0;
+    let freezeUsed = false;
+    if (row.lastLogin === yesterday) {
+      row.streakDays += 1;
+    } else if (twoDaysAgo && row.lastLogin === twoDaysAgo && row.streakFreezes > 0) {
+      // a streak-freeze bridges EXACTLY one missed day → the streak continues
+      row.streakFreezes -= 1;
+      row.streakDays += 1;
+      freezeUsed = true;
+    } else {
+      row.streakDays = 1;
+    }
     row.lastLogin = today;
     const rewardGranted = STREAK_REWARDS[row.streakDays] ?? 0;
     row.tickets += rewardGranted;
-    return { days: row.streakDays, tickets: row.tickets, rewardGranted };
+    return { days: row.streakDays, tickets: row.tickets, rewardGranted, freezes: row.streakFreezes, freezeUsed, daysAway };
+  }
+
+  async getStreak(playerId: string): Promise<StreakState> {
+    const row = this.players.get(playerId);
+    if (!row) return { days: 0, tickets: 0, rewardGranted: 0, freezes: 0 };
+    return { days: row.streakDays, tickets: row.tickets, rewardGranted: 0, freezes: row.streakFreezes };
+  }
+  async getStreakFreezes(playerId: string): Promise<number> {
+    return this.players.get(playerId)?.streakFreezes ?? 0;
+  }
+  async grantStreakFreeze(playerId: string, n: number): Promise<number> {
+    const row = this.players.get(playerId);
+    if (!row) return 0;
+    row.streakFreezes = Math.min(STREAK_FREEZE.max, row.streakFreezes + Math.max(0, n));
+    return row.streakFreezes;
+  }
+  async buyStreakFreeze(playerId: string): Promise<BuyFreezeResult> {
+    const row = this.players.get(playerId);
+    if (!row) return { ok: false, reason: 'insufficient' };
+    if (row.streakFreezes >= STREAK_FREEZE.max) return { ok: false, reason: 'capped' };
+    if (row.tickets < STREAK_FREEZE.ticketCost) return { ok: false, reason: 'insufficient' };
+    row.tickets -= STREAK_FREEZE.ticketCost;
+    row.streakFreezes += 1;
+    return { ok: true, freezes: row.streakFreezes, tickets: row.tickets };
   }
 
   private leagueState(division: number, points: number): LeagueState {

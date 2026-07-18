@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/store/memory.js';
 import { awardGameCrowns, baseCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from '../src/season.js';
-import { FREEROLL, SEASON, crownsForTier, seasonTiers, tierFromCrowns } from '@ludo/shared';
+import { FREEROLL, SEASON, crownsForTier, seasonTiers, tierFromCrowns, winbackFor } from '@ludo/shared';
 
 const NOW = '2026-07-18T00:00:00.000Z';
 const DAY = '2026-07-18';
@@ -148,6 +148,33 @@ describe('buySeasonPremium', () => {
     const r = await buySeasonPremium(store, ok, 'anon:s1', TX);
     expect(r).toMatchObject({ ok: true, unlockedTiers: [], ticketsGranted: 0 });
     expect((await store.getSeasonProgress('anon:s1')).premium).toBe(true);
+  });
+});
+
+describe('winbackFor (comeback tiers)', () => {
+  it('offers nothing below 3 days away', () => {
+    expect(winbackFor(0)).toBeNull();
+    expect(winbackFor(2)).toBeNull();
+  });
+  it('offers the highest tier the player qualifies for', () => {
+    expect(winbackFor(3)).toMatchObject({ tickets: 2 });
+    expect(winbackFor(6)).toMatchObject({ tickets: 2 });
+    expect(winbackFor(7)).toMatchObject({ tickets: 5 });
+    expect(winbackFor(30)).toMatchObject({ tickets: 5 });
+  });
+});
+
+describe('claiming a streak-freeze tier grants a freeze', () => {
+  it('adds to the freeze inventory when a streakFreeze reward is claimed', async () => {
+    const store = await freshStore();
+    // tier 15 free lane is a streakFreeze reward
+    const t15 = seasonTiers()[14]!;
+    expect(t15.free.kind).toBe('streakFreeze');
+    await store.addCrowns('anon:s1', crownsForTier(15), DAY); // reach tier 15
+    expect(await store.getStreakFreezes('anon:s1')).toBe(0);
+    const r = await claimSeasonTier(store, 'anon:s1', 15, 'free', DAY);
+    expect(r.ok).toBe(true);
+    expect(await store.getStreakFreezes('anon:s1')).toBe(1);
   });
 });
 
