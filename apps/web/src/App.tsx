@@ -18,7 +18,8 @@ import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
-import { sendLimits, buySkin, claimCosmetic, fetchProfile, pushIdentity } from './lib/session';
+import { SeasonSheet } from './components/SeasonSheet';
+import { sendLimits, buySkin, claimCosmetic, claimSeasonReward, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
@@ -137,8 +138,9 @@ export default function App() {
       ownedSkins: state.ownedSkins,
       limits: state.limits,
       profile: state.profile,
+      season: state.season,
     });
-  }, [state.challenge, state.streak, state.league, state.tickets, state.ownedSkins, state.limits, state.profile]);
+  }, [state.challenge, state.streak, state.league, state.tickets, state.ownedSkins, state.limits, state.profile, state.season]);
 
   const refreshBalance = useCallback(
     async (wallet: Wallet) => {
@@ -371,6 +373,8 @@ export default function App() {
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
       onSkins: (ownedIds) => dispatch({ type: 'OWNED_SKINS', ownedIds }),
+      onSeasonState: (season) => dispatch({ type: 'SEASON_STATE', season }),
+      onSeasonProgress: (p) => dispatch({ type: 'SEASON_PROGRESS', crowns: p.crowns, tier: p.tier, gained: p.gained }),
       onProfile: (p) => dispatch({ type: 'PROFILE', profile: p }),
       onGeo: (stakingBlocked) => dispatch({ type: 'GEO', stakingBlocked }),
       onRefunded: (txHash) => {
@@ -801,6 +805,21 @@ export default function App() {
     [dispatch],
   );
 
+  // Claim a season-pass tier reward: the server validates + grants, then returns
+  // the fresh state (with the tier marked claimed and any tickets folded in).
+  const claimSeason = useCallback(
+    async (tier: number, lane: 'free' | 'premium') => {
+      const season = await claimSeasonReward(SERVER_URL, tier, lane, walletRef.current?.address);
+      if (season) {
+        dispatch({ type: 'SEASON_STATE', season });
+        dispatch({ type: 'TOAST', message: t('seasonClaimed') });
+      } else {
+        dispatch({ type: 'TOAST', message: t('offline') });
+      }
+    },
+    [dispatch],
+  );
+
   // Buy a cosmetic with cUSD (rec 6): pay on-chain via the CosmeticsStore, then
   // hand the tx to the server to unlock ownership. Dormant until the store is
   // deployed (the cUSD button only shows when cosmeticsCusdAvailable).
@@ -913,6 +932,7 @@ export default function App() {
       />
       <NoWalletSheet />
       <HelpModal />
+      <SeasonSheet onClaim={claimSeason} />
       <DocModal />
       <Toast />
     </>

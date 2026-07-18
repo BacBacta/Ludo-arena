@@ -14,6 +14,7 @@ import {
   type StakeCents,
   type StreakState,
   type PublicProfile,
+  type SeasonState,
 } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
@@ -96,6 +97,8 @@ interface RetentionCache {
   ownedSkins: string[];
   limits: LimitsState;
   profile: Profile;
+  /** Cached season pass state so the lobby chip renders before hello.ok lands. */
+  season: SeasonState | null;
 }
 
 const DEFAULT_RETENTION: RetentionCache = {
@@ -106,6 +109,7 @@ const DEFAULT_RETENTION: RetentionCache = {
   ownedSkins: [],
   limits: { dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS, stakedTodayCents: 0, selfExcludedUntil: null },
   profile: { name: '', flag: '🌍', elo: 1200, games: 0, wins: 0 },
+  season: null,
 };
 
 function loadRetention(): RetentionCache {
@@ -151,6 +155,12 @@ export interface AppState {
   tickets: number;
   /** Premium dice skins unlocked (server-authoritative; cached for the lobby). */
   ownedSkins: string[];
+  /** Season pass state (crowns, tier, claims, reward table); null until hello.ok. */
+  season: SeasonState | null;
+  /** Season track sheet open state. */
+  seasonOpen: boolean;
+  /** Transient crown-gain feedback after a game (`n` re-triggers the animation). */
+  crownGain: { gained: number; tier: number; n: number } | null;
   /** Own stable profile (identity + ELO + W/L), cached for the lobby card. */
   profile: Profile;
   recentOpponents: RecentOpponent[];
@@ -275,6 +285,9 @@ export const initialState: AppState = {
   league: loadRetention().league,
   tickets: loadRetention().tickets,
   ownedSkins: loadRetention().ownedSkins,
+  season: loadRetention().season,
+  seasonOpen: false,
+  crownGain: null,
   profile: loadRetention().profile,
   viewProfile: null,
   recentOpponents: loadRecentOpponents(),
@@ -345,6 +358,10 @@ export type Action =
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
   | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
+  | { type: 'SEASON_STATE'; season: SeasonState }
+  | { type: 'SEASON_PROGRESS'; crowns: number; tier: number; gained: number }
+  | { type: 'SEASON_MODAL'; open: boolean }
+  | { type: 'CLEAR_CROWN_GAIN' }
   | { type: 'PROFILE'; profile: Partial<Profile> }
   | { type: 'PROFILE_VIEW'; pid: string }
   | { type: 'PROFILE_INFO'; pid: string; profile: PublicProfile | null }
@@ -476,6 +493,19 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, tickets: a.total };
     case 'OWNED_SKINS':
       return { ...s, ownedSkins: a.ownedIds, tickets: a.tickets ?? s.tickets };
+    case 'SEASON_STATE':
+      return { ...s, season: a.season };
+    case 'SEASON_PROGRESS': {
+      // Fold the light per-game push into the cached state (keep the static reward
+      // table) and fire the transient crown-gain feedback.
+      const season = s.season ? { ...s.season, crowns: a.crowns, tier: a.tier } : s.season;
+      const n = (s.crownGain?.n ?? 0) + 1;
+      return { ...s, season, crownGain: { gained: a.gained, tier: a.tier, n } };
+    }
+    case 'CLEAR_CROWN_GAIN':
+      return { ...s, crownGain: null };
+    case 'SEASON_MODAL':
+      return { ...s, seasonOpen: a.open };
     case 'PROFILE': {
       // Merge only defined fields. (The session layer already suppresses profile
       // updates from wallet-less connections, so this never gets anon 0/0 data.)
@@ -528,7 +558,7 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_WALLET_ADDRESS':
       return { ...s, walletAddress: a.address };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', emotes: {}, giftFlight: null, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null, rematchOffer: null };
+      return { ...s, screen: 'lobby', emotes: {}, giftFlight: null, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null, rematchOffer: null, crownGain: null };
     case 'REMATCH_OFFER':
       return { ...s, rematchOffer: a.name };
     case 'REMATCH_CLEAR':

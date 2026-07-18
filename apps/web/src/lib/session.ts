@@ -34,6 +34,7 @@ import {
   type LeagueState,
   type LimitsState,
   type PublicProfile,
+  type SeasonState,
   type ServerMsg,
   type StakeCents,
   type StreakState,
@@ -125,6 +126,10 @@ export interface SessionEvents {
   onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win' | 'sync'): void;
   /** Premium dice skins the player owns (from hello.ok). */
   onSkins(ownedIds: string[]): void;
+  /** Full season pass state (hello.ok, or after a claim). */
+  onSeasonState(season: SeasonState): void;
+  /** Light per-game season push: crowns earned this game + the reached tier. */
+  onSeasonProgress(p: { crowns: number; tier: number; gained: number; dailyGames: number }): void;
   /** Own stable profile from hello.ok: identity (name/flag) + ELO + W/L + public pid. */
   onProfile(p: { name?: string; flag?: string; elo?: number; games?: number; wins?: number; pid?: string }): void;
   /** Responsible-gaming limits (E5.2). */
@@ -700,6 +705,73 @@ export function claimCosmetic(
     };
   });
 }
+/**
+ * One-shot: claim a season-pass tier reward. Opens a short-lived socket, hellos
+ * (so the server resolves this player's pid + wallet proof), sends season.claim,
+ * and resolves with the fresh SeasonState the server pushes back — or null on
+ * error/timeout. Mirrors buySkin: claims happen from the lobby, outside a game.
+ */
+export function claimSeasonReward(
+  serverUrl: string,
+  tier: number,
+  lane: 'free' | 'premium',
+  walletAddress?: string,
+): Promise<SeasonState | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: SeasonState | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 5000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'season.claim', tier, lane }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      // The successful claim ends with a fresh season.state (a preceding
+      // tickets.grant, if any, is folded into that state's claimed lists).
+      if (msg.t === 'season.state') {
+        clearTimeout(timer);
+        done(msg.season);
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
 /** The INITIAL connection is retried this many times before we declare the server
@@ -891,6 +963,7 @@ export class RemoteSession implements GameSession {
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
+        if (msg.season) this.ev.onSeasonState(msg.season);
         // Guests: pin the FIRST server-assigned identity (no-op once any name is
         // saved). Without this the server derives a NEW name per connection, so
         // friends saw a different name for the same player in every game.
@@ -976,6 +1049,12 @@ export class RemoteSession implements GameSession {
         break;
       case 'tickets.grant':
         this.ev.onTickets(msg.granted, msg.total, msg.reason);
+        break;
+      case 'season.state':
+        this.ev.onSeasonState(msg.season);
+        break;
+      case 'season.progress':
+        this.ev.onSeasonProgress({ crowns: msg.crowns, tier: msg.tier, gained: msg.gained, dailyGames: msg.dailyGames });
         break;
       case 'limits.update':
         this.ev.onLimits(msg.limits);

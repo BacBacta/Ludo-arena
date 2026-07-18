@@ -37,7 +37,7 @@ export function Lobby({
   /** Tap a league row → open that player's public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin } = useAppState();
+  const { stakeCents, streak, challenge, league, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
@@ -192,6 +192,29 @@ export function Lobby({
 
       {/* MODE MENU — promoted right under the hero (was buried below the cards).
           The single scannable menu of everything you can play. */}
+      {season && (
+        <>
+          <div className="seclabel">👑 {t('seasonTitle')}</div>
+          <div className="card modelist">
+            <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'SEASON_MODAL', open: true }); }}>
+              <span className="mrow__ic mrow__ic--gold">👑</span>
+              <span className="mrow__txt">
+                <b>{t('seasonTier')} {season.tier}/{season.tierCount}</b>
+                <small>{t('seasonLobbyHint')}</small>
+              </span>
+              {(() => {
+                const claimable = season.claimedFree
+                  ? season.tiers.filter((d) => season.tier >= d.tier && !season.claimedFree.includes(d.tier)).length
+                  : 0;
+                return claimable > 0
+                  ? <span className="mrow__badge mrow__badge--claim">{claimable} {t('seasonClaim')}</span>
+                  : <span className="mrow__badge">👑 {season.crowns}</span>;
+              })()}
+            </button>
+          </div>
+        </>
+      )}
+
       <div className="seclabel">{t('gameModes')}</div>
       <div className="card modelist">
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
