@@ -6,6 +6,9 @@ node_modules
 **/cache
 apps/web
 packages/contracts
+# …except the deployed addresses, baked into the server image so escrow/store
+# resolution works without pinned env overrides (see apps/server/Dockerfile).
+!packages/contracts/deployments.json
 **/*.log
 .turbo
 **/*.tsbuildinfo
