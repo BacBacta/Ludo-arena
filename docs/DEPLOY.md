@@ -24,13 +24,62 @@ flyctl redis create                           # Upstash; note the REDIS_URL
 # secrets
 flyctl secrets set \
   REDIS_URL="redis://…" \
+  DATABASE_URL="postgres://…" \
   ARBITER_PRIVATE_KEY="0x…" \
   CHAIN="celo-sepolia" \
   ESCROW_ADDRESS="0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6" \
-  BLOCKED_COUNTRIES=""
+  ESCROW_N_ADDRESS="0x…" \
+  STAKING_ENABLED="false" \
+  BLOCKED_COUNTRIES="" \
+  TRUSTED_EDGE_SECRET="" \
+  MINIPAY_ALLOWED_ORIGINS=""
 
 flyctl deploy
 ```
+
+### New security env (set before real money)
+
+- **`TRUSTED_EDGE_SECRET`** (G-6) — the geo header (`cf-ipcountry`/`x-vercel-ip-country`)
+  is client-forgeable because the Fly server is directly reachable over WS. Put a
+  trusted edge (Cloudflare/Vercel/Fly proxy) in front that sets both the country
+  header **and** `x-edge-secret: <this>`; the server only believes the country when
+  the secret matches. **Geo now fails CLOSED**: once `BLOCKED_COUNTRIES` is set, an
+  unverifiable region (no/forged secret) is refused staked play — so wire the edge
+  BEFORE the deny list, or all staked play is refused (the server warns at boot).
+- **`MINIPAY_ALLOWED_ORIGINS`** (R-AUTH-1 defence-in-depth) — comma-separated WS
+  origins allowed to auto-prove a MiniPay wallet (e.g. the MiniPay webview origin).
+  Browsers forbid JS from setting Origin, so this closes the malicious-website
+  vector. Empty = dev/testnet (any origin). A non-browser script can still forge
+  Origin; that residual needs the MiniPay attestation below.
+- **`DATABASE_URL`** — Postgres for durable settlement (`settlementDurable()` gates
+  real stakes on it). Without it the server runs Redis-only (in-memory durable) and
+  refuses wallet-backed staked play.
+
+### Real-money launch gate (R-COMP-2)
+
+`STAKING_ENABLED` is the **explicit** switch for staked play. Settlement arms
+ONLY when `STAKING_ENABLED="true"`; with it unset/false the server refuses to
+create arbiters even when `ARBITER_PRIVATE_KEY` + escrow addresses are present
+(it logs a warning at boot). This exists so mainnet addresses landing in secrets
+can never *silently* take real money — enabling staking is a deliberate,
+auditable step, not a side effect of a key being configured. Flip it to `"true"`
+per network only after launch sign-off.
+
+Before setting it `"true"` for real money, also confirm:
+
+- **`BLOCKED_COUNTRIES`** (R-COMP-1) holds the legal-reviewed deny list — it is
+  intentionally empty above and the server warns while it is. Real-money rake in
+  a prohibited jurisdiction is a compliance exposure.
+- **Arbiter key custody (R-KEY-1, ops task — NOT closed in code).** The single
+  hot `ARBITER_PRIVATE_KEY` here signs every payout AND is the treasury+owner on
+  the current deployment. A compromise lets the holder name themselves winner of
+  any game they seat in and redirect the rake. Before mainnet: move the key to a
+  KMS/secret manager (not a plaintext Fly secret), and split the signer from the
+  gas submitter so the signing key is not exposed on the always-on box. The
+  `refundActive` 24 h valve + the gas-balance monitor are mitigations, not a fix.
+- **Contracts redeployed** with the R-ESCROW-1 pull-payment `LudoEscrow` and the
+  post-C3 `LudoEscrowN` (R-DEPLOY-1), and `ESCROW_ADDRESS`/`ESCROW_N_ADDRESS`
+  updated to the new addresses.
 
 The app listens on `internal_port` 8080 (WS upgrades over the same port), health
 check `/health`. Result URL: `wss://ludo-arena-server.fly.dev` — this is the URL
@@ -59,3 +108,54 @@ build time):
 Deploy the server first, confirm `https://ludo-arena-server.fly.dev/health`
 returns `{ "ok": true }`, then deploy the frontend (its build points at that
 URL). For MiniPay, submit the Vercel production URL (BACKLOG E7).
+
+## 3. Redeploying the hardened contracts (R-DEPLOY-1 + G-2 coordination)
+
+The R-ESCROW-1 pull-payment `LudoEscrow` and the post-C3 `LudoEscrowN` are in the
+source but the LIVE Celo Sepolia deployment still runs the older bytecode. This is
+the procedure to redeploy them. **Testnet only — never mainnet; use a Celo Sepolia
+deployer key funded from a faucet, never a real-funds key.**
+
+> Rehearsed on a local anvil: `NETWORK=localhost npm run deploy` deployed the
+> hardened contracts (the deployed `LudoEscrow` answers `withdraw()` with the
+> `NothingToWithdraw` custom error `0xd0d04f60` — proof the pull-payment is
+> present) and wrote BOTH `packages/contracts/deployments.json` and the vendored
+> `apps/web/src/deployments.json` to the same new addresses.
+
+### The G-2 trap this order avoids
+
+`deploy.ts` auto-syncs the **client** bundle copy (`apps/web/src/deployments.json`),
+but the **server** in production reads its escrow from the `ESCROW_ADDRESS` /
+`ESCROW_N_ADDRESS` **Fly secrets**, NOT from `deployments.json`. So after a
+redeploy the client bundle points at the NEW escrow while the server still settles
+the OLD one until you update the Fly secrets. The G-2 guard makes this fail SAFE
+(the client refuses to deposit into an escrow the server won't settle), but you
+must land BOTH updates to actually take stakes.
+
+### Steps (in this order)
+
+```bash
+# 1. Deploy the hardened contracts to Celo Sepolia (writes both deployments.json).
+cd packages/contracts
+NETWORK=celo-sepolia DEPLOYER_PRIVATE_KEY="0x<faucet-funded-testnet-key>" npm run deploy
+#   → note the printed LudoEscrow + LudoEscrowN addresses.
+
+# 2. Verify on Celoscan that each is verified + the hardened one (has withdraw()).
+
+# 3. Point the SERVER at the new escrows (Fly secret — the manual step G-2 guards).
+flyctl secrets set \
+  ESCROW_ADDRESS="0x<new LudoEscrow>" \
+  ESCROW_N_ADDRESS="0x<new LudoEscrowN>"
+
+# 4. Commit the regenerated deployments.json (both files) and REDEPLOY THE WEB so
+#    the client bundle ships the new addresses (deploy.ts already updated the file).
+git add packages/contracts/deployments.json apps/web/src/deployments.json
+git commit -m "chore: redeploy hardened escrows on Celo Sepolia"
+#    → Vercel rebuilds the web with the new bundled addresses.
+
+# 5. Confirm concordance: a hello.ok from the server now advertises the new escrow,
+#    and the client bundle matches → deposits are accepted. If step 3 or 4 is
+#    missed, staking is refused (G-2) rather than sending funds to a dead escrow.
+```
+
+Only after this, and the other launch-gate items above, flip `STAKING_ENABLED="true"`.

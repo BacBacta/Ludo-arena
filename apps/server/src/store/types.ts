@@ -5,8 +5,32 @@
  * in Postgres. MemoryStore keeps dev zero-config (no restart survival).
  */
 import { createHmac } from 'node:crypto';
-import type { GameState, Seat } from '@ludo/game-engine';
+import type { Game4, GameState, Seat } from '@ludo/game-engine';
 import type { ChallengeState, GameOverReason, LeagueState, LimitsState, StakeCents, StreakState } from '@ludo/shared';
+
+/** Result of buying a streak-freeze: the new inventory + ticket balance, or why not. */
+export type BuyFreezeResult =
+  | { ok: true; freezes: number; tickets: number }
+  | { ok: false; reason: 'capped' | 'insufficient' };
+
+/** Global current-season window (stored in meta). */
+export interface SeasonMeta {
+  id: number;
+  startsAt: string; // ISO
+  endsAt: string; // ISO
+}
+
+/** A player's progress in the current season. Resets (via `seasonId`) at rollover. */
+export interface SeasonProgress {
+  seasonId: number;
+  crowns: number;
+  premium: boolean;
+  claimedFree: number[];
+  claimedPrem: number[];
+  crownBoost: number; // multiplier, e.g. 1.25 (from a premium reward)
+  dailyDate: string | null; // UTC day of the daily-games counter
+  dailyGames: number; // games counted today (soft cap)
+}
 
 /** Serializable part of a Session (the ws handle and Room ref are rebuilt live). */
 export interface SessionRecord {
@@ -19,6 +43,10 @@ export interface SessionRecord {
   stake: StakeCents | null;
   gameId: string | null;
   seat: Seat | null;
+  /** 4-player room membership (mutually exclusive with gameId/seat in practice),
+   *  persisted so a reconnect after a restart can reattach to the restored Room4. */
+  room4Id?: string | null;
+  seat4?: number | null;
 }
 
 export interface RoomPlayer {
@@ -43,6 +71,41 @@ export interface RoomSnapshot {
   over?: boolean;
   /** Ticket-gated freeroll game (winner gets the ticket prize on finish). */
   freeroll?: boolean;
+}
+
+/** One seat of a persisted 4-player room. Bots and the (possibly detached) human
+ *  identity are captured so the game restores and reattaches after a restart. */
+export interface Room4Player {
+  /** Owning session id (empty for a bot seat) — reattach + reconcile key. */
+  sessionId: string;
+  /** Depositor wallet for a staked seat (settlement reconcile); absent otherwise. */
+  wallet?: string;
+  name: string;
+  flag: string;
+  bot: boolean;
+  pid?: string;
+  frame?: string;
+  avatar?: string;
+}
+
+/** A 4-player room snapshot (G-5). Staked 4p carries real on-chain money, so —
+ *  like the 1v1 RoomSnapshot — it must survive a restart: without it an
+ *  in-flight staked table strands 4 deposits with no server record to settle or
+ *  refund them (funds stuck until the contract's 24 h refundActive). */
+export interface Room4Snapshot {
+  gameId: string;
+  state: Game4;
+  diceIndex: number;
+  autoStreak: number[];
+  fairness: { serverSeed: string; commit: string; seeds: string[] };
+  seats: Room4Player[];
+  entryTickets: number;
+  prizeTickets: number;
+  /** cUSD payout to the winner + rake (0 for free/ticket tables). >0 ⇒ staked. */
+  payoutCents: number;
+  rakeCents: number;
+  /** Terminal flag: a snapshot taken after the winning move must NOT restore live. */
+  over?: boolean;
 }
 
 export interface GameRecord {
@@ -71,6 +134,12 @@ export interface SettlementJob {
   /** Which escrow this job settles. Absent (legacy rows) means the 1v1 '2p' path.
    *  Lets the 2p and 4p durable queues resume only their own jobs. */
   variant?: '2p' | '4p';
+  /** Dice fairness to REVEAL on-chain at settlement (provably-fair anchor). The
+   *  serverSeed whose sha256 is the game's on-chain fairnessCommit, plus the player
+   *  entropies (2 for 1v1, N for 4p) so anyone can recompute the dice. OPTIONAL and
+   *  money-flow-INDEPENDENT: a job without it still settles/pays correctly — the
+   *  reveal is an extra event, never a payout precondition. */
+  reveal?: { serverSeed: string; entropies: string[] };
 }
 
 export interface Store {
@@ -90,6 +159,9 @@ export interface Store {
   // Rooms (hot)
   saveRoom(snap: RoomSnapshot): Promise<void>;
   loadRooms(): Promise<RoomSnapshot[]>;
+  saveRoom4(snap: Room4Snapshot): Promise<void>;
+  loadRooms4(): Promise<Room4Snapshot[]>;
+  deleteRoom4(gameId: string): Promise<void>;
   deleteRoom(gameId: string): Promise<void>;
 
   // Queues (hot; membership only — pairing needs a live socket, so queues
@@ -125,16 +197,47 @@ export interface Store {
   enqueueSettlement(job: SettlementJob): Promise<void>;
   listPendingSettlements(): Promise<SettlementJob[]>;
   markSettlement(gameId: string, status: SettlementJob['status'], attempts: number, txHash?: string): Promise<void>;
+  /** Whether ANY settlement record (any status) exists for a game — used at boot
+   *  to detect a staked game that finished but whose settlement job never landed
+   *  (crash between the terminal snapshot and the enqueue). */
+  hasSettlement(gameId: string): Promise<boolean>;
 
   // Daily challenge (E4.1). `today` is a UTC date string (YYYY-MM-DD); progress
   // resets when the stored day differs. Tickets persist across days.
   getChallenge(playerId: string, today: string): Promise<ChallengeState>;
   addCapture(playerId: string, today: string): Promise<ChallengeState>;
 
+  // Season pass (anti-churn keystone — see docs/SEASON_PASS_SPEC.md). The current
+  // season is global (meta); per-player progress resets when the season rolls over.
+  /** Current season window; creates the first season on first call. */
+  getSeason(nowIso: string): Promise<SeasonMeta>;
+  /** This player's progress in the CURRENT season (fresh if their season differs). */
+  getSeasonProgress(playerId: string): Promise<SeasonProgress>;
+  /** Add crowns + count today's game (soft-cap tracking); returns the new totals. */
+  addCrowns(playerId: string, crowns: number, today: string): Promise<{ crowns: number; dailyGames: number }>;
+  /** Idempotently claim a tier on a lane; false if it was already claimed. */
+  claimSeasonTier(playerId: string, tier: number, lane: 'free' | 'premium'): Promise<boolean>;
+  setSeasonPremium(playerId: string): Promise<void>;
+  setSeasonCrownBoost(playerId: string, multiplier: number): Promise<void>;
+  /** Consume a premium-purchase tx hash: true the FIRST time, false if already
+   *  used. Single-use GLOBALLY, so an old purchase tx can't be replayed to unlock
+   *  premium again in a later season. */
+  consumePremiumTx(txHash: string, playerId: string, seasonId: number): Promise<boolean>;
+  /** If now is past the season end, start the next season; returns true if it did. */
+  rolloverSeason(nowIso: string): Promise<boolean>;
+
   // Login streak (E4.2). Once per UTC day: +1 if last login was `yesterday`,
   // reset to 1 otherwise; milestone rewards (STREAK_REWARDS) granted on the
   // crossing login. No-op re-return if already logged in today.
-  recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState>;
+  recordLogin(playerId: string, today: string, yesterday: string, twoDaysAgo?: string): Promise<StreakState>;
+  /** Current streak state WITHOUT recording a login (for a mid-session refresh). */
+  getStreak(playerId: string): Promise<StreakState>;
+  /** Streak-freezes held (season Phase 3). */
+  getStreakFreezes(playerId: string): Promise<number>;
+  /** Grant `n` streak-freezes (capped at STREAK_FREEZE.max); returns the new total. */
+  grantStreakFreeze(playerId: string, n: number): Promise<number>;
+  /** Buy one streak-freeze with tickets (a sink); atomic spend+grant. */
+  buyStreakFreeze(playerId: string): Promise<BuyFreezeResult>;
 
   // Weekly league (E4.3). Points accumulate during the week; rolloverLeagues
   // (weekly cron) promotes/relegates and resets. getLeague includes the

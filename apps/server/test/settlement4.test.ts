@@ -10,6 +10,7 @@ const SEAT_D = '0x4444444444444444444444444444444444444444' as Address;
 const SEATS: Address[] = [WINNER, SEAT_B, SEAT_C, SEAT_D];
 const TX = '0xset4' as Hex;
 const REFUND_TX = '0xref4' as Hex;
+const VOID_TX = '0xvoid4' as Hex;
 
 function makeArbiterN(over: Partial<ArbiterNLike> = {}): ArbiterNLike {
   return {
@@ -18,6 +19,7 @@ function makeArbiterN(over: Partial<ArbiterNLike> = {}): ArbiterNLike {
     seatsOf: async () => SEATS,
     submitSettle: async () => TX,
     submitRefundUnfilled: async () => REFUND_TX,
+    submitVoid: async () => VOID_TX,
     ...over,
   };
 }
@@ -114,6 +116,40 @@ describe('SettlementQueue4', () => {
     now = 1_000 + JOIN_TIMEOUT_N_S + 1;
     await vi.runAllTimersAsync();
     expect(refund).toHaveBeenCalledOnce();
+  });
+
+  it('voids (not refundUnfilled) a refund job whose escrow is already Active', async () => {
+    // The table filled on-chain (all 4 deposited → Active) but the game never
+    // started — e.g. a seat never revealed its fairness entropy — so the reveal
+    // timeout enqueued a refund. refundUnfilled reverts on an Active escrow, and
+    // before the fix this refund job (winnerWallet === '') fell into the settle
+    // branch, failed "winner '' is not a seat", and left the pot stuck in Active
+    // until the 24 h refundActive. It must voidGame instead.
+    const store = new MemoryStore();
+    const voidFn = vi.fn(async () => VOID_TX);
+    const refund = vi.fn(async () => REFUND_TX);
+    const settle = vi.fn(async () => TX);
+    const refunded: string[] = [];
+    const q = new SettlementQueue4({
+      store,
+      arbiter: makeArbiterN({
+        gameStatus: async () => ({ status: GameStatusN.Active, seatCount: 4, joined: 4, createdAt: 0 }),
+        submitVoid: voidFn,
+        submitRefundUnfilled: refund,
+        submitSettle: settle,
+      }),
+      onSettled: () => {},
+      onRefunded: (gameId) => refunded.push(gameId),
+    });
+    await q.enqueueRefundUnfilled('g-active-void');
+    await vi.runAllTimersAsync();
+
+    expect(voidFn).toHaveBeenCalledOnce();
+    expect(settle).not.toHaveBeenCalled(); // never tried to settle to an empty winner
+    expect(refund).not.toHaveBeenCalled(); // refundUnfilled would have reverted
+    expect(refunded).toEqual(['g-active-void']); // depositors notified of the refund
+    const rows = await store.listPendingSettlements();
+    expect(rows).toHaveLength(0); // terminal — not stuck retrying
   });
 
   it('is idempotent when the game is already Settled on-chain', async () => {

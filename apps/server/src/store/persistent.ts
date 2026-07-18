@@ -9,11 +9,13 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import { pidFor } from './types.js';
-import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
+import type { BuyFreezeResult, GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ALLOWED_STAKES_CENTS,
   ANTI_TILT,
   DAILY_CHALLENGE,
+  SEASON,
+  STREAK_FREEZE,
   DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   DIVISIONS,
@@ -85,8 +87,18 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS owned_skins TEXT[] NOT NULL DEFAULT
 -- Responsible gaming (E5.2).
 ALTER TABLE players ADD COLUMN IF NOT EXISTS stake_date DATE;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS staked_today_cents INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_limit_cents INTEGER NOT NULL DEFAULT 200;
+-- Single source of truth for the default daily stake limit: the shared constant,
+-- interpolated so this never drifts from the client display / memory store again.
+-- A stale literal (200) here made production enforce a different default ($2) than
+-- the declared $5 everywhere else — a fresh DB got the wrong cap silently.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS daily_limit_cents INTEGER NOT NULL DEFAULT ${DEFAULT_DAILY_STAKE_LIMIT_CENTS};
+-- ADD COLUMN IF NOT EXISTS is a no-op on an existing column (its old DEFAULT would
+-- persist), so realign the default on every boot. Existing ROWS are left untouched
+-- (changing a player's already-set limit is a compliance action, not a migration).
+ALTER TABLE players ALTER COLUMN daily_limit_cents SET DEFAULT ${DEFAULT_DAILY_STAKE_LIMIT_CENTS};
 ALTER TABLE players ADD COLUMN IF NOT EXISTS self_excluded_until DATE;
+-- Streak-freeze inventory (season Phase 3). Added via ALTER so existing DBs migrate.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS streak_freezes INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
@@ -136,6 +148,32 @@ CREATE INDEX IF NOT EXISTS settlements_pending_idx ON settlements(status) WHERE 
 -- queues each resume only their own pending jobs. Added via ALTER so existing
 -- databases migrate; legacy rows default to the 1v1 '2p' path.
 ALTER TABLE settlements ADD COLUMN IF NOT EXISTS variant TEXT NOT NULL DEFAULT '2p';
+
+-- Season pass (anti-churn keystone — docs/SEASON_PASS_SPEC.md). The current season
+-- window lives in meta (key 'season:current'); per-player rows are keyed by season
+-- so history is retained and a rollover just starts writing under a new season_id.
+CREATE TABLE IF NOT EXISTS season_progress (
+  player_id TEXT NOT NULL REFERENCES players(id),
+  season_id INTEGER NOT NULL,
+  crowns INTEGER NOT NULL DEFAULT 0,
+  premium BOOLEAN NOT NULL DEFAULT false,
+  claimed_free INTEGER[] NOT NULL DEFAULT '{}',
+  claimed_prem INTEGER[] NOT NULL DEFAULT '{}',
+  crown_boost REAL NOT NULL DEFAULT 1,
+  daily_date DATE,
+  daily_games INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (player_id, season_id)
+);
+
+-- Premium-pass purchases: the tx hash is the PRIMARY KEY so each on-chain payment
+-- unlocks premium exactly once — an old purchase tx can't be replayed to unlock a
+-- later season for free (the on-chain item id is season-agnostic).
+CREATE TABLE IF NOT EXISTS premium_purchases (
+  tx_hash    TEXT PRIMARY KEY,
+  player_id  TEXT NOT NULL,
+  season_id  INTEGER NOT NULL,
+  at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `;
 
 export class PersistentStore implements Store {
@@ -202,6 +240,27 @@ export class PersistentStore implements Store {
   }
   async deleteRoom(gameId: string): Promise<void> {
     await this.redis.multi().del(`room:${gameId}`).srem('rooms', gameId).exec();
+  }
+  async saveRoom4(snap: Room4Snapshot): Promise<void> {
+    await this.redis
+      .multi()
+      .set(`room4:${snap.gameId}`, JSON.stringify(snap))
+      .sadd('rooms4', snap.gameId)
+      .exec();
+  }
+  async loadRooms4(): Promise<Room4Snapshot[]> {
+    const ids = await this.redis.smembers('rooms4');
+    if (ids.length === 0) return [];
+    const raws = await this.redis.mget(ids.map((id) => `room4:${id}`));
+    const snaps: Room4Snapshot[] = [];
+    for (const [i, raw] of raws.entries()) {
+      if (raw) snaps.push(JSON.parse(raw) as Room4Snapshot);
+      else await this.redis.srem('rooms4', ids[i]!); // stale index entry
+    }
+    return snaps;
+  }
+  async deleteRoom4(gameId: string): Promise<void> {
+    await this.redis.multi().del(`room4:${gameId}`).srem('rooms4', gameId).exec();
   }
 
   // ---------- queues ----------
@@ -335,6 +394,11 @@ export class PersistentStore implements Store {
     );
   }
 
+  async hasSettlement(gameId: string): Promise<boolean> {
+    const res = await this.pool.query(`SELECT 1 FROM settlements WHERE game_id = $1`, [gameId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   private challengeFrom(row: { challenge_date: string | null; challenge_captures: number; challenge_done: boolean; freeroll_tickets: number } | undefined, today: string): ChallengeState {
     const fresh = !row || row.challenge_date !== today;
     return {
@@ -378,24 +442,74 @@ export class PersistentStore implements Store {
     return { progress: row.challenge_captures, target: DAILY_CHALLENGE.captures, completed: row.challenge_done, tickets: row.freeroll_tickets };
   }
 
-  async recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState> {
-    const cur = await this.pool.query<{ last_login: string | null; streak_days: number; freeroll_tickets: number }>(
-      `SELECT to_char(last_login, 'YYYY-MM-DD') AS last_login, streak_days, freeroll_tickets FROM players WHERE id = $1`,
+  async recordLogin(playerId: string, today: string, yesterday: string, twoDaysAgo?: string): Promise<StreakState> {
+    const cur = await this.pool.query<{ last_login: string | null; streak_days: number; freeroll_tickets: number; streak_freezes: number }>(
+      `SELECT to_char(last_login, 'YYYY-MM-DD') AS last_login, streak_days, freeroll_tickets, streak_freezes FROM players WHERE id = $1`,
       [playerId],
     );
     const row = cur.rows[0];
-    if (!row) return { days: 1, tickets: 0, rewardGranted: 0 };
+    if (!row) return { days: 1, tickets: 0, rewardGranted: 0, freezes: 0, daysAway: 0 };
     if (row.last_login === today) {
-      return { days: row.streak_days, tickets: row.freeroll_tickets, rewardGranted: 0 };
+      return { days: row.streak_days, tickets: row.freeroll_tickets, rewardGranted: 0, freezes: row.streak_freezes, daysAway: 0 };
     }
-    const days = row.last_login === yesterday ? row.streak_days + 1 : 1;
+    const daysAway = row.last_login ? Math.max(1, Math.round((Date.parse(today) - Date.parse(row.last_login)) / 86_400_000)) : 0;
+    let days: number;
+    let freezes = row.streak_freezes;
+    let freezeUsed = false;
+    if (row.last_login === yesterday) {
+      days = row.streak_days + 1;
+    } else if (twoDaysAgo && row.last_login === twoDaysAgo && row.streak_freezes > 0) {
+      // a streak-freeze bridges EXACTLY one missed day → the streak continues
+      days = row.streak_days + 1;
+      freezes = row.streak_freezes - 1;
+      freezeUsed = true;
+    } else {
+      days = 1;
+    }
     const rewardGranted = STREAK_REWARDS[days] ?? 0;
     const res = await this.pool.query<{ freeroll_tickets: number }>(
-      `UPDATE players SET last_login = $2::date, streak_days = $3, freeroll_tickets = freeroll_tickets + $4, updated_at = now()
+      `UPDATE players SET last_login = $2::date, streak_days = $3, streak_freezes = $4, freeroll_tickets = freeroll_tickets + $5, updated_at = now()
        WHERE id = $1 RETURNING freeroll_tickets`,
-      [playerId, today, days, rewardGranted],
+      [playerId, today, days, freezes, rewardGranted],
     );
-    return { days, tickets: res.rows[0]?.freeroll_tickets ?? row.freeroll_tickets, rewardGranted };
+    return { days, tickets: res.rows[0]?.freeroll_tickets ?? row.freeroll_tickets, rewardGranted, freezes, freezeUsed, daysAway };
+  }
+
+  async getStreak(playerId: string): Promise<StreakState> {
+    const res = await this.pool.query<{ streak_days: number; freeroll_tickets: number; streak_freezes: number }>(
+      `SELECT streak_days, freeroll_tickets, streak_freezes FROM players WHERE id = $1`,
+      [playerId],
+    );
+    const r = res.rows[0];
+    if (!r) return { days: 0, tickets: 0, rewardGranted: 0, freezes: 0 };
+    return { days: r.streak_days, tickets: r.freeroll_tickets, rewardGranted: 0, freezes: r.streak_freezes };
+  }
+  async getStreakFreezes(playerId: string): Promise<number> {
+    const res = await this.pool.query<{ streak_freezes: number }>(`SELECT streak_freezes FROM players WHERE id = $1`, [playerId]);
+    return res.rows[0]?.streak_freezes ?? 0;
+  }
+  async grantStreakFreeze(playerId: string, n: number): Promise<number> {
+    const res = await this.pool.query<{ streak_freezes: number }>(
+      `UPDATE players SET streak_freezes = LEAST($2, streak_freezes + $3), updated_at = now()
+       WHERE id = $1 RETURNING streak_freezes`,
+      [playerId, STREAK_FREEZE.max, Math.max(0, n)],
+    );
+    return res.rows[0]?.streak_freezes ?? 0;
+  }
+  async buyStreakFreeze(playerId: string): Promise<BuyFreezeResult> {
+    // Atomic: only spend + grant when under the cap AND affordable (both checked in
+    // the WHERE), so a row comes back exactly when the purchase succeeded.
+    const res = await this.pool.query<{ streak_freezes: number; freeroll_tickets: number }>(
+      `UPDATE players SET streak_freezes = streak_freezes + 1, freeroll_tickets = freeroll_tickets - $2, updated_at = now()
+       WHERE id = $1 AND streak_freezes < $3 AND freeroll_tickets >= $2
+       RETURNING streak_freezes, freeroll_tickets`,
+      [playerId, STREAK_FREEZE.ticketCost, STREAK_FREEZE.max],
+    );
+    const row = res.rows[0];
+    if (row) return { ok: true, freezes: row.streak_freezes, tickets: row.freeroll_tickets };
+    // distinguish capped vs insufficient for a precise client message
+    const at = await this.pool.query<{ streak_freezes: number }>(`SELECT streak_freezes FROM players WHERE id = $1`, [playerId]);
+    return { ok: false, reason: (at.rows[0]?.streak_freezes ?? 0) >= STREAK_FREEZE.max ? 'capped' : 'insufficient' };
   }
 
   private async leagueState(division: number, points: number): Promise<LeagueState> {
@@ -659,6 +773,112 @@ export class PersistentStore implements Store {
       [a, b],
     );
     return { aWins: Number(res.rows[0]?.a_wins ?? 0), bWins: Number(res.rows[0]?.b_wins ?? 0) };
+  }
+
+  // ---------- season pass ----------
+  private freshProgress(seasonId: number): SeasonProgress {
+    return { seasonId, crowns: 0, premium: false, claimedFree: [], claimedPrem: [], crownBoost: 1, dailyDate: null, dailyGames: 0 };
+  }
+  async getSeason(nowIso: string): Promise<SeasonMeta> {
+    const raw = await this.getMeta('season:current');
+    if (raw) return JSON.parse(raw) as SeasonMeta;
+    const ends = new Date(new Date(nowIso).getTime() + SEASON.durationDays * 86_400_000).toISOString();
+    const meta: SeasonMeta = { id: 1, startsAt: nowIso, endsAt: ends };
+    await this.setMeta('season:current', JSON.stringify(meta));
+    return meta;
+  }
+  private async currentSeasonId(): Promise<number> {
+    const raw = await this.getMeta('season:current');
+    return raw ? (JSON.parse(raw) as SeasonMeta).id : 1;
+  }
+  async getSeasonProgress(playerId: string): Promise<SeasonProgress> {
+    const sid = await this.currentSeasonId();
+    const res = await this.pool.query<{
+      crowns: number; premium: boolean; claimed_free: number[]; claimed_prem: number[];
+      crown_boost: number; daily_date: string | null; daily_games: number;
+    }>(
+      `SELECT crowns, premium, claimed_free, claimed_prem, crown_boost,
+              to_char(daily_date, 'YYYY-MM-DD') AS daily_date, daily_games
+         FROM season_progress WHERE player_id = $1 AND season_id = $2`,
+      [playerId, sid],
+    );
+    const r = res.rows[0];
+    if (!r) return this.freshProgress(sid);
+    return {
+      seasonId: sid, crowns: r.crowns, premium: r.premium,
+      claimedFree: r.claimed_free ?? [], claimedPrem: r.claimed_prem ?? [],
+      crownBoost: r.crown_boost, dailyDate: r.daily_date, dailyGames: r.daily_games,
+    };
+  }
+  async addCrowns(playerId: string, crowns: number, today: string): Promise<{ crowns: number; dailyGames: number }> {
+    const sid = await this.currentSeasonId();
+    const add = Math.max(0, Math.round(crowns));
+    const res = await this.pool.query<{ crowns: number; daily_games: number }>(
+      `INSERT INTO season_progress (player_id, season_id, crowns, daily_date, daily_games)
+         VALUES ($1, $2, $3, $4::date, 1)
+       ON CONFLICT (player_id, season_id) DO UPDATE SET
+         crowns = season_progress.crowns + $3,
+         daily_games = CASE WHEN season_progress.daily_date = $4::date THEN season_progress.daily_games + 1 ELSE 1 END,
+         daily_date = $4::date
+       RETURNING crowns, daily_games`,
+      [playerId, sid, add, today],
+    );
+    const row = res.rows[0]!;
+    return { crowns: row.crowns, dailyGames: row.daily_games };
+  }
+  async claimSeasonTier(playerId: string, tier: number, lane: 'free' | 'premium'): Promise<boolean> {
+    const sid = await this.currentSeasonId();
+    const col = lane === 'free' ? 'claimed_free' : 'claimed_prem'; // controlled union, safe to interpolate
+    // `before` snapshots the pre-update row (CTEs read a consistent snapshot), so we
+    // report whether THIS call added the tier while the upsert idempotently appends it.
+    const res = await this.pool.query<{ newly: boolean }>(
+      `WITH before AS (
+         SELECT ${col} AS arr FROM season_progress WHERE player_id = $1 AND season_id = $2
+       ), up AS (
+         INSERT INTO season_progress (player_id, season_id, ${col})
+           VALUES ($1, $2, ARRAY[$3]::integer[])
+         ON CONFLICT (player_id, season_id) DO UPDATE SET
+           ${col} = CASE WHEN $3 = ANY(season_progress.${col}) THEN season_progress.${col}
+                         ELSE array_append(season_progress.${col}, $3) END
+         RETURNING 1
+       )
+       SELECT NOT COALESCE($3 = ANY(b.arr), false) AS newly
+         FROM up LEFT JOIN before b ON true`,
+      [playerId, sid, tier],
+    );
+    return res.rows[0]?.newly ?? true;
+  }
+  async setSeasonPremium(playerId: string): Promise<void> {
+    const sid = await this.currentSeasonId();
+    await this.pool.query(
+      `INSERT INTO season_progress (player_id, season_id, premium) VALUES ($1, $2, true)
+       ON CONFLICT (player_id, season_id) DO UPDATE SET premium = true`,
+      [playerId, sid],
+    );
+  }
+  async setSeasonCrownBoost(playerId: string, multiplier: number): Promise<void> {
+    const sid = await this.currentSeasonId();
+    await this.pool.query(
+      `INSERT INTO season_progress (player_id, season_id, crown_boost) VALUES ($1, $2, $3)
+       ON CONFLICT (player_id, season_id) DO UPDATE SET crown_boost = $3`,
+      [playerId, sid, multiplier],
+    );
+  }
+  async consumePremiumTx(txHash: string, playerId: string, seasonId: number): Promise<boolean> {
+    // ON CONFLICT DO NOTHING + rowCount tells us if THIS call was the first to use it.
+    const res = await this.pool.query(
+      `INSERT INTO premium_purchases (tx_hash, player_id, season_id) VALUES ($1, $2, $3)
+       ON CONFLICT (tx_hash) DO NOTHING`,
+      [txHash.toLowerCase(), playerId, seasonId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+  async rolloverSeason(nowIso: string): Promise<boolean> {
+    const s = await this.getSeason(nowIso);
+    if (new Date(nowIso).getTime() < new Date(s.endsAt).getTime()) return false;
+    const ends = new Date(new Date(nowIso).getTime() + SEASON.durationDays * 86_400_000).toISOString();
+    await this.setMeta('season:current', JSON.stringify({ id: s.id + 1, startsAt: nowIso, endsAt: ends }));
+    return true;
   }
 
   async getMeta(key: string): Promise<string | null> {

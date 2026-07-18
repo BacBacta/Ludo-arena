@@ -4,10 +4,12 @@
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
 import { pidFor } from './types.js';
-import type { GameRecord, RoomSnapshot, SessionRecord, SettlementJob, Store } from './types.js';
+import type { BuyFreezeResult, GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
 import {
   ANTI_TILT,
   DAILY_CHALLENGE,
+  SEASON,
+  STREAK_FREEZE,
   DEFAULT_DAILY_STAKE_LIMIT_CENTS,
   DEFAULT_DIVISION,
   DIVISIONS,
@@ -41,6 +43,7 @@ interface PlayerRow {
   tickets: number;
   lastLogin?: string;
   streakDays: number;
+  streakFreezes: number;
   division: number;
   weeklyPoints: number;
   lossStreak: number;
@@ -56,11 +59,15 @@ interface PlayerRow {
 export class MemoryStore implements Store {
   private sessions = new Map<string, SessionRecord>();
   private rooms = new Map<string, RoomSnapshot>();
+  private rooms4 = new Map<string, Room4Snapshot>();
   private queues = new Map<StakeCents, string[]>();
   private players = new Map<string, PlayerRow>();
   private games = new Map<string, GameRecord>();
   private settlements = new Map<string, SettlementJob>();
   private meta = new Map<string, string>();
+  private season: SeasonMeta | null = null;
+  private seasonProg = new Map<string, SeasonProgress>();
+  private premiumTx = new Set<string>();
   private pairGames = new Map<string, number>();
 
   async init(): Promise<void> {}
@@ -90,6 +97,15 @@ export class MemoryStore implements Store {
   }
   async deleteRoom(gameId: string): Promise<void> {
     this.rooms.delete(gameId);
+  }
+  async saveRoom4(snap: Room4Snapshot): Promise<void> {
+    this.rooms4.set(snap.gameId, structuredClone(snap));
+  }
+  async loadRooms4(): Promise<Room4Snapshot[]> {
+    return [...this.rooms4.values()].map((s) => structuredClone(s));
+  }
+  async deleteRoom4(gameId: string): Promise<void> {
+    this.rooms4.delete(gameId);
   }
 
   async queuePush(stake: StakeCents, sessionId: string): Promise<void> {
@@ -142,6 +158,7 @@ export class MemoryStore implements Store {
       done: false,
       tickets: 0,
       streakDays: 0,
+      streakFreezes: 0,
       division: DEFAULT_DIVISION,
       weeklyPoints: 0,
       lossStreak: 0,
@@ -187,6 +204,9 @@ export class MemoryStore implements Store {
       if (txHash) job.txHash = txHash;
     }
   }
+  async hasSettlement(gameId: string): Promise<boolean> {
+    return this.settlements.has(gameId);
+  }
 
   async getChallenge(playerId: string, today: string): Promise<ChallengeState> {
     const row = this.players.get(playerId);
@@ -215,17 +235,108 @@ export class MemoryStore implements Store {
     return { progress: row.captures, target: DAILY_CHALLENGE.captures, completed: row.done, tickets: row.tickets };
   }
 
-  async recordLogin(playerId: string, today: string, yesterday: string): Promise<StreakState> {
-    const row = this.players.get(playerId);
-    if (!row) return { days: 1, tickets: 0, rewardGranted: 0 };
-    if (row.lastLogin === today) {
-      return { days: row.streakDays, tickets: row.tickets, rewardGranted: 0 };
+  // ---------- season pass ----------
+  async getSeason(nowIso: string): Promise<SeasonMeta> {
+    if (!this.season) {
+      const ends = new Date(new Date(nowIso).getTime() + SEASON.durationDays * 86_400_000).toISOString();
+      this.season = { id: 1, startsAt: nowIso, endsAt: ends };
     }
-    row.streakDays = row.lastLogin === yesterday ? row.streakDays + 1 : 1;
+    return { ...this.season };
+  }
+  private prog(playerId: string): SeasonProgress {
+    const cur = this.season?.id ?? 1;
+    let p = this.seasonProg.get(playerId);
+    if (!p || p.seasonId !== cur) {
+      p = { seasonId: cur, crowns: 0, premium: false, claimedFree: [], claimedPrem: [], crownBoost: 1, dailyDate: null, dailyGames: 0 };
+      this.seasonProg.set(playerId, p);
+    }
+    return p;
+  }
+  async getSeasonProgress(playerId: string): Promise<SeasonProgress> {
+    const p = this.prog(playerId);
+    return { ...p, claimedFree: [...p.claimedFree], claimedPrem: [...p.claimedPrem] };
+  }
+  async addCrowns(playerId: string, crowns: number, today: string): Promise<{ crowns: number; dailyGames: number }> {
+    const p = this.prog(playerId);
+    if (p.dailyDate !== today) { p.dailyDate = today; p.dailyGames = 0; }
+    p.dailyGames += 1;
+    p.crowns += Math.max(0, Math.round(crowns));
+    return { crowns: p.crowns, dailyGames: p.dailyGames };
+  }
+  async claimSeasonTier(playerId: string, tier: number, lane: 'free' | 'premium'): Promise<boolean> {
+    const p = this.prog(playerId);
+    const arr = lane === 'free' ? p.claimedFree : p.claimedPrem;
+    if (arr.includes(tier)) return false;
+    arr.push(tier);
+    return true;
+  }
+  async setSeasonPremium(playerId: string): Promise<void> {
+    this.prog(playerId).premium = true;
+  }
+  async setSeasonCrownBoost(playerId: string, multiplier: number): Promise<void> {
+    this.prog(playerId).crownBoost = multiplier;
+  }
+  async consumePremiumTx(txHash: string, _playerId: string, _seasonId: number): Promise<boolean> {
+    const key = txHash.toLowerCase();
+    if (this.premiumTx.has(key)) return false;
+    this.premiumTx.add(key);
+    return true;
+  }
+  async rolloverSeason(nowIso: string): Promise<boolean> {
+    const s = await this.getSeason(nowIso);
+    if (new Date(nowIso).getTime() < new Date(s.endsAt).getTime()) return false;
+    const ends = new Date(new Date(nowIso).getTime() + SEASON.durationDays * 86_400_000).toISOString();
+    this.season = { id: s.id + 1, startsAt: nowIso, endsAt: ends };
+    // per-player progress resets lazily (prog() sees a new seasonId)
+    return true;
+  }
+
+  async recordLogin(playerId: string, today: string, yesterday: string, twoDaysAgo?: string): Promise<StreakState> {
+    const row = this.players.get(playerId);
+    if (!row) return { days: 1, tickets: 0, rewardGranted: 0, freezes: 0, daysAway: 0 };
+    if (row.lastLogin === today) {
+      return { days: row.streakDays, tickets: row.tickets, rewardGranted: 0, freezes: row.streakFreezes, daysAway: 0 };
+    }
+    const daysAway = row.lastLogin ? Math.max(1, Math.round((Date.parse(today) - Date.parse(row.lastLogin)) / 86_400_000)) : 0;
+    let freezeUsed = false;
+    if (row.lastLogin === yesterday) {
+      row.streakDays += 1;
+    } else if (twoDaysAgo && row.lastLogin === twoDaysAgo && row.streakFreezes > 0) {
+      // a streak-freeze bridges EXACTLY one missed day → the streak continues
+      row.streakFreezes -= 1;
+      row.streakDays += 1;
+      freezeUsed = true;
+    } else {
+      row.streakDays = 1;
+    }
     row.lastLogin = today;
     const rewardGranted = STREAK_REWARDS[row.streakDays] ?? 0;
     row.tickets += rewardGranted;
-    return { days: row.streakDays, tickets: row.tickets, rewardGranted };
+    return { days: row.streakDays, tickets: row.tickets, rewardGranted, freezes: row.streakFreezes, freezeUsed, daysAway };
+  }
+
+  async getStreak(playerId: string): Promise<StreakState> {
+    const row = this.players.get(playerId);
+    if (!row) return { days: 0, tickets: 0, rewardGranted: 0, freezes: 0 };
+    return { days: row.streakDays, tickets: row.tickets, rewardGranted: 0, freezes: row.streakFreezes };
+  }
+  async getStreakFreezes(playerId: string): Promise<number> {
+    return this.players.get(playerId)?.streakFreezes ?? 0;
+  }
+  async grantStreakFreeze(playerId: string, n: number): Promise<number> {
+    const row = this.players.get(playerId);
+    if (!row) return 0;
+    row.streakFreezes = Math.min(STREAK_FREEZE.max, row.streakFreezes + Math.max(0, n));
+    return row.streakFreezes;
+  }
+  async buyStreakFreeze(playerId: string): Promise<BuyFreezeResult> {
+    const row = this.players.get(playerId);
+    if (!row) return { ok: false, reason: 'insufficient' };
+    if (row.streakFreezes >= STREAK_FREEZE.max) return { ok: false, reason: 'capped' };
+    if (row.tickets < STREAK_FREEZE.ticketCost) return { ok: false, reason: 'insufficient' };
+    row.tickets -= STREAK_FREEZE.ticketCost;
+    row.streakFreezes += 1;
+    return { ok: true, freezes: row.streakFreezes, tickets: row.tickets };
   }
 
   private leagueState(division: number, points: number): LeagueState {

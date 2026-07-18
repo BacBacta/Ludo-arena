@@ -76,10 +76,35 @@ export interface ChallengeState {
 /** Login-streak milestones (E4.2): consecutive-day count → freeroll tickets. */
 export const STREAK_REWARDS: Record<number, number> = { 3: 1, 7: 2 };
 
+/** Streak-freeze (season Phase 3): a ticket-bought item that protects the login
+ *  streak across ONE missed day (loss-aversion retention + a ticket sink). Also
+ *  granted by the season track (streakFreeze reward). `max` caps hoarding. */
+export const STREAK_FREEZE = { ticketCost: 4, max: 3 } as const;
+
 export interface StreakState {
   days: number; // current consecutive-day streak
   tickets: number; // total freeroll tickets held (shared with the challenge)
   rewardGranted: number; // tickets granted by this login's milestone (0 if none)
+  freezes?: number; // streak-freezes held (inventory)
+  freezeUsed?: boolean; // a freeze was consumed on THIS login to bridge a missed day
+  daysAway?: number; // days since the previous login (for the win-back offer); 0/1 = active
+}
+
+/** Win-back / comeback offer (season Phase 3): returning after an absence grants
+ *  non-cashable tickets, tiered by days away. NEVER for self-excluded / limit-hit
+ *  players (RG). The stake-only credit tier (14-30d) is deferred — it needs a
+ *  non-withdrawable stake-credit primitive that doesn't exist yet. */
+export const WINBACK_TIERS: ReadonlyArray<{ minDaysAway: number; tickets: number }> = [
+  { minDaysAway: 7, tickets: 5 },
+  { minDaysAway: 3, tickets: 2 },
+];
+/** The comeback reward for `daysAway`, or null if below the first threshold. */
+export function winbackFor(daysAway: number): { minDaysAway: number; tickets: number } | null {
+  return WINBACK_TIERS.find((tier) => daysAway >= tier.minDaysAway) ?? null;
+}
+export interface Comeback {
+  daysAway: number;
+  tickets: number;
 }
 
 /** Anti-tilt bonus (E4.5): after N consecutive staked losses the player is
@@ -87,9 +112,117 @@ export interface StreakState {
  *  unbacked cash liability (the old cents-cashback had no payout path). */
 export const ANTI_TILT = { losses: 3, rewardTickets: 1 } as const;
 
-/** Daily freeroll (v1): a ticket-gated free 1v1 — entry costs a ticket, the
- *  winner takes both entries plus a house bonus. */
-export const FREEROLL = { entryTickets: 1, winnerTickets: 3 } as const;
+/** Daily freeroll: a ticket-gated free 1v1. Net-neutral-leaning by design — each
+ *  of the 2 players stakes `entryTickets`, the winner takes `winnerTickets`
+ *  (2·2 = 4 in / 3 out = a slight SINK, not a faucet). This is deliberate: the
+ *  economy sim showed a house-bonus faucet here drives runaway ticket inflation,
+ *  so the freeroll now gently removes tickets from circulation instead. */
+export const FREEROLL = { entryTickets: 2, winnerTickets: 3 } as const;
+
+// ---- Season pass (anti-churn keystone) — see docs/SEASON_PASS_SPEC.md ---------
+/** Crowns are earned by playing and fill a ~28-day track of TIERS; each tier
+ *  grants a reward. Crowns never convert to money; the pass is the wealth-
+ *  proportional ticket sink AND the main retention driver. */
+export const SEASON = {
+  tierCount: 50,
+  durationDays: 28,
+  crownPerGame: 10,
+  winBonus: 5,
+  firstWinDaily: 15,   // first win of the UTC day
+  challengeDaily: 20,  // daily challenge completed
+  softCapGames: 10,    // beyond this many games/day, per-game crowns decay…
+  softCapCrown: 3,     // …to this (anti-grind, preserves 28-day pacing)
+  // front-loaded tier cost: first `frontTiers` cheap → fast early rewards (D1 hook)
+  frontTiers: 5,
+  frontCost: 30,
+  laterCost: 55,
+} as const;
+
+/** Premium season pass (Phase 2): a one-time-per-season USDT purchase that unlocks
+ *  the premium reward lane. Bought through the existing CosmeticsStore rail — the
+ *  server verifies the on-chain Purchased(buyer, keccak(itemId)) like a cosmetic.
+ *  `itemId` is the store catalogue key; `cents` is the price ($1.50 = a conversion
+ *  loss-leader, see docs/SEASON_PASS_SPEC.md §4). */
+export const SEASON_PREMIUM = { itemId: 'season-premium', cents: 150 } as const;
+
+/** Cumulative crowns needed to REACH tier t (1..tierCount). */
+export function crownsForTier(t: number): number {
+  if (t <= 0) return 0;
+  const f = Math.min(t, SEASON.frontTiers);
+  const l = Math.max(0, t - SEASON.frontTiers);
+  return f * SEASON.frontCost + l * SEASON.laterCost;
+}
+/** The tier a player has REACHED with `crowns` (0..tierCount). */
+export function tierFromCrowns(crowns: number): number {
+  let t = 0;
+  while (t < SEASON.tierCount && crownsForTier(t + 1) <= crowns) t++;
+  return t;
+}
+
+export type RewardKind = 'tickets' | 'cosmetic' | 'streakFreeze' | 'crownBoost' | 'title';
+export interface Reward {
+  kind: RewardKind;
+  amount?: number; // tickets count, or boost % (e.g. 25)
+  id?: string;     // cosmetic / title id
+}
+export interface TierDef {
+  tier: number; // 1..tierCount
+  free: Reward;
+  premium: Reward;
+}
+export interface SeasonState {
+  id: number;
+  endsAt: string; // ISO
+  tierCount: number;
+  crowns: number; // THIS player's crowns this season
+  tier: number;   // reached tier (0..tierCount)
+  premium: boolean;
+  claimedFree: number[];
+  claimedPrem: number[];
+  tiers: TierDef[]; // the reward table (content)
+}
+
+/** Season-exclusive dice-skin pool (season Phase 4 — content cadence). These are
+ *  PASS-ONLY: never unlockable by progression or purchasable, so owning one is a
+ *  season badge of honour (scarcity/status, §10). The visuals are procedural (no
+ *  art assets) and live in the client's DICE_SKINS. Each season draws a distinct
+ *  set via `seasonSkinsFor`; the recurring content task APPENDS new ids here so the
+ *  rotation keeps producing fresh exclusives (docs/SEASON_PASS_SPEC.md §4-Content). */
+export const SEASON_SKINS: readonly string[] = [
+  'season-aurora', 'season-crimson', 'season-abyss', 'season-verdant',
+  'season-solar', 'season-frost', 'season-void', 'season-royal',
+];
+/** The `count` season-exclusive skins for a season, rotating so consecutive
+ *  seasons get disjoint sets until the pool wraps (then the art task has appended
+ *  more). Deterministic → the same season always yields the same set. */
+export function seasonSkinsFor(seasonId: number, count: number): string[] {
+  const base = ((seasonId - 1) * count) % SEASON_SKINS.length;
+  return Array.from({ length: count }, (_, i) => SEASON_SKINS[(base + i) % SEASON_SKINS.length]!);
+}
+
+/** The season reward table (content) for `seasonId`. Rhythm per §15: no empty
+ *  tier; free = tickets + streak-freeze at 15/35 + a season-exclusive skin at
+ *  25/50; premium = crown boost early, exclusive skins at 20/40, a legendary title
+ *  at 50. Cosmetic ids are the season's own exclusives (rotated per season). */
+export function seasonTiers(seasonId = 1): TierDef[] {
+  const [freeA, freeB, premA, premB] = seasonSkinsFor(seasonId, 4);
+  const tiers: TierDef[] = [];
+  for (let t = 1; t <= SEASON.tierCount; t++) {
+    const free: Reward =
+      t === 25 ? { kind: 'cosmetic', id: freeA }
+      : t === SEASON.tierCount ? { kind: 'cosmetic', id: freeB }
+      : t === 15 || t === 35 ? { kind: 'streakFreeze', amount: 1 }
+      : { kind: 'tickets', amount: t % 5 === 0 ? 3 : 2 };
+    const premium: Reward =
+      t === 3 ? { kind: 'crownBoost', amount: 25 }
+      : t === SEASON.tierCount ? { kind: 'title', id: `season-${seasonId}-legend` }
+      : t === 20 ? { kind: 'cosmetic', id: premA }
+      : t === 40 ? { kind: 'cosmetic', id: premB }
+      : { kind: 'tickets', amount: t % 5 === 0 ? 5 : 3 };
+    tiers.push({ tier: t, free, premium });
+  }
+  return tiers;
+}
 
 /** 4-player table config. A FREE table fills empty seats with bots after
  *  `botFillMs`; a cUSD-STAKED table needs 4 real stakers (bots have no funds)
@@ -350,6 +483,16 @@ export type ClientMsg =
   // verifies the tx emitted Purchased(buyer=provenWallet, itemId=keccak(id))
   // before granting ownership. Dormant until the store is deployed (rec 6).
   | { t: 'cosmetic.claim'; txHash: string; id: string }
+  // Season pass: claim the reward for a REACHED tier on a lane. The server checks
+  // the tier is unlocked (crowns) and — for 'premium' — that the pass is owned,
+  // then grants the reward idempotently and pushes back a fresh season.state.
+  | { t: 'season.claim'; tier: number; lane: 'free' | 'premium' }
+  // Unlock the premium pass for the current season: the server verifies the USDT
+  // purchase tx (Purchased(buyer, keccak(SEASON_PREMIUM.itemId)) on the
+  // CosmeticsStore) like cosmetic.claim, then flips premium on + retro-unlocks.
+  | { t: 'season.buyPremium'; txHash: string }
+  // Buy one streak-freeze with tickets (season Phase 3 sink).
+  | { t: 'streak.buyFreeze' }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -389,6 +532,18 @@ export interface ResumedGame {
   fairnessCommit: string;
 }
 
+/** The on-chain settlement contracts the server is configured to settle against,
+ *  advertised in hello.ok so the client can verify its own bundled addresses match
+ *  before locking any real stake (guards a server/client address drift, e.g. after
+ *  a contract redeploy). Addresses are lowercase-comparable hex strings. */
+export interface SettlementContracts {
+  chainId: number;
+  /** LudoEscrow (1v1); absent if the 1v1 arbiter is not configured. */
+  escrow?: string;
+  /** LudoEscrowN (4-player); absent if the N-player arbiter is not configured. */
+  escrowN?: string;
+}
+
 export type ServerMsg =
   | {
       t: 'hello.ok';
@@ -412,6 +567,8 @@ export type ServerMsg =
       league?: LeagueState;
       limits?: LimitsState; // responsible-gaming state (E5.2)
       ownedSkins?: string[]; // premium skins the player has unlocked (server-authoritative)
+      season?: SeasonState; // current season pass state (crowns, tier, claims, reward table)
+      comeback?: Comeback; // win-back offer surfaced on return after an absence (Phase 3)
       stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
       // Wallet ownership proof (SIWE): if a wallet was supplied but isn't proven
       // yet, `walletNonce` is the string to sign; `walletProven` reflects state.
@@ -420,6 +577,14 @@ export type ServerMsg =
       // The ToS version the server has on record as accepted for this player (so
       // the client knows whether it must re-prompt before staked play).
       consentTosVersion?: string;
+      // The on-chain contracts the SERVER will settle against. The client MUST
+      // refuse to deposit into any escrow whose address (or chain) differs from
+      // these: the server resolves its escrow from a Fly secret while the client
+      // resolves it from a copy vendored into its own bundle, so a redeploy that
+      // updates one but not the other would send the stake to an escrow the server
+      // never settles — funds stuck until the 24 h refundActive. Present only when
+      // settlement is armed (an arbiter is configured). See SettlementContracts.
+      contracts?: SettlementContracts;
     }
   | { t: 'queue.ok'; position: number }
   // Your last opponent clicked Rematch and is waiting; `name` is their display
@@ -497,6 +662,15 @@ export type ServerMsg =
   | { t: 'skin.owned'; ownedIds: string[]; tickets: number }
   // Responsible-gaming state after hello or a limits.set (E5.2).
   | { t: 'limits.update'; limits: LimitsState }
+  // Login streak / streak-freeze state after a buyFreeze (season Phase 3).
+  | { t: 'streak.update'; streak: StreakState }
+  // Full season pass state — sent on hello and after a season.claim (the reward
+  // table is static, so the client keeps `tiers` and only needs the light
+  // `season.progress` push mid-session).
+  | { t: 'season.state'; season: SeasonState }
+  // Lightweight per-game push: crowns earned (and the tier it unlocked). Lets the
+  // client animate the track filling without re-sending the whole reward table.
+  | { t: 'season.progress'; crowns: number; tier: number; gained: number; dailyGames: number }
   // ---- 4-player online (Game4 state; seats 0-3) ----
   | {
       t: 'match.found4';
@@ -595,6 +769,10 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof m.skinId === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.skinId) ? m : null;
     case 'cosmetic.claim':
       return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) && typeof m.id === 'string' && cosmeticById(m.id) !== undefined ? m : null;
+    case 'season.claim':
+      return Number.isInteger(m.tier) && m.tier >= 1 && m.tier <= SEASON.tierCount && (m.lane === 'free' || m.lane === 'premium') ? m : null;
+    case 'season.buyPremium':
+      return typeof m.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.txHash) ? m : null;
     case 'emote':
       return typeof m.id === 'string' && ((EMOTES as readonly string[]).includes(m.id) || isQuickChat(m.id)) ? m : null;
     case 'gift':
@@ -624,6 +802,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'game.resign':
     case 'game.rematch':
     case 'rematch.decline':
+    case 'streak.buyFreeze':
     case 'ping':
       return m;
     default:

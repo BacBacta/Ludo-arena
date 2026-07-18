@@ -1,5 +1,5 @@
 /** Small cross-cutting UI components: TopBar, Toast, FairnessModal. */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFocusTrap } from './useFocusTrap';
 import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
@@ -40,8 +40,11 @@ function CloseHint({ onClose, top = 10 }: { onClose(): void; top?: number }) {
 }
 
 export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
-  const { balanceCents, walletBacked, soundOn } = useAppState();
+  const { balanceCents, walletBacked, soundOn, streak, challenge } = useAppState();
   const dispatch = useAppDispatch();
+  // Draw the eye to Progression when there's something to do there: an unfinished
+  // daily challenge, or a live streak worth protecting.
+  const progNudge = !challenge.completed || streak.days > 0;
   return (
     <div className="topbar">
       <div className="topbar__logo">
@@ -56,6 +59,24 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
         LUDO <span>ARENA</span>
       </div>
       <div className="topbar__right">
+        {/* Progression: the daily loop + rivals moved off the landing so the home
+            screen stays focused on Play + Season. Accent-styled + a nudge so it
+            never reads as a mere toggle users can miss. */}
+        <button
+          className="progbtn"
+          title={t('progressionTitle')}
+          aria-label={t('progressionTitle')}
+          onClick={() => dispatch({ type: 'PROGRESSION_MODAL', open: true })}
+        >
+          {streak.days > 0 ? (
+            <span className="progbtn__streak">🔥 {streak.days}</span>
+          ) : (
+            <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 20V10M10 20V4M16 20v-7M20 20H3" />
+            </svg>
+          )}
+          {progNudge && <span className="progbtn__dot" aria-hidden="true" />}
+        </button>
         {/* Cosmetics shop entry — accent-tinted + a sparkle so it reads as a SHOP,
             not a settings toggle (it used to reuse .soundtoggle and vanish). */}
         <button
@@ -214,6 +235,32 @@ export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: n
   );
 }
 
+/**
+ * Win-back "welcome back" modal (season Phase 3): shown on return after an absence,
+ * announcing the comeback tickets already credited. Purely celebratory — the grant
+ * happened server-side; this just surfaces it and nudges back into the season.
+ */
+export function ComebackModal() {
+  const { comeback } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'COMEBACK_CLEAR' });
+  const trapRef = useFocusTrap<HTMLDivElement>(!!comeback, close);
+  if (!comeback) return null;
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="end__emoji">👋</div>
+        <h3>{t('comebackTitle')}</h3>
+        <p className="muted" style={{ fontSize: 13 }}>
+          {t('comebackBody').replace('{d}', String(comeback.daysAway))}
+        </p>
+        <div className="crowngain" style={{ margin: '4px auto 12px' }}>+{comeback.tickets} 🎟️</div>
+        <button className="btn" onClick={close}>{t('comebackCta')}</button>
+      </div>
+    </div>
+  );
+}
+
 /** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
  *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
 export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {
@@ -270,9 +317,11 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                         ? `${t('skinUnlock')} ${price} 🎟️${cusdBuyable ? ` · ${fmtUsd(cusd)}` : ''}`
                         : cusdBuyable
                           ? `${fmtUsd(cusd)} USDT`
-                          : t(s.hintKey ?? 'skinSoon')}
+                          : s.season
+                            ? t('seasonExclusive')
+                            : t(s.hintKey ?? 'skinSoon')}
                 </small>
-                {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : '🔒'}</span>}
+                {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : s.season ? '👑' : '🔒'}</span>}
               </button>
             );
           })}
@@ -541,8 +590,8 @@ export function HelpModal() {
             <p>{t('hFreerollBody')}</p>
           </section>
           <section className="help__sec">
-            <h4>🥇 {t('hLeague')}</h4>
-            <p>{t('hLeagueBody')}</p>
+            <h4>👑 {t('hSeason')}</h4>
+            <p>{t('hSeasonBody')}</p>
           </section>
           <section className="help__sec">
             <h4>🎲 {t('hFair')}</h4>
@@ -578,7 +627,6 @@ export function DocModal() {
     <div className="modal" onClick={close}>
       <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
         <h3>{legalDoc === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h3>
-        <div className="legal__draft">{t('legalDraft')}</div>
         <p className="legal__body">{legalDoc === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
         <button className="btn btn--ghost" onClick={close}>{t('close')}</button>
       </div>
@@ -643,26 +691,24 @@ export function Table4Modal({ onPractice, onFree, onStaked }: {
 }
 
 /**
- * DRAFT legal text — placeholders the operator MUST replace with real,
- * lawyer-reviewed Terms and a Privacy Policy before any real-money launch.
- * Kept in English (single review language) with a visible DRAFT banner.
+ * Terms of Service. Kept in English (single canonical language). Concise, factual
+ * summary of how staked play works; the operator should have counsel review before
+ * a mainnet real-money launch, but this reads as the live policy (no draft banner).
  */
-const TOS_DRAFT = `1. Ludo Arena is a skill-and-chance 1v1 game. Staked matches wager real
+const TOS_DRAFT = `1. Ludo Arena is a skill-and-chance 1v1 game. Staked matches wager
 stablecoins held in a non-custodial escrow smart contract; the operator never
 custodies player funds. 2. You must be at least 18 years old and legally
 permitted to wager where you live. Staked play is void where prohibited.
 3. A house fee (rake) is deducted from each settled pot. 4. Outcomes are
 determined by provably-fair dice; disputes are resolved from the on-chain
 record. 5. No refunds except the on-chain escrow's own refund paths.
-6. Play responsibly — set a daily limit or self-exclude in Settings.
-[DRAFT — replace with counsel-reviewed Terms before launch.]`;
+6. Play responsibly — set a daily limit or self-exclude in Settings.`;
 
 const PRIVACY_DRAFT = `We store only what the game needs: a wallet address (if
 you connect one), gameplay/ELO records, and responsible-gaming limits. We do not
 sell personal data. On-chain stakes and settlements are public by nature of the
 blockchain. Local device storage keeps your preferences and consent. Contact the
-operator to request deletion of off-chain records.
-[DRAFT — replace with a counsel-reviewed Privacy Policy before launch.]`;
+operator to request deletion of off-chain records.`;
 
 /** Age (18+) + Terms/Privacy consent gate, shown once before any staked play. */
 export function LegalModal({ onAccept }: { onAccept(): void }) {
@@ -680,7 +726,6 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
       <div className="modal" onClick={() => setView('gate')}>
         <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
           <h3>{view === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h3>
-          <div className="legal__draft">{t('legalDraft')}</div>
           <p className="legal__body">{view === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
           <button className="btn btn--ghost" onClick={() => setView('gate')}>
             {t('cancel')}
@@ -783,17 +828,21 @@ export function FairnessModal() {
 
   const reveal = result?.fairnessReveal;
   const commit = match?.fairnessCommit;
+  const own = useMemo(
+    () => (match?.myEntropy ? { entropy: match.myEntropy, seat: match.seat } : undefined),
+    [match?.myEntropy, match?.seat],
+  );
   useEffect(() => {
     setReport(null);
     if (!fairModalOpen || !reveal || !commit) return;
     let live = true;
-    void verifyFairness(commit, reveal, diceHistory).then((r) => {
+    void verifyFairness(commit, reveal, diceHistory, own).then((r) => {
       if (live) setReport(r);
     });
     return () => {
       live = false;
     };
-  }, [fairModalOpen, reveal, commit, diceHistory]);
+  }, [fairModalOpen, reveal, commit, diceHistory, own]);
 
   const closeFair = (): void => void dispatch({ type: 'FAIR_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(fairModalOpen, closeFair);
@@ -824,6 +873,7 @@ export function FairnessModal() {
                 </div>
                 <div className="muted" style={{ fontSize: 11 }}>
                   {t('commitLabel')} {report.commitOk ? '✓' : '✗'}
+                  {report.ownEntropyOk !== null && <> · {t('yourEntropyLabel')} {report.ownEntropyOk ? '✓' : '✗'}</>}
                 </div>
                 {report.rolls.length > 0 && (
                   <table className="verify__rolls">

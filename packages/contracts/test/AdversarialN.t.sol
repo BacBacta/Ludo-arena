@@ -53,7 +53,7 @@ contract AdversarialNTest is Test {
         }
         // fill a 4-seat table
         for (uint256 i = 0; i < 4; i++) {
-            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4);
+            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4, bytes32(0));
         }
         tok.setBlocked(players[2]); // seat #3 becomes unpayable (blacklist / griefing)
 
@@ -85,10 +85,10 @@ contract AdversarialNTest is Test {
         for (uint256 i = 0; i < 4; i++) {
             tok.mint(players[i], 10e18);
             vm.prank(players[i]); tok.approve(address(esc), type(uint256).max);
-            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4);
+            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4, bytes32(0));
         }
         tok.setBlocked(players[0]); // the winner is unpayable at settle time
-        esc.settle(gameId, players[0], _sign(gameId, players[0]));
+        esc.settle(gameId, players[0], "", new string[](0), _sign(gameId, players[0]));
 
         uint256 pot = 4e18;
         uint256 rake = (pot * 900) / 10_000;
@@ -118,9 +118,9 @@ contract AdversarialNTest is Test {
         for (uint256 i = 0; i < 4; i++) {
             tok.mint(players[i], 10e18);
             vm.prank(players[i]); tok.approve(address(esc), type(uint256).max);
-            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4);
+            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4, bytes32(0));
         }
-        esc.settle(gameId, players[0], _sign(gameId, players[0]));
+        esc.settle(gameId, players[0], "", new string[](0), _sign(gameId, players[0]));
         // pot 4e18, rake 9% = 0.36e18, winner gets 3.64e18
         assertEq(tok.balanceOf(players[0]), 9e18 + 3.64e18);
         assertEq(tok.balanceOf(treasury), 0.36e18);
@@ -134,13 +134,13 @@ contract AdversarialNTest is Test {
         for (uint256 i = 0; i < 4; i++) {
             tok.mint(players[i], 10e18);
             vm.prank(players[i]); tok.approve(address(esc), type(uint256).max);
-            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4);
+            vm.prank(players[i]); esc.join(gameId, address(tok), 1e18, 4, bytes32(0));
         }
         address intruder = address(0xE5);
         tok.mint(intruder, 10e18);
         vm.prank(intruder); tok.approve(address(esc), type(uint256).max);
         vm.prank(intruder);
         vm.expectRevert(LudoEscrowN.BadStatus.selector); // table already Active
-        esc.join(gameId, address(tok), 1e18, 4);
+        esc.join(gameId, address(tok), 1e18, 4, bytes32(0));
     }
 }

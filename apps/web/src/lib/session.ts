@@ -10,6 +10,7 @@ import {
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
 import { deviceFingerprint } from './fingerprint';
+import { setServerContracts } from './settlementGuard';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
 import { loadAvatarId } from './avatars';
@@ -27,11 +28,14 @@ import {
   RAKE_BPS,
   walletProofMessage,
   type ChallengeState,
+  type ErrorCode,
   type GameOverReason,
   type OpponentInfo,
   type LeagueState,
   type LimitsState,
+  type Comeback,
   type PublicProfile,
+  type SeasonState,
   type ServerMsg,
   type StakeCents,
   type StreakState,
@@ -72,6 +76,10 @@ export interface MatchInfo {
   stakeCents: StakeCents;
   potCents: number;
   fairnessCommit: string;
+  /** Our OWN committed entropy for this game (RemoteSession only). Kept so the
+   *  fairness verifier can confirm the server actually bound it at our seat in the
+   *  reveal, not silently ignore it (R-DICE-1). Absent for the local bot. */
+  myEntropy?: string;
 }
 
 export interface GameResult {
@@ -97,7 +105,12 @@ export interface SessionEvents {
   /** A gift was sent from one seat to another (id in GIFTS). */
   onGift(from: number, to: number, id: string): void;
   onOver(result: GameResult): void;
-  onInfo(message: string): void;
+  /** A server-side notice. `code` is the machine-readable reason when it came from
+   *  an `error` message: benign gameplay races (NOT_YOUR_TURN / ILLEGAL_MOVE — a
+   *  duplicate or stale intent the authoritative state already superseded) carry it
+   *  so the UI can release the input lock WITHOUT a nagging toast, while real errors
+   *  (limits, bad state, …) still surface. Absent for purely informational notices. */
+  onInfo(message: string, code?: ErrorCode): void;
   /** On-chain settlement confirmed (E3.3): the payout tx is mined. */
   onSettled(txHash: string): void;
   /** Stake refunded on-chain (E3.4): the opponent never joined. */
@@ -114,6 +127,12 @@ export interface SessionEvents {
   onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win' | 'sync'): void;
   /** Premium dice skins the player owns (from hello.ok). */
   onSkins(ownedIds: string[]): void;
+  /** Win-back comeback offer surfaced on return after an absence (Phase 3). */
+  onComeback(c: Comeback): void;
+  /** Full season pass state (hello.ok, or after a claim). */
+  onSeasonState(season: SeasonState): void;
+  /** Light per-game season push: crowns earned this game + the reached tier. */
+  onSeasonProgress(p: { crowns: number; tier: number; gained: number; dailyGames: number }): void;
   /** Own stable profile from hello.ok: identity (name/flag) + ELO + W/L + public pid. */
   onProfile(p: { name?: string; flag?: string; elo?: number; games?: number; wins?: number; pid?: string }): void;
   /** Responsible-gaming limits (E5.2). */
@@ -239,10 +258,24 @@ export class LocalBotSession implements GameSession {
       } else if (seat === 1) {
         const pick = pickAutoMove(this.state, 1, value) ?? this.state.legal[0];
         if (pick !== undefined) setTimeout(() => this.applyMove(1, pick), BOT_MOVE_MS);
+      } else {
+        // seat 0 with a REAL choice: the human must pick a token, so the client
+        // needs the post-roll state (phase=awaiting-move + legal list) to make
+        // tokens tappable. The server (room.ts) broadcasts game.state here for
+        // exactly this reason; the local bot has no server, so emit it ourselves.
+        // Without it the board shows nothing to tap and the die looks frozen after
+        // the player's own roll (only after the opening, once a roll first yields
+        // more than one legal move).
+        this.ev.onState(this.state);
       }
-      // seat 0 with multiple choices: wait for the player's tap
     } else {
-      // rolled with no legal move — no walk, just pass the turn after a beat
+      // Rolled with no legal move (or a three-6 burn): applyRoll ALREADY flipped the
+      // turn, but only onTurn (activeTurn) fires below — the store's game.turn stays
+      // stale, so when the turn hands BACK to the human (e.g. the bot rolls a no-move)
+      // the client's `handoff` guard hides the roll button and the die freezes for
+      // good. Publish the flipped state first, mirroring the server's announceTurn
+      // (room.ts), which broadcasts game.state on every turn pass for this exact reason.
+      this.ev.onState(this.state);
       this.afterTurnChange(0);
     }
   }
@@ -301,6 +334,12 @@ export type JoinIntent =
   | { kind: 'create' }
   | { kind: 'join'; code: string };
 
+// R-WEB-2: the resume token lives in localStorage, not sessionStorage, so it
+// SURVIVES an OS-initiated webview/tab kill (a routine Android/MiniPay lifecycle
+// event when backgrounded). On relaunch the client can resume an in-progress
+// staked game instead of being auto-played to a timeout-forfeit and losing the
+// escrowed stake. Two tabs now share the token — safe since the server take-over
+// (R-RT-1) lets the newest socket own the session and the stale one go quiet.
 const TOKEN_KEY = 'ludo.sessionToken';
 
 /** One-shot lobby sync at app open: pulls fresh league standings + daily
@@ -317,6 +356,7 @@ export function syncLobby(
     challenge(challenge: ChallengeState): void;
     streak(streak: StreakState): void;
     limits(limits: LimitsState): void;
+    season?(season: SeasonState): void;
   },
 ): void {
   let ws: WebSocket;
@@ -332,7 +372,7 @@ export function syncLobby(
     const entropy = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
     let token: string | null = null;
     try {
-      token = sessionStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
     } catch {
       /* storage unavailable */
     }
@@ -348,7 +388,7 @@ export function syncLobby(
     if (msg.t !== 'hello.ok') return;
     clearTimeout(timer);
     try {
-      if (msg.sessionToken) sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
+      if (msg.sessionToken) localStorage.setItem(TOKEN_KEY, msg.sessionToken);
     } catch {
       /* storage unavailable */
     }
@@ -356,6 +396,7 @@ export function syncLobby(
     if (msg.challenge) on.challenge(msg.challenge);
     if (msg.streak) on.streak(msg.streak);
     if (msg.limits) on.limits(msg.limits);
+    if (msg.season) on.season?.(msg.season);
     ws.close();
   };
   ws.onerror = () => clearTimeout(timer);
@@ -514,7 +555,7 @@ export function sendLimits(
     })();
     let token: string | null = null;
     try {
-      token = sessionStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
     } catch {
       /* storage unavailable */
     }
@@ -575,7 +616,7 @@ export function buySkin(
     })();
     let token: string | null = null;
     try {
-      token = sessionStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
     } catch {
       /* storage unavailable */
     }
@@ -640,7 +681,7 @@ export function claimCosmetic(
     })();
     let token: string | null = null;
     try {
-      token = sessionStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
     } catch {
       /* storage unavailable */
     }
@@ -669,14 +710,208 @@ export function claimCosmetic(
     };
   });
 }
+/**
+ * One-shot: claim a season-pass tier reward. Opens a short-lived socket, hellos
+ * (so the server resolves this player's pid + wallet proof), sends season.claim,
+ * and resolves with the fresh SeasonState the server pushes back — or null on
+ * error/timeout. Mirrors buySkin: claims happen from the lobby, outside a game.
+ */
+export function claimSeasonReward(
+  serverUrl: string,
+  tier: number,
+  lane: 'free' | 'premium',
+  walletAddress?: string,
+): Promise<SeasonState | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: SeasonState | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 5000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'season.claim', tier, lane }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      // The successful claim ends with a fresh season.state (a preceding
+      // tickets.grant, if any, is folded into that state's claimed lists).
+      if (msg.t === 'season.state') {
+        clearTimeout(timer);
+        done(msg.season);
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
+/**
+ * One-shot: unlock the premium season pass. Sends the verified USDT purchase tx;
+ * the server confirms it on-chain (like cosmetic.claim), flips premium on, and
+ * retro-unlocks reached tiers, then pushes the fresh SeasonState we resolve with.
+ */
+export function buySeasonPremium(
+  serverUrl: string,
+  txHash: string,
+  walletAddress?: string,
+): Promise<SeasonState | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: SeasonState | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 20000); // chain read can be slow
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'season.buyPremium', txHash }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'season.state') {
+        clearTimeout(timer);
+        done(msg.season);
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
+/**
+ * One-shot: buy a streak-freeze with tickets. Resolves with the fresh StreakState
+ * (freezes + ticket total) the server pushes back, or null on error/timeout.
+ */
+export function buyStreakFreeze(serverUrl: string, walletAddress?: string): Promise<StreakState | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: StreakState | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 5000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'streak.buyFreeze' }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'streak.update') {
+        clearTimeout(timer);
+        done(msg.streak);
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
+/** The INITIAL connection is retried this many times before we declare the server
+ *  unreachable. The target audience is low-end Android on slow 3G, where a single
+ *  wss handshake can miss a tight window on jitter/packet loss — one slow attempt
+ *  must NOT read as "server unreachable" (private tables have no bot fallback). */
+const MAX_INITIAL_ATTEMPTS = 4;
 
 export class RemoteSession implements GameSession {
   private ws: WebSocket | null = null;
   private disposed = false;
   private inGame = false;
   private attempts = 0;
+  private initialAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** Timestamp of the LAST message received — the liveness signal. A websocket
    *  can die silently (mobile screen off, laptop sleep, NAT timeout): no close
@@ -737,9 +972,12 @@ export class RemoteSession implements GameSession {
   private connect(initial: boolean): void {
     const ws = new WebSocket(withQa(this.serverUrl));
     this.ws = ws;
+    // Per-attempt handshake budget. Kept generous (not the old 2.5 s) because on a
+    // distant/3G link the TCP+TLS+WS upgrade legitimately takes a few seconds; a too
+    // tight window turned normal jitter into a false "server unreachable".
     const failTimer = setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) ws.close();
-    }, 2500);
+    }, 4500);
 
     ws.onopen = () => {
       clearTimeout(failTimer);
@@ -766,8 +1004,21 @@ export class RemoteSession implements GameSession {
       clearTimeout(failTimer);
       if (this.disposed) return;
       if (!this.inGame) {
-        // never reached a game: initial-connection failure → bot fallback
-        if (initial) this.onUnavailable();
+        if (!initial) return;
+        // Initial connection never reached a game. RETRY a few times before giving
+        // up: a single slow/dropped handshake on 3G must not read as "unreachable".
+        // Only after the retries are exhausted do we fall back (bot for matchmaking,
+        // back-to-lobby for a private table). Re-uses reconnectTimer (idle here).
+        this.initialAttempts += 1;
+        if (this.initialAttempts < MAX_INITIAL_ATTEMPTS) {
+          const delay = Math.min(400 * 2 ** (this.initialAttempts - 1), 2000);
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            if (!this.disposed) this.connect(true);
+          }, delay);
+        } else {
+          this.onUnavailable();
+        }
         return;
       }
       this.scheduleReconnect();
@@ -802,7 +1053,7 @@ export class RemoteSession implements GameSession {
 
   private token(): string | null {
     try {
-      return sessionStorage.getItem(TOKEN_KEY);
+      return localStorage.getItem(TOKEN_KEY);
     } catch {
       return null;
     }
@@ -812,7 +1063,7 @@ export class RemoteSession implements GameSession {
     switch (msg.t) {
       case 'hello.ok': {
         try {
-          sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
+          localStorage.setItem(TOKEN_KEY, msg.sessionToken);
         } catch {
           /* storage unavailable: reconnection within this session still works */
         }
@@ -832,11 +1083,14 @@ export class RemoteSession implements GameSession {
         }
         const wasReconnecting = this.attempts > 0;
         this.attempts = 0;
+        this.initialAttempts = 0; // server is proven reachable → later drops retry generously, not "unreachable"
         if (msg.challenge) this.ev.onChallenge(msg.challenge);
         if (msg.streak) this.ev.onStreak(msg.streak);
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
+        if (msg.season) this.ev.onSeasonState(msg.season);
+        if (msg.comeback) this.ev.onComeback(msg.comeback);
         // Guests: pin the FIRST server-assigned identity (no-op once any name is
         // saved). Without this the server derives a NEW name per connection, so
         // friends saw a different name for the same player in every game.
@@ -853,6 +1107,9 @@ export class RemoteSession implements GameSession {
           if (id.name) this.ev.onProfile({ name: id.name, flag: id.flag });
         }
         if (msg.stakingBlocked !== undefined) this.ev.onGeo(msg.stakingBlocked);
+        // Record the escrow addresses the server settles against, so a stake can
+        // be refused before deposit if this bundle's addresses drifted (G-2).
+        setServerContracts(msg.contracts);
         if (msg.resumed) {
           this.inGame = true;
           this.ev.onResumed(msg.resumed, msg.resumed.state);
@@ -873,7 +1130,9 @@ export class RemoteSession implements GameSession {
           this.revealedGameId = msg.gameId;
           this.send({ t: 'game.entropy', entropy: this.entropy });
         }
-        this.ev.onMatchFound(msg);
+        // Carry our own entropy so the fairness modal can prove the server bound it
+        // at our seat in the reveal (R-DICE-1), not pre-grind the sequence itself.
+        this.ev.onMatchFound({ ...msg, myEntropy: this.entropy });
         break;
       case 'game.state':
         this.ev.onState(msg.state);
@@ -918,8 +1177,17 @@ export class RemoteSession implements GameSession {
       case 'tickets.grant':
         this.ev.onTickets(msg.granted, msg.total, msg.reason);
         break;
+      case 'season.state':
+        this.ev.onSeasonState(msg.season);
+        break;
+      case 'season.progress':
+        this.ev.onSeasonProgress({ crowns: msg.crowns, tier: msg.tier, gained: msg.gained, dailyGames: msg.dailyGames });
+        break;
       case 'limits.update':
         this.ev.onLimits(msg.limits);
+        break;
+      case 'streak.update':
+        this.ev.onStreak(msg.streak);
         break;
       case 'rematch.offer':
         this.ev.onRematchOffer(msg.name);
@@ -928,7 +1196,7 @@ export class RemoteSession implements GameSession {
         this.ev.onRematchCancelled(msg.reason);
         break;
       case 'error':
-        this.ev.onInfo(msg.message);
+        this.ev.onInfo(msg.message, msg.code);
         break;
       default:
         break;

@@ -53,17 +53,32 @@ export interface Remote4Events {
   onRefunded(txHash: string): void;
   /** A server error (bad state) — terminal for this session. */
   onError(message: string): void;
+  /** The socket dropped mid-game; the session is retrying in the background
+   *  (R-WEB-1). Optional — the board keeps its last state during the retry. */
+  onReconnecting?(): void;
   /** The socket could not be reached / dropped before/after the game. */
   onGone(): void;
 }
 
+// R-WEB-2: localStorage (not sessionStorage) so the resume token survives a
+// webview/tab kill — see the note in session.ts. Shared key with the 2p session.
 const TOKEN_KEY = 'ludo.sessionToken';
+// R-WEB-1: bounded reconnect attempts for a dropped in-progress (staked) game,
+// ~45s of backoff total — mirrors the 2p RemoteSession budget.
+const MAX_RECONNECTS = 12;
+/** Initial-connect retries before "server unreachable" — survives 3G jitter. */
+const MAX_INITIAL_ATTEMPTS4 = 4;
 
 export class Remote4 {
   private ws: WebSocket | null = null;
   private disposed = false;
   private inGame = false;
   private readonly entropy: string;
+  private entropyCommit = ''; // sha256(entropy); computed once, reused on reconnect
+  private revealedGameId = ''; // gameId we last revealed raw entropy for (once per game)
+  private gameOver = false; // set on game.over4 — a close after this is expected
+  private reconnects = 0; // consecutive reconnect attempts (bounded)
+  private initialAttempts = 0; // initial-connect retries before onGone (3G jitter)
   /** Last message timestamp — liveness. A silently-dead socket (screen off,
    *  sleep, NAT timeout) fires no close event; the heartbeat force-closes it so
    *  the session ends visibly (onGone) instead of freezing the board forever. */
@@ -91,7 +106,8 @@ export class Remote4 {
     // Commit to our entropy (hash) before connecting: the server uses each seat's
     // commit as its dice contribution and never sees the raw value up front.
     void sha256Hex(this.entropy).then((commit) => {
-      if (!this.disposed) this.connect(commit);
+      this.entropyCommit = commit;
+      if (!this.disposed) this.connect(false);
     });
     // Liveness heartbeat (mirrors RemoteSession): ping every 10s; 25s of silence
     // means the socket is dead — close it so the player isn't left frozen.
@@ -103,24 +119,27 @@ export class Remote4 {
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisible);
   }
 
-  private connect(entropyCommit: string): void {
+  private connect(resume: boolean): void {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(this.serverUrl));
     } catch {
-      this.ev.onGone();
+      this.scheduleReconnectOrGone();
       return;
     }
     this.ws = ws;
+    // Generous handshake budget (was 2.5 s): on a distant/3G link the wss upgrade
+    // legitimately takes a few seconds — a tight window turned jitter into a false
+    // "server unreachable" on the initial connect.
     const failTimer = setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) ws.close();
-    }, 2500);
+    }, 4500);
 
     ws.onopen = () => {
       clearTimeout(failTimer);
       this.send({
         t: 'hello',
-        entropyCommit,
+        entropyCommit: this.entropyCommit,
         sessionToken: this.token() ?? undefined,
         wallet: this.walletAddress,
         fingerprint: deviceFingerprint(),
@@ -130,13 +149,16 @@ export class Remote4 {
         avatar: loadAvatarId(), // chosen 3D profile avatar (broadcast to others)
         ...loadCustomIdentity(), // edited display name / country flag
       });
-      this.send({ t: 'queue.join4', stakeCents: this.stakeCents });
+      // On a RESUME the server reattaches us to our live seat from the token and
+      // resyncs (R-WEB-1); joining the queue again would try to start a new game.
+      if (!resume) this.send({ t: 'queue.join4', stakeCents: this.stakeCents });
+      this.reconnects = 0; // a successful open resets the retry budget
+      this.initialAttempts = 0; // reachable → later drops retry, not instant onGone
     };
     ws.onclose = () => {
       clearTimeout(failTimer);
-      if (this.disposed) return;
-      // No resume in v1: any close before the game is over ends the session.
-      this.ev.onGone();
+      if (this.disposed || this.gameOver) return;
+      this.scheduleReconnectOrGone();
     };
     ws.onmessage = (e) => {
       let msg: ServerMsg;
@@ -154,7 +176,7 @@ export class Remote4 {
     switch (msg.t) {
       case 'hello.ok':
         try {
-          sessionStorage.setItem(TOKEN_KEY, msg.sessionToken);
+          localStorage.setItem(TOKEN_KEY, msg.sessionToken);
         } catch {
           /* storage unavailable */
         }
@@ -176,6 +198,13 @@ export class Remote4 {
         break;
       case 'match.found4':
         this.inGame = true;
+        // Anti-grinding reveal (R-DICE-3): the server committed its seed knowing
+        // only our entropy COMMIT; reveal the raw value now so the staked-4p dice
+        // bind to it. Harmless on a free table (the server ignores the reveal).
+        if (this.revealedGameId !== msg.gameId) {
+          this.revealedGameId = msg.gameId;
+          this.send({ t: 'game.entropy', entropy: this.entropy });
+        }
         this.ev.onMatch({
           gameId: msg.gameId,
           seat: msg.seat,
@@ -205,6 +234,7 @@ export class Remote4 {
         break;
       case 'game.over4':
         this.inGame = false;
+        this.gameOver = true; // a socket close after this is expected, not a drop
         this.ev.onOver({ winner: msg.winner, payoutCents: msg.payoutCents, rakeCents: msg.rakeCents, fairnessReveal: msg.fairnessReveal });
         break;
       case 'game.settled4':
@@ -221,9 +251,40 @@ export class Remote4 {
     }
   }
 
+  /** R-WEB-1: a dropped IN-PROGRESS game (a staker whose socket blipped) retries
+   *  with backoff and resumes via the token; before match.found4 no stake is
+   *  locked, so a drop there just ends the search. Gives up after MAX_RECONNECTS. */
+  private scheduleReconnectOrGone(): void {
+    if (this.disposed || this.gameOver) return;
+    // Initial connection (never reached a game): retry a few times before declaring
+    // the server gone — a single slow/dropped 3G handshake must not fail instantly.
+    if (!this.inGame) {
+      this.initialAttempts += 1;
+      if (this.initialAttempts >= MAX_INITIAL_ATTEMPTS4) {
+        this.ev.onGone();
+        return;
+      }
+      const delay = Math.min(400 * 2 ** (this.initialAttempts - 1), 2000);
+      setTimeout(() => {
+        if (!this.disposed && !this.gameOver) this.connect(false); // re-send queue.join4
+      }, delay);
+      return;
+    }
+    if (this.reconnects >= MAX_RECONNECTS) {
+      this.ev.onGone();
+      return;
+    }
+    this.reconnects += 1;
+    this.ev.onReconnecting?.();
+    const delay = Math.min(500 * 2 ** (this.reconnects - 1), 4000);
+    setTimeout(() => {
+      if (!this.disposed && !this.gameOver) this.connect(true);
+    }, delay);
+  }
+
   private token(): string | null {
     try {
-      return sessionStorage.getItem(TOKEN_KEY);
+      return localStorage.getItem(TOKEN_KEY);
     } catch {
       return null;
     }

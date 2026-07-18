@@ -14,7 +14,7 @@ export const ERC20_ABI = [
 ] as const;
 
 export const ESCROW_ABI = [
-  { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }], outputs: [] },
+  { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }, { name: 'fairnessCommit', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'refundExpired', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   {
     type: 'function', name: 'games', stateMutability: 'view', inputs: [{ name: '', type: 'bytes32' }],
@@ -33,7 +33,7 @@ export const ESCROW_ABI = [
 
 /** LudoEscrowN (N-player) — join takes seatCount; seatsOf lists the depositors. */
 export const ESCROW_N_ABI = [
-  { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }, { name: 'seatCount', type: 'uint8' }], outputs: [] },
+  { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }, { name: 'seatCount', type: 'uint8' }, { name: 'fairnessCommit', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'seatsOf', stateMutability: 'view', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [{ name: '', type: 'address[]' }] },
 ] as const;
 
@@ -53,6 +53,15 @@ export function cosmeticItemId(id: string): Hex {
  * bytes32. Left-pad to 32 bytes — canonical, so E3.3 server settlement signs
  * the exact same value.
  */
+/** The fairness commit (sha256 hex from match.found) as a bytes32 for `join`. */
+export function commitToBytes32(commit: string): Hex {
+  const hex = commit.startsWith('0x') ? commit.slice(2) : commit;
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+    throw new Error(`fairnessCommit is not a 32-byte hex value, cannot stake: ${commit}`);
+  }
+  return `0x${hex}` as Hex;
+}
+
 export function gameIdToBytes32(gameId: string): Hex {
   const hex = gameId.startsWith('0x') ? gameId.slice(2) : gameId;
   if (!/^[0-9a-fA-F]{1,64}$/.test(hex)) {
@@ -77,6 +86,9 @@ export interface StakeParams {
   token: Address;
   gameId: string;
   stakeCents: number;
+  /** Dice fairness commit (sha256(serverSeed) hex) from match.found — anchored
+   *  on-chain at join so the reveal at settlement is publicly verifiable. */
+  fairnessCommit: string;
   /** cUSD address for MiniPay legacy-tx gas; omit to pay in the native coin. */
   feeCurrency?: Address;
   onStatus?: (status: StakeStatus) => void;
@@ -95,8 +107,9 @@ export interface StakeReceipt {
  * the game, returns without a second join.
  */
 export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> {
-  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, feeCurrency, onStatus } = params;
+  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, fairnessCommit, feeCurrency, onStatus } = params;
   const gameId32 = gameIdToBytes32(gameId);
+  const commit32 = commitToBytes32(fairnessCommit);
   const chain = walletClient.chain ?? null;
 
   const decimals = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
@@ -126,7 +139,7 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
   }
 
   onStatus?.('joining');
-  const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake], ...extra });
+  const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], ...extra });
   const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
   if (r.status !== 'success') throw new Error('join reverted');
 
@@ -140,8 +153,9 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
  * if this address already deposited, returns without a second join.
  */
 export async function stakeInEscrowN(params: StakeParams & { seatCount: number }): Promise<StakeReceipt> {
-  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, feeCurrency, onStatus, seatCount } = params;
+  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, fairnessCommit, feeCurrency, onStatus, seatCount } = params;
   const gameId32 = gameIdToBytes32(gameId);
+  const commit32 = commitToBytes32(fairnessCommit);
   const chain = walletClient.chain ?? null;
 
   const decimals = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
@@ -167,7 +181,7 @@ export async function stakeInEscrowN(params: StakeParams & { seatCount: number }
   }
 
   onStatus?.('joining');
-  const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount], ...extra });
+  const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], ...extra });
   const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
   if (r.status !== 'success') throw new Error('join reverted');
 

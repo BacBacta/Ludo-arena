@@ -6,6 +6,7 @@
   "scripts": {
     "deploy": "tsx script/deploy.ts",
     "switch-stablecoin": "tsx script/switchStablecoin.ts",
+    "list-season-premium": "tsx script/listSeasonPremium.ts",
     "smoke": "tsx script/smoke.ts",
     "node": "hardhat node",
     "typecheck": "tsc --noEmit"

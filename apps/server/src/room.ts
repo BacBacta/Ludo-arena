@@ -44,7 +44,10 @@ export interface RoomResult {
   freeroll: boolean;
 }
 
-const DIE_SETTLE_MS = 900; // hold a forced move until the die stops tumbling (~700ms)
+// Hold a forced (single-legal) move until the die stops tumbling (~700ms). Env-
+// tunable so a bot sim / load test (Phase 4/6) can run games accelerated
+// (DIE_SETTLE_MS=0); prod keeps the 900ms animation beat by default.
+const DIE_SETTLE_MS = Number(process.env.DIE_SETTLE_MS ?? 900);
 
 export class Room {
   readonly gameId: string;
@@ -108,7 +111,7 @@ export class Room {
 
   start(): void {
     this.broadcast({ t: 'game.state', state: this.state });
-    this.announceTurn();
+    this.announceTurn(true); // state just went out above — don't duplicate it
     this.onChange?.(this);
   }
 
@@ -116,7 +119,7 @@ export class Room {
   resume(): void {
     if (this.over) return;
     this.broadcast({ t: 'game.state', state: this.state });
-    this.announceTurn();
+    this.announceTurn(true); // state just went out above — don't duplicate it
   }
 
   /** Swap in a live client (reconnection) and resync it. */
@@ -254,18 +257,22 @@ export class Room {
     if (events.won) {
       this.finish(seat, 'finish');
     } else {
-      this.announceTurn();
+      // game.moved above already carried the authoritative state → don't re-send it.
+      this.announceTurn(true);
     }
   }
 
-  private announceTurn(): void {
+  private announceTurn(stateAlreadySent = false): void {
     if (this.over) return;
     this.deadlineTs = Date.now() + BLITZ.moveClockMs;
-    // Broadcast the authoritative state alongside the turn. A no-legal-move roll
-    // passes the turn WITHOUT a game.moved, so without this the client's game.turn
-    // stays stale and its `handoff` guard hides the next player's roll button
-    // (the game visibly stalls after the first non-6 roll).
-    this.broadcast({ t: 'game.state', state: this.state });
+    // A no-legal-move roll passes the turn WITHOUT a game.moved, so the client
+    // needs the authoritative state here or its game.turn stays stale and its
+    // `handoff` guard hides the next player's roll button (the game visibly stalls
+    // after the first non-6 roll). But after a move — or an explicit state
+    // broadcast — the same state already went out (game.moved carries it), so
+    // re-sending it is pure redundant re-render churn on every move: skip it and
+    // send the turn alone, matching the documented protocol (game.moved / game.turn).
+    if (!stateAlreadySent) this.broadcast({ t: 'game.state', state: this.state });
     this.broadcast({ t: 'game.turn', seat: this.state.turn, deadlineTs: this.deadlineTs });
     this.armClock();
   }

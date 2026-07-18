@@ -45,6 +45,9 @@ contract LudoEscrowN {
         uint40 createdAt;
         Status status;
         uint16 rakeBps; // rake SNAPSHOT at creation — settle can't be re-priced mid-game
+        // Provably-fair anchor (last field → stable getter order): sha256(serverSeed)
+        // published to every seat before play; revealed on-chain at settlement.
+        bytes32 fairnessCommit;
     }
 
     mapping(bytes32 => Game) public games;
@@ -61,6 +64,9 @@ contract LudoEscrowN {
 
     // ---------- Events ----------
     event Joined(bytes32 indexed gameId, address indexed player, address token, uint96 stake, uint8 joined, uint8 seatCount);
+    /// @notice Revealed dice seed + per-seat seeds at settlement, so anyone can check
+    ///         sha256(serverSeed) == the game's fairnessCommit and recompute the dice.
+    event FairnessRevealed(bytes32 indexed gameId, string serverSeed, string[] seatSeeds);
     event Settled(bytes32 indexed gameId, address indexed winner, uint256 payout, uint256 rake);
     event Refunded(bytes32 indexed gameId);
     /// @notice A push transfer could not be delivered; `amount` is now withdrawable by `account`.
@@ -83,6 +89,7 @@ contract LudoEscrowN {
     error LengthMismatch();
     error TokenNotAllowed();
     error NothingToWithdraw();
+    error CommitMismatch();
 
     constructor(address _arbiter, address _treasury, uint256 _rakeBps) {
         require(_rakeBps <= MAX_RAKE_BPS, "rake > max");
@@ -151,7 +158,9 @@ contract LudoEscrowN {
     /// @notice Join (or create) game `gameId` by locking one seat's stake. The
     ///         first call sets token + stake + seatCount; later joiners must match.
     ///         When `seatCount` seats are filled the game goes Active.
-    function join(bytes32 gameId, address token, uint96 stake, uint8 seatCount) external {
+    /// @param fairnessCommit sha256(serverSeed) published to every seat before play;
+    ///        the first joiner records it, every later seat must present the same.
+    function join(bytes32 gameId, address token, uint96 stake, uint8 seatCount, bytes32 fairnessCommit) external {
         if (stake == 0) revert BadStake();
         Game storage g = games[gameId];
 
@@ -164,8 +173,10 @@ contract LudoEscrowN {
             g.createdAt = uint40(block.timestamp);
             g.status = Status.Filling;
             g.rakeBps = uint16(rakeBps); // snapshot the fee at creation
+            g.fairnessCommit = fairnessCommit; // fix the dice commit before play
         } else if (g.status == Status.Filling) {
             if (token != g.token || stake != g.stake || seatCount != g.seatCount) revert BadStake();
+            if (fairnessCommit != g.fairnessCommit) revert CommitMismatch(); // every seat attests the same commit
             if (_isSeated[gameId][msg.sender]) revert AlreadyJoined();
         } else {
             revert BadStatus();
@@ -184,7 +195,8 @@ contract LudoEscrowN {
     /// @notice Settle the game. `sig` = the arbiter's ECDSA signature over
     ///         keccak256(abi.encode(chainid, this, gameId, winner)). The winner
     ///         must be one of the depositors.
-    function settle(bytes32 gameId, address winner, bytes calldata sig) external {
+    function settle(bytes32 gameId, address winner, string calldata serverSeed, string[] calldata seatSeeds, bytes calldata sig) external {
+        emit FairnessRevealed(gameId, serverSeed, seatSeeds);
         _settle(gameId, winner, sig);
     }
 

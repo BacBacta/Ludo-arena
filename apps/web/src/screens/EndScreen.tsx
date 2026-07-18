@@ -73,7 +73,7 @@ function EloReveal({ delta, rating }: { delta: number; rating: number }) {
 }
 
 export function EndScreen({ onRematch, onDecline }: { onRematch(): void; onDecline(): void }) {
-  const { result, match, settleTxHash, refunded, league, walletBacked, profile, rematchOffer } = useAppState();
+  const { result, match, settleTxHash, refunded, league, walletBacked, profile, rematchOffer, crownGain } = useAppState();
 
   const won = !!result && !!match && result.winner === match.seat;
   const staked = !!match && match.stakeCents > 0;
@@ -135,6 +135,11 @@ export function EndScreen({ onRematch, onDecline }: { onRematch(): void; onDecli
         </div>
         <EloReveal delta={result.eloDelta} rating={profile.elo} />
         <small className="muted">{DIVISIONS[league.division] ?? ''} {t('league')}</small>
+        {crownGain && crownGain.gained > 0 && (
+          <div className="crowngain" key={crownGain.n} role="status">
+            +{crownGain.gained} 👑 · {t('seasonTier')} {crownGain.tier}
+          </div>
+        )}
         {refunded ? (
           <small className="muted">
             {t('refundedNote')}

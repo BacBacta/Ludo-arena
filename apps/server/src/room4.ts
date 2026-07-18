@@ -10,6 +10,7 @@ import { BLITZ } from '@ludo/game-engine';
 import { applyMove4, applyRoll4, newGame4, nextSeat4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
 import type { Player4Info, ServerMsg } from '@ludo/shared';
 import { rollDie4, type Fairness4 } from './fairness.js';
+import type { Room4Snapshot } from './store/index.js';
 
 export interface Client4 {
   send(msg: ServerMsg): void;
@@ -21,10 +22,16 @@ export interface Client4 {
 }
 
 export interface Seat4 {
-  client: Client4 | null; // null = bot seat
+  client: Client4 | null; // null = bot seat OR a detached human (staked grace window)
   bot: boolean; // true once a bot drives this seat (empty seat, resign, or drop)
   name: string;
   flag: string;
+  /** Owning session id — kept even when `client` is nulled (drop/restore) so the
+   *  seat can be snapshotted and reattached after a restart (G-5). Absent for bots. */
+  sessionId?: string;
+  /** Depositor wallet for a staked seat (settlement reconcile after a restart);
+   *  absent for free tables and bots. */
+  wallet?: string;
   /** Opaque public id (profile.get); absent for bots. */
   pid?: string;
   /** Equipped avatar frame (cosmetic); absent for bots. */
@@ -40,8 +47,10 @@ export interface Room4Result {
   fairness: Fairness4;
 }
 
-const BOT_ROLL_MS = 700; // bot "thinking" before it rolls
-const BOT_MOVE_MS = 900; // then before it commits its move (die settles first)
+// Bot pacing ("thinking" before rolling / committing). Env-tunable so a sim /
+// load test can accelerate (BOT_ROLL_MS=0 BOT_MOVE_MS=0); prod keeps the beat.
+const BOT_ROLL_MS = Number(process.env.BOT_ROLL_MS ?? 700); // bot "thinking" before it rolls
+const BOT_MOVE_MS = Number(process.env.BOT_MOVE_MS ?? 900); // then before it commits its move (die settles first)
 
 export class Room4 {
   readonly gameId: string;
@@ -62,6 +71,10 @@ export class Room4 {
   private over = false;
   onResult?: (r: Room4Result) => void;
   onEnd?: (room: Room4) => void;
+  /** Fired on every state transition so the store can snapshot the room (G-5).
+   *  Staked 4p carries real money, so — like the 1v1 Room — it must survive a
+   *  restart or an in-flight table strands 4 deposits with no record to settle. */
+  onChange?: (room: Room4) => void;
 
   constructor(
     gameId: string,
@@ -85,8 +98,84 @@ export class Room4 {
     return this.seats.map((s) => ({ name: s.name, flag: s.flag, bot: s.bot, pid: s.pid, frame: s.frame, avatar: s.avatar }));
   }
 
+  /** Serialize for the store (G-5). Seats persist their identity (not the live
+   *  client) so the game restores and reattaches after a restart. */
+  toSnapshot(): Room4Snapshot {
+    return {
+      gameId: this.gameId,
+      state: this.state,
+      diceIndex: this.diceIndex,
+      autoStreak: [...this.autoStreak],
+      fairness: { serverSeed: this.fairness.serverSeed, commit: this.fairness.commit, seeds: [...this.fairness.seeds] },
+      seats: this.seats.map((s) => ({
+        sessionId: s.sessionId ?? '',
+        wallet: s.wallet,
+        name: s.name,
+        flag: s.flag,
+        bot: s.bot,
+        pid: s.pid,
+        frame: s.frame,
+        avatar: s.avatar,
+      })),
+      entryTickets: this.entryTickets,
+      prizeTickets: this.prizeTickets,
+      payoutCents: this.payoutCents,
+      rakeCents: this.rakeCents,
+      over: this.over,
+    };
+  }
+
+  /** Rebuild a room from a store snapshot (server restart). Seats come back
+   *  detached (client: null) — reattached when their session reconnects. A bot
+   *  seat stays a bot; a human seat auto-plays on the clock until it reattaches. */
+  static fromSnapshot(snap: Room4Snapshot): Room4 {
+    const seats: Seat4[] = snap.seats.map((s) => ({
+      client: null,
+      bot: s.bot,
+      name: s.name,
+      flag: s.flag,
+      sessionId: s.sessionId || undefined,
+      wallet: s.wallet,
+      pid: s.pid,
+      frame: s.frame,
+      avatar: s.avatar,
+    }));
+    const room = new Room4(
+      snap.gameId,
+      seats,
+      { serverSeed: snap.fairness.serverSeed, commit: snap.fairness.commit, seeds: [...snap.fairness.seeds] },
+      snap.entryTickets,
+      snap.prizeTickets,
+      snap.payoutCents,
+      snap.rakeCents,
+    );
+    room.state = snap.state;
+    room.diceIndex = snap.diceIndex;
+    room.autoStreak = [...snap.autoStreak];
+    room.over = snap.over ?? false; // never resurrect a finished game as live
+    return room;
+  }
+
+  /** Restart the clock after a restore so the game continues (bots roll, humans
+   *  auto-play on timeout until they reattach). No-op for a finished game. */
+  resume(): void {
+    if (this.over) return;
+    this.announceTurn();
+  }
+
   seatOf(clientId: string): number {
     return this.seats.findIndex((s) => s.client?.id === clientId);
+  }
+
+  /** The owning session id of each non-bot seat (for cleanup after the game). */
+  seatSessions(): string[] {
+    return this.seats.map((s) => s.sessionId).filter((id): id is string => !!id);
+  }
+
+  /** The seat a session owns (by persisted sessionId), or -1. Used to reattach a
+   *  reconnecting player to a room restored from a snapshot (its client is null). */
+  seatOfSession(sessionId: string): number {
+    return this.seats.findIndex((s) => s.sessionId === sessionId);
   }
 
   client(seat: number): Client4 | null {
@@ -104,6 +193,7 @@ export class Room4 {
   start(): void {
     this.broadcast({ t: 'game.state4', state: this.state });
     this.announceTurn();
+    this.onChange?.(this);
   }
 
   /** A human at `seat` rolls. */
@@ -150,11 +240,40 @@ export class Room4 {
     this.broadcast({ t: 'game.gift', from, to, id });
   }
 
-  /** A human dropped (socket closed): a bot drives the seat and the client is
-   *  removed (they no longer receive broadcasts). */
+  /** Is this a real-money table? Staked seats get a reconnect grace window; free
+   *  seats forfeit to a bot on drop (no funds at risk). */
+  private staked(): boolean {
+    return this.payoutCents > 0;
+  }
+
+  /** A human dropped (socket closed). Free table: hand the seat to a bot at once
+   *  (no money at stake). Staked table (R-WEB-1): DETACH the client but KEEP the
+   *  seat human — their turns auto-play on the clock, and only the existing
+   *  autoStreak forfeit hands it to a bot after repeated no-shows. That leaves a
+   *  grace window for a reconnect (attach) to resume before the stake is lost. */
   drop(clientId: string): void {
     const seat = this.seatOf(clientId);
-    if (seat >= 0) this.handOverToBot(seat, true);
+    if (seat < 0) return;
+    const s = this.seats[seat];
+    if (this.staked() && s && !s.bot) {
+      s.client = null; // detach only; seat stays human → clock auto-plays its turns
+      return;
+    }
+    this.handOverToBot(seat, true);
+  }
+
+  /** Reconnect (R-WEB-1): rebind a live client to `seat` and resync it. Only while
+   *  the seat is still the human's (not yet bot-forfeited) does it forgive the
+   *  no-show streak; a seat already handed to a bot can still re-attach to WATCH
+   *  the game finish. Returns false if the game is already over (nothing to resume). */
+  attach(seat: number, client: Client4): boolean {
+    const s = this.seats[seat];
+    if (!s || this.over) return false;
+    s.client = client;
+    if (!s.bot) this.autoStreak[seat] = 0; // still their seat → reset the no-show streak
+    client.send({ t: 'game.state4', state: this.state });
+    client.send({ t: 'game.turn4', seat: this.state.turn, deadlineTs: this.deadlineTs });
+    return true;
   }
 
   private handOverToBot(seat: number, disconnected: boolean): void {
@@ -167,6 +286,7 @@ export class Room4 {
       this.clearClock();
       this.scheduleBot();
     }
+    this.onChange?.(this); // persist the seat → bot change
   }
 
   suspend(): void {
@@ -205,6 +325,7 @@ export class Room4 {
       // no legal move: applyRoll4 already passed the turn
       this.announceTurn();
     }
+    this.onChange?.(this); // persist the post-roll state (diceIndex advanced)
   }
 
   private doMove(token: number): void {
@@ -213,9 +334,14 @@ export class Room4 {
     this.state = state;
     this.broadcast({ t: 'game.moved4', seat, token, capture: events.capture, state });
     if (events.won) {
+      // Persist the TERMINAL state (over=true) BEFORE onResult's async settle, so a
+      // crash in that window still leaves a snapshot the boot reconcile can settle.
+      this.over = true;
+      this.onChange?.(this);
       this.finish(seat);
     } else {
       this.announceTurn(); // applyMove4 already set the next turn (extraTurn → same seat)
+      this.onChange?.(this);
     }
   }
 

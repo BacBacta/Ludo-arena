@@ -35,7 +35,7 @@ export enum GameStatusN {
 export const JOIN_TIMEOUT_N_S = 120;
 
 const ESCROW_N_ABI = [
-  { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'sig', type: 'bytes' }], outputs: [] },
+  { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'serverSeed', type: 'string' }, { name: 'seatSeeds', type: 'string[]' }, { name: 'sig', type: 'bytes' }], outputs: [] },
   { type: 'function', name: 'refundUnfilled', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'voidGame', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'seatsOf', stateMutability: 'view', inputs: [{ name: 'gameId', type: 'bytes32' }], outputs: [{ name: '', type: 'address[]' }] },
@@ -64,7 +64,7 @@ export class ArbiterN {
   readonly address: Address;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
-  private readonly escrow: Address;
+  readonly escrow: Address;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
   private readonly walletClient: ReturnType<typeof createWalletClient>;
 
@@ -133,14 +133,25 @@ export class ArbiterN {
     return this.publicClient.getBalance({ address: this.account.address });
   }
 
-  async submitSettle(gameId: string, winner: Address): Promise<Hex> {
+  /** Settle the winner AND reveal the dice fairness on-chain (serverSeed + per-seat
+   *  seeds). Money-flow-INDEPENDENT: absent reveal → empty, payout unchanged. */
+  async submitSettle(gameId: string, winner: Address, reveal?: { serverSeed: string; entropies: string[] }): Promise<Hex> {
     const sig = await this.signSettlement(gameId, winner);
-    return this.submit('settle', [gameIdToBytes32(gameId), winner, sig]);
+    return this.submit('settle', [gameIdToBytes32(gameId), winner, reveal?.serverSeed ?? '', reveal?.entropies ?? [], sig]);
   }
 
   /** Refund every depositor of a table that never filled (past JOIN_TIMEOUT). */
   async submitRefundUnfilled(gameId: string): Promise<Hex> {
     return this.submit('refundUnfilled', [gameIdToBytes32(gameId)]);
+  }
+
+  /** Return every stake of an ACTIVE (all-seats-deposited) game to its depositor.
+   *  The 4p analogue of the 1v1 voidGame: needed when a table filled on-chain but
+   *  the game never started (e.g. a seat never revealed its fairness entropy).
+   *  refundUnfilled reverts on an Active escrow (it requires Filling), so without
+   *  this the pot would be stuck until the 24 h permissionless refundActive. */
+  async submitVoid(gameId: string): Promise<Hex> {
+    return this.submit('voidGame', [gameIdToBytes32(gameId)]);
   }
 
   async healthcheck(): Promise<bigint> {
@@ -184,8 +195,9 @@ export interface ArbiterNLike {
   readonly chainId: number;
   gameStatus(gameId: string): Promise<GameN>;
   seatsOf(gameId: string): Promise<Address[]>;
-  submitSettle(gameId: string, winner: Address): Promise<Hex>;
+  submitSettle(gameId: string, winner: Address, reveal?: { serverSeed: string; entropies: string[] }): Promise<Hex>;
   submitRefundUnfilled(gameId: string): Promise<Hex>;
+  submitVoid(gameId: string): Promise<Hex>;
 }
 
 export interface Settlement4Deps {
@@ -197,6 +209,9 @@ export interface Settlement4Deps {
   onRefunded: (gameId: string, txHash: string) => void;
   /** Money-critical alert (payout failed / stuck escrow) for an ops pager. */
   onAlert?: (message: string) => void;
+  /** Fired on EVERY terminal outcome — the caller drops per-game bookkeeping it
+   *  held while the job was in flight (mirrors SettlementQueue.onTerminal). */
+  onTerminal?: (gameId: string) => void;
   /** Wall-clock seconds; injectable for tests. */
   now?: () => number;
 }
@@ -215,8 +230,8 @@ export class SettlementQueue4 {
   constructor(private readonly deps: Settlement4Deps) {}
 
   /** Enqueue a winner payout for a completed 4p game (durable, non-blocking). */
-  async enqueue(gameId: string, winnerWallet: string): Promise<void> {
-    return this.add(gameId, winnerWallet);
+  async enqueue(gameId: string, winnerWallet: string, reveal?: { serverSeed: string; entropies: string[] }): Promise<void> {
+    return this.add(gameId, winnerWallet, reveal);
   }
 
   /** Enqueue a full refund for a table that never filled (winner unknown). */
@@ -224,7 +239,7 @@ export class SettlementQueue4 {
     return this.add(gameId, '');
   }
 
-  private async add(gameId: string, winnerWallet: string): Promise<void> {
+  private async add(gameId: string, winnerWallet: string, reveal?: { serverSeed: string; entropies: string[] }): Promise<void> {
     const job: SettlementJob = {
       gameId,
       winnerWallet,
@@ -232,6 +247,7 @@ export class SettlementQueue4 {
       status: 'pending',
       attempts: 0,
       variant: '4p',
+      reveal,
     };
     await this.deps.store.enqueueSettlement(job);
     void this.process(job);
@@ -263,12 +279,32 @@ export class SettlementQueue4 {
     this.timers.add(timer);
   }
 
+  /** Wraps processOnce so onTerminal fires exactly once on ANY terminal outcome —
+   *  no terminal branch can silently leak the caller's per-game bookkeeping. */
   private async process(job: SettlementJob): Promise<void> {
+    const terminal = await this.processOnce(job);
+    if (terminal) this.deps.onTerminal?.(job.gameId);
+  }
+
+  /** @returns true when DONE (any outcome); false when it rescheduled/retried. */
+  private async processOnce(job: SettlementJob): Promise<boolean> {
     const attempts = job.attempts + 1;
     try {
       const { status, createdAt } = await this.deps.arbiter.gameStatus(job.gameId);
 
       if (status === GameStatusN.Active) {
+        // A refund job (winnerWallet === '') on an Active escrow means the table
+        // filled on-chain but the game never started (e.g. a seat never revealed).
+        // voidGame returns every stake to its depositor; refundUnfilled would
+        // revert here (it requires Filling). Without this the pot sat in Active
+        // until the 24 h refundActive — the 4p gap the 1v1 void path already closes.
+        if (job.winnerWallet === '') {
+          const txHash = await this.deps.arbiter.submitVoid(job.gameId);
+          await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
+          this.deps.onRefunded(job.gameId, txHash);
+          console.log(`[settlement4] ${job.gameId} voided (Active, refund) in tx ${txHash}`);
+          return true;
+        }
         // Reconcile the winner against the actual on-chain seats; settle() reverts
         // NotAPlayer otherwise, burning retries until the pot is stuck in Active.
         const seats = await this.deps.arbiter.seatsOf(job.gameId);
@@ -278,13 +314,13 @@ export class SettlementQueue4 {
           const msg = `[settlement4][ALERT] winner ${job.winnerWallet} is not an on-chain seat (${seats.join(', ')}) for 4p game ${job.gameId}. NOT settling; manual review — funds locked in Active escrow.`;
           console.error(msg);
           this.deps.onAlert?.(msg);
-          return;
+          return true;
         }
-        const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address);
+        const txHash = await this.deps.arbiter.submitSettle(job.gameId, job.winnerWallet as Address, job.reveal);
         await this.deps.store.markSettlement(job.gameId, 'settled', attempts, txHash);
         this.deps.onSettled(job.gameId, txHash);
         console.log(`[settlement4] ${job.gameId} settled in tx ${txHash}`);
-        return;
+        return true;
       }
 
       if (status === GameStatusN.Filling) {
@@ -294,20 +330,20 @@ export class SettlementQueue4 {
         if (waitS > 0) {
           console.log(`[settlement4] ${job.gameId} awaiting refund window (${waitS}s)`);
           this.reschedule(job, (waitS + 3) * 1_000);
-          return;
+          return false; // not terminal — runs again after the wait
         }
         const txHash = await this.deps.arbiter.submitRefundUnfilled(job.gameId);
         await this.deps.store.markSettlement(job.gameId, 'refunded', attempts, txHash);
         this.deps.onRefunded(job.gameId, txHash);
         console.log(`[settlement4] ${job.gameId} refundUnfilled in tx ${txHash}`);
-        return;
+        return true;
       }
 
       // Already resolved on-chain (Settled/Refunded), or nobody staked (None).
       const terminal = status === GameStatusN.Settled ? 'settled' : status === GameStatusN.Refunded ? 'refunded' : 'failed';
       await this.deps.store.markSettlement(job.gameId, terminal, attempts);
       if (terminal === 'failed') console.warn(`[settlement4] ${job.gameId} not stakeable (status ${status}); skipping`);
-      return;
+      return true;
     } catch (e) {
       console.error(`[settlement4] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);
       if (attempts >= MAX_ATTEMPTS_4) {
@@ -315,7 +351,7 @@ export class SettlementQueue4 {
         const msg = `[settlement4][ALERT] PAYOUT FAILED after ${attempts} attempts — 4p game ${job.gameId}, winner ${job.winnerWallet || '(refund)'}, chain ${job.chainId}. Funds may be locked in LudoEscrowN; manual settle/refund required.`;
         console.error(msg);
         this.deps.onAlert?.(msg);
-        return;
+        return true;
       }
       await this.deps.store.markSettlement(job.gameId, 'pending', attempts);
       const backoff = Math.min(1_000 * 2 ** (attempts - 1), 30_000);
@@ -324,6 +360,7 @@ export class SettlementQueue4 {
         void this.process({ ...job, attempts });
       }, backoff);
       this.timers.add(timer);
+      return false; // retrying
     }
   }
 }

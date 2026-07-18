@@ -64,21 +64,21 @@ contract LudoEscrowNTest is Test {
     }
 
     function _joinFour() internal {
-        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4);
-        vm.prank(bob); esc.join(gameId, address(cusd), STAKE, 4);
-        vm.prank(carol); esc.join(gameId, address(cusd), STAKE, 4);
-        vm.prank(dave); esc.join(gameId, address(cusd), STAKE, 4);
+        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
+        vm.prank(carol); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
+        vm.prank(dave); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
     }
 
     // ---- happy path ----
 
     function testFourPlayerFullFlow() public {
         _joinFour();
-        (,,, uint8 joined,, LudoEscrowN.Status status,) = esc.games(gameId);
+        (,,, uint8 joined,, LudoEscrowN.Status status,,) = esc.games(gameId);
         assertEq(joined, 4);
         assertEq(uint256(status), uint256(LudoEscrowN.Status.Active));
 
-        esc.settle(gameId, carol, _sign(gameId, carol));
+        esc.settle(gameId, carol, "", new string[](0), _sign(gameId, carol));
 
         // pot 4e18, rake 9% = 0.36e18, payout 3.64e18
         assertEq(cusd.balanceOf(carol), 10e18 - 1e18 + 3.64e18);
@@ -93,7 +93,7 @@ contract LudoEscrowNTest is Test {
         _joinFour();
         uint256 before = cusd.balanceOf(address(esc));
         assertEq(before, 4e18);
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        esc.settle(gameId, alice, "", new string[](0), _sign(gameId, alice));
         // escrow fully drained: payout + rake == pot
         assertEq(cusd.balanceOf(address(esc)), 0);
     }
@@ -108,16 +108,16 @@ contract LudoEscrowNTest is Test {
 
     function testTwoAndThreeSeatGamesWork() public {
         bytes32 g2 = keccak256("g2");
-        vm.prank(alice); esc.join(g2, address(cusd), STAKE, 2);
-        vm.prank(bob); esc.join(g2, address(cusd), STAKE, 2);
-        esc.settle(g2, bob, _sign(g2, bob));
+        vm.prank(alice); esc.join(g2, address(cusd), STAKE, 2, bytes32(0));
+        vm.prank(bob); esc.join(g2, address(cusd), STAKE, 2, bytes32(0));
+        esc.settle(g2, bob, "", new string[](0), _sign(g2, bob));
         assertEq(cusd.balanceOf(bob), 10e18 - 1e18 + 1.82e18);
 
         bytes32 g3 = keccak256("g3");
-        vm.prank(alice); esc.join(g3, address(cusd), STAKE, 3);
-        vm.prank(bob); esc.join(g3, address(cusd), STAKE, 3);
-        vm.prank(carol); esc.join(g3, address(cusd), STAKE, 3);
-        esc.settle(g3, alice, _sign(g3, alice));
+        vm.prank(alice); esc.join(g3, address(cusd), STAKE, 3, bytes32(0));
+        vm.prank(bob); esc.join(g3, address(cusd), STAKE, 3, bytes32(0));
+        vm.prank(carol); esc.join(g3, address(cusd), STAKE, 3, bytes32(0));
+        esc.settle(g3, alice, "", new string[](0), _sign(g3, alice));
         // g3: pot 3e18, rake 0.27e18. Treasury accumulates g2 (0.18) + g3 (0.27).
         assertEq(cusd.balanceOf(treasury), 0.18e18 + 0.27e18);
     }
@@ -125,34 +125,34 @@ contract LudoEscrowNTest is Test {
     // ---- guards ----
 
     function testCannotSettleBeforeActive() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4);
-        vm.prank(bob); esc.join(gameId, address(cusd), STAKE, 4);
+        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
         // sig computed first: forge's expectRevert applies to the very next call.
         bytes memory sig = _sign(gameId, alice);
         vm.expectRevert(LudoEscrowN.BadStatus.selector);
-        esc.settle(gameId, alice, sig);
+        esc.settle(gameId, alice, "", new string[](0), sig);
     }
 
     function testCannotSettleTwice() public {
         _joinFour();
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        esc.settle(gameId, alice, "", new string[](0), _sign(gameId, alice));
         bytes memory sig = _sign(gameId, alice);
         vm.expectRevert(LudoEscrowN.BadStatus.selector);
-        esc.settle(gameId, alice, sig);
+        esc.settle(gameId, alice, "", new string[](0), sig);
     }
 
     function testWinnerMustBeADepositor() public {
         _joinFour();
         bytes memory sig = _sign(gameId, address(0xDEAD));
         vm.expectRevert(LudoEscrowN.NotAPlayer.selector);
-        esc.settle(gameId, address(0xDEAD), sig);
+        esc.settle(gameId, address(0xDEAD), "", new string[](0), sig);
     }
 
     function testBadSignatureRejected() public {
         _joinFour();
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xBAD, esc.settlementDigest(gameId, alice));
         vm.expectRevert(LudoEscrowN.BadSignature.selector);
-        esc.settle(gameId, alice, abi.encodePacked(r, s, v));
+        esc.settle(gameId, alice, "", new string[](0), abi.encodePacked(r, s, v));
     }
 
     function testHighSSignatureRejected() public {
@@ -163,47 +163,47 @@ contract LudoEscrowNTest is Test {
         bytes32 highS = bytes32(N - uint256(s));
         uint8 flippedV = v == 27 ? 28 : 27;
         vm.expectRevert(LudoEscrowN.BadSignature.selector);
-        esc.settle(gameId, alice, abi.encodePacked(r, highS, flippedV));
+        esc.settle(gameId, alice, "", new string[](0), abi.encodePacked(r, highS, flippedV));
     }
 
     function testBadSeatCountRejected() public {
         vm.prank(alice);
         vm.expectRevert(LudoEscrowN.BadSeatCount.selector);
-        esc.join(gameId, address(cusd), STAKE, 5); // > MAX_SEATS
+        esc.join(gameId, address(cusd), STAKE, 5, bytes32(0)); // > MAX_SEATS
         vm.prank(alice);
         vm.expectRevert(LudoEscrowN.BadSeatCount.selector);
-        esc.join(gameId, address(cusd), STAKE, 1); // < MIN_SEATS
+        esc.join(gameId, address(cusd), STAKE, 1, bytes32(0)); // < MIN_SEATS
     }
 
     function testMismatchedParamsRejected() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4);
+        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
         vm.prank(bob);
         vm.expectRevert(LudoEscrowN.BadStake.selector);
-        esc.join(gameId, address(cusd), 2e18, 4); // wrong stake
+        esc.join(gameId, address(cusd), 2e18, 4, bytes32(0)); // wrong stake
         vm.prank(bob);
         vm.expectRevert(LudoEscrowN.BadStake.selector);
-        esc.join(gameId, address(cusd), STAKE, 3); // wrong seatCount
+        esc.join(gameId, address(cusd), STAKE, 3, bytes32(0)); // wrong seatCount
     }
 
     function testCannotJoinTwice() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4);
+        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
         vm.prank(alice);
         vm.expectRevert(LudoEscrowN.AlreadyJoined.selector);
-        esc.join(gameId, address(cusd), STAKE, 4);
+        esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
     }
 
     function testCannotJoinActiveGame() public {
         _joinFour();
         vm.prank(alice);
         vm.expectRevert(LudoEscrowN.BadStatus.selector);
-        esc.join(gameId, address(cusd), STAKE, 4);
+        esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
     }
 
     // ---- refunds ----
 
     function testRefundUnfilled() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4);
-        vm.prank(bob); esc.join(gameId, address(cusd), STAKE, 4);
+        vm.prank(alice); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), STAKE, 4, bytes32(0));
         vm.expectRevert(LudoEscrowN.NotExpired.selector);
         esc.refundUnfilled(gameId);
         vm.warp(block.timestamp + 121);
@@ -256,7 +256,7 @@ contract LudoEscrowNTest is Test {
     function testSetRakeBpsZeroPromo() public {
         vm.prank(treasury); esc.setRakeBps(0);
         _joinFour();
-        esc.settle(gameId, carol, _sign(gameId, carol));
+        esc.settle(gameId, carol, "", new string[](0), _sign(gameId, carol));
         // full 4e18 pot to the winner, no rake
         assertEq(cusd.balanceOf(carol), 10e18 - 1e18 + 4e18);
         assertEq(cusd.balanceOf(treasury), 0);
@@ -286,10 +286,10 @@ contract LudoEscrowNTest is Test {
     function testSettleBatchSettlesAll() public {
         bytes32 ga = keccak256("ba");
         bytes32 gb = keccak256("bb");
-        vm.prank(alice); esc.join(ga, address(cusd), STAKE, 2);
-        vm.prank(bob); esc.join(ga, address(cusd), STAKE, 2);
-        vm.prank(carol); esc.join(gb, address(cusd), STAKE, 2);
-        vm.prank(dave); esc.join(gb, address(cusd), STAKE, 2);
+        vm.prank(alice); esc.join(ga, address(cusd), STAKE, 2, bytes32(0));
+        vm.prank(bob); esc.join(ga, address(cusd), STAKE, 2, bytes32(0));
+        vm.prank(carol); esc.join(gb, address(cusd), STAKE, 2, bytes32(0));
+        vm.prank(dave); esc.join(gb, address(cusd), STAKE, 2, bytes32(0));
 
         bytes32[] memory ids = new bytes32[](2);
         address[] memory winners = new address[](2);

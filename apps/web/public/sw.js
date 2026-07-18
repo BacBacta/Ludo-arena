@@ -7,7 +7,7 @@
  * same-origin GETs use cache-first, populating the cache on first fetch. WS and
  * cross-origin (RPC/wallet) requests are never intercepted.
  */
-const CACHE = 'ludo-v34';
+const CACHE = 'ludo-v36';
 const SHELL = ['/', '/index.html', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -29,6 +29,9 @@ self.addEventListener('fetch', (event) => {
   if (req.headers.has('range')) return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // let RPC/wallet/WS pass through
+  // The auto-update probe must always hit the network (never a cached build id),
+  // so a running app can detect a fresh deployment. Let it pass straight through.
+  if (url.pathname === '/version.json') return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

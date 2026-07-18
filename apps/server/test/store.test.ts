@@ -4,7 +4,7 @@ import { PersistentStore } from '../src/store/persistent.js';
 import { playerId, type SessionRecord, type Store } from '../src/store/types.js';
 import { Room, type Client } from '../src/room.js';
 import { createFairness } from '../src/fairness.js';
-import { ANTI_TILT, DEFAULT_DAILY_STAKE_LIMIT_CENTS, type ServerMsg } from '@ludo/shared';
+import { ANTI_TILT, DEFAULT_DAILY_STAKE_LIMIT_CENTS, SEASON, STREAK_FREEZE, crownsForTier, type ServerMsg } from '@ludo/shared';
 
 function makeClient(id: string): Client & { inbox: ServerMsg[] } {
   const inbox: ServerMsg[] = [];
@@ -45,6 +45,19 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       expect(await store.loadSession('tok1')).toEqual(sessionRec);
       await store.deleteSession('tok1');
       expect(await store.loadSession('tok1')).toBeNull();
+      await store.close();
+    });
+
+    it('hasSettlement reflects any settlement record (R-SETTLE-2 boot reconcile)', async () => {
+      const store = make();
+      await store.init();
+      expect(await store.hasSettlement('gS')).toBe(false); // nothing enqueued yet
+      await store.enqueueSettlement({ gameId: 'gS', winnerWallet: '0xabc', chainId: 11_142_220, status: 'pending', attempts: 0, variant: '2p' });
+      expect(await store.hasSettlement('gS')).toBe(true);
+      // still true once resolved (rows are marked, never deleted) → no false re-enqueue
+      await store.markSettlement('gS', 'settled', 1, '0xtx');
+      expect(await store.hasSettlement('gS')).toBe(true);
+      expect(await store.hasSettlement('other')).toBe(false);
       await store.close();
     });
 
@@ -163,6 +176,60 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       // D3 gave +1, D7 gave +2 → 3 tickets total, streak 7
       expect(last).toMatchObject({ days: 7, rewardGranted: 2, tickets: 3 });
 
+      await store.close();
+    });
+
+    it('bridges a one-day gap with a streak-freeze, resets on a bigger gap', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'F', flag: '🌍' });
+
+      // build a streak to day 2, then MISS one day (login on the 4th)
+      await store.recordLogin(id, '2026-09-01', '2026-08-31', '2026-08-30');
+      await store.recordLogin(id, '2026-09-02', '2026-09-01', '2026-08-31');
+      // no freeze yet → the missed day resets the streak
+      const noFreeze = await store.recordLogin(id, '2026-09-04', '2026-09-03', '2026-09-02');
+      expect(noFreeze).toMatchObject({ days: 1, freezeUsed: false, daysAway: 2 });
+
+      // grant a freeze, rebuild to day 2, miss a day → the freeze BRIDGES it
+      expect(await store.grantStreakFreeze(id, 1)).toBe(1);
+      await store.recordLogin(id, '2026-09-05', '2026-09-04', '2026-09-03');
+      const bridged = await store.recordLogin(id, '2026-09-07', '2026-09-06', '2026-09-05');
+      expect(bridged).toMatchObject({ days: 3, freezeUsed: true, freezes: 0 });
+
+      // a TWO-day gap (missed two days) is too big for one freeze → reset
+      await store.grantStreakFreeze(id, 1);
+      const tooBig = await store.recordLogin(id, '2026-09-11', '2026-09-10', '2026-09-09');
+      expect(tooBig).toMatchObject({ days: 1, freezeUsed: false, daysAway: 4 });
+
+      await store.close();
+    });
+
+    it('buys streak-freezes with tickets, caps the inventory, refuses when broke', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'B', flag: '🌍' });
+
+      expect(await store.buyStreakFreeze(id)).toMatchObject({ ok: false, reason: 'insufficient' });
+      await store.grantTickets(id, 100);
+      const b1 = await store.buyStreakFreeze(id);
+      expect(b1).toMatchObject({ ok: true, freezes: 1, tickets: 100 - STREAK_FREEZE.ticketCost });
+      // buy up to the cap, then refuse as 'capped'
+      while ((await store.getStreakFreezes(id)) < STREAK_FREEZE.max) await store.buyStreakFreeze(id);
+      expect(await store.getStreakFreezes(id)).toBe(STREAK_FREEZE.max);
+      expect(await store.buyStreakFreeze(id)).toMatchObject({ ok: false, reason: 'capped' });
+
+      await store.close();
+    });
+
+    it('grantStreakFreeze never exceeds the cap', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 10);
+      await store.getOrCreatePlayer(id, { name: 'G', flag: '🌍' });
+      expect(await store.grantStreakFreeze(id, STREAK_FREEZE.max + 5)).toBe(STREAK_FREEZE.max);
       await store.close();
     });
 
@@ -339,6 +406,111 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       expect(await store.getMeta('leagueWeek')).toBe('2026-W28');
       await store.setMeta('leagueWeek', '2026-W29');
       expect(await store.getMeta('leagueWeek')).toBe('2026-W29');
+      await store.close();
+    });
+
+    it('accrues season crowns, tracks daily games, and derives the tier', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'C', flag: '🌍' });
+      const now = '2026-07-18T00:00:00.000Z';
+      const day1 = '2026-07-18';
+      const day2 = '2026-07-19';
+
+      // the season is global + durable, so its id is whatever the store is on
+      // (fresh in-memory = 1; a durable Postgres may carry a later season) — assert
+      // the invariants (a 28-day window, fresh per-player progress), not the number.
+      const season = await store.getSeason(now);
+      expect(season.id).toBeGreaterThanOrEqual(1);
+      if (season.id === 1) {
+        expect(new Date(season.endsAt).getTime() - new Date(season.startsAt).getTime())
+          .toBe(SEASON.durationDays * 86_400_000);
+      }
+
+      // fresh progress: no crowns, tier 0, nothing claimed
+      const p0 = await store.getSeasonProgress(id);
+      expect(p0).toMatchObject({ seasonId: season.id, crowns: 0, premium: false, dailyGames: 0 });
+      expect(p0.claimedFree).toEqual([]);
+
+      // enough crowns to cross tier 1 (frontCost) with the daily counter incrementing
+      const a1 = await store.addCrowns(id, crownsForTier(1), day1);
+      expect(a1).toMatchObject({ crowns: crownsForTier(1), dailyGames: 1 });
+      const a2 = await store.addCrowns(id, 0, day1);
+      expect(a2.dailyGames).toBe(2);
+      // new day resets the daily counter but keeps crowns
+      const a3 = await store.addCrowns(id, 0, day2);
+      expect(a3).toMatchObject({ crowns: crownsForTier(1), dailyGames: 1 });
+
+      await store.close();
+    });
+
+    it('claims tiers idempotently per lane and toggles premium', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'K', flag: '🌍' });
+
+      expect(await store.claimSeasonTier(id, 1, 'free')).toBe(true);
+      expect(await store.claimSeasonTier(id, 1, 'free')).toBe(false); // already claimed
+      expect(await store.claimSeasonTier(id, 1, 'premium')).toBe(true); // separate lane
+      expect(await store.claimSeasonTier(id, 2, 'free')).toBe(true);
+
+      const p = await store.getSeasonProgress(id);
+      expect([...p.claimedFree].sort((a, b) => a - b)).toEqual([1, 2]);
+      expect(p.claimedPrem).toEqual([1]);
+
+      expect(p.premium).toBe(false);
+      await store.setSeasonPremium(id);
+      await store.setSeasonCrownBoost(id, 1.25);
+      const p2 = await store.getSeasonProgress(id);
+      expect(p2).toMatchObject({ premium: true, crownBoost: 1.25 });
+
+      await store.close();
+    });
+
+    it('consumes a premium-purchase tx hash exactly once (no cross-season replay)', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'P', flag: '🌍' });
+      const tx = '0x' + Math.random().toString(16).slice(2).padEnd(64, '0').slice(0, 64);
+
+      expect(await store.consumePremiumTx(tx, id, 1)).toBe(true); // first use unlocks
+      expect(await store.consumePremiumTx(tx, id, 1)).toBe(false); // replay same season
+      expect(await store.consumePremiumTx(tx, id, 2)).toBe(false); // replay a LATER season
+      // case-insensitive (tx hashes may arrive mixed-case)
+      expect(await store.consumePremiumTx(tx.toUpperCase(), id, 2)).toBe(false);
+      // a different tx is independent
+      const tx2 = '0x' + Math.random().toString(16).slice(2).padEnd(64, '1').slice(0, 64);
+      expect(await store.consumePremiumTx(tx2, id, 1)).toBe(true);
+
+      await store.close();
+    });
+
+    it('rolls the season over only past its end, resetting per-player progress', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'R', flag: '🌍' });
+      const start = '2026-07-18T00:00:00.000Z';
+      const s1 = await store.getSeason(start);
+      await store.addCrowns(id, 100, '2026-07-18');
+      await store.setSeasonPremium(id);
+
+      // before the end: no rollover
+      const mid = new Date(new Date(s1.endsAt).getTime() - 1000).toISOString();
+      expect(await store.rolloverSeason(mid)).toBe(false);
+      expect((await store.getSeasonProgress(id)).crowns).toBe(100);
+
+      // past the end: rolls to the next season, progress resets to fresh
+      const after = new Date(new Date(s1.endsAt).getTime() + 1000).toISOString();
+      expect(await store.rolloverSeason(after)).toBe(true);
+      const s2 = await store.getSeason(after);
+      expect(s2.id).toBe(s1.id + 1);
+      const fresh = await store.getSeasonProgress(id);
+      expect(fresh).toMatchObject({ seasonId: s2.id, crowns: 0, premium: false });
+
       await store.close();
     });
   });

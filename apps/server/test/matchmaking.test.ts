@@ -166,3 +166,53 @@ describe('Matchmaker.sweep', () => {
     expect(mm.position(100, 'a')).toBe(0);
   });
 });
+
+describe('isQueued — single-slot queue membership (ASVS V11.1.4 regression)', () => {
+  it('is false for a session that never joined', () => {
+    const m = new Matchmaker<string>();
+    expect(m.isQueued('alice')).toBe(false);
+  });
+
+  it('sees a waiting session', () => {
+    const m = new Matchmaker<string>();
+    m.join(25, entry('alice', 1200));
+    expect(m.isQueued('alice')).toBe(true);
+  });
+
+  it('sees a session queued at a DIFFERENT stake than the one being checked', () => {
+    // The bug: queue.join only ran `position(msg.stake, session)`, which reads one
+    // stake's array. Sitting in 25¢ and then joining 100¢ passed that check, so a
+    // session held several live entries — and each one's responsible-gaming check
+    // read a daily total that is only debited when a game actually starts, so all
+    // of them passed and every entry could pair into its own staked game.
+    const m = new Matchmaker<string>();
+    m.join(25, entry('alice', 1200));
+    expect(m.position(100, 'alice')).toBe(0); // the old, per-stake guard: blind
+    expect(m.isQueued('alice')).toBe(true); // the new one: catches it
+  });
+
+  it('is false once the entry paired away (pairing splices both seats out)', () => {
+    const m = new Matchmaker<string>();
+    m.join(25, entry('alice', 1200));
+    const pair = m.join(25, entry('bob', 1210));
+    expect(pair).not.toBeNull();
+    expect(m.isQueued('alice')).toBe(false);
+    expect(m.isQueued('bob')).toBe(false);
+  });
+
+  it('is false after leave/leaveAll across every stake', () => {
+    const m = new Matchmaker<string>();
+    m.join(25, entry('alice', 1200));
+    m.leave(25, 'alice');
+    expect(m.isQueued('alice')).toBe(false);
+    m.join(500, entry('alice', 1200));
+    m.leaveAll('alice');
+    expect(m.isQueued('alice')).toBe(false);
+  });
+
+  it('does not confuse one session for another', () => {
+    const m = new Matchmaker<string>();
+    m.join(25, entry('alice', 1200));
+    expect(m.isQueued('bob')).toBe(false);
+  });
+});

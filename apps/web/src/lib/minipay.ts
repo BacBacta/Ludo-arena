@@ -14,6 +14,7 @@ import {
 } from 'viem';
 import { activeChain } from './chains';
 import { deploymentForChain } from './deployments';
+import { assertServerEscrow } from './settlementGuard';
 import { buyCosmeticCusd, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
 import type { Hex } from 'viem';
 
@@ -76,11 +77,14 @@ export async function lockStake(
   wallet: Wallet,
   gameId: string,
   stakeCents: number,
+  fairnessCommit: string,
   onStatus?: (s: StakeStatus) => void,
 ): Promise<void> {
   const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
   const dep = deploymentForChain(chainId);
   if (!dep) throw new Error(`No LudoEscrow deployment for chain ${chainId}`);
+  // Refuse to deposit into an escrow the server will not settle (G-2).
+  assertServerEscrow(chainId, dep.escrow, '1v1');
   await stakeInEscrow({
     walletClient: wallet.walletClient,
     publicClient: wallet.publicClient,
@@ -89,6 +93,7 @@ export async function lockStake(
     token: dep.stablecoin,
     gameId,
     stakeCents,
+    fairnessCommit,
     // MiniPay pays gas in cUSD; on Celo Sepolia the stake token doubles as gas token
     feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
     onStatus,
@@ -104,11 +109,14 @@ export async function lockStake4(
   wallet: Wallet,
   gameId: string,
   stakeCents: number,
+  fairnessCommit: string,
   onStatus?: (s: StakeStatus) => void,
 ): Promise<void> {
   const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
   const dep = deploymentForChain(chainId);
   if (!dep?.escrowN) throw new Error(`No LudoEscrowN deployment for chain ${chainId}`);
+  // Refuse to deposit into an escrow the server will not settle (G-2).
+  assertServerEscrow(chainId, dep.escrowN, '4p');
   await stakeInEscrowN({
     walletClient: wallet.walletClient,
     publicClient: wallet.publicClient,
@@ -117,6 +125,7 @@ export async function lockStake4(
     token: dep.stablecoin,
     gameId,
     stakeCents,
+    fairnessCommit,
     seatCount: 4,
     feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
     onStatus,

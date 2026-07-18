@@ -55,10 +55,10 @@ contract LudoEscrowTest is Test {
     }
 
     function testFullFlow() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
 
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        esc.settle(gameId, alice, "", "", "", _sign(gameId, alice));
 
         // pot 2e18, rake 9 % = 0.18e18, payout 1.82e18
         assertEq(cusd.balanceOf(alice), 10e18 - 1e18 + 1.82e18);
@@ -66,33 +66,33 @@ contract LudoEscrowTest is Test {
     }
 
     function testCannotSettleTwice() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        esc.settle(gameId, alice, "", "", "", _sign(gameId, alice));
         // sig computed first: forge's expectRevert applies to the very next call.
         bytes memory sig = _sign(gameId, alice);
         vm.expectRevert(LudoEscrow.BadStatus.selector);
-        esc.settle(gameId, alice, sig);
+        esc.settle(gameId, alice, "", "", "", sig);
     }
 
     function testBadSignatureRejected() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xBAD, esc.settlementDigest(gameId, alice));
         vm.expectRevert(LudoEscrow.BadSignature.selector);
-        esc.settle(gameId, alice, abi.encodePacked(r, s, v));
+        esc.settle(gameId, alice, "", "", "", abi.encodePacked(r, s, v));
     }
 
     function testWinnerMustBePlayer() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
         bytes memory sig = _sign(gameId, address(0xDEAD));
         vm.expectRevert(LudoEscrow.NotAPlayer.selector);
-        esc.settle(gameId, address(0xDEAD), sig);
+        esc.settle(gameId, address(0xDEAD), "", "", "", sig);
     }
 
     function testRefundExpired() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
         vm.expectRevert(LudoEscrow.NotExpired.selector);
         esc.refundExpired(gameId);
         vm.warp(block.timestamp + 121);
@@ -101,37 +101,37 @@ contract LudoEscrowTest is Test {
     }
 
     function testStakeMustMatch() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
         vm.prank(bob);
         vm.expectRevert(LudoEscrow.BadStake.selector);
-        esc.join(gameId, address(cusd), 2e18);
+        esc.join(gameId, address(cusd), 2e18, bytes32(0));
     }
 
     // ---- rescue paths (stuck Active games) ----
 
     function testVoidGameRefundsBothPlayers() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
         vm.prank(arbiter); esc.voidGame(gameId);
         assertEq(cusd.balanceOf(alice), 10e18);
         assertEq(cusd.balanceOf(bob), 10e18);
         // cannot settle a voided game
         bytes memory sig = _sign(gameId, alice);
         vm.expectRevert(LudoEscrow.BadStatus.selector);
-        esc.settle(gameId, alice, sig);
+        esc.settle(gameId, alice, "", "", "", sig);
     }
 
     function testVoidGameOnlyArbiter() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
         vm.prank(alice);
         vm.expectRevert(LudoEscrow.NotArbiter.selector);
         esc.voidGame(gameId);
     }
 
     function testRefundActiveAfterTimeout() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
         vm.expectRevert(LudoEscrow.NotExpired.selector);
         esc.refundActive(gameId);
         vm.warp(block.timestamp + 24 hours + 1);
@@ -141,15 +141,15 @@ contract LudoEscrowTest is Test {
     }
 
     function testMalleableSignatureRejected() public {
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(arbiterPk, esc.settlementDigest(gameId, alice));
         // flip the canonical low-s sig into its high-s malleable twin; must reject
         uint256 n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
         bytes32 highS = bytes32(n - uint256(s));
         uint8 flippedV = v == 27 ? 28 : 27;
         vm.expectRevert(LudoEscrow.BadSignature.selector);
-        esc.settle(gameId, alice, abi.encodePacked(r, highS, flippedV));
+        esc.settle(gameId, alice, "", "", "", abi.encodePacked(r, highS, flippedV));
     }
 
     // ---- governable rake (rec 3) ----
@@ -160,9 +160,9 @@ contract LudoEscrowTest is Test {
 
     function testSetRakeBpsChangesPayout() public {
         vm.prank(treasury); esc.setRakeBps(0); // 0%-rake acquisition promo
-        vm.prank(alice); esc.join(gameId, address(cusd), 1e18);
-        vm.prank(bob); esc.join(gameId, address(cusd), 1e18);
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        vm.prank(alice); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(cusd), 1e18, bytes32(0));
+        esc.settle(gameId, alice, "", "", "", _sign(gameId, alice));
         // no rake: winner takes the full pot, treasury untouched
         assertEq(cusd.balanceOf(alice), 10e18 - 1e18 + 2e18);
         assertEq(cusd.balanceOf(treasury), 0);
@@ -197,10 +197,10 @@ contract LudoEscrowTest is Test {
     function testSettleBatchSettlesAll() public {
         bytes32 g1 = keccak256("b1");
         bytes32 g2 = keccak256("b2");
-        vm.prank(alice); esc.join(g1, address(cusd), 1e18);
-        vm.prank(bob); esc.join(g1, address(cusd), 1e18);
-        vm.prank(alice); esc.join(g2, address(cusd), 1e18);
-        vm.prank(bob); esc.join(g2, address(cusd), 1e18);
+        vm.prank(alice); esc.join(g1, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(g1, address(cusd), 1e18, bytes32(0));
+        vm.prank(alice); esc.join(g2, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(g2, address(cusd), 1e18, bytes32(0));
 
         bytes32[] memory ids = new bytes32[](2);
         address[] memory winners = new address[](2);
@@ -225,8 +225,8 @@ contract LudoEscrowTest is Test {
 
     function testSettleBatchAtomicOnBadEntry() public {
         bytes32 g1 = keccak256("b1");
-        vm.prank(alice); esc.join(g1, address(cusd), 1e18);
-        vm.prank(bob); esc.join(g1, address(cusd), 1e18);
+        vm.prank(alice); esc.join(g1, address(cusd), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(g1, address(cusd), 1e18, bytes32(0));
         // second entry references an un-Active game → whole batch reverts, g1 unpaid
         bytes32[] memory ids = new bytes32[](2);
         address[] memory winners = new address[](2);

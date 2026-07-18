@@ -24,21 +24,32 @@ export interface RollCheck {
 
 export interface FairnessReport {
   commitOk: boolean;
+  /** R-DICE-1: whether OUR own committed entropy actually appears in the reveal at
+   *  our seat. `null` when we can't check (no own entropy supplied — e.g. a replay
+   *  of someone else's transcript). A dishonest server that ignored our entropy and
+   *  pre-ground the seed would still pass commitOk + every roll, but fail this. */
+  ownEntropyOk: boolean | null;
   rolls: RollCheck[];
   allOk: boolean;
 }
 
-/** Recompute commit + every recorded roll and compare to what was played. */
+/** Recompute commit + every recorded roll and compare to what was played. When
+ *  `own` is supplied, ALSO verify our own committed entropy is the one bound at our
+ *  seat — otherwise the "provably fair" check is blind to a server that silently
+ *  dropped our entropy and chose the whole sequence itself (R-DICE-1). */
 export async function verifyFairness(
   commit: string,
   reveal: { serverSeed: string; entropies: [string, string] },
   dice: Array<{ index: number; value: number }>,
+  own?: { entropy: string; seat: number },
 ): Promise<FairnessReport> {
   const commitOk = (await sha256Hex(reveal.serverSeed)) === commit;
+  const ownEntropyOk = own && own.entropy ? reveal.entropies[own.seat] === own.entropy : null;
   const rolls: RollCheck[] = [];
   for (const d of [...dice].sort((a, b) => a.index - b.index)) {
     const computed = await computeDie(reveal.serverSeed, reveal.entropies, d.index);
     rolls.push({ index: d.index, played: d.value, computed, ok: computed === d.value });
   }
-  return { commitOk, rolls, allOk: commitOk && rolls.every((r) => r.ok) };
+  const allOk = commitOk && ownEntropyOk !== false && rolls.every((r) => r.ok);
+  return { commitOk, ownEntropyOk, rolls, allOk };
 }

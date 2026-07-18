@@ -59,6 +59,10 @@ body {
   color: #ffffff; /* default text sits on the blue stage; panels re-set to dark */
   display: flex;
   justify-content: center;
+  /* MiniPay/webview: kill the rubber-band overscroll that drags the page into the
+     dotted corners, and never allow horizontal scroll (the full-bleed board). */
+  overscroll-behavior: none;
+  overflow-x: hidden;
 }
 
 /* signature dotted stage */
@@ -87,6 +91,22 @@ body::before {
   min-height: 100dvh;
   padding: calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
   animation: fade 0.25s ease;
+}
+
+/* The game screen must fit the VISIBLE viewport without scrolling. MiniPay's webview
+   reports dvh as the toolbar-HIDDEN (large) height, so a dvh-tall screen overflowed
+   the actually-visible area and dragged into the dotted corners. svh is the small
+   (toolbar-shown) height → it always fits; overflow:hidden stops any residual scroll.
+   The board is capped so it can never push the corner avatars / action bar off the
+   bottom — the square SVG shrinks and centres within the full-bleed wrapper. */
+.screen--game {
+  min-height: 0;
+  height: 100vh; /* fallback for engines without svh */
+  height: 100svh;
+  overflow: hidden;
+}
+.screen--game .boardwrap {
+  max-height: calc(100svh - 300px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
 
 /* staggered lobby entrance */
@@ -981,15 +1001,20 @@ small.muted { font-size: 12px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   background: rgba(23, 37, 84, 0.55);
   border-radius: 16px;
-  padding: 8px 10px;
+  padding: 6px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 14px rgba(15, 26, 68, 0.3);
 }
+/* The bar packs 8 controls; on a narrow (MiniPay) width they must SHRINK to fit —
+   otherwise the last ones (menu, and critically the leave ✕) overflow and, under
+   the game screen's overflow:hidden, get clipped off entirely. Let every control
+   shrink toward a still-tappable floor instead of pushing the exit off-screen. */
 .gamebar__btn {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   width: 44px;
+  min-width: 30px;
   height: 44px;
   border: none;
   border-radius: 12px;
@@ -1124,6 +1149,15 @@ small.muted { font-size: 12px; }
 .dicebtn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; }
 /* disabled only occurs mid-turn (picking a token): stay gold, just inert */
 .dicebtn:disabled { cursor: default; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 6px 14px rgba(23, 43, 99, 0.3); }
+/* Hidden-but-MOUNTED between turns (same trick as .huddie--idle): the die element
+   must exist before its roll arrives or the Die3D tumble transition can't play,
+   which made the first roll after each turn just pop to the result. */
+.dicebtn--idle {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  left: -9999px;
+}
 
 /* compact opponent die tucked beside their name chip in the HUD */
 /* Kept MOUNTED even on my turn (a fresh mount can't run the tumble transition);
@@ -1332,21 +1366,23 @@ small.muted { font-size: 12px; }
 /* ---- in-game emotes ---- */
 .emotebar { position: relative; display: inline-flex; }
 .emotebar__toggle {
-  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  width: 40px; height: 40px; min-width: 30px; flex-shrink: 1; border-radius: 50%; border: none; cursor: pointer;
   font-size: 20px; line-height: 1; background: var(--surface); color: var(--txt);
   box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
 }
 .emotebar__toggle:active { transform: scale(0.92); }
 /* popover sheet: emoji row + quick-chat pill row */
 .emotebar__sheet {
-  position: absolute; z-index: 20; width: 224px; box-sizing: border-box;
+  position: absolute; z-index: 20; width: 224px; max-width: calc(100vw - 20px); box-sizing: border-box;
   display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--surface);
   border-radius: 18px; box-shadow: 0 12px 30px rgba(23, 43, 99, 0.5);
   animation: emoteRow 0.14s ease-out;
 }
-/* anchored to the button's edge (not centred) so a top-bar bar doesn't overhang
-   the board centre; the up-variant (1v1 bottom bar) opens upward, right-aligned */
-.emotebar--up .emotebar__sheet { bottom: 100%; margin-bottom: 8px; left: 0; transform-origin: bottom left; }
+/* Anchor to the button's RIGHT edge so the sheet opens toward the board centre and
+   never overhangs the screen edge (the emote toggle sits right-of-centre in the
+   1v1 bottom bar; left-aligning pushed the 224px sheet off the right edge, where the
+   game screen's overflow:hidden clipped it to half). Matches the gift sheet. */
+.emotebar--up .emotebar__sheet { bottom: 100%; margin-bottom: 8px; right: 0; left: auto; transform-origin: bottom right; }
 .emotebar--down .emotebar__sheet { top: 100%; margin-top: 8px; right: 0; transform-origin: top right; }
 /* compact grids: 4 emojis / 2 quick-chats per row → half the height it was */
 .emotebar__row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
@@ -1407,7 +1443,7 @@ small.muted { font-size: 12px; }
 /* ---- in-game gifts (directed treats: coffee, rose, cake…) ---- */
 .giftbar { position: relative; display: inline-flex; }
 .giftbar__toggle {
-  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  width: 40px; height: 40px; min-width: 30px; flex-shrink: 1; border-radius: 50%; border: none; cursor: pointer;
   font-size: 20px; line-height: 1; color: var(--txt); background: rgba(245, 179, 1, 0.16);
   box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
 }
@@ -1523,6 +1559,36 @@ small.muted { font-size: 12px; }
   color: #fff2c2;
   text-shadow: 0 0 6px rgba(245, 179, 1, 0.9);
 }
+/* Progression entry: a distinct accent pill (never a bare toggle) that shows the
+   live streak and a nudge dot when there's a daily task, so users don't miss it. */
+.progbtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(46, 158, 107, 0.16);
+  border: 1px solid rgba(46, 158, 107, 0.5);
+  color: var(--me);
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 0;
+}
+.progbtn:active { transform: scale(0.94); }
+.progbtn .icon { width: 18px; height: 18px; }
+.progbtn__streak { font-size: 12px; font-weight: 800; line-height: 1; color: var(--opp); white-space: nowrap; }
+.progbtn__dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: progpulse 1.8s ease-in-out infinite;
+}
+@keyframes progpulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: 0.7; } }
 .verify {
   margin: 10px 0;
   padding: 8px;
@@ -1733,6 +1799,16 @@ small.muted { font-size: 12px; }
   transition: transform 0.7s cubic-bezier(0.16, 0.72, 0.24, 1);
   will-change: transform;
 }
+/* Optimistic roll spin (online RTT): the die tumbles from the instant of the click
+   while the roll intent is in flight, then decelerates onto the server's value when
+   it lands. The rotation itself is JS-driven (Die3D winds the shared accumulator on
+   an interval); here we only swap the timing to LINEAR so the chained tumbles read
+   as one continuous spin instead of pulsing with the settle easing. */
+.die3d--spinning { transition-timing-function: linear; }
+/* Quick, decisive settle straight out of a spin (~0.32s) so the rolled number reads
+   almost immediately once the server value lands, instead of a second full 0.7s
+   tumble stacked on top of the RTT the die already spun through. */
+.die3d--landing { transition: transform 0.32s cubic-bezier(0.2, 0.85, 0.25, 1); }
 /* each face: rounded plastic tile — top-lit edge (bright top / dark bottom) so
    it reads as a lit rounded solid, plus a specular sweep for wet-plastic gloss */
 .die3d__face {
@@ -1962,3 +2038,97 @@ small.muted { font-size: 12px; }
 /* live freeroll card: ticket balance badge; dimmed when no ticket yet */
 .mini__badge { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--accent); }
 .mini--dim { opacity: 0.72; }
+
+/* ---- Season pass ---------------------------------------------------------- */
+/* lobby "claim" badge: gold-filled call-to-action when a reward is waiting */
+.mrow__badge--claim { background: var(--accent); color: #5d4300; font-weight: 800; }
+
+.seasonsheet { max-width: 460px; }
+.seasonbar { background: var(--card-2); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
+.seasonbar__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 13px; }
+.seasonbar__head b { font-family: var(--font-display); }
+.seasonbar__head span { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+.seasonbar__track { height: 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.08); overflow: hidden; }
+.seasonbar__fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 0.5s ease; }
+
+.seasontiers { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+.seasontier { display: flex; align-items: stretch; gap: 10px; opacity: 0.55; }
+.seasontier--on { opacity: 1; }
+.seasontier__n {
+  flex: 0 0 30px; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 15px; font-weight: 800; color: var(--muted);
+  background: var(--card-2); border-radius: 10px;
+}
+.seasontier--on .seasontier__n { color: var(--accent); background: rgba(245, 179, 1, 0.14); }
+.seasontier__lanes { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seasonreward {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left;
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
+  font-size: 13px; color: var(--txt); width: 100%;
+}
+.seasonreward span { font-weight: 700; }
+.seasonreward small { font-size: 10.5px; color: var(--muted); }
+.seasonreward--claim { border-color: var(--accent); box-shadow: 0 0 12px rgba(245, 179, 1, 0.25); cursor: pointer; }
+.seasonreward--claim small { color: var(--accent); font-weight: 800; }
+.seasonreward--done { opacity: 0.7; }
+.seasonreward--done small { color: var(--me); }
+.seasonreward--prem { background: rgba(122, 61, 18, 0.06); }
+.seasonreward:disabled { cursor: default; }
+
+/* Season showcase card on the lobby: progress bar + value + premium teaser */
+.seasoncard {
+  display: block; width: 100%; text-align: left; padding: 14px 16px;
+  background: linear-gradient(150deg, var(--card), var(--card-2));
+  border: 1px solid rgba(245, 179, 1, 0.4);
+}
+.seasoncard__top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.seasoncard__crown { font-size: 22px; line-height: 1; }
+.seasoncard__id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.seasoncard__id b { font-family: var(--font-display); font-size: 16px; }
+.seasoncard__id small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.seasoncard__crowns { font-weight: 800; font-size: 13px; color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.seasoncard__bar { margin-bottom: 10px; }
+.seasoncard__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.seasoncard__hint { font-size: 12px; color: var(--muted); }
+.seasoncard__claim { font-size: 12.5px; font-weight: 800; color: #5d4300; background: var(--accent); border-radius: 999px; padding: 4px 12px; }
+.seasoncard__prem { font-size: 12px; font-weight: 700; color: var(--accent); background: rgba(245, 179, 1, 0.14); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+
+/* Progression sheet (daily loop + rivals) opened from the top bar */
+.progressionsheet { max-width: 440px; }
+.progressionsheet .seclabel:first-of-type { margin-top: 4px; }
+
+/* streak-freeze: a compact chip in the daily card footer (not a menu row) */
+.daily__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 4px 14px; }
+.daily__foot .daily__hint { margin: 0; flex: 1; min-width: 140px; }
+.freezechip {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 12px; font-weight: 700; color: var(--txt);
+  background: rgba(90, 160, 220, 0.14); border: 1px solid rgba(90, 160, 220, 0.3);
+  border-radius: 999px; padding: 5px 10px; cursor: pointer;
+}
+.freezechip__buy { color: var(--accent); font-weight: 800; }
+
+/* premium pass CTA inside the season sheet: a gold gradient banner */
+.seasonpremium {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  background: linear-gradient(100deg, rgba(245, 179, 1, 0.16), rgba(255, 202, 58, 0.28));
+  border: 1px solid var(--accent); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px;
+  text-align: left; cursor: pointer;
+}
+.seasonpremium__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.seasonpremium__txt b { font-family: var(--font-display); font-size: 15px; }
+.seasonpremium__txt small { font-size: 11.5px; color: var(--muted); }
+.seasonpremium__cta {
+  flex: 0 0 auto; font-family: var(--font-display); font-weight: 800; font-size: 15px;
+  color: #5d4300; background: var(--accent); border-radius: 999px; padding: 8px 16px; white-space: nowrap;
+}
+.seasonpremium--owned { justify-content: center; cursor: default; }
+.seasonpremium--owned b { color: var(--accent-2); }
+
+/* end-screen crown-gain feedback: a gold chip that pops in after a game */
+.crowngain {
+  margin-top: 6px; font-family: var(--font-display); font-weight: 800; font-size: 15px;
+  color: var(--accent-2); background: rgba(245, 179, 1, 0.16); border-radius: 999px; padding: 4px 14px;
+  animation: crownpop 0.5s ease;
+}
+@keyframes crownpop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }

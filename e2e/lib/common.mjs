@@ -63,7 +63,9 @@ export class WireBot {
 
   connect(extraHello = {}) {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(SRV);
+      // opts.url lets a single run point different bots at different endpoints
+      // (e.g. separate chaos proxies for asymmetric latency); defaults to SRV.
+      const ws = new WebSocket(this.opts.url ?? SRV);
       this.ws = ws;
       const to = setTimeout(() => reject(new Error(`${this.name}: hello timeout`)), 8000);
       ws.on('open', () => {
@@ -178,7 +180,7 @@ export async function launchBrowser() {
 export async function newPlayer(browser, ctxOpts = {}) {
   const ctx = await browser.newContext(ctxOpts);
   const page = await ctx.newPage();
-  const wire = { helloName: null, seat: null, seat4: null, pingsSent: 0 };
+  const wire = { helloName: null, helloSent: null, seat: null, seat4: null, pingsSent: 0 };
   page.on('websocket', (ws) => {
     ws.on('framereceived', (f) => {
       try {
@@ -189,10 +191,66 @@ export async function newPlayer(browser, ctxOpts = {}) {
       } catch { /* binary/other */ }
     });
     ws.on('framesent', (f) => {
-      try { if (JSON.parse(f.payload).t === 'ping') wire.pingsSent++; } catch { /* other */ }
+      try {
+        const m = JSON.parse(f.payload);
+        if (m.t === 'ping') wire.pingsSent++;
+        if (m.t === 'hello') wire.helloSent = m; // observe wallet/miniPay claims
+      } catch { /* other */ }
     });
   });
   return { ctx, page, wire };
+}
+
+/** Android low-end webview emulation (MiniPay's target): 360x800, touch. */
+export const MOBILE_CONTEXT = {
+  viewport: { width: 360, height: 800 },
+  userAgent: 'Mozilla/5.0 (Linux; Android 10; SM-A105F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+  isMobile: true,
+  hasTouch: true,
+  deviceScaleFactor: 2,
+};
+
+/**
+ * Inject a MOCKED MiniPay wallet (window.ethereum) BEFORE the app boots, for CI.
+ * `opts.reject` makes eth_requestAccounts throw a user-rejected (4001) error to
+ * test the refusal path. Real signing is exercised manually on Celo Sepolia.
+ * The provider records every request method in `window.__ethCalls`.
+ */
+export async function injectMiniPay(page, opts = {}) {
+  const address = opts.address || '0x00000000000000000000000000000000000000Aa';
+  const reject = !!opts.reject;
+  await page.addInitScript(({ address, reject }) => {
+    const calls = [];
+    // eslint-disable-next-line no-undef
+    window.__ethCalls = calls;
+    // eslint-disable-next-line no-undef
+    window.ethereum = {
+      isMiniPay: true,
+      request: async ({ method }) => {
+        calls.push(method);
+        if ((method === 'eth_requestAccounts' || method === 'eth_accounts') && reject) {
+          const e = new Error('User rejected the request');
+          e.code = 4001;
+          throw e;
+        }
+        switch (method) {
+          case 'eth_requestAccounts':
+          case 'eth_accounts':
+            return [address];
+          case 'eth_chainId':
+            return '0xaa044c'; // 11142220 (Celo Sepolia)
+          case 'net_version':
+            return '11142220';
+          case 'wallet_switchEthereumChain':
+            return null;
+          case 'eth_getBalance':
+            return '0x0';
+          default:
+            return null;
+        }
+      },
+    };
+  }, { address, reject });
 }
 
 export async function openLobby(page) {

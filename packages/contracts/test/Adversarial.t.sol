@@ -55,6 +55,26 @@ contract FeeToken is IERC20 {
     }
 }
 
+/// @dev Token that BLACKLISTS one recipient (like USDC/USDT freeze): transfer TO
+///      the blacklisted address reverts. Models a griefing/frozen winner or player.
+contract BlacklistToken is IERC20 {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    address public blocked;
+    function setBlocked(address a) external { blocked = a; }
+    function mint(address to, uint256 a) external { balanceOf[to] += a; }
+    function approve(address s, uint256 a) external { allowance[msg.sender][s] = a; }
+    function transferFrom(address f, address t, uint256 a) external returns (bool) {
+        if (allowance[f][msg.sender] < a || balanceOf[f] < a) return false;
+        allowance[f][msg.sender] -= a; balanceOf[f] -= a; balanceOf[t] += a; return true;
+    }
+    function transfer(address t, uint256 a) external returns (bool) {
+        require(t != blocked, "blacklisted");
+        if (balanceOf[msg.sender] < a) return false;
+        balanceOf[msg.sender] -= a; balanceOf[t] += a; return true;
+    }
+}
+
 /// @dev Reentrant token: on payout it tries to re-enter settle() to double-pay.
 contract ReentrantToken is IERC20 {
     mapping(address => uint256) public balanceOf;
@@ -71,7 +91,7 @@ contract ReentrantToken is IERC20 {
     function transfer(address t, uint256 a) external returns (bool) {
         balanceOf[msg.sender] -= a; balanceOf[t] += a;
         if (armed) { armed = false; // re-enter once
-            try esc.settle(gid, win, sig) { } catch { } // CEI must make this a no-op
+            try esc.settle(gid, win, "", "", "", sig) { } catch { } // CEI must make this a no-op
         }
         return true;
     }
@@ -123,11 +143,11 @@ contract AdversarialTest is Test {
         GoodToken g = new GoodToken(); _fund(address(g));
         vm.expectEmit(true, true, false, true, address(esc));
         emit Joined(gameId, alice, address(g), 1e18);
-        vm.prank(alice); esc.join(gameId, address(g), 1e18);
-        vm.prank(bob); esc.join(gameId, address(g), 1e18);
+        vm.prank(alice); esc.join(gameId, address(g), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(g), 1e18, bytes32(0));
         vm.expectEmit(true, true, false, true, address(esc));
         emit Settled(gameId, alice, 1.82e18, 0.18e18);
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        esc.settle(gameId, alice, "", "", "", _sign(gameId, alice));
     }
 
     // ---------- FIX VERIFIED: USDT-style no-return token now WORKS (SafeERC20) ----------
@@ -138,9 +158,9 @@ contract AdversarialTest is Test {
         vm.prank(alice); t.approve(address(esc), type(uint256).max);
         vm.prank(bob); t.approve(address(esc), type(uint256).max);
         // SafeERC20 tolerates the missing bool return → join + settle succeed.
-        vm.prank(alice); esc.join(gameId, address(t), 1e18);
-        vm.prank(bob); esc.join(gameId, address(t), 1e18);
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        vm.prank(alice); esc.join(gameId, address(t), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(t), 1e18, bytes32(0));
+        esc.settle(gameId, alice, "", "", "", _sign(gameId, alice));
         assertEq(t.balanceOf(alice), 10e18 - 1e18 + 1.82e18); // paid despite no bool return
         assertEq(t.balanceOf(treasury), 0.18e18);
     }
@@ -152,16 +172,16 @@ contract AdversarialTest is Test {
         vm.prank(alice); f.approve(address(esc), type(uint256).max);
         vm.prank(alice);
         vm.expectRevert(LudoEscrow.TokenNotAllowed.selector);
-        esc.join(gameId, address(f), 1e18); // can never enter the escrow → no stranded funds
+        esc.join(gameId, address(f), 1e18, bytes32(0)); // can never enter the escrow → no stranded funds
     }
 
     // ---------- FIX VERIFIED: rake is snapshotted at deposit ----------
     function testRakeSnapshot_LockedAtDeposit() public {
         GoodToken g = new GoodToken(); _fund(address(g));
-        vm.prank(alice); esc.join(gameId, address(g), 1e18); // snapshot rake = 900 (9%)
-        vm.prank(bob); esc.join(gameId, address(g), 1e18);
+        vm.prank(alice); esc.join(gameId, address(g), 1e18, bytes32(0)); // snapshot rake = 900 (9%)
+        vm.prank(bob); esc.join(gameId, address(g), 1e18, bytes32(0));
         vm.prank(treasury); esc.setRakeBps(1000); // owner cranks to 10% AFTER staking
-        esc.settle(gameId, alice, _sign(gameId, alice));
+        esc.settle(gameId, alice, "", "", "", _sign(gameId, alice));
         // settle used the SNAPSHOT (9%), not the new 10% → winner got the promised payout
         assertEq(g.balanceOf(alice), 10e18 - 1e18 + 1.82e18);
         assertEq(g.balanceOf(treasury), 0.18e18); // 9%, not 10%
@@ -174,14 +194,98 @@ contract AdversarialTest is Test {
         r.mint(alice, 10e18); r.mint(bob, 10e18);
         vm.prank(alice); r.approve(address(esc), type(uint256).max);
         vm.prank(bob); r.approve(address(esc), type(uint256).max);
-        vm.prank(alice); esc.join(gameId, address(r), 1e18);
-        vm.prank(bob); esc.join(gameId, address(r), 1e18);
+        vm.prank(alice); esc.join(gameId, address(r), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(r), 1e18, bytes32(0));
         bytes memory sig = _sign(gameId, alice);
         r.arm(esc, gameId, alice, sig); // transfer() will try to re-enter settle once
-        esc.settle(gameId, alice, sig);
+        esc.settle(gameId, alice, "", "", "", sig);
         // winner paid EXACTLY once (payout 1.82e18); reentrancy blocked by CEI.
         assertEq(r.balanceOf(alice), 10e18 - 1e18 + 1.82e18);
         assertEq(r.balanceOf(address(esc)), 0); // escrow fully drained, no residue
+    }
+
+    // ---------- C3 (R-ESCROW-1) FIX: pull-payment ports to the 1v1 escrow ----------
+    // Before the fix, settle/_refundBoth/refundExpired all pushed via a reverting
+    // transfer, so ONE blacklisted/frozen recipient locked the WHOLE pot forever
+    // (settle, voidGame AND refundActive all reverted — no escape valve). Now a
+    // push the token refuses is credited to `withdrawable` and pulled via withdraw().
+
+    /// A blacklisted WINNER can't block settlement: the payout is credited and
+    /// withdrawn later; the rake still reaches the treasury (mirrors LudoEscrowN).
+    function testSettle_BlacklistedWinnerIsCredited() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(treasury); esc.setTokenAllowed(address(tok), true);
+        tok.mint(alice, 10e18); tok.mint(bob, 10e18);
+        vm.prank(alice); tok.approve(address(esc), type(uint256).max);
+        vm.prank(bob); tok.approve(address(esc), type(uint256).max);
+        vm.prank(alice); esc.join(gameId, address(tok), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(tok), 1e18, bytes32(0));
+
+        tok.setBlocked(alice); // the winner is unpayable at settle time
+        esc.settle(gameId, alice, "", "", "", _sign(gameId, alice)); // MUST NOT revert
+
+        uint256 pot = 2e18;
+        uint256 rake = (pot * 900) / 10_000;
+        uint256 payout = pot - rake;
+        assertEq(esc.withdrawable(address(tok), alice), payout); // credited, not lost
+        assertEq(tok.balanceOf(treasury), rake); // rake still delivered
+        assertEq(tok.balanceOf(address(esc)), payout); // only the winner's payout stays
+
+        tok.setBlocked(address(0));
+        vm.prank(alice); esc.withdraw(address(tok));
+        assertEq(tok.balanceOf(alice), 9e18 + payout);
+        assertEq(tok.balanceOf(address(esc)), 0);
+    }
+
+    /// A blacklisted player must NOT block the OTHER player's refund on voidGame.
+    function testVoidGame_OneBadPlayerDoesNotBlockOther() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(treasury); esc.setTokenAllowed(address(tok), true);
+        tok.mint(alice, 10e18); tok.mint(bob, 10e18);
+        vm.prank(alice); tok.approve(address(esc), type(uint256).max);
+        vm.prank(bob); tok.approve(address(esc), type(uint256).max);
+        vm.prank(alice); esc.join(gameId, address(tok), 1e18, bytes32(0));
+        vm.prank(bob); esc.join(gameId, address(tok), 1e18, bytes32(0));
+
+        tok.setBlocked(bob); // bob becomes unpayable
+        vm.prank(arbiter); esc.voidGame(gameId); // MUST NOT revert
+
+        assertEq(tok.balanceOf(alice), 10e18); // alice refunded immediately (push)
+        assertEq(tok.balanceOf(bob), 9e18); // bob not paid...
+        assertEq(esc.withdrawable(address(tok), bob), 1e18); // ...but credited
+        assertEq(tok.balanceOf(address(esc)), 1e18); // only bob's stake stays
+
+        tok.setBlocked(address(0));
+        vm.prank(bob); esc.withdraw(address(tok));
+        assertEq(tok.balanceOf(bob), 10e18);
+        assertEq(tok.balanceOf(address(esc)), 0);
+    }
+
+    /// A blacklisted lone staker is credited on refundExpired, never blocked.
+    function testRefundExpired_BlacklistedLoneStakerCredited() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(treasury); esc.setTokenAllowed(address(tok), true);
+        tok.mint(alice, 10e18);
+        vm.prank(alice); tok.approve(address(esc), type(uint256).max);
+        vm.prank(alice); esc.join(gameId, address(tok), 1e18, bytes32(0)); // WaitingOpponent
+
+        tok.setBlocked(alice);
+        vm.warp(block.timestamp + esc.JOIN_TIMEOUT() + 1);
+        esc.refundExpired(gameId); // MUST NOT revert
+
+        assertEq(esc.withdrawable(address(tok), alice), 1e18); // credited
+        assertEq(tok.balanceOf(address(esc)), 1e18);
+        tok.setBlocked(address(0));
+        vm.prank(alice); esc.withdraw(address(tok));
+        assertEq(tok.balanceOf(alice), 10e18);
+    }
+
+    /// withdraw() with nothing owed reverts cleanly (no silent no-op).
+    function testWithdrawNothingReverts() public {
+        BlacklistToken tok = new BlacklistToken();
+        vm.prank(alice);
+        vm.expectRevert(LudoEscrow.NothingToWithdraw.selector);
+        esc.withdraw(address(tok));
     }
 
     // ---------- fuzz: payout + rake == pot for any stake & rake ----------
@@ -194,10 +298,10 @@ contract AdversarialTest is Test {
         g.mint(alice, uint256(stake)); g.mint(bob, uint256(stake));
         vm.prank(alice); g.approve(address(e), type(uint256).max);
         vm.prank(bob); g.approve(address(e), type(uint256).max);
-        vm.prank(alice); e.join(gameId, address(g), stake);
-        vm.prank(bob); e.join(gameId, address(g), stake);
+        vm.prank(alice); e.join(gameId, address(g), stake, bytes32(0));
+        vm.prank(bob); e.join(gameId, address(g), stake, bytes32(0));
         (uint8 v, bytes32 rr, bytes32 s) = vm.sign(arbiterPk, e.settlementDigest(gameId, alice));
-        e.settle(gameId, alice, abi.encodePacked(rr, s, v));
+        e.settle(gameId, alice, "", "", "", abi.encodePacked(rr, s, v));
         uint256 pot = uint256(stake) * 2;
         uint256 rake = (pot * rakeBps) / 10000;
         uint256 payout = pot - rake;

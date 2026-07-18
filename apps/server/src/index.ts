@@ -11,10 +11,10 @@ import { getAddress, isAddress, recoverMessageAddress, type Address, type Hex } 
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
   FREEROLL,
+  SEASON_PREMIUM,
+  STREAK_FREEZE,
   TABLE4,
   PREMIUM_SKINS,
-  isoWeek,
-  leaguePointsForWin,
   MAX_DAILY_GAMES_VS_SAME,
   parseClientMsg,
   PROFILE_NAME_MIN,
@@ -25,9 +25,14 @@ import {
   TABLE_CODE_LEN,
   TOS_VERSION,
   walletProofMessage,
+  winbackFor,
+  type Comeback,
+  type LimitsState,
+  type StreakState,
   type Player4Info,
   type ResumedGame,
   type ServerMsg,
+  type SettlementContracts,
   type StakeCents,
 } from '@ludo/shared';
 
@@ -38,6 +43,9 @@ function utcToday(): string {
 function utcYesterday(): string {
   return new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 }
+function utcTwoDaysAgo(): string {
+  return new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+}
 function utcPlusDays(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
@@ -45,12 +53,16 @@ import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
 import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
-import { createFairness, createFairness4, createSeedCommit, finalizeFairness, randomSeatSeed, sha256Hex, type Fairness } from './fairness.js';
+import { createFairness, createFairness4, createSeed4Commit, createSeedCommit, finalizeFairness, finalizeFairness4, randomSeatSeed, sha256Hex, type Fairness, type Fairness4 } from './fairness.js';
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
+import { sameDepositors } from './depositors.js';
+import { countryOf as geoCountryOf, isGeoBlocked as geoIsBlocked } from './geo.js';
+import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { type Fairness4 } from './fairness.js';
+import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
+import { telemetry, tpid } from './telemetry.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -109,19 +121,30 @@ interface Session extends Client {
   /** Running inside MiniPay: the auto-connected address is trusted, so ownership
    *  is accepted WITHOUT a SIWE signature (MiniPay can't personal_sign). */
   miniPay?: boolean;
+  /** Whether this connection's WS Origin may auto-prove a MiniPay wallet (R-AUTH-1).
+   *  false ⇒ a MiniPay claim is NOT auto-proven (off a trusted origin). Undefined in
+   *  dev/testnet (no allowlist configured) ⇒ treated as allowed. */
+  miniPayOriginOk?: boolean;
 }
 
 // Geo-gating (E5.4): ISO country codes where staked play is disabled.
 const BLOCKED_COUNTRIES = new Set(
   (process.env.BLOCKED_COUNTRIES ?? '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean),
 );
-function countryOf(headers: Record<string, string | string[] | undefined>): string | undefined {
-  const c = headers['cf-ipcountry'] ?? headers['x-vercel-ip-country'] ?? headers['x-country'];
-  return typeof c === 'string' && c.length === 2 ? c.toUpperCase() : undefined;
-}
-function isGeoBlocked(country: string | undefined): boolean {
-  return country !== undefined && BLOCKED_COUNTRIES.has(country);
-}
+// Shared secret proving a request came through the trusted edge (Cloudflare/Vercel/
+// Fly proxy) that sets the geo header. The Fly server is directly reachable over
+// WS, so cf-ipcountry & friends are client-forgeable unless the edge authenticates
+// itself — the edge must set `x-edge-secret: <this>` alongside the country header.
+const TRUSTED_EDGE_SECRET = (process.env.TRUSTED_EDGE_SECRET ?? '').trim();
+// Origins allowed to auto-prove a MiniPay wallet (R-AUTH-1 defence-in-depth). Empty
+// = dev/testnet behaviour (any origin). Set to the MiniPay webview origin in prod.
+const MINIPAY_ALLOWED_ORIGINS = new Set(
+  (process.env.MINIPAY_ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean),
+);
+// Thin wrappers over the pure, unit-tested geo helpers (see geo.ts).
+const countryOf = (headers: Record<string, string | string[] | undefined>): string | undefined =>
+  geoCountryOf(headers, TRUSTED_EDGE_SECRET);
+const isGeoBlocked = (country: string | undefined): boolean => geoIsBlocked(country, BLOCKED_COUNTRIES);
 
 const store = await createStore();
 /** Secret gate for QA test traffic (e2e runs against production). A session
@@ -161,7 +184,13 @@ interface PendingStaked4 {
   stake: number;
   pot: number;
   rake: number;
-  fairness: Fairness4;
+  // Anti-grinding (R-DICE-3): the seed is committed knowing only the seat commits;
+  // each human reveals its raw entropy, and the dice bind to those reveals — so the
+  // server can't pre-grind the sequence. Fairness is finalized once all reveals are in.
+  serverSeed: string;
+  commit: string;
+  seatCommits: string[]; // each seat's hello entropyCommit, to verify its reveal
+  reveals: (string | null)[]; // raw entropy per seat (null until revealed)
 }
 const pendingStaked4 = new Map<string, PendingStaked4>();
 // Per-room write chain: snapshots must reach the store in transition order.
@@ -229,14 +258,35 @@ function postOpsAlert(message: string): void {
   }).catch((e) => console.error('[ops] alert webhook failed', e instanceof Error ? e.message : e));
 }
 
-// On-chain settlement (E3.3). null when no ARBITER_PRIVATE_KEY is configured.
-const arbiter = createArbiter();
+// R-COMP-2: real-money staked play must be an EXPLICIT launch decision, not a side
+// effect of the arbiter secret being present. Settlement arms ONLY when
+// STAKING_ENABLED === 'true'; otherwise staked play stays off even with a key +
+// escrow configured, so mainnet addresses landing in secrets can never silently
+// go live. Flip this flag deliberately (per network) once launch is signed off.
+const stakingEnabled = (process.env.STAKING_ENABLED ?? '').trim() === 'true';
+if (!stakingEnabled && (process.env.ARBITER_PRIVATE_KEY ?? '').trim()) {
+  console.warn('[ludo-server] ARBITER_PRIVATE_KEY is set but STAKING_ENABLED != true — staked play is DISABLED (explicit launch gate, R-COMP-2). Set STAKING_ENABLED=true to arm settlement.');
+}
+// On-chain settlement (E3.3). null unless staking is armed AND a key is configured.
+const arbiter = stakingEnabled ? createArbiter() : null;
 // cUSD cosmetic-purchase verifier (rec 6). null until the CosmeticsStore is
 // deployed → cosmetic.claim stays off (ticket unlocks still work regardless).
 const cosmeticsVerifier = createCosmeticsVerifier();
-// N-player settlement for staked 4-player games (LudoEscrowN). null until the
-// N-player escrow is deployed + configured → staked 4-player stays deferred.
-const arbiterN = createArbiterN();
+// N-player settlement for staked 4-player games (LudoEscrowN). null unless staking
+// is armed AND the N-player escrow is deployed + configured.
+const arbiterN = stakingEnabled ? createArbiterN() : null;
+// The escrow addresses the server will SETTLE against, advertised to the client in
+// hello.ok so it can refuse to deposit into a mismatched escrow (server resolves
+// from a Fly secret, client from a bundled copy — a redeploy could drift them).
+// Present only when an arbiter is armed; both arbiters share one chain (CHAIN env).
+const settlementContracts: SettlementContracts | undefined =
+  arbiter || arbiterN
+    ? {
+        chainId: (arbiter ?? arbiterN)!.chainId,
+        escrow: arbiter?.escrow.toLowerCase(),
+        escrowN: arbiterN?.escrow.toLowerCase(),
+      }
+    : undefined;
 // gameId → who to notify with game.settled once the payout tx is mined.
 const settlementNotify = new Map<string, { sessionIds: [string, string]; winner: Seat }>();
 const settlementQueue = arbiter
@@ -260,6 +310,11 @@ const settlementQueue = arbiter
         }
         settlementNotify.delete(gameId);
       },
+      // Drop the notify entry on EVERY terminal outcome, not just the two that
+      // notify players: a `failed` payout, an already-resolved game and a no-op
+      // refund would otherwise keep their entry forever (an unbounded slow leak
+      // only a long soak would surface).
+      onTerminal: (gameId) => settlementNotify.delete(gameId),
     })
   : null;
 // gameId → seats to notify + winner seat, for the durable 4p queue's callbacks.
@@ -277,6 +332,7 @@ const settlementQueue4 = arbiterN
         }
         settlement4Notify.delete(gameId);
       },
+      onTerminal: (gameId) => settlement4Notify.delete(gameId),
       onRefunded: (gameId, txHash) => {
         const info = settlement4Notify.get(gameId);
         if (!info) return;
@@ -294,6 +350,11 @@ if (cosmeticsVerifier) console.log(`[ludo-server] cUSD cosmetics enabled — Cos
 // the country header is only trustworthy behind a trusted edge (Cloudflare/Vercel).
 if (arbiter && BLOCKED_COUNTRIES.size === 0) {
   console.warn('[compliance] settlement is ENABLED but BLOCKED_COUNTRIES is empty — staked play is allowed in every region. Set a legal-reviewed deny list and enforce the country header behind a trusted edge before real-money launch.');
+} else if (arbiter && !TRUSTED_EDGE_SECRET) {
+  // A deny list is set but the country header is not authenticated: geo now fails
+  // CLOSED (unknown region ⇒ no staked play), so legit players will be refused
+  // until the edge sets x-edge-secret. Loud, because it blocks real-money play.
+  console.warn('[compliance] BLOCKED_COUNTRIES is set but TRUSTED_EDGE_SECRET is NOT — the geo header is spoofable, so staked play FAILS CLOSED for every unverified region. Configure the trusted edge to set `x-edge-secret` + the country header before launch.');
 }
 else console.warn('[ludo-server] settlement disabled (no ARBITER_PRIVATE_KEY)');
 
@@ -376,6 +437,8 @@ function toRecord(s: Session): SessionRecord {
     stake: s.stake,
     gameId: s.room?.gameId ?? null,
     seat: s.seat,
+    room4Id: s.room4?.gameId ?? null,
+    seat4: s.seat4 ?? null,
   };
 }
 
@@ -390,6 +453,102 @@ function persistRoom(room: Room): void {
     room.gameId,
     prev.then(() => store.saveRoom(snap)).catch((e) => console.error('[store] saveRoom', e)),
   );
+}
+
+/** Snapshot a 4-player room after every transition (G-5). Serialized per gameId so
+ *  writes never race. Staked 4p carries real money, so — like the 1v1 room — its
+ *  in-flight state must survive a restart or 4 deposits strand with no record. */
+function persistRoom4(room: Room4): void {
+  const snap = room.toSnapshot();
+  const prev = roomWrites.get(room.gameId) ?? Promise.resolve();
+  roomWrites.set(
+    room.gameId,
+    prev.then(() => store.saveRoom4(snap)).catch((e) => console.error('[store] saveRoom4', e)),
+  );
+}
+
+/** Settle a finished staked 4p game from the ROOM SEATS (not a live-session
+ *  closure), so it works for a game restored after a restart too. The seats carry
+ *  the depositor wallet + owning session id since G-5. */
+function settleStaked4FromSeats(gameId: string, seats: Seat4[], winnerSeat: number, fairness?: Fairness4): void {
+  const winnerWallet = seats[winnerSeat]?.wallet;
+  if (!winnerWallet || !settlementQueue4) return;
+  settlement4Notify.set(gameId, { sessionIds: seats.map((s) => s.sessionId ?? ''), winnerSeat });
+  // Reveal the dice fairness on-chain: the seed + every seat's revealed seed.
+  const reveal = fairness ? { serverSeed: fairness.serverSeed, entropies: [...fairness.seeds] } : undefined;
+  settlementQueue4.enqueue(gameId, getAddress(winnerWallet), reveal).catch((e) => console.error('[settlement4] enqueue', e));
+}
+
+/** Accrue a finished game's season crowns for one player and push the light
+ *  `season.progress` update if they're connected. Fire-and-forget: a crown-accrual
+ *  hiccup must never disrupt settlement, stats, or the next match. `session` may be
+ *  absent (a player who already disconnected) — the crowns are still recorded. */
+function awardSeasonCrowns(pid: string, session: Session | undefined, isWinner: boolean): void {
+  awardGameCrowns(store, pid, isWinner, utcToday())
+    .then((a) => {
+      session?.send({ t: 'season.progress', crowns: a.crowns, tier: a.tier, gained: a.gained, dailyGames: a.dailyGames });
+      telemetry('season.crowns', { pid: tpid(pid), gained: a.gained, crowns: a.crowns, tier: a.tier, dailyGames: a.dailyGames, won: isWinner });
+    })
+    .catch((e) => console.error('[season] awardGameCrowns', e));
+}
+
+/** Win-back offer (season Phase 3): a returning wallet player, absent ≥3 days, is
+ *  granted non-cashable comeback tickets — UNLESS they're self-excluded (RG). Idempotent
+ *  per day: recordLogin reports daysAway only on the day-transition. Returns the
+ *  offer to surface in hello.ok (and mutates `streak` so its ticket total is fresh). */
+async function applyWinback(pid: string, streak: StreakState | undefined, limits: LimitsState): Promise<Comeback | undefined> {
+  if (!streak || streak.daysAway === undefined || streak.daysAway < 3) return undefined;
+  if (limits.selfExcludedUntil) return undefined; // RG: never re-engage a self-excluded player
+  const offer = winbackFor(streak.daysAway);
+  if (!offer) return undefined;
+  const total = await store.grantTickets(pid, offer.tickets);
+  streak.tickets = total; // keep the ticket count in hello.ok consistent with the grant
+  telemetry('winback', { pid: tpid(pid), daysAway: streak.daysAway, tickets: offer.tickets });
+  telemetry('tickets', { pid: tpid(pid), delta: offer.tickets, reason: 'winback', total });
+  return { daysAway: streak.daysAway, tickets: offer.tickets };
+}
+
+/** Best-effort player stats (played/win) for a finished 4p game, from the seats. */
+function recordRoom4StatsFromSeats(seats: Seat4[], winnerSeat: number): void {
+  seats.forEach((s, seat) => {
+    if (s.bot || !s.sessionId) return;
+    const pid = playerId(s.wallet, s.sessionId);
+    store.recordPlayed(pid).catch((e) => console.error('[profile] recordPlayed4', e));
+    if (seat === winnerSeat) store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
+    awardSeasonCrowns(pid, sessions.get(s.sessionId), seat === winnerSeat);
+  });
+}
+
+/** Wire a staked 4p room's lifecycle so it is restart-safe: persist on every
+ *  change, settle + record from the seats on finish, and clean up on end. Used by
+ *  both a freshly started room and one restored from a snapshot at boot. */
+function wireStakedRoom4(room: Room4): void {
+  room.onChange = persistRoom4;
+  room.onResult = (r) => {
+    recordRoom4StatsFromSeats(r.seats, r.winnerSeat);
+    settleStaked4FromSeats(r.gameId, r.seats, r.winnerSeat, r.fairness);
+  };
+  room.onEnd = () => {
+    rooms4.delete(room.gameId);
+    detachSessionsFromRoom4(room);
+    // The terminal snapshot is dropped once settlement is safely enqueued (durable
+    // job); the queue's own record + resumePending then own recovery. Delete after
+    // a tick so a same-turn crash still leaves the over=true snapshot to reconcile.
+    void store.deleteRoom4(room.gameId).catch((e) => console.error('[store] deleteRoom4', e));
+  };
+}
+
+/** Clear the 4p room membership from every seat's session and persist it, so a
+ *  reconnect after the game ends does not try to reattach to a dead room. */
+function detachSessionsFromRoom4(room: Room4): void {
+  for (const s of room.seatSessions()) {
+    const sess = sessions.get(s);
+    if (sess && sess.room4 === room) {
+      sess.room4 = null;
+      sess.seat4 = null;
+      persistSession(sess);
+    }
+  }
 }
 
 function makeSession(id: string, ws: WebSocket | null, rec: Omit<SessionRecord, 'gameId' | 'seat'>): Session {
@@ -462,27 +621,35 @@ function wireRoom(room: Room): void {
       .then(() => store.deleteRoom(result.gameId))
       .catch((e) => console.error('[store] onResult', e));
 
-    // Weekly league: award the winner league points and push their standings (E4.3).
     const winnerId = result.winner === 0 ? idA : idB;
     const loserId = result.winner === 0 ? idB : idA;
     const winnerSession = sessions.get(result.players[result.winner].id);
     const loserSession = sessions.get(result.players[result.winner === 0 ? 1 : 0].id);
-    // QA games keep the audit trail (recordGame/ELO above) but must not touch
-    // the public ladder or grant rewards — test traffic polluted the league.
+    // QA games keep the audit trail (recordGame/ELO above) but must not grant
+    // rewards — test traffic must not touch the season/economy.
     if (room.qa) return;
-    store
-      .addLeaguePoints(winnerId, leaguePointsForWin(result.stakeCents))
-      .then((league) => winnerSession?.send({ t: 'league.update', league }))
-      .catch((e) => console.error('[league] addLeaguePoints', e));
     // Profile W/L: bump the winner's win count (games_played is bumped in updateElo).
+    // (The weekly league was retired — it duplicated the season pass's progression
+    //  role and its ticket rollover was an inflation faucet.)
     store.recordWin(winnerId).catch((e) => console.error('[profile] recordWin', e));
 
-    // Freeroll prize: winner takes both entries plus the house bonus, in tickets.
+    // Season pass: every finished (non-QA) game earns crowns — the wealth-neutral
+    // engagement sink that also drives retention. Both players earn; the winner
+    // gets the win bonus. Pushed live so the track fills on the end screen.
+    awardSeasonCrowns(winnerId, winnerSession, true);
+    awardSeasonCrowns(loserId, loserSession, false);
+
+    // Participation (beta model: freeroll uptake, stake mix). Opaque pids only.
+    telemetry('game.end', { winner: tpid(winnerId), loser: tpid(loserId), stakeCents: result.stakeCents, freeroll: !!result.freeroll });
+
+    // Freeroll prize: winner takes the pot in tickets (a slight net sink vs the
+    // two entries — see FREEROLL). A faucet event for the ticket-inflation index.
     if (result.freeroll) {
       store
         .grantTickets(winnerId, FREEROLL.winnerTickets)
         .then((total) => {
           winnerSession?.send({ t: 'tickets.grant', granted: FREEROLL.winnerTickets, total, reason: 'freeroll-win' });
+          telemetry('tickets', { pid: tpid(winnerId), delta: FREEROLL.winnerTickets, reason: 'freeroll-win', total });
         })
         .catch((e) => console.error('[freeroll] prize', e));
     }
@@ -505,9 +672,18 @@ function wireRoom(room: Room): void {
     const winnerWallet = result.players[result.winner].wallet;
     if (settlementQueue && result.stakeCents > 0 && pa.wallet && pb.wallet && winnerWallet) {
       settlementNotify.set(result.gameId, { sessionIds: [pa.id, pb.id], winner: result.winner });
-      settlementQueue
-        .enqueue(result.gameId, winnerWallet)
-        .catch((e) => console.error('[settlement] enqueue', e));
+      // Reveal the dice fairness on-chain at settlement (provably-fair anchor): the
+      // seed whose sha256 is the escrow's fairnessCommit + both entropies.
+      const reveal = { serverSeed: result.fairness.serverSeed, entropies: [...result.fairness.entropies] };
+      settlementQueue.enqueue(result.gameId, winnerWallet, reveal).catch((e) => {
+        // A dropped enqueue would silently lose the winner's payout (the terminal
+        // snapshot is already persisted). Page ops — the boot reconciliation
+        // (R-SETTLE-2) is the net that re-enqueues it, but a live DB blip that
+        // never crashes the process would otherwise go unnoticed.
+        const msg = `[settlement][ALERT] enqueue FAILED for game ${result.gameId}, winner ${winnerWallet}: ${e instanceof Error ? e.message : e}. Winner not yet queued for payout.`;
+        console.error(msg);
+        postOpsAlert(msg);
+      });
     }
   };
 }
@@ -525,6 +701,43 @@ for (const snap of await store.loadRooms()) {
   wireRoom(room);
   room.resume();
   console.log(`[ludo-server] restored game ${snap.gameId} (stake ${snap.stakeCents}c)`);
+  // R-SETTLE-2: a staked game can persist its terminal (over=true) snapshot and
+  // then crash before onResult's async enqueue lands — the payout job is lost and
+  // resume() no-ops for an over room, so the winner would never be paid. Re-enqueue
+  // any finished staked game that has no settlement record yet.
+  const winnerSeat = snap.over ? snap.state.winner : null;
+  if (settlementQueue && snap.stakeCents > 0 && winnerSeat != null) {
+    const winnerWallet = snap.players[winnerSeat]?.wallet;
+    const bothWallets = snap.players[0].wallet && snap.players[1].wallet;
+    if (winnerWallet && bothWallets && !(await store.hasSettlement(snap.gameId))) {
+      settlementNotify.set(snap.gameId, { sessionIds: [snap.players[0].sessionId, snap.players[1].sessionId], winner: winnerSeat });
+      const reveal = { serverSeed: snap.fairness.serverSeed, entropies: [...snap.fairness.entropies] };
+      await settlementQueue.enqueue(snap.gameId, winnerWallet, reveal).catch((e) => console.error('[settlement] boot re-enqueue', e));
+      console.warn(`[settlement] re-enqueued orphaned staked game ${snap.gameId} (crash between game-over and settlement)`);
+    }
+  }
+}
+// Restore in-progress 4-player games (G-5). Staked 4p carries real money, so a
+// restart must not drop the game: an unrestored table strands 4 deposits with no
+// server record to settle or refund them.
+for (const snap of await store.loadRooms4()) {
+  const room = Room4.fromSnapshot(snap);
+  wireStakedRoom4(room); // persistence + settle/record-from-seats + cleanup (safe for free tables too: no wallet ⇒ settle no-ops)
+  rooms4.set(snap.gameId, room);
+  room.resume(); // restart the clock so bots/auto-play drive it to a finish even if nobody reconnects
+  console.log(`[ludo-server] restored 4p game ${snap.gameId} (payout ${snap.payoutCents}c)`);
+  // R-SETTLE-2 (4p): a staked game can persist its terminal snapshot then crash
+  // before settle enqueues. Re-enqueue any finished staked 4p with no record yet.
+  const winnerSeat = snap.over ? snap.state.winner : null;
+  if (settlementQueue4 && snap.payoutCents > 0 && winnerSeat != null) {
+    const winnerWallet = snap.seats[winnerSeat]?.wallet;
+    if (winnerWallet && !(await store.hasSettlement(snap.gameId))) {
+      settlement4Notify.set(snap.gameId, { sessionIds: snap.seats.map((s) => s.sessionId), winnerSeat });
+      const reveal = { serverSeed: snap.fairness.serverSeed, entropies: [...snap.fairness.seeds] };
+      await settlementQueue4.enqueue(snap.gameId, getAddress(winnerWallet), reveal).catch((e) => console.error('[settlement4] boot re-enqueue', e));
+      console.warn(`[settlement4] re-enqueued orphaned staked 4p game ${snap.gameId} (crash between game-over and settlement)`);
+    }
+  }
 }
 // Finish any settlements interrupted by the previous run (1v1 and 4p).
 await settlementQueue?.resumePending();
@@ -557,23 +770,25 @@ if (gasArbiter) {
   setInterval(() => void checkGas(), 5 * 60_000);
 }
 
-// Weekly league rollover (E4.3): runs when the ISO week changes (Mon 00:00 UTC).
-// Checked at boot and hourly so a restart never misses the boundary.
-async function maybeRolloverLeague(): Promise<void> {
-  const week = isoWeek(new Date());
-  const last = await store.getMeta('leagueWeek');
-  if (last === null) {
-    await store.setMeta('leagueWeek', week); // first boot: mark, don't roll over
-    return;
-  }
-  if (last !== week) {
-    const { promoted, relegated, ticketsAwarded } = await store.rolloverLeagues();
-    await store.setMeta('leagueWeek', week);
-    console.log(`[league] rollover ${last} → ${week}: ${promoted} promoted, ${relegated} relegated, ${ticketsAwarded} tickets awarded`);
+// The weekly league was retired: it duplicated the season pass's progression role
+// and its weekly ticket rollover was an inflation faucet the season economy is
+// designed to avoid. No points are awarded and no rollover runs; the season pass
+// is the single progression system. (Store league methods are kept but unused.)
+
+// Season pass rollover: the store starts the next season once the window ends
+// (and lazily resets per-player progress). Checked at boot and hourly so a restart
+// never leaves an expired season live. `getSeason` also seeds season 1 on first boot.
+async function maybeRolloverSeason(): Promise<void> {
+  const now = new Date().toISOString();
+  const before = await store.getSeason(now);
+  if (await store.rolloverSeason(now)) {
+    const after = await store.getSeason(now);
+    console.log(`[season] rollover ${before.id} → ${after.id} (ends ${after.endsAt})`);
+    telemetry('season.rollover', { from: before.id, to: after.id, endsAt: after.endsAt });
   }
 }
-await maybeRolloverLeague().catch((e) => console.error('[league] rollover', e));
-setInterval(() => void maybeRolloverLeague().catch((e) => console.error('[league] rollover', e)), 3_600_000);
+await maybeRolloverSeason().catch((e) => console.error('[season] rollover', e));
+setInterval(() => void maybeRolloverSeason().catch((e) => console.error('[season] rollover', e)), 3_600_000);
 
 // ---------- http + ws ----------
 
@@ -656,6 +871,10 @@ let connSeq = 0;
 wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress ?? 'unknown';
   const country = countryOf(req.headers);
+  // WS Origin (browsers set it and forbid JS from overriding it) → whether a
+  // MiniPay auto-prove may be trusted on this connection (R-AUTH-1 defence).
+  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+  const miniPayOriginOk = miniPayOriginTrusted(origin, MINIPAY_ALLOWED_ORIGINS);
   let qaConn = false;
   if (QA_KEY !== '') {
     try {
@@ -664,13 +883,18 @@ wss.on('connection', (ws, req) => {
       qaConn = false;
     }
   }
-  if (limiter.isBanned(ip)) {
+  // Authorized QA/load-test connections (they carry the secret QA_KEY) are exempt
+  // from the per-IP connection cap, the ban list and the rate limiter — a load run
+  // (Phase 4 bot sim, Phase 6 load) drives thousands of fast actions from ONE host,
+  // which the prod-facing limits would throttle. Real users never have QA_KEY, so
+  // prod protection is unchanged.
+  if (!qaConn && limiter.isBanned(ip)) {
     send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Temporarily banned. Try again later.' });
     ws.close();
     return;
   }
   const liveForIp = connsByIp.get(ip) ?? 0;
-  if (liveForIp >= MAX_CONNS_PER_IP) {
+  if (!qaConn && liveForIp >= MAX_CONNS_PER_IP) {
     send(ws, { t: 'error', code: 'LIMIT_REACHED', message: 'Too many connections.' });
     ws.close();
     return;
@@ -687,7 +911,7 @@ wss.on('connection', (ws, req) => {
   let inbox = Promise.resolve();
 
   ws.on('message', (data) => {
-    const verdict = limiter.allow(connKey, ip);
+    const verdict = qaConn ? 'ok' : limiter.allow(connKey, ip);
     if (verdict !== 'ok') {
       // silent drop while over rate (no error amplification); one notice on ban
       if (verdict === 'ban') {
@@ -723,6 +947,7 @@ wss.on('connection', (ws, req) => {
         resumedSession.country = country;
         resumedSession.ip = ip;
         resumedSession.miniPay = msg.miniPay === true;
+        resumedSession.miniPayOriginOk = miniPayOriginOk;
         if (msg.frame !== undefined) resumedSession.frame = msg.frame;
         if (msg.avatar !== undefined) resumedSession.avatar = msg.avatar;
         // Profile edit on a resumed session: apply the sanitized custom identity
@@ -739,9 +964,15 @@ wss.on('connection', (ws, req) => {
           : { gamesPlayed: 0, wins: 0, name: resumedSession.name, flag: resumedSession.flag };
         resumedSession.name = rStats.name;
         resumedSession.flag = rStats.flag;
+        let rChallenge = await store.getChallenge(rpid, utcToday());
+        const rStreak = resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday(), utcTwoDaysAgo()) : undefined;
+        const rLimits = await store.getLimits(rpid, utcToday());
+        const rComeback = resumedSession.wallet ? await applyWinback(rpid, rStreak, rLimits) : undefined;
+        if (rComeback) rChallenge = await store.getChallenge(rpid, utcToday()); // refresh ticket total
         send(ws, {
           t: 'hello.ok',
           sessionToken: resumedSession.id,
+          contracts: settlementContracts,
           elo: resumedSession.elo,
           name: resumedSession.name,
           flag: resumedSession.flag,
@@ -751,17 +982,37 @@ wss.on('connection', (ws, req) => {
           frame: resumedSession.frame,
           avatar: resumedSession.avatar,
           resumed: resumedGame(resumedSession),
-          challenge: await store.getChallenge(rpid, utcToday()),
-          streak: resumedSession.wallet ? await store.recordLogin(rpid, utcToday(), utcYesterday()) : undefined,
-          league: await store.getLeague(rpid),
-          limits: await store.getLimits(rpid, utcToday()),
+          challenge: rChallenge,
+          streak: rStreak,
+          limits: rLimits,
           ownedSkins: await store.getOwnedSkins(rpid),
+          season: await buildSeasonState(store, rpid, new Date().toISOString()),
+          comeback: rComeback,
           stakingBlocked: isGeoBlocked(country),
           walletNonce: rProof.walletNonce,
           walletProven: rProof.walletProven,
           consentTosVersion: resumedSession.consentTos,
         });
+        // R-WEB-1: if this session had a live 4-player seat (staked table), rebind
+        // the new socket to it and resync — a dropped staker resumes instead of
+        // forfeiting their locked stake. The room kept the seat during the grace
+        // window (Room4.drop detaches without bot-forfeiting for staked tables).
+        if (resumedSession.room4 && resumedSession.seat4 != null && !resumedSession.room4.isOver()) {
+          resumedSession.room4.attach(resumedSession.seat4, resumedSession);
+        }
         return;
+      }
+      // A socket may legitimately re-hello (the web client does it on profile edit
+      // and on wallet-connect-after-load), and each one mints a fresh Session below.
+      // Only the closure `session` was rebound, so the PREVIOUS record stayed in the
+      // global `sessions` map for the process lifetime — the close handler expires
+      // the last session only. That leaked one Session per extra hello, unbounded.
+      // Drop the superseded record here: one socket owns at most one idle session.
+      // A session that is mid-game / mid-stake is left alone — its Room still points
+      // at it, and killing it would strand a live (possibly staked) game; that case
+      // is bounded by real games, not by message count.
+      if (session && session.ws === ws && !session.room && !session.room4 && !session.pendingGameId) {
+        sessions.delete(session.id);
       }
       const id = randomBytes(16).toString('hex');
       // `wallet` was normalized at the top of the hello handler. Identity is
@@ -799,22 +1050,32 @@ wss.on('connection', (ws, req) => {
       }
       session.ip = ip;
       session.miniPay = msg.miniPay === true; // trusted address, no SIWE (before issueWalletNonce)
+      session.miniPayOriginOk = miniPayOriginOk; // origin gate for the auto-prove (R-AUTH-1)
       session.frame = msg.frame; // cosmetic; validated to AVATAR_FRAMES in parse
       session.avatar = msg.avatar; // cosmetic; validated to AVATARS in parse
       sessions.set(id, session);
       persistSession(session);
-      const pid = playerId(msg.wallet, id);
-      const challenge = await store.getChallenge(pid, utcToday());
+      // Key off the NORMALIZED wallet — never raw msg.wallet. normalizeWallet maps a
+      // non-address to undefined, so raw input here made a client-chosen string the
+      // durable key: it both diverged from idKey (:822, normalized → `anon:<id>`),
+      // splitting one player across two identities, and let any client write junk
+      // rows under an arbitrary key of its choosing.
+      const pid = playerId(wallet, id);
+      let challenge = await store.getChallenge(pid, utcToday());
       // Streak is persisted only for wallet-linked players (anon rows are ephemeral).
-      const streak = msg.wallet ? await store.recordLogin(pid, utcToday(), utcYesterday()) : undefined;
-      const league = await store.getLeague(pid);
+      const streak = wallet ? await store.recordLogin(pid, utcToday(), utcYesterday(), utcTwoDaysAgo()) : undefined;
       const limits = await store.getLimits(pid, utcToday());
+      // Win-back: grant comeback tickets to a returning absent player (RG-gated).
+      const comeback = wallet ? await applyWinback(pid, streak, limits) : undefined;
+      if (comeback) challenge = await store.getChallenge(pid, utcToday()); // refresh ticket total
       const ownedSkins = await store.getOwnedSkins(pid);
+      const season = await buildSeasonState(store, pid, new Date().toISOString());
       await recordConsent(session, msg.consent);
       const proof = issueWalletNonce(session);
       send(ws, {
         t: 'hello.ok',
         sessionToken: id,
+        contracts: settlementContracts,
         elo,
         name,
         flag,
@@ -825,9 +1086,10 @@ wss.on('connection', (ws, req) => {
         avatar: session.avatar,
         challenge,
         streak,
-        league,
         limits,
         ownedSkins,
+        season,
+        comeback,
         stakingBlocked: isGeoBlocked(country),
         walletNonce: proof.walletNonce,
         walletProven: proof.walletProven,
@@ -873,14 +1135,22 @@ wss.on('connection', (ws, req) => {
           break;
         }
         // Reject a duplicate join from a session that's already queued (a double
-        // queue.join must not create two entries / self-pair).
-        if (matchmaker.position(msg.stake, session) > 0 || freerollMatchmaker.position(0, session) > 0) {
+        // queue.join must not create two entries / self-pair). Checked across ALL
+        // stakes, not just the requested one: the daily-limit check below reads a
+        // counter that is only debited when a game starts, so one session holding
+        // entries in several stake queues could pass every check and then exceed
+        // the limit as each entry pairs.
+        if (matchmaker.isQueued(session) || freerollMatchmaker.isQueued(session)) {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in the queue.' });
           break;
         }
         // Freeroll (ticket-gated free 1v1): its own queue; entry checked here and
         // SPENT at match time (refunded on abandon before the game starts).
         if (msg.freeroll) {
+          if (walletKeyedWriteBlocked(session)) {
+            session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to spend a freeroll ticket.' });
+            break;
+          }
           const fpid = playerId(session.wallet, session.id);
           const held = (await store.getChallenge(fpid, utcToday())).tickets;
           if (held < FREEROLL.entryTickets) {
@@ -962,7 +1232,7 @@ wss.on('connection', (ws, req) => {
             session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to play a staked 4-player table.' });
             break;
           }
-          const blocked4 = await stakeBlock(session, stake4 as StakeCents);
+          const blocked4 = await stakeBlock(session, stake4 as StakeCents, !!arbiterN);
           if (blocked4) {
             session.send({ t: 'error', code: 'LIMIT_REACHED', message: blocked4 });
             break;
@@ -1126,23 +1396,43 @@ wss.on('connection', (ws, req) => {
         // Anti-grinding reveal: verify the raw entropy against the hello commit,
         // store it, and finalize the game once both players have revealed.
         const pending = session.pendingGameId ? pendingReveals.get(session.pendingGameId) : undefined;
-        if (!pending) break;
-        let seat: 0 | 1;
-        if (session === pending.a) seat = 0;
-        else if (session === pending.b) seat = 1;
-        else break;
-        if (!session.entropyCommit || sha256Hex(msg.entropy) !== session.entropyCommit) {
-          session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Entropy does not match commit.' });
+        if (pending) {
+          let seat: 0 | 1;
+          if (session === pending.a) seat = 0;
+          else if (session === pending.b) seat = 1;
+          else break;
+          if (!session.entropyCommit || sha256Hex(msg.entropy) !== session.entropyCommit) {
+            session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Entropy does not match commit.' });
+            break;
+          }
+          session.entropy = msg.entropy;
+          pending.entropies[seat] = msg.entropy;
+          // Start once both revealed AND (for real-money games) both stakes are locked.
+          maybeStartPending(pending);
           break;
         }
-        session.entropy = msg.entropy;
-        pending.entropies[seat] = msg.entropy;
-        // Start once both revealed AND (for real-money games) both stakes are locked.
-        maybeStartPending(pending);
+        // Staked 4-player reveal (R-DICE-3): bind this seat's raw entropy against
+        // its hello commit; play starts once all four reveal AND all stakes lock.
+        const p4 = session.pendingGameId ? pendingStaked4.get(session.pendingGameId) : undefined;
+        if (p4) {
+          const seat4 = p4.humans.indexOf(session);
+          if (seat4 < 0) break;
+          if (sha256Hex(msg.entropy) !== p4.seatCommits[seat4]) {
+            session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Entropy does not match commit.' });
+            break;
+          }
+          session.entropy = msg.entropy;
+          p4.reveals[seat4] = msg.entropy;
+          maybeStartStaked4(p4);
+        }
         break;
       }
 
       case 'limits.set': {
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to change limits.' });
+          break;
+        }
         const pid = playerId(session.wallet, session.id);
         const selfExcludedUntil = msg.selfExcludeDays ? utcPlusDays(msg.selfExcludeDays) : undefined;
         await store.setLimits(pid, { dailyLimitCents: msg.dailyLimitCents, selfExcludedUntil });
@@ -1151,6 +1441,10 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'skin.buy': {
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to spend tickets.' });
+          break;
+        }
         // Unlock a premium dice skin by spending its ticket price (server-authoritative).
         const price = PREMIUM_SKINS[msg.skinId];
         if (price === undefined) {
@@ -1209,8 +1503,114 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'season.claim': {
+        // Same trust model as skin.buy: an unproven wallet can't claim rewards that
+        // credit a durable balance to that address (anon sessions pass — their
+        // progress is ephemeral anyway).
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to claim season rewards.' });
+          break;
+        }
+        const clpid = playerId(session.wallet, session.id);
+        const res = await claimSeasonTier(store, clpid, msg.tier, msg.lane, utcToday());
+        if (!res.ok) {
+          const message =
+            res.error === 'locked' ? 'That tier is not unlocked yet.'
+            : res.error === 'not-premium' ? 'The premium track requires the season pass.'
+            : 'That reward was already claimed.';
+          const code = res.error === 'already' ? 'BAD_STATE' : 'LIMIT_REACHED';
+          session.send({ t: 'error', code, message });
+          break;
+        }
+        // A ticket reward surfaces in the ticket UI; then a fresh season.state marks
+        // the tier claimed (the client keeps the static reward table).
+        if (res.ticketsGranted && res.ticketsGranted > 0) {
+          const total = (await store.getChallenge(clpid, utcToday())).tickets;
+          session.send({ t: 'tickets.grant', granted: res.ticketsGranted, total, reason: 'sync' });
+          telemetry('tickets', { pid: tpid(clpid), delta: res.ticketsGranted, reason: 'season-claim', total });
+        }
+        telemetry('season.claim', { pid: tpid(clpid), tier: msg.tier, lane: msg.lane, reward: res.reward?.kind, tickets: res.ticketsGranted ?? 0 });
+        // A streak-freeze reward changed the inventory → refresh the streak UI too.
+        if (res.reward?.kind === 'streakFreeze') session.send({ t: 'streak.update', streak: await store.getStreak(clpid) });
+        // A cosmetic reward granted a real owned skin → push the new owned list.
+        if (res.reward?.kind === 'cosmetic') {
+          session.send({ t: 'skin.owned', ownedIds: await store.getOwnedSkins(clpid), tickets: (await store.getChallenge(clpid, utcToday())).tickets });
+        }
+        session.send({ t: 'season.state', season: await buildSeasonState(store, clpid, new Date().toISOString()) });
+        break;
+      }
+
+      case 'season.buyPremium': {
+        // Premium is a USDT purchase → it must credit a proven wallet (the same
+        // verified-buyer model as cosmetic.claim). No anon premium.
+        if (!cosmeticsVerifier) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'The premium pass is not available yet.' });
+          break;
+        }
+        if (!session.wallet) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to buy the premium pass.' });
+          break;
+        }
+        const bpid = playerId(session.wallet, session.id);
+        const buyerWallet = session.wallet as Address;
+        const res = await buySeasonPremium(
+          store,
+          (txHash) => cosmeticsVerifier.verifyPurchase(txHash as Hex, buyerWallet, SEASON_PREMIUM.itemId),
+          bpid,
+          msg.txHash,
+        );
+        if (!res.ok) {
+          const message =
+            res.error === 'already' ? 'You already own the premium pass this season.'
+            : res.error === 'replay' ? 'That purchase was already used.'
+            : 'Could not verify that USDT purchase.';
+          session.send({ t: 'error', code: res.error === 'already' ? 'BAD_STATE' : 'BAD_MESSAGE', message });
+          break;
+        }
+        // Retroactive tickets surface in the ticket UI; a fresh season.state flips
+        // the premium lane on + marks the auto-unlocked tiers claimed.
+        if (res.ticketsGranted && res.ticketsGranted > 0) {
+          const total = (await store.getChallenge(bpid, utcToday())).tickets;
+          session.send({ t: 'tickets.grant', granted: res.ticketsGranted, total, reason: 'sync' });
+          telemetry('tickets', { pid: tpid(bpid), delta: res.ticketsGranted, reason: 'season-premium-retro', total });
+        }
+        telemetry('season.premium', { pid: tpid(bpid), unlocked: res.unlockedTiers?.length ?? 0, tickets: res.ticketsGranted ?? 0 });
+        // The retroactive unlock may have granted premium-lane skins → refresh owned.
+        session.send({ t: 'skin.owned', ownedIds: await store.getOwnedSkins(bpid), tickets: (await store.getChallenge(bpid, utcToday())).tickets });
+        session.send({ t: 'season.state', season: await buildSeasonState(store, bpid, new Date().toISOString()) });
+        break;
+      }
+
+      case 'streak.buyFreeze': {
+        // Buy one streak-freeze with tickets (a sink). Wallet-keyed like skin.buy —
+        // an unproven wallet can't spend a durable balance.
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to buy a streak-freeze.' });
+          break;
+        }
+        const sfpid = playerId(session.wallet, session.id);
+        const res = await store.buyStreakFreeze(sfpid);
+        if (!res.ok) {
+          session.send({
+            t: 'error',
+            code: 'LIMIT_REACHED',
+            message: res.reason === 'capped' ? 'You already hold the maximum streak-freezes.' : 'Not enough tickets for a streak-freeze.',
+          });
+          break;
+        }
+        telemetry('tickets', { pid: tpid(sfpid), delta: -STREAK_FREEZE.ticketCost, reason: 'streak-freeze', total: res.tickets });
+        session.send({ t: 'streak.update', streak: await store.getStreak(sfpid) });
+        break;
+      }
+
       case 'game.rematch': {
         if (session.room || session.pendingGameId) break;
+        // A repeated game.rematch must not stack queue entries: it falls through to
+        // matchmaker.join below, which (unlike queue.join) had no dedupe guard, so
+        // the token bucket alone allowed ~30 entries/s for one session — each one
+        // pairing into its own staked game past a daily-limit check that reads the
+        // still-undebited counter.
+        if (matchmaker.isQueued(session) || freerollMatchmaker.isQueued(session)) break;
         // Fresh per-game entropy commit (fairness): rebind BEFORE pairing/seeding so
         // the server commits its next seed without ever knowing this game's raw
         // entropy — the client reveals it later on match.found. Without this, a
@@ -1315,6 +1715,12 @@ wss.on('connection', (ws, req) => {
     if (n <= 0) connsByIp.delete(ip);
     else connsByIp.set(ip, n);
     if (!session) return;
+    // R-RT-1: a resume (double tab / reconnect) rebinds the SAME Session object to
+    // a newer socket. If this closing socket is no longer the session's active one,
+    // it is stale — do the per-connection cleanup above but NEVER tear down the live
+    // session (nulling its ws, dropping its live 4p seat to a bot, forfeiting a
+    // locked stake). Only the owning socket's close tears the session down.
+    if (session.ws !== ws) return;
     session.ws = null;
     session.alive = false;
     // If the last opponent is waiting on us for a rematch, don't leave them
@@ -1344,6 +1750,9 @@ wss.on('connection', (ws, req) => {
           refundFreerollEntry(p.a);
           refundFreerollEntry(p.b);
         }
+        // Staked game abandoned pre-Room: auto-refund any on-chain deposit either
+        // side already locked (R-SETTLE-1) — the queue voids/refunds by status.
+        scheduleRefund1v1(p);
         opp.send({ t: 'error', code: 'INTERNAL', message: 'Opponent left before the game started.' });
       }
     }
@@ -1426,11 +1835,26 @@ async function recordConsent(session: Session, consent?: { tosVersion: string; a
 /** Wallet ownership proof state for hello.ok. Proof is PER-SESSION (never durable
  *  by wallet — that would let anyone claim a proven address), so a fresh session
  *  with an unproven wallet gets a nonce to sign. */
+/** R-AUTH-2: a wallet-keyed durable write (tickets, cosmetics, RG limits/self-
+ *  exclusion, ELO) must never act on a wallet the session only CLAIMED. Wallet
+ *  addresses are public, so a scripted client that sets `wallet` without proving
+ *  it could spend a victim's tickets or force their self-exclusion. Proven wallets
+ *  (incl. MiniPay, trusted by the platform) and wallet-less sessions (keyed by the
+ *  ephemeral session id, no cross-account reach) are fine. */
+function walletKeyedWriteBlocked(session: Session): boolean {
+  return !!session.wallet && !session.walletProven;
+}
+
 function issueWalletNonce(session: Session): { walletNonce?: string; walletProven?: boolean } {
   if (!session.wallet) return {};
   // MiniPay: the wallet is auto-connected + trusted and cannot personal_sign, so
   // accept the address as proven with NO nonce/signature (the required model).
-  if (session.miniPay) {
+  // MiniPay auto-prove, but only from a trusted Origin (R-AUTH-1 defence-in-depth):
+  // a malicious website cannot forge the WS Origin, so it can no longer claim a
+  // victim's wallet as proven. Off-origin (or origin not on the allowlist) falls
+  // through to the unproven path — MiniPay can't sign, so such a session simply
+  // stays unproven and walletKeyedWriteBlocked keeps it out of wallet-keyed writes.
+  if (session.miniPay && session.miniPayOriginOk !== false) {
     session.walletProven = true;
     return { walletProven: true };
   }
@@ -1439,8 +1863,24 @@ function issueWalletNonce(session: Session): { walletNonce?: string; walletProve
   return { walletNonce: session.walletNonce, walletProven: false };
 }
 
-async function stakeBlock(session: Session, stake: StakeCents): Promise<string | null> {
+/**
+ * @param settlerReady is the arbiter that will settle THIS mode armed? Defaults to
+ *   the 1v1 arbiter; the 4p entry passes `!!arbiterN`.
+ */
+async function stakeBlock(session: Session, stake: StakeCents, settlerReady = !!arbiter): Promise<string | null> {
   if (stake <= 0) return null;
+  // The launch gate (R-COMP-2) must fail SAFE. STAKING_ENABLED=false only nulls the
+  // arbiter — and `needsLock` is `stake > 0 && wallets && !!arbiter`, so a
+  // wallet-backed staked game would then start WITHOUT waiting for the escrow and
+  // would never be settled. A client that deposited anyway (its escrow address is
+  // baked into its own bundle, not handed out by us) leaves real funds locked until
+  // the contract's 24 h refundActive. Turning staking OFF must stop staked play, not
+  // silently turn it into unsettled staked play. Staked 4p already refused on
+  // `!arbiterN` at its entry (index.ts:1034) — 1v1 had no equivalent. Wallet-less
+  // demo players stake simulated balances (no escrow, no settlement) — unaffected.
+  if (session.wallet && !settlerReady) {
+    return 'Staked games are temporarily unavailable — free practice only.';
+  }
   // Staked play requires accepting the CURRENT terms (18+/ToS), enforced
   // server-side (the client gate is bypassable). Recorded in recordConsent.
   if (session.consentTos !== TOS_VERSION) {
@@ -1483,8 +1923,19 @@ async function resumeSession(token: string, ws: WebSocket, wallet: string | unde
     // change then); otherwise fall through to a fresh, correctly-tagged session.
     const inGame = !!existing.room && !existing.room.isOver();
     if (!inGame && !walletsMatch(existing.wallet, wallet)) return null;
+    // R-RT-1: proactively close the previous socket so a lingering stale tab stops
+    // receiving state. Its close handler is now a no-op for the session (guarded on
+    // session.ws === ws), so this take-over can't null the new live socket.
+    const prev = existing.ws;
     existing.ws = ws;
     existing.alive = true;
+    if (prev && prev !== ws) {
+      try {
+        prev.close();
+      } catch {
+        /* already closing */
+      }
+    }
     return existing;
   }
   const rec = await store.loadSession(token);
@@ -1498,7 +1949,17 @@ async function resumeSession(token: string, ws: WebSocket, wallet: string | unde
       room.attach(rec.seat, session);
     }
   }
-  const inGame = !!session.room && !session.room.isOver();
+  // 4-player reattach (G-5): rebind to a Room4 restored from a snapshot at boot.
+  if (rec.room4Id && rec.seat4 != null) {
+    const room4 = rooms4.get(rec.room4Id);
+    if (room4 && !room4.isOver()) {
+      session.room4 = room4;
+      session.seat4 = rec.seat4;
+      room4.attach(rec.seat4, session);
+    }
+  }
+  const inGame =
+    (!!session.room && !session.room.isOver()) || (!!session.room4 && !session.room4.isOver());
   if (!inGame && !walletsMatch(session.wallet, wallet)) return null; // wallet changed → fresh session
   sessions.set(rec.id, session);
   if (rec.gameId && (!session.room || session.room.isOver())) persistSession(session); // game ended while away
@@ -1544,10 +2005,25 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
   }
   a.send({ t: 'tickets.grant', granted: 0, total: spentA, reason: 'freeroll-win' }); // sync new totals
   b.send({ t: 'tickets.grant', granted: 0, total: spentB, reason: 'freeroll-win' });
+  // Sink events for the ticket-inflation index (both entries left circulation).
+  telemetry('tickets', { pid: tpid(pidA), delta: -FREEROLL.entryTickets, reason: 'freeroll-entry', total: spentA });
+  telemetry('tickets', { pid: tpid(pidB), delta: -FREEROLL.entryTickets, reason: 'freeroll-entry', total: spentB });
   await startGame(0, a, b, true);
 }
 
 async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = false, fromTable = false): Promise<void> {
+  // Last-resort guard: never start a game for a seat that is already playing or
+  // already staking another one. The 1 s matchmaker sweep calls straight in here
+  // without re-running the queue guards, so a stale entry (or a second entry that
+  // slipped in) must not open a concurrent staked game — that is how the daily
+  // limit gets bypassed, since its counter is only debited once a game starts.
+  // Both seats were already spliced out of the queue by the caller, so refusing is
+  // enough — do NOT leaveAll() here, that would also drop the innocent seat's other
+  // legitimate waits. The queue guards make this unreachable; log if it ever fires.
+  if (a.room || b.room || a.pendingGameId || b.pendingGameId) {
+    console.warn(`[matchmaking] refused a pairing for a busy seat (a=${!!(a.room || a.pendingGameId)} b=${!!(b.room || b.pendingGameId)})`);
+    return;
+  }
   // Mark private-table origin so a later rematch re-pairs the same friend rather
   // than re-queueing publicly (both seats share the origin).
   a.lastGamePrivate = fromTable;
@@ -1579,14 +2055,13 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
     store.getOrCreatePlayer(idA, { wallet: a.wallet, name: a.name, flag: a.flag }),
     store.getOrCreatePlayer(idB, { wallet: b.wallet, name: b.name, flag: b.flag }),
   ]);
-  // Count the stake toward each player's daily total (E5.2) and the pair count (E5.3).
-  if (stake > 0) {
-    await Promise.all([
-      store.addDailyStake(idA, utcToday(), stake),
-      store.addDailyStake(idB, utcToday(), stake),
-    ]);
-    if (a.wallet && b.wallet) await store.bumpPairGame(idA, idB, utcToday());
-  }
+  // NOTE: the daily-stake debit (E5.2) and the pair count (E5.3) are NOT applied
+  // here. A match that never becomes Active (the opponent simply never deposits)
+  // is aborted+refunded by abortPendingStaked, and `addDailyStake` has no inverse
+  // in the Store — so debiting at match time irreversibly consumed the *victim's*
+  // daily limit for a game that never happened, letting an attacker who spends
+  // nothing lock a victim out of staked play for the rest of the UTC day.
+  // Both are applied in startRoom(), which runs only once the escrow is Active.
   // Anti-grinding: if both clients sent an entropy COMMIT, the server commits its
   // seed now (knowing only the hashes), announces the match, and waits for both to
   // reveal their raw entropy before finalizing the dice. Only free/practice games
@@ -1675,6 +2150,20 @@ function matchFoundMsg(gameId: string, seat: Seat, me: Session, opp: Session, st
 
 /** Create the Room from a finalized fairness and start it (match.found already sent). */
 function startRoom(gameId: string, stake: StakeCents, a: Session, b: Session, fairness: Fairness, freeroll = false): void {
+  // Count the stake toward each player's daily total (E5.2) and the pair count
+  // (E5.3) HERE — the game is now really starting. Debiting at match time instead
+  // was irreversible (the Store has no decrement) and every abort path refunds the
+  // escrow without restoring the counter, so a non-depositing opponent could burn
+  // a victim's whole daily limit on a game that never ran. See startGame().
+  if (stake > 0) {
+    const idA = playerId(a.wallet, a.id);
+    const idB = playerId(b.wallet, b.id);
+    void Promise.all([
+      store.addDailyStake(idA, utcToday(), stake),
+      store.addDailyStake(idB, utcToday(), stake),
+      a.wallet && b.wallet ? store.bumpPairGame(idA, idB, utcToday()) : Promise.resolve(),
+    ]).catch((e) => console.error('[rg] dailyStake', e));
+  }
   const room = new Room(gameId, stake, a, b, fairness);
   room.qa = !!a.qa || !!b.qa;
   room.freeroll = freeroll;
@@ -1725,26 +2214,64 @@ function maybeStartPending(p: PendingReveal): void {
   pollStakeLock(p, 0);
 }
 
+/** Enqueue an automatic refund for a staked 1v1 that must NOT proceed (a pre-Room
+ *  abort, a disconnect during entropy reveal, or a squatted gameId). The durable
+ *  queue reads the on-chain status and recovers any deposit — refund the lone
+ *  staker (WaitingOpponent) or void both stakes (Active) — instead of stranding it
+ *  until a manual refundExpired. No-op for non-staked or wallet-less games. */
+function scheduleRefund1v1(p: PendingReveal): void {
+  if (!settlementQueue || p.stake <= 0 || !p.a.wallet || !p.b.wallet) return;
+  settlementNotify.set(p.gameId, { sessionIds: [p.a.id, p.b.id], winner: 0 });
+  settlementQueue.enqueueRefund(p.gameId).catch((e) => console.error('[settlement] enqueue refund', e));
+}
+
+/** Tear down a pending staked match before the Room exists: drop the pending
+ *  entry, free both players to queue again, tell them, and auto-refund any locked
+ *  stake. Centralised so every abort path (timeout, RPC exhaustion, depositor
+ *  mismatch, disconnect) recovers funds identically (R-SETTLE-1/3/4). */
+function abortPendingStaked(p: PendingReveal, message: string, alert?: string): void {
+  if (pendingReveals.get(p.gameId) !== p) return; // already torn down
+  pendingReveals.delete(p.gameId);
+  p.a.pendingGameId = undefined;
+  p.b.pendingGameId = undefined;
+  const err: ServerMsg = { t: 'error', code: 'INTERNAL', message };
+  p.a.send(err);
+  p.b.send(err);
+  scheduleRefund1v1(p);
+  if (alert) {
+    console.error(alert);
+    postOpsAlert(alert);
+  }
+}
+
 /** Poll the escrow until both stakes are Active, then start; abort on timeout. */
 function pollStakeLock(p: PendingReveal, attempt: number): void {
   if (pendingReveals.get(p.gameId) !== p) return; // finalized or aborted
   void arbiter!
     .gameStatus(p.gameId)
-    .then(({ status }) => {
+    .then(({ status, playerA, playerB }) => {
       if (pendingReveals.get(p.gameId) !== p) return;
       if (status === GameStatus.Active) {
+        // R-SETTLE-3: `join` is permissionless and the gameId is known to both
+        // clients, so a stranger who learns it could fill the second seat. Before
+        // starting, verify the on-chain depositors ARE the two matched players —
+        // otherwise void both deposits and cancel, never play a mismatched escrow.
+        const want = [p.a.wallet!, p.b.wallet!];
+        const got = [playerA, playerB];
+        if (!sameDepositors(want, got)) {
+          abortPendingStaked(
+            p,
+            'Stake verification failed — match cancelled. Any locked stake is refunded shortly.',
+            `[stake-gate][ALERT] ${p.gameId} depositor mismatch: matched {${want.join(', ')}} but escrow holds {${got.join(', ')}} — voiding.`,
+          );
+          return;
+        }
         finalizeGame(p);
         return;
       }
       if (attempt >= MAX_LOCK_POLLS) {
-        // Stakes never both locked. Abort the match; whoever DID lock can reclaim
-        // via the escrow's refundExpired (WaitingOpponent) after JOIN_TIMEOUT.
-        pendingReveals.delete(p.gameId);
-        p.a.pendingGameId = undefined;
-        p.b.pendingGameId = undefined;
-        const err: ServerMsg = { t: 'error', code: 'INTERNAL', message: 'Stakes were not locked in time — match cancelled.' };
-        p.a.send(err);
-        p.b.send(err);
+        // Stakes never both locked. Abort + auto-refund whoever DID lock.
+        abortPendingStaked(p, 'Stakes were not locked in time — match cancelled. Any locked stake is refunded shortly.');
         console.warn(`[stake-gate] ${p.gameId} aborted: stakes not Active after ${attempt} polls`);
         return;
       }
@@ -1752,9 +2279,17 @@ function pollStakeLock(p: PendingReveal, attempt: number): void {
     })
     .catch((e) => {
       console.error('[stake-gate] gameStatus poll failed', e instanceof Error ? e.message : e);
-      if (attempt < MAX_LOCK_POLLS && pendingReveals.get(p.gameId) === p) {
-        setTimeout(() => pollStakeLock(p, attempt + 1), LOCK_POLL_MS);
+      if (pendingReveals.get(p.gameId) !== p) return;
+      if (attempt >= MAX_LOCK_POLLS) {
+        // R-SETTLE-4: the poll exhausted on persistent RPC errors. It used to stop
+        // silently — leaking any locked deposit and wedging pendingGameId (players
+        // couldn't re-queue until they disconnected). Abort + refund like the
+        // success-path timeout instead.
+        abortPendingStaked(p, 'Could not confirm stakes on-chain — match cancelled. Any locked stake is refunded shortly.');
+        console.warn(`[stake-gate] ${p.gameId} aborted: gameStatus poll errored out after ${attempt} attempts`);
+        return;
       }
+      setTimeout(() => pollStakeLock(p, attempt + 1), LOCK_POLL_MS);
     });
 }
 
@@ -1790,10 +2325,10 @@ function leave4(sessionParam: Session): void {
 function recordRoom4Stats(humans: Session[], winnerSeat: number, seats: Seat4[]): void {
   humans.forEach((h, seat) => {
     const pid = playerId(h.wallet, h.id);
+    const won = seat === winnerSeat && !seats[seat]?.bot;
     store.recordPlayed(pid).catch((e) => console.error('[profile] recordPlayed4', e));
-    if (seat === winnerSeat && !seats[seat]?.bot) {
-      store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
-    }
+    if (won) store.recordWin(pid).catch((e) => console.error('[profile] recordWin4', e));
+    awardSeasonCrowns(pid, h, won);
   });
 }
 
@@ -1837,7 +2372,7 @@ function startRoom4(humans: Session[]): void {
     if (h) {
       const name = uniqueAtTable(h.name, taken);
       taken.add(name.toLowerCase());
-      seats.push({ client: h, bot: false, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
+      seats.push({ client: h, bot: false, sessionId: h.id, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
       const bot = pickBot4(taken, i);
@@ -1848,8 +2383,13 @@ function startRoom4(humans: Session[]): void {
   }
   const fairness = createFairness4(seatSeeds);
   const room = new Room4(gameId, seats, fairness, 0, 0); // free table: no tickets, no cUSD
+  room.onChange = persistRoom4; // survive a restart like every other game (G-5)
   room.onResult = (r) => recordRoom4Stats(humans, r.winnerSeat, r.seats);
-  room.onEnd = () => rooms4.delete(gameId);
+  room.onEnd = () => {
+    rooms4.delete(gameId);
+    detachSessionsFromRoom4(room);
+    void store.deleteRoom4(gameId).catch((e) => console.error('[store] deleteRoom4', e));
+  };
   rooms4.set(gameId, room);
   const players = room.players();
   humans.forEach((h, seat) => {
@@ -1917,17 +2457,44 @@ function startStakedRoom4(humans: Session[], stake: number): void {
   const gameId = randomBytes(16).toString('hex');
   const pot = potCents4(stake);
   const rake = stake * 4 - pot;
-  const seatSeeds = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
-  const fairness = createFairness4(seatSeeds);
+  // Anti-grinding (R-DICE-3): commit the seed knowing ONLY the seat commits, then
+  // wait for each human to reveal its raw entropy. Staked 4p is all-human, so every
+  // dice input is committed before the server can see it (matches the 2p scheme).
+  const { serverSeed, commit } = createSeed4Commit();
+  const seatCommits = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
   const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
-  pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, fairness });
-  // count each seat's stake toward the daily limit (E5.2)
-  void Promise.all(humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), stake))).catch((e) => console.error('[4p] dailyStake', e));
+  pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, serverSeed, commit, seatCommits, reveals: humans.map(() => null) });
+  // NOTE: the daily-limit debit (E5.2) is applied in startStaked4Room, once all
+  // four stakes are Active — not here. A table that never fills (any seat simply
+  // never deposits) is cancelled + refunded, and addDailyStake has no inverse, so
+  // debiting at match time burned all four players' daily limits for a game that
+  // never ran — one no-show could lock three victims out for the UTC day.
   humans.forEach((h, seat) => {
     h.pendingGameId = gameId; // block other joins while staking
-    h.send({ t: 'match.found4', gameId, seat, players, entryTickets: 0, prizeTickets: 0, stakeCents: stake, potCents: pot, fairnessCommit: fairness.commit });
+    h.send({ t: 'match.found4', gameId, seat, players, entryTickets: 0, prizeTickets: 0, stakeCents: stake, potCents: pot, fairnessCommit: commit });
   });
   pollStaked4Lock(gameId, 0);
+}
+
+/** All four seats revealed their raw entropy (R-DICE-3)? Only then can the dice
+ *  be bound to inputs the server committed to blind. */
+function allRevealed4(p: PendingStaked4): boolean {
+  return p.reveals.every((r) => r !== null);
+}
+
+/** A reveal arrived out of order (before stakes locked): if every seat has now
+ *  revealed AND the escrow is already Active, start immediately instead of waiting
+ *  for the next poll tick. Otherwise the lock poll drives the start. */
+function maybeStartStaked4(p: PendingStaked4): void {
+  if (!allRevealed4(p) || !arbiterN) return;
+  void arbiterN
+    .gameStatus(p.gameId)
+    .then(({ status }) => {
+      if (pendingStaked4.get(p.gameId) === p && status === GameStatusN.Active) startStaked4Room(p);
+    })
+    .catch(() => {
+      /* the lock poll will retry */
+    });
 }
 
 function pollStaked4Lock(gameId: string, attempt: number): void {
@@ -1935,9 +2502,37 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
   if (!p || !arbiterN) return;
   void arbiterN
     .gameStatus(gameId)
-    .then(({ status }) => {
+    .then(async ({ status }) => {
       if (pendingStaked4.get(gameId) !== p) return;
-      if (status === GameStatusN.Active) {
+      // Start only when the money is locked AND fairness can be bound to all four
+      // revealed entropies. If stakes are Active but a reveal is still missing, keep
+      // polling — the MAX_LOCK_POLLS timeout below tears down + refunds a table that
+      // never completes (a seat that never reveals).
+      if (status === GameStatusN.Active && allRevealed4(p)) {
+        // Before dealing, verify the four on-chain depositors ARE the four matched
+        // players — the 4p analogue of the 1v1 depositor check (R-SETTLE-3). status
+        // Active only means four seats are filled, not BY WHOM: a party that learned
+        // the gameId could have deposited into a seat. Play a mismatched escrow and
+        // the winner may not be an on-chain seat (settle reverts) — funds stuck.
+        // On mismatch: void (refund every depositor, squatter included) and cancel.
+        const want = p.humans.map((h) => h.wallet!);
+        const seats = await arbiterN!.seatsOf(gameId);
+        if (!sameDepositors(want, seats)) {
+          if (pendingStaked4.get(gameId) !== p) return; // lost the race to another tick
+          pendingStaked4.delete(gameId);
+          for (const h of p.humans) {
+            h.pendingGameId = undefined;
+            h.send({ t: 'error', code: 'INTERNAL', message: 'Stake accounts did not match the table — cancelled. Any locked stake is refunded shortly.' });
+          }
+          const alert = `[4p stake-gate][ALERT] ${gameId} depositor mismatch: matched {${want.join(', ')}} but escrow holds {${seats.join(', ')}} — voiding.`;
+          console.error(alert);
+          postOpsAlert(alert);
+          // A refund job on an already-Active escrow is routed to voidGame by the
+          // settlement queue (returns every stake to its depositor) — see the
+          // Active-void branch in settlement4.ts.
+          scheduleRefundUnfilled4(gameId, p.humans);
+          return;
+        }
         startStaked4Room(p);
         return;
       }
@@ -1958,16 +2553,24 @@ function pollStaked4Lock(gameId: string, attempt: number): void {
     });
 }
 
-/** All 4 stakes Active → create + start the Room4, settling the winner on win. */
+/** All 4 stakes Active AND all entropies revealed → bind the dice to the reveals
+ *  (R-DICE-3) and start the Room4, settling the winner on win. */
 function startStaked4Room(p: PendingStaked4): void {
   pendingStaked4.delete(p.gameId);
-  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
-  const room = new Room4(p.gameId, seats, p.fairness, 0, 0, p.pot, p.rake);
-  room.onResult = (r) => {
-    recordRoom4Stats(p.humans, r.winnerSeat, r.seats);
-    settleStaked4(p, r.winnerSeat);
-  };
-  room.onEnd = () => rooms4.delete(p.gameId);
+  // Count each seat's stake toward the daily limit (E5.2) — here, where the game
+  // really starts (all 4 stakes Active), never at match time. See startStakedRoom4.
+  if (p.stake > 0) {
+    void Promise.all(p.humans.map((h) => store.addDailyStake(playerId(h.wallet, h.id), utcToday(), p.stake)))
+      .catch((e) => console.error('[4p] dailyStake', e));
+  }
+  // Bind the committed seed to the now-revealed raw seat seeds. allRevealed4 gated
+  // this call, so every reveal is present; `?? ''` only satisfies the type.
+  const fairness = finalizeFairness4(p.serverSeed, p.commit, p.reveals.map((r) => r ?? ''));
+  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, sessionId: h.id, wallet: h.wallet, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
+  const room = new Room4(p.gameId, seats, fairness, 0, 0, p.pot, p.rake);
+  // Restart-safe lifecycle: persist on every change, settle + record from the seats
+  // (not the p.humans closure, which a restart loses) on finish (G-5).
+  wireStakedRoom4(room);
   rooms4.set(p.gameId, room);
   p.humans.forEach((h, seat) => {
     h.pendingGameId = undefined;
@@ -1975,17 +2578,6 @@ function startStaked4Room(p: PendingStaked4): void {
     h.seat4 = seat;
   });
   room.start();
-}
-
-/** Winner decided → durably settle the payout on LudoEscrowN. The job is
- *  persisted and resumed at boot, so a crash before the tx mines never loses it. */
-function settleStaked4(p: PendingStaked4, winnerSeat: number): void {
-  const winner = p.humans[winnerSeat];
-  if (!winner?.wallet || !settlementQueue4) return;
-  settlement4Notify.set(p.gameId, { sessionIds: p.humans.map((h) => h.id), winnerSeat });
-  settlementQueue4
-    .enqueue(p.gameId, getAddress(winner.wallet))
-    .catch((e) => console.error('[settlement4] enqueue', e));
 }
 
 /** Refund every depositor of a table that never filled. Durable: the queue waits
@@ -2025,3 +2617,29 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       .finally(() => process.exit(0));
   });
 }
+
+/**
+ * Last-resort handlers. The authoritative state machine drives itself from timers
+ * (Room's move clock and auto-play, Room4's equivalents, the reveal timeout) that
+ * fire OUTSIDE the try/catch around the message loop — the only one on the request
+ * path. Without these, a single throw in one game's timer took the whole process
+ * down with it, dropping every concurrent game, staked ones included.
+ *
+ * A crashed process is still the safest end state (state is written through to the
+ * store, so the supervisor restarts and games resume) — but exit only AFTER the
+ * room snapshots are flushed, and never on an error we can survive.
+ */
+let crashing = false;
+function lastResort(kind: string, err: unknown): void {
+  console.error(`[fatal] ${kind}:`, err instanceof Error ? (err.stack ?? err.message) : err);
+  postOpsAlert(`[fatal] ${kind}: ${err instanceof Error ? err.message : String(err)}`);
+  if (crashing) return; // a throw while shutting down must not re-enter
+  crashing = true;
+  for (const room of rooms.values()) room.suspend();
+  settlementQueue?.stop();
+  void Promise.allSettled([...roomWrites.values()])
+    .then(() => store.close())
+    .finally(() => process.exit(1)); // non-zero: let the supervisor restart us
+}
+process.on('uncaughtException', (err) => lastResort('uncaughtException', err));
+process.on('unhandledRejection', (reason) => lastResort('unhandledRejection', reason));

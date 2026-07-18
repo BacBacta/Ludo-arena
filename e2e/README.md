@@ -17,6 +17,12 @@ VITE_SERVER_URL=ws://localhost:8787 npm run build --workspace @ludo/web
 
 # 3. tout le harnais (~20 min)
 node e2e/run-all.mjs
+
+# 4. sonde PERF (Phase 6) — exige une origine qui COMPRESSE (comme la prod).
+#    `python3 -m http.server` ne compresse pas : la mesure porterait alors sur les
+#    octets bruts (~669 Ko) et le TTI 3G serait faux (~10 s au lieu de ~4 s).
+node e2e/lib/serve-gzip.mjs apps/web/dist 8899 &
+WEB=http://localhost:8899 node e2e/ui-perf.mjs
 ```
 
 Variables : `SRV` (défaut `ws://localhost:8787`), `WEB` (défaut

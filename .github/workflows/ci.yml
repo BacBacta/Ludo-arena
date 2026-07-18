@@ -5,8 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to a PR makes the previous run's verdict irrelevant — don't pay for it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
+    name: lint · typecheck · unit · build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,11 +23,110 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      # Engine coverage thresholds are enforced by packages/game-engine/vitest.config.ts
+      # (statements/functions/lines 90, branches 88) — `npm test` fails if they drop.
       - run: npm test
       - run: npm run simulate
       - run: npm run build
 
+  store-postgres:
+    name: durable store (Postgres + Redis)
+    runs-on: ubuntu-latest
+    # The PRODUCTION store is Postgres + Redis, but its tests skip without a DB —
+    # so it was never exercised in CI, and a stale SQL default ($2 vs the declared
+    # $5 daily-limit) went unnoticed. Run them against real services here.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ludo
+          POSTGRES_DB: ludo
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Store tests against the real durable backends
+        env:
+          REDIS_URL: redis://localhost:6379
+          DATABASE_URL: postgres://postgres:ludo@localhost:5432/ludo
+        run: npm test --workspace=@ludo/server -- store.test.ts
+
+  audit:
+    name: dependency audit (production)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Gate on what actually ships. The dev tree (vitest/vite and friends) carries
+      # advisories that never reach a user, and failing the build on those trains
+      # everyone to ignore a red audit — which is how a real one gets missed.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  e2e-smoke:
+    name: e2e smoke (real WebSocket)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # The wire probes speak the real client protocol over a real socket against a
+      # real server. They import playwright DYNAMICALLY (e2e/lib/common.mjs), so no
+      # browser download is needed — only the UI probes pay that cost, and those stay
+      # out of the PR path (they are the slow, nightly-grade ones).
+      - name: Boot server
+        env:
+          QA_KEY: ci-smoke
+          # Collapse the die-tumble delay: wire-anticheat needs a statistically
+          # useful number of rolls inside its loop. wire-4p is excluded here BECAUSE
+          # it asserts the real tumble gap — it belongs to the nightly run.
+          DIE_SETTLE_MS: '0'
+          PORT: '8787'
+        run: |
+          npx tsx apps/server/src/index.ts > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if node -e "require('net').connect(8787,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))" 2>/dev/null; then
+              echo "server up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server failed to start"; cat /tmp/server.log; exit 1
+      - name: Regression + security + anti-cheat probes
+        env:
+          SRV: ws://localhost:8787/?qa=ci-smoke
+        run: |
+          set -e
+          node e2e/wire-regression.mjs
+          node e2e/wire-gates.mjs
+          node e2e/wire-security.mjs
+          node e2e/wire-anticheat.mjs
+      - name: Server log on failure
+        if: failure()
+        run: cat /tmp/server.log
+
   contracts:
+    name: contracts (forge)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -32,5 +137,5 @@ jobs:
       # forge-std is not vendored in the repo; fetch it for the test run.
       - name: Vendor forge-std
         run: git clone --depth 1 https://github.com/foundry-rs/forge-std lib/forge-std
-      - name: Run escrow contract tests
+      - name: Run escrow contract tests (unit + fuzz + invariants)
         run: forge test -vvv

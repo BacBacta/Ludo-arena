@@ -40,6 +40,10 @@ export interface Die3DProps {
   /** Bumps on every fresh roll to trigger a new tumble; 0 = never rolled. */
   rollKey: number;
   skin: DiceSkin;
+  /** A roll intent is in flight (online RTT) with no value yet: spin continuously
+   *  from the click and land on `value` when the server's roll arrives (rollKey
+   *  bumps). Purely visual — the local bot resolves instantly so it never spins. */
+  spinning?: boolean;
 }
 
 /**
@@ -47,11 +51,20 @@ export interface Die3DProps {
  * forward (never rewinds), landing on REST[value]. Unequal X/Y turn counts make
  * the somersault read as "all directions", not a single-axis spin.
  */
-export function Die3D({ value, rollKey, skin }: Die3DProps) {
+export function Die3D({ value, rollKey, skin, spinning }: Die3DProps) {
   const turns = useRef({ x: 0, y: 0 });
   const lastKey = useRef<number | null>(null);
   const [rolling, setRolling] = useState(false);
+  // A short, decisive settle after an optimistic spin (vs the full 700ms tumble):
+  // the die was already spinning through the RTT, so once the server value lands it
+  // just needs to snap onto the face — a fresh full tumble made the result take ~1s
+  // extra to read on a laggy link.
+  const [landing, setLanding] = useState(false);
+  const justSpun = useRef(false);
   const [rot, setRot] = useState<[number, number]>(() => REST[value] ?? [0, 0]);
+  // Latest value for the spin interval (avoids a stale closure without re-arming it).
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   useEffect(() => {
     const base = REST[value] ?? [0, 0];
@@ -75,6 +88,22 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
     }
     if (rollKey === lastKey.current) return; // same roll, nothing new
     lastKey.current = rollKey;
+    if (justSpun.current) {
+      // Coming out of an optimistic spin: the die is already mid-tumble, so a full
+      // fresh tumble just delays the result. Snap forward one turn onto the face
+      // with the short .die3d--landing transition → the number reads almost at once.
+      justSpun.current = false;
+      turns.current.x += 1;
+      turns.current.y += 1;
+      setLanding(true);
+      setRolling(true);
+      setRot([base[0] + 360 * turns.current.x, base[1] + 360 * turns.current.y]);
+      const id = setTimeout(() => {
+        setLanding(false);
+        setRolling(false);
+      }, 320);
+      return () => clearTimeout(id);
+    }
     // wind forward by unequal whole turns, then land on the value's rest angle
     turns.current.x += 4;
     turns.current.y += 3;
@@ -85,6 +114,36 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rollKey]);
 
+  // Optimistic roll (online RTT): keep tumbling from the click until the server's
+  // value lands. Driven by the SAME `turns` accumulator as the settle above — each
+  // tick is one more forward tumble — so when the real value arrives the rollKey
+  // effect above continues winding forward and decelerates onto the face. Sharing
+  // the accumulator is what keeps it stable: a separate CSS keyframe wound a second,
+  // independent angle that snapped/back-spun at the landing.
+  useEffect(() => {
+    if (!spinning) return;
+    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const wind = (): void => {
+      turns.current.x += 4;
+      turns.current.y += 3;
+      const base = REST[valueRef.current] ?? [0, 0];
+      setRolling(true);
+      setRot([base[0] + 360 * turns.current.x, base[1] + 360 * turns.current.y]);
+    };
+    wind();
+    // Interval a touch under the 0.7s transition so each tumble retargets before it
+    // settles → continuous motion (with the linear timing set by .die3d--spinning).
+    const id = setInterval(wind, 640);
+    return () => {
+      clearInterval(id);
+      // Tell the rollKey settle that this landing follows a spin → snap, don't
+      // re-tumble. Cleanup runs just before the rollKey effect on the same commit
+      // where spinning flips false and the value arrives.
+      justSpun.current = true;
+    };
+  }, [spinning]);
+
   // The cube is ALWAYS mounted so the CSS transition can animate the tumble (a
   // freshly-mounted element can't transition — that broke the roll). Perspective
   // is applied ONLY while rolling; at rest there is none, so the face-on cube
@@ -92,8 +151,8 @@ export function Die3D({ value, rollKey, skin }: Die3DProps) {
   // there's no lean-back-to-flat settle that would flash the side faces/corners.
   return (
     <div className="die3d-stage">
-      <div className={`die3d-lift${rolling ? ' die3d-lift--rolling' : ''}`}>
-        <div className="die3d" style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
+      <div className={`die3d-lift${rolling || spinning ? ' die3d-lift--rolling' : ''}`}>
+        <div className={`die3d${spinning ? ' die3d--spinning' : ''}${landing ? ' die3d--landing' : ''}`} style={{ transform: `rotateX(${rot[0]}deg) rotateY(${rot[1]}deg)` }}>
           {FACES.map((f) => (
             <div key={f.v} className="die3d__face" style={{ transform: f.t }}>
               <DieFace value={f.v} skin={skin} />

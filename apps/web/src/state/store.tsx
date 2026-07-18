@@ -14,6 +14,8 @@ import {
   type StakeCents,
   type StreakState,
   type PublicProfile,
+  type SeasonState,
+  type Comeback,
 } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
@@ -96,6 +98,8 @@ interface RetentionCache {
   ownedSkins: string[];
   limits: LimitsState;
   profile: Profile;
+  /** Cached season pass state so the lobby chip renders before hello.ok lands. */
+  season: SeasonState | null;
 }
 
 const DEFAULT_RETENTION: RetentionCache = {
@@ -106,6 +110,7 @@ const DEFAULT_RETENTION: RetentionCache = {
   ownedSkins: [],
   limits: { dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS, stakedTodayCents: 0, selfExcludedUntil: null },
   profile: { name: '', flag: '🌍', elo: 1200, games: 0, wins: 0 },
+  season: null,
 };
 
 function loadRetention(): RetentionCache {
@@ -151,6 +156,16 @@ export interface AppState {
   tickets: number;
   /** Premium dice skins unlocked (server-authoritative; cached for the lobby). */
   ownedSkins: string[];
+  /** Season pass state (crowns, tier, claims, reward table); null until hello.ok. */
+  season: SeasonState | null;
+  /** Season track sheet open state. */
+  seasonOpen: boolean;
+  /** Progression sheet (daily loop + rivals) open state. */
+  progressionOpen: boolean;
+  /** Transient crown-gain feedback after a game (`n` re-triggers the animation). */
+  crownGain: { gained: number; tier: number; n: number } | null;
+  /** Win-back offer surfaced on return after an absence (Phase 3); null = none. */
+  comeback: Comeback | null;
   /** Own stable profile (identity + ELO + W/L), cached for the lobby card. */
   profile: Profile;
   recentOpponents: RecentOpponent[];
@@ -177,6 +192,13 @@ export interface AppState {
    *  move finishes animating), so the indicator lags game.turn during a walk. */
   activeTurn: Seat;
   result: GameResult | null;
+  /** An action the local player sent to the server and is awaiting the
+   *  authoritative echo for (roll → game.dice, move → game.moved). While set,
+   *  the die and the movable pawns are locked so a slow RTT can't be re-tapped
+   *  into duplicate intents (which the server rejects with an error toast). Only
+   *  ever set for RemoteSession — the local bot resolves synchronously, so it is
+   *  cleared in the same batched render and never visibly locks anything. */
+  pendingAction: 'roll' | 'move' | null;
   /** On-chain payout tx hash once the arbiter settle() is mined (E3.3). */
   settleTxHash: string | null;
   /** True + tx hash when the stake was refunded (opponent never joined, E3.4). */
@@ -268,6 +290,11 @@ export const initialState: AppState = {
   league: loadRetention().league,
   tickets: loadRetention().tickets,
   ownedSkins: loadRetention().ownedSkins,
+  season: loadRetention().season,
+  seasonOpen: false,
+  progressionOpen: false,
+  crownGain: null,
+  comeback: null,
   profile: loadRetention().profile,
   viewProfile: null,
   recentOpponents: loadRecentOpponents(),
@@ -282,6 +309,7 @@ export const initialState: AppState = {
   turnDeadlineTs: null,
   activeTurn: 0,
   result: null,
+  pendingAction: null,
   settleTxHash: null,
   refunded: false,
   botMode: false,
@@ -320,6 +348,7 @@ export type Action =
   | { type: 'GIFT'; from: number; to: number; id: string }
   | { type: 'CLEAR_EMOTES' }
   | { type: 'MOVED'; game: GameState; capture: boolean }
+  | { type: 'PENDING'; action: 'roll' | 'move' | null }
   | { type: 'TURN'; seat: Seat; deadlineTs: number }
   | { type: 'GAME_OVER'; result: GameResult }
   | { type: 'RECONNECTING' }
@@ -336,6 +365,13 @@ export type Action =
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
   | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
+  | { type: 'SEASON_STATE'; season: SeasonState }
+  | { type: 'SEASON_PROGRESS'; crowns: number; tier: number; gained: number }
+  | { type: 'SEASON_MODAL'; open: boolean }
+  | { type: 'PROGRESSION_MODAL'; open: boolean }
+  | { type: 'CLEAR_CROWN_GAIN' }
+  | { type: 'COMEBACK'; comeback: Comeback }
+  | { type: 'COMEBACK_CLEAR' }
   | { type: 'PROFILE'; profile: Partial<Profile> }
   | { type: 'PROFILE_VIEW'; pid: string }
   | { type: 'PROFILE_INFO'; pid: string; profile: PublicProfile | null }
@@ -387,6 +423,7 @@ export function reducer(s: AppState, a: Action): AppState {
         diceHistory: [],
         activeTurn: 0,
         turnDeadlineTs: null,
+        pendingAction: null,
         staking: 'idle',
         privateCode: null,
       };
@@ -403,6 +440,8 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'DICE':
       return {
         ...s,
+        // The authoritative roll landed → release any local roll lock.
+        pendingAction: null,
         lastDice: { value: a.value, index: a.index, seat: a.seat },
         diceHistory: [...s.diceHistory, { index: a.index, value: a.value, seat: a.seat }],
       };
@@ -419,13 +458,18 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, emotes: {}, giftFlight: null };
     case 'MOVED':
       // Challenge progress is server-authoritative (CHALLENGE_UPDATE), not derived here.
-      return { ...s, game: a.game };
+      // The authoritative move landed → release any local move lock.
+      return { ...s, game: a.game, pendingAction: null };
+    case 'PENDING':
+      return { ...s, pendingAction: a.action };
     case 'TURN':
-      return { ...s, turnDeadlineTs: a.deadlineTs, activeTurn: a.seat };
+      // A turn hand-off is a terminal server ack too (e.g. a no-legal-move roll
+      // passes the turn without a game.moved) → clear the lock as a backstop.
+      return { ...s, turnDeadlineTs: a.deadlineTs, activeTurn: a.seat, pendingAction: null };
     case 'GAME_OVER': {
       // On-chain payout is settled by the arbiter (E3.3) and reflected via
       // SET_BALANCE — no simulated credit (staked play requires a wallet).
-      const base = { ...s, screen: 'end' as const, result: a.result, settleTxHash: null, refunded: false, reconnecting: false, staking: 'idle' as const };
+      const base = { ...s, screen: 'end' as const, result: a.result, pendingAction: null, settleTxHash: null, refunded: false, reconnecting: false, staking: 'idle' as const };
       // Remember a REAL 1v1 opponent (pid present) + my result — the rivalry
       // ledger. Bots (no pid) and 4-player games are skipped.
       const opp = s.match?.opponent;
@@ -459,6 +503,25 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, tickets: a.total };
     case 'OWNED_SKINS':
       return { ...s, ownedSkins: a.ownedIds, tickets: a.tickets ?? s.tickets };
+    case 'SEASON_STATE':
+      return { ...s, season: a.season };
+    case 'SEASON_PROGRESS': {
+      // Fold the light per-game push into the cached state (keep the static reward
+      // table) and fire the transient crown-gain feedback.
+      const season = s.season ? { ...s.season, crowns: a.crowns, tier: a.tier } : s.season;
+      const n = (s.crownGain?.n ?? 0) + 1;
+      return { ...s, season, crownGain: { gained: a.gained, tier: a.tier, n } };
+    }
+    case 'CLEAR_CROWN_GAIN':
+      return { ...s, crownGain: null };
+    case 'COMEBACK':
+      return { ...s, comeback: a.comeback };
+    case 'COMEBACK_CLEAR':
+      return { ...s, comeback: null };
+    case 'SEASON_MODAL':
+      return { ...s, seasonOpen: a.open };
+    case 'PROGRESSION_MODAL':
+      return { ...s, progressionOpen: a.open };
     case 'PROFILE': {
       // Merge only defined fields. (The session layer already suppresses profile
       // updates from wallet-less connections, so this never gets anon 0/0 data.)
@@ -501,6 +564,7 @@ export function reducer(s: AppState, a: Action): AppState {
         activeTurn: a.game.turn,
         turnDeadlineTs: null,
         lastDice: null,
+        pendingAction: null,
         reconnecting: false,
       };
     case 'STAKING':
@@ -510,7 +574,7 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_WALLET_ADDRESS':
       return { ...s, walletAddress: a.address };
     case 'GO_LOBBY':
-      return { ...s, screen: 'lobby', emotes: {}, giftFlight: null, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null, rematchOffer: null };
+      return { ...s, screen: 'lobby', emotes: {}, giftFlight: null, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null, rematchOffer: null, crownGain: null };
     case 'REMATCH_OFFER':
       return { ...s, rematchOffer: a.name };
     case 'REMATCH_CLEAR':

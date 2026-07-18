@@ -1,0 +1,307 @@
+{
+ "attacks": [
+  {
+   "id": "oversized-frame",
+   "category": "oversized-payload",
+   "description": "A single WebSocket frame larger than the 1KB cap. ws is configured with maxPayload:1024, so an oversized frame is a protocol error (close 1009). Without the ws 'error' listener this would surface as an unhandled 'error' event and crash the whole Node process, killing every other player's live game. parseClientMsg also has a defence-in-depth `raw.length > 1024` guard for anything under the frame cap.",
+   "howToSend": "At any time after the socket opens (before OR after hello): send one frame well over 1KB, e.g. `ws.send(JSON.stringify({t:'ping', pad:'A'.repeat(2000)}))` (~2030 bytes), or raw `ws.send('x'.repeat(2000))`, or a binary `ws.send(Buffer.alloc(4096, 0x41))`.",
+   "expectedServerBehavior": "The offending connection is closed (ws code 1009 / 'Max payload size exceeded'); the `ws.on('error')` handler (index.ts:717) logs it. MUST NOT crash the process, MUST NOT throw an unhandled error, MUST NOT affect any other session/room. Any sub-1KB-frame that still parses to nothing valid returns exactly one {t:'error',code:'BAD_MESSAGE'}."
+  },
+  {
+   "id": "malformed-json-and-envelope",
+   "category": "malformed-payload",
+   "description": "Payloads that are not valid JSON, or are valid JSON but not a message envelope (missing or non-string `t`, or a non-object root). parseClientMsg must reject every one without throwing. JSON.parse is wrapped in try/catch, and the envelope check requires `typeof obj==='object' && obj!==null && typeof obj.t==='string'`.",
+   "howToSend": "After hello, send each of these one at a time: `ws.send('{')` (truncated JSON), `ws.send('[]')` (array root, no string t), `ws.send('\"hello\"')` (bare JSON string), `ws.send('123')` (bare number), `ws.send('null')`, `ws.send('{\"t\":123}')` (t not a string), `ws.send('{\"foo\":1}')` (t missing), `ws.send('{\"t\":\"game.move\"}')` (known t, required field missing).",
+   "expectedServerBehavior": "Each yields exactly one {t:'error',code:'BAD_MESSAGE',message:'Invalid message.'} from the parseClientMsg==null branch (index.ts:743). MUST NOT crash, MUST NOT create a session, MUST NOT mutate any queue/room state, MUST NOT emit more than one error per bad frame (no amplification)."
+  },
+  {
+   "id": "game-move-bad-token",
+   "category": "type-confusion",
+   "description": "game.move with an out-of-range, non-integer, or wrong-typed token index. The engine indexes token positions, so an unchecked out-of-range/float index could corrupt state or throw. parseClientMsg enforces `Number.isInteger(m.token) && m.token>=0 && m.token<=3`; Room.move additionally requires `state.legal.includes(token)`.",
+   "howToSend": "In a 1v1 game during YOUR awaiting-move phase (after a roll that opened >1 legal move), send `{t:'game.move',token:X}` for each X in: -1, 4, 99, 1.5, \"0\" (string), null, [], {} , and token omitted entirely. Then send a well-typed token 0-3 that is NOT in the current `legal` list, and finally send a valid token while it is NOT your turn (during <otherSeat>'s turn).",
+   "expectedServerBehavior": "Malformed/out-of-range/wrong-type/missing token \u2192 parseClientMsg returns null \u2192 {t:'error',code:'BAD_MESSAGE'}. Well-typed but not in `legal` \u2192 {code:'ILLEGAL_MOVE'}. Well-typed but off-turn/wrong-phase \u2192 {code:'NOT_YOUR_TURN'}. The engine (applyMove) MUST NEVER receive an out-of-range index; MUST NOT crash; MUST NOT move <otherSeat>'s token or advance the wrong seat."
+  },
+  {
+   "id": "gift-fractional-seat",
+   "category": "type-confusion-parser-gap",
+   "description": "gift.to accepts a NON-INTEGER seat index \u2014 a real parser gap. protocol.ts:601 validates gift only with `typeof m.to==='number' && m.to>=0 && m.to<=3` (no Number.isInteger), and Room4.gift (room4.ts:144) re-checks only `to<0||to>3||to===from`. So to:2.5 passes both gates and is broadcast verbatim as {t:'game.gift',to:2.5} to every seat, where peer clients index seats by `to` and may render/crash on a fractional index.",
+   "howToSend": "Join a FREE 4-player table (`{t:'queue.join4'}` with no stakeCents, wait for match.found4 and your <mySeat>). Then send `{t:'gift',to:2.5,id:'\ud83c\udf81'}` (also try to:0.5, to:1.9, to:2.999). In a 1v1 room the 1v1 Room.gift `(to!==0&&to!==1)` guard drops it, so the 4-player table is the exploitable phase.",
+   "expectedServerBehavior": "The server MUST reject/silently drop a non-integer seat and MUST NOT broadcast {t:'game.gift',to:2.5,...} to the table (correct fix: add Number.isInteger to the parser or Room4.gift). Acceptable: silent drop, or {code:'BAD_MESSAGE'}. MUST NOT crash, MUST NOT emit a fractional/undefined seat that other clients then index by."
+  },
+  {
+   "id": "rematch-entropycommit-unvalidated",
+   "category": "type-confusion-parser-gap",
+   "description": "game.rematch lets a client overwrite its anti-grinding entropy commit with an UNVALIDATED value of any type. protocol.ts:625 returns the message for `game.rematch` without touching entropyCommit, and index.ts:1287 does `if (msg.entropyCommit) session.entropyCommit = msg.entropyCommit` \u2014 bypassing the strict hello-time check `/^[0-9a-f]{64}$/` (protocol.ts:569). A number/object/oversized string then lands in session.entropyCommit, which later flows into the commit-compare `sha256Hex(entropy) !== session.entropyCommit` (index.ts:1179) and, via a subsequent free 4p join, into seat seeds `h.entropyCommit || ...` \u2192 createFairness4/rollDie4 (`seeds.join('|')`).",
+   "howToSend": "On the post-game end screen (after game.over, so session.room is null and no pendingGameId), send `{t:'game.rematch',entropyCommit:123456}` (number), then `{t:'game.rematch',entropyCommit:{x:1}}` (object), then `{t:'game.rematch',entropyCommit:'Z'.repeat(900)}` (oversized non-hex). Optionally follow with `{t:'queue.join4'}` to push the poisoned commit into a free-table seat seed.",
+   "expectedServerBehavior": "The server MUST validate the rematch commit exactly like hello (reject/ignore anything not `/^[0-9a-f]{64}$/`) and MUST NEVER assign a non-string/oversized value into session state used for fairness. MUST NOT crash on the later commit-compare or fairness `join('|')`; any resulting harm must be confined to the attacker's own reveal \u2014 it MUST NOT corrupt or bias a real opponent's dice."
+  },
+  {
+   "id": "action-before-hello",
+   "category": "state-machine",
+   "description": "Game/queue actions sent before a session exists. The dispatcher only reaches the switch after `if (!session)` guard; a missing guard would null-deref on session.room/session.seat. This probes that every non-hello message is rejected until hello establishes the socket\u2192session binding.",
+   "howToSend": "Immediately after the socket opens, WITHOUT sending hello, send `{t:'game.roll'}`, then `{t:'game.move',token:0}`, then `{t:'queue.join',stake:0}`, then `{t:'game.resign'}`.",
+   "expectedServerBehavior": "Each returns {t:'error',code:'BAD_STATE',message:'hello required first.'} (index.ts:880). MUST NOT create or mutate any session/room, MUST NOT null-deref (session is null and the guard returns before any handler runs), MUST NOT crash."
+  },
+  {
+   "id": "turn-and-seat-spoof",
+   "category": "authorization",
+   "description": "Attempt to act for another seat or double-advance the dice. There is deliberately NO seat field on game.roll/game.move/game.resign \u2014 the acting seat is derived from the socket-bound `session.seat`/`session.seat4` (index.ts:1110-1125). This verifies a client cannot forge which seat it plays and cannot roll twice in one turn (Room.doRoll flips phase to awaiting-move; a second roll then fails the phase guard).",
+   "howToSend": "In a 1v1 game: (a) during <otherSeat>'s turn, spam `{t:'game.roll'}` and `{t:'game.move',token:<currentToken>}`; (b) during YOUR awaiting-roll, fire two `{t:'game.roll'}` back-to-back in the same tick to race a double dice-advance; (c) send `{t:'game.resign'}` repeatedly. No seat/gameId field exists to spoof \u2014 the only lever is timing.",
+   "expectedServerBehavior": "Off-turn roll/move \u2192 {code:'NOT_YOUR_TURN'}; the server always acts on `session.seat`, so a client can NEVER roll/move/resign for <otherSeat>. The second racing roll hits `state.phase!=='awaiting-roll'` \u2192 NOT_YOUR_TURN with no second dice/diceIndex advance (messages are also serialized on the per-connection inbox promise chain). Repeated resign after `over` is a no-op (Room.resign guards `if(this.over)`). MUST NOT crash, MUST NOT double-pay or corrupt ELO/state."
+  },
+  {
+   "id": "entropy-reveal-abuse",
+   "category": "fairness-authorization",
+   "description": "Abuse of the anti-grinding reveal: reveal for a game you don't belong to, reveal an entropy that doesn't match your hello commit, or replay the correct reveal to try to double-finalize. game.entropy resolves the seat strictly by object identity (`session===pending.a`/`pending.b`, else break) and checks `sha256Hex(msg.entropy)===session.entropyCommit` (index.ts:1170-1204); finalizeGame deletes the pending entry so start is once-only.",
+   "howToSend": "(a) When you have NO pendingGameId (not mid-match): send `{t:'game.entropy',entropy:'a'.repeat(64)}` \u2014 handler finds no pending and silently breaks. (b) Right after match.found while pending: send `{t:'game.entropy',entropy:'a'.repeat(32)}` (a value that does NOT hash to your hello entropyCommit). (c) Send your CORRECT reveal, then immediately send it again 5x to attempt a double start.",
+   "expectedServerBehavior": "(a) Silent no-op \u2014 never binds entropy to a game the session isn't a member of, never acts for another seat. (b) {t:'error',code:'BAD_MESSAGE',message:'Entropy does not match commit.'}. (c) Idempotent: maybeStartPending/finalizeGame start the Room exactly once (pendingReveals.delete guards re-entry). MUST NOT start a game with forged entropy, MUST NOT reveal on behalf of the opponent seat, MUST NOT crash."
+  },
+  {
+   "id": "flood-rate-limit",
+   "category": "flooding-dos",
+   "description": "A message flood meant to exhaust CPU/memory or amplify error responses. Per-connection token bucket (capacity 100, refill 30/s) drains fast; violations and bans accrue per IP (rateLimit.ts). limiter.allow runs BEFORE handle(), so a flood is dropped without ever parsing, and dropped messages must not each generate an error reply (no amplification).",
+   "howToSend": "At any time after connect (works even pre-hello), in a tight loop send far more than the bucket allows within one second, e.g. `for(let i=0;i<400;i++) ws.send('{\"t\":\"ping\"}')`. Repeat the burst 3 times with brief pauses to cross the per-IP ban threshold.",
+   "expectedServerBehavior": "Once the bucket empties, excess frames are SILENTLY dropped (verdict 'drop' \u2192 no per-message error, no pong flood back). One drained period counts as one violation; on the 3rd violation the server sends a single {t:'error',code:'LIMIT_REACHED'} and closes the socket (5-min IP ban). Connections from other IPs and co-NAT peers on their own buckets are unaffected. MUST NOT crash, MUST NOT amplify (one error per drained period at most)."
+  },
+  {
+   "id": "roll-out-of-turn",
+   "category": "out-of-turn-roll",
+   "description": "The non-turn player tries to roll the die during the opponent's turn. If mishandled the server would advance the shared dice index / consume a fairness die on behalf of, or against, the player whose turn it actually is, corrupting the deterministic roll stream for both seats.",
+   "howToSend": "Two sockets (attacker owns both seats via a FREE private table: A sends hello+{t:'table.create',stake:0} -> table.created{code}; B sends hello+{t:'table.join',code:<code>}); both reveal {t:'game.entropy',entropy} on match.found. Wait for {t:'game.turn',seat:<mySeat>} showing it is seat <mySeat>'s turn (phase awaiting-roll). On the OTHER socket (seat <otherSeat>) send {t:'game.roll'} before <mySeat> has rolled.",
+   "expectedServerBehavior": "ONLY acceptable: server sends {t:'error',code:'NOT_YOUR_TURN'} to the <otherSeat> socket and does nothing else \u2014 no game.dice broadcast to anyone, diceIndex/fairness stream unchanged, turn/phase unchanged. Must not roll for either seat and must not crash."
+  },
+  {
+   "id": "move-before-any-roll",
+   "category": "wrong-phase-move",
+   "description": "The player whose turn it is sends game.move while still in awaiting-roll (no die has been produced yet, state.dice === null). A naive handler could dereference the null die or apply a move with an undefined dice value.",
+   "howToSend": "At game start after both game.entropy reveals, once {t:'game.turn',seat:<mySeat>} arrives with phase awaiting-roll, the <mySeat> socket sends {t:'game.move',token:0} WITHOUT first sending game.roll.",
+   "expectedServerBehavior": "ONLY acceptable: {t:'error',code:'NOT_YOUR_TURN'} to the sender (phase !== 'awaiting-move'). No game.moved, no state mutation, dice stays null. Must never reach applyMove (which throws 'BAD_STATE: not in move phase') and must not crash."
+  },
+  {
+   "id": "double-roll-in-move-phase",
+   "category": "roll-twice",
+   "description": "Player rolls, gets a multi-choice awaiting-move state, then rolls AGAIN instead of moving. A second roll must not overwrite the pending die / regenerate legal moves, which would let a player re-roll an unfavorable die.",
+   "howToSend": "On <mySeat>'s turn send {t:'game.roll'}; wait for the roll to yield MULTIPLE legal moves (e.g. first turn roll a 6 -> both base tokens exitable -> server broadcasts {t:'game.state',state:{phase:'awaiting-move',legal:[0,1]}}). Before sending any game.move, send a second {t:'game.roll'} on the same socket.",
+   "expectedServerBehavior": "ONLY acceptable: the second roll returns {t:'error',code:'NOT_YOUR_TURN'} (phase !== 'awaiting-roll'); no second game.dice, diceIndex unchanged, the original die and legal[] preserved. Must not re-roll or clear the pending move."
+  },
+  {
+   "id": "illegal-nonexistent-token",
+   "category": "illegal-move",
+   "description": "On the player's own awaiting-move turn, submit a token index that passes the 0..3 parse bound but does not exist (only 2 tokens per player) or is not currently movable. If the legal-list check is bypassed/reordered, applyMove throws 'invalid token: N' (seatRow[token] === undefined).",
+   "howToSend": "Reach a state where it is <mySeat>'s turn, phase awaiting-move, with legal e.g. [0,1] (two movable tokens, so no auto-settle and ~15s to act). Send {t:'game.move',token:3} (token 3 never exists \u2014 tokensPerPlayer=2). Also test token:2 and an in-range-but-not-legal token.",
+   "expectedServerBehavior": "ONLY acceptable: {t:'error',code:'ILLEGAL_MOVE'} to the sender; state unchanged. The engine's 'invalid token' throw MUST NOT be reached (no INTERNAL error, no crash) because Room.move checks state.legal.includes(token) first."
+  },
+  {
+   "id": "malformed-token-out-of-bounds",
+   "category": "bad-message",
+   "description": "game.move with a token outside 0..3, a non-integer, a string, or omitted entirely. Must be rejected at the protocol layer, never routed into the room where it could index positions out of range.",
+   "howToSend": "On any socket after hello, send each of: {t:'game.move',token:7}, {t:'game.move',token:-1}, {t:'game.move',token:1.5}, {t:'game.move',token:'0'}, {t:'game.move'} (no token). Send both during your turn and out of turn.",
+   "expectedServerBehavior": "ONLY acceptable: parseClientMsg returns null -> {t:'error',code:'BAD_MESSAGE'} for every variant. The message is never dispatched to Room.move, so no NOT_YOUR_TURN/ILLEGAL_MOVE is produced, no state changes, no crash."
+  },
+  {
+   "id": "settle-window-double-move-race",
+   "category": "timer-race-double-apply",
+   "description": "When a roll yields exactly ONE legal move the server withholds game.state and schedules an auto-play in ~900ms (DIE_SETTLE_MS) reusing this.clock. If the player manually submits that same move inside the window, the pending timer must be cancelled by the move's announceTurn->clearClock; a regression that fails to cancel would fire applyAndBroadcast a second time on an already-advanced state, throwing 'BAD_STATE: not in move phase' inside a setTimeout callback \u2014 and with no process-level uncaughtException handler that CRASHES the whole server (killing every live game).",
+   "howToSend": "Engineer a single-legal-move position: get one of <mySeat>'s tokens onto the track, the other in base, then on your turn send {t:'game.roll'} and keep rolling states until the die is a non-6 with your on-track token movable (legal.length===1). You receive {t:'game.dice'} but NOT a fresh game.state. Immediately (<900ms) send {t:'game.move',token:<onlyLegalToken>} (compute <onlyLegalToken> from the tracked state). Repeat rapidly across many turns to hit the window.",
+   "expectedServerBehavior": "ONLY acceptable: EXACTLY ONE move is applied \u2014 a single {t:'game.moved',token:<onlyLegalToken>}; the scheduled auto-play is cancelled (no duplicate game.moved, no double advance). The server MUST NOT throw from the settle timer and MUST NOT crash; game state stays consistent for both seats."
+  },
+  {
+   "id": "actions-after-game-over",
+   "category": "post-game-action",
+   "description": "After the game is finished, keep sending game.roll/game.move. A resurrected clock or a re-processed move after 'over' could re-award ELO/league/payout or mutate a terminal state.",
+   "howToSend": "Force termination: on <mySeat> send {t:'game.resign'} (or play to a win) and wait for {t:'game.over'}. Then send {t:'game.roll'} and {t:'game.move',token:0} from BOTH the winner and loser sockets several times.",
+   "expectedServerBehavior": "ONLY acceptable: silent drop \u2014 session.room is nulled on room end so the messages route nowhere; even if routed, Room.roll/move return immediately on this.over. No error storm, no game.dice/game.moved, no second game.over, no ELO/payout re-award, no crash."
+  },
+  {
+   "id": "actions-before-game-start",
+   "category": "pre-game-action",
+   "description": "Send game.roll/game.move before ever being in a room, and during the post-match-found entropy-reveal window where pendingGameId is set but the Room has not been created yet (session.room is still null). The only valid message in the reveal window is game.entropy.",
+   "howToSend": "(a) Immediately after {t:'hello.ok'}, without any queue/table, send {t:'game.roll'} and {t:'game.move',token:0}. (b) After receiving {t:'match.found'} but BEFORE sending {t:'game.entropy'}, send {t:'game.roll'} and {t:'game.move',token:1}.",
+   "expectedServerBehavior": "ONLY acceptable: silent drop \u2014 the switch routes to neither session.room4 nor session.room (both null), so nothing happens. No error, no dice/move, no Room creation shortcut, no crash. The pending game still starts normally only once game.entropy is revealed."
+  },
+  {
+   "id": "concurrent-membership-escape",
+   "category": "double-booking",
+   "description": "queue.join's 'Already in a game' guard checks session.room and session.pendingGameId but NOT session.room4. A player seated in a live 4-player game can therefore enter the 1v1 queue and be matched into a SECOND concurrent game. Because game.roll/game.move route to room4 first (priority), the 1v1 room is unreachable by the attacker and auto-forfeits on its clock \u2014 griefing the honest 1v1 opponent (and, at stake>0, distorting stake accounting) while one session double-books two seats.",
+   "howToSend": "Send {t:'queue.join4'} (free table, stakeCents omitted) and wait for {t:'match.found4'} (now session.room4 is set, session.room is null). While that 4p game is live, on the SAME socket send {t:'queue.join',stake:0}. Have a second helper client also in the 1v1 free queue so the join pairs immediately.",
+   "expectedServerBehavior": "ONLY acceptable: queue.join is REJECTED with {t:'error',code:'BAD_STATE',message:'Already in a game.'} whenever session.room4 holds a live seat; the session must NOT be enqueued or matched into a second game. No second Room is created; the 4p game is untouched. (Current code omits the session.room4 check \u2014 this is the defect the test pins.)"
+  },
+  {
+   "id": "hello-wallet-claim-profile-hijack",
+   "category": "identity-spoofing",
+   "description": "playerId() keys durable rows purely on the lowercased wallet (store/types.ts:196, session id ignored), and the hello handler calls getOrCreatePlayer with a CLAIMED but UNPROVEN wallet plus customName/customFlag/frame/avatar. getOrCreatePlayer (memory.ts:126-129) overwrites an existing row's name/flag/frame/avatar, and hello also calls recordLogin (a write) and returns getLimits/getOwnedSkins/getLeague/getChallenge/pid keyed to that wallet. The R-AUTH-2 walletKeyedWriteBlocked guard covers limits.set/skin.buy/freeroll but NOT the hello path, so an attacker who simply knows a victim's public 0x address can vandalize the victim's public identity and read their responsible-gaming state \u2014 without ever proving the wallet.",
+   "howToSend": "On a fresh connection, send exactly one message and never send wallet.prove (or send a garbage signature): {\"t\":\"hello\",\"entropyCommit\":\"<64-hex>\",\"wallet\":\"<victimWallet0x>\",\"name\":\"PWNED\",\"flag\":\"\ud83c\uddf7\ud83c\uddfa\",\"frame\":\"royal\",\"avatar\":\"ninja_medium-light\"}. The victim wallet is public (seen in a prior settlement tx or on-chain). Phase: immediately at connect, before any queue/game. Observe hello.ok returns the victim's games/wins/pid/league/limits/ownedSkins, and that the victim's durable name/flag/frame/avatar are now overwritten (visible via profile.get on their pid or their next login).",
+   "expectedServerBehavior": "hello.ok may still be returned, but with the wallet unproven the server MUST treat it as unauthenticated: it MUST NOT run the getOrCreatePlayer customName/customFlag/frame/avatar write against the victim's row, MUST NOT call recordLogin on that wallet, and MUST NOT disclose the wallet's limits/self-exclusion, ownedSkins, challenge, or league. These wallet-keyed writes/reads must be gated on session.walletProven (or keyed to the ephemeral session id until proof), exactly like walletKeyedWriteBlocked already gates limits.set/skin.buy. No crash, and zero mutation of another account's durable state."
+  },
+  {
+   "id": "join2p-while-in-4p-doublebook",
+   "category": "duplicate",
+   "description": "queue.join only rejects when session.room || session.pendingGameId is set (index.ts:912); it does NOT check session.room4, even though queue.join4 checks all three (index.ts:984). A player already seated in a live 4-player Room4 (session.room4 + seat4 set, session.room null) can therefore also be paired into a 1v1 Room, ending up in two concurrent games. Because game.roll/game.move/game.resign route to room4 FIRST (index.ts:1111-1124), the 2p game is unreachable and its honest opponent is stranded until timeout-forfeit. The same missing room4 guard exists on table.create, table.join and game.rematch.",
+   "howToSend": "1) hello. 2) {\"t\":\"queue.join4\"} (free table, no stakeCents); wait ~12s for bot-fill (TABLE4.botFillMs) until match.found4 arrives \u2014 now room4/seat4 are set. 3) While that 4p game is live, send {\"t\":\"queue.join\",\"stake\":0}. Have a second free 2p player waiting (or open a second socket) so you pair immediately. 4) Send {\"t\":\"game.roll\"}: it drives only the 4p game; the 2p opponent never sees you act and auto-forfeits.",
+   "expectedServerBehavior": "queue.join MUST reject with error code BAD_STATE (\"Already in a game.\") when session.room4 (or seat4) is set \u2014 the same guard queue.join4 already applies. A session must never be booked into two concurrent games. The identical fix must extend to table.create, table.join and game.rematch. No crash; no honest opponent seated against a player who cannot act in that game."
+  },
+  {
+   "id": "multi-stake-queue-doublebook",
+   "category": "duplicate",
+   "description": "The duplicate-queue guard in queue.join checks matchmaker.position(msg.stake, session) at ONLY the requested stake (index.ts:918). A session can therefore sit in two different stake queues at once; when both pair (via an arriving opponent or the 1s sweep, which call startGame directly and bypass the top-of-handler room/pendingGameId guard at index.ts:2180-2185), startGame runs twice for the same session, double-booking it and abandoning the first opponent. Wallet-less demo players are allowed to stake (stakeBlock only hard-blocks wallet-backed sessions), so no wallet is needed.",
+   "howToSend": "hello with {\"consent\":{\"tosVersion\":\"2026-07-01\",\"age18\":true}} and NO wallet. Send {\"t\":\"queue.join\",\"stake\":25} (ensure the 25c queue is otherwise empty so you queue at position 1), then immediately {\"t\":\"queue.join\",\"stake\":100}. The top guard passes (session.room null) and position(100) is 0, so you are now queued at BOTH 25 and 100. Then let two other demo players (or the sweep) pair you at 25 and at 100 \u2014 startGame fires twice for your session.",
+   "expectedServerBehavior": "The second queue.join MUST be rejected with BAD_STATE (\"Already in the queue.\") \u2014 the duplicate-queue check must cover every stake queue (and the freeroll queue), not just msg.stake \u2014 so a session is in at most one matchmaking queue / one game. startGame must never run twice for one session. No crash, no abandoned opponent, no double-counted game/ELO."
+  },
+  {
+   "id": "double-submit-move-roll",
+   "category": "double-submit",
+   "description": "Attempt to apply the same turn twice by double-submitting game.roll/game.move, and to replay an earlier valid game.move after the turn has advanced. Room.roll/move (room.ts:131-154) guard on turn===seat, phase, and legal-membership; the ws message loop is serialized (inbox chain, index.ts:733). This should make a second identical action a no-op, but it is the classic double-apply vector and must be verified to never move two tokens or advance the opponent's state.",
+   "howToSend": "In a live 1v1 on your turn: send {\"t\":\"game.roll\"}; when game.state reports phase awaiting-move with \u22652 legal tokens, send {\"t\":\"game.move\",\"token\":<legalToken>} TWICE in immediate succession (same token). Separately, replay an earlier {\"t\":\"game.move\",\"token\":<X>} after your turn already passed. Also send a second {\"t\":\"game.roll\"} right after your first roll.",
+   "expectedServerBehavior": "The first move applies exactly once (one game.moved). The duplicate/replayed move MUST be rejected: NOT_YOUR_TURN (phase is no longer awaiting-move or the turn advanced) or ILLEGAL_MOVE \u2014 never a second applyMove, never two tokens moved, never a mutation to the opponent's turn. A second game.roll \u2192 NOT_YOUR_TURN (phase now awaiting-move). No crash, no double state transition."
+  },
+  {
+   "id": "entropy-reveal-mismatch-and-replay",
+   "category": "replay",
+   "description": "game.entropy is looked up by session.pendingGameId and identity-checked (session===pending.a/b, index.ts:1175-1178) with a commit check sha256Hex(entropy)===session.entropyCommit (index.ts:1179). Probe it with a commit-mismatched reveal, a duplicate/late reveal after the Room has started (pendingGameId cleared in startRoom), and a reveal while holding no pending match. finalizeGame deletes the pendingReveals entry, so a re-fire must not re-seed or spawn a second Room.",
+   "howToSend": "Right after match.found (pre-Room reveal phase): (a) send {\"t\":\"game.entropy\",\"entropy\":\"<16+ chars whose sha256 != my entropyCommit>\"}; (b) send the correct {\"t\":\"game.entropy\",\"entropy\":\"<preimage of my commit>\"}; (c) after game.state/first game.turn arrives (Room started), send the same correct reveal AGAIN. Separately, on a session with no pendingGameId, send any {\"t\":\"game.entropy\",\"entropy\":\"<val>\"}.",
+   "expectedServerBehavior": "(a) commit mismatch \u2192 error BAD_MESSAGE (\"Entropy does not match commit.\"), no seat entropy stored, game keeps waiting. (b) correct \u2192 stored once. (c) duplicate/late reveal \u2192 silently ignored: pendingGameId was cleared and pendingReveals.get misses, so NO second Room, NO dice re-seed, NO fairness re-finalize. Reveal with no pending match \u2192 silent no-op. You can never reveal for another seat (identity check). No crash."
+  },
+  {
+   "id": "gift-emote-seat-spoof",
+   "category": "authority-spoofing",
+   "description": "Social channels carry a client-chosen `to` seat (gift) and are parse-bounded 0..3, but `from` is always the server-side session seat, so a client cannot forge the sender seat. Test self-targeting, targeting a non-existent 1v1 seat, and sending outside any game. Room.gift (room.ts:171-177) drops to===from and to\u2209{0,1}; emote/gift route only when in a room; per-seat throttles apply.",
+   "howToSend": "In a live 1v1 (you are seat <mySeat>): send {\"t\":\"gift\",\"to\":<mySeat>,\"id\":\"\ud83c\udf81\"} (self), {\"t\":\"gift\",\"to\":2,\"id\":\"\ud83c\udf81\"} and {\"t\":\"gift\",\"to\":3,\"id\":\"\ud83c\udf81\"} (seats that don't exist in 1v1). Before joining any game, send {\"t\":\"emote\",\"id\":\"\ud83d\udd25\"}. Then spam {\"t\":\"emote\",\"id\":\"\ud83d\udd25\"} 10x in <1s to probe the throttle.",
+   "expectedServerBehavior": "Self-gift and to\u2209{0,1} are silently dropped (no game.gift broadcast). emote/gift sent while not in a room are silent no-ops. Any gift that IS broadcast carries `from` = your authoritative seat \u2014 the sender seat can never be spoofed to impersonate the opponent. Rapid repeats are dropped by the per-seat throttle (1200ms emote / 1500ms gift). No crash, no forged sender seat, no broadcast for an invalid target."
+  },
+  {
+   "id": "double-resign-double-settle",
+   "category": "double-submit",
+   "description": "resign() finishes with the opponent as winner, driving game.over + onResult + on-chain settlement enqueue. Double-resigning, or acting after resign, must not fire finish() twice (which would double-enqueue settlement / double-apply ELO). Room.resign/finish set over=true first and clearClock (room.ts:156-159, 307-313); this is the money-critical double-apply path to verify.",
+   "howToSend": "In a live 1v1 (staked if possible), send {\"t\":\"game.resign\"} twice back-to-back. Then, after resigning, send {\"t\":\"game.roll\"} and {\"t\":\"game.move\",\"token\":0}.",
+   "expectedServerBehavior": "The first resign finishes the game exactly once: a single game.over (opponent = winner), a single onResult \u2192 a single settlementQueue.enqueue, single ELO delta. The second resign hits over===true and returns immediately \u2014 no second game.over, no second settlement job, no double payout/ELO. Post-resign roll/move hit the over guard \u2192 no-op (or NOT_YOUR_TURN). No crash, no double-settlement."
+  },
+  {
+   "id": "walletprove-replay-other-session",
+   "category": "replay",
+   "description": "wallet.prove verifies recoverMessageAddress over walletProofMessage(session.walletNonce) against session.wallet (index.ts:890-909). The nonce is per-session random and cleared on success. Replaying a captured victim signature onto a different session (that merely CLAIMS the victim wallet) must not mark it proven, because the signed nonce differs.",
+   "howToSend": "Obtain a victim's valid {\"t\":\"wallet.prove\",\"signature\":\"0x<130-hex>\"} (or reuse your own old one from a prior session). On a NEW connection, send {\"t\":\"hello\",\"wallet\":\"<victimWallet0x>\",\"entropyCommit\":\"<64-hex>\"} to receive a fresh walletNonce in hello.ok, then send the captured {\"t\":\"wallet.prove\",\"signature\":\"<victimSig>\"}. Also replay a used signature against its own original session after it already proved.",
+   "expectedServerBehavior": "Verification MUST fail: the signature was over a DIFFERENT random walletNonce, so recovery over this session's walletProofMessage(nonce) won't equal the claimed wallet \u2192 error BAD_STATE (\"Wallet verification failed.\"), walletProven stays false. Replay against the original session is a no-op (nonce cleared \u2192 the !session.walletNonce guard breaks early). A captured signature can never mark another session's claimed wallet as proven. No crash."
+  },
+  {
+   "id": "rematch-requeue-duplication",
+   "category": "matchmaking-integrity",
+   "description": "game.rematch (apps/server/src/index.ts ~1281) re-enqueues the session into the matchmaker with NO 'already queued' guard, unlike queue.join which rejects a duplicate via matchmaker.position(). Its re-queue branch calls matchmaker.join(stake,{session,...}) directly (~1351), and matchmaker.join unconditionally q.push()es (matchmaking.ts:76). Sending game.rematch repeatedly while already queued therefore inserts multiple QueueEntry objects that all reference the SAME Session. compatible() only blocks a==b self-pairing, so the duplicates survive. As real opponents arrive (join or the 1s sweep), each is paired against a different duplicate slot, so startGame runs multiple times for the one session, overwriting session.room/seat/pendingGameId and stranding earlier opponents (possibly a staker) in a Room whose 'opponent' no longer routes messages there. State corruption / orphaned opponents.",
+   "howToSend": "After hello (entropyCommit set) with no active game (session.room and pendingGameId both null \u2014 e.g. sitting on the post-game end screen, or fresh): send {\"t\":\"game.rematch\"} five times in a row (each returns queue.ok). Timing: while idle in the free queue, stake resolves to session.lastStake ?? 0. Then have a peer send {\"t\":\"queue.join\",\"stake\":0}; then a second peer joins the same stake. Watch for two match.found for <mySeat>.",
+   "expectedServerBehavior": "The 2nd+ game.rematch while already queued is the ONLY-acceptable outcomes: reject with error code BAD_STATE ('Already in the queue') OR silently no-op \u2014 exactly one queue entry per session. MUST NOT create duplicate matchmaker entries, MUST NOT start the session into more than one Room, MUST NOT crash or corrupt an existing opponent's Room."
+  },
+  {
+   "id": "multi-queue-double-book",
+   "category": "matchmaking-integrity",
+   "description": "queue.join's duplicate guard only checks matchmaker.position(msg.stake, session) (the SAME stake's queue) plus the freeroll queue (index.ts ~918), and queue.join4 only checks session.room/room4/pendingGameId (~984). Nothing stops a session sitting in several matchmaking tracks at once. Vector (a): queue.join{stake:25} then queue.join{stake:100} lands in two different per-stake queues (position(100) is 0 while you sit in the 25 queue). Vector (b): queue.join4{} (free 4p) then queue.join{stake:0} \u2014 the 4p waiting list is not consulted by queue.join, and room4 is still null while merely waiting. When both tracks match/bot-fill, startGame/startRoom4 seat the session in TWO live games (two Rooms, or session.room AND session.room4). game.roll/game.move route to only one (room4 first), so the other opponent \u2014 potentially a staker \u2014 is left in a game with a ghost that the clock auto-forfeits.",
+   "howToSend": "Vector a (reachable for a consented wallet-less demo session): hello with consent {tosVersion:<TOS_VERSION>,age18:true}; send {\"t\":\"queue.join\",\"stake\":25} then {\"t\":\"queue.join\",\"stake\":100} (both return queue.ok); two demo peers queue.join at 25 and 100 (or wait for the 1s sweep) \u2192 two startGame. Vector b (free, no money): send {\"t\":\"queue.join4\"} then {\"t\":\"queue.join\",\"stake\":0}; a peer sends {\"t\":\"queue.join\",\"stake\":0} to fill the 2p side, then wait <= TABLE4.botFillMs (12s) for the 4p table to bot-fill (match.found4). Session <mySeat> is now in both.",
+   "expectedServerBehavior": "ONLY acceptable: the second join across any track is rejected with error code BAD_STATE ('already in a game/queue'), OR the prior track membership is atomically dropped first \u2014 a session must occupy at most one matchmaking track and MUST NEVER be seated in two games. MUST NOT crash, MUST NOT leave a real/staked opponent paired against a non-responding ghost."
+  },
+  {
+   "id": "room4-move-bot-seat",
+   "category": "authorization",
+   "description": "Room4.roll() ignores input for a bot seat (room4.ts:112 `if (this.seats[seat]?.bot) return`) but Room4.move() (room4.ts:118-123) has NO bot guard \u2014 it checks only over/turn/phase/legal. After a human resigns (handOverToBot keeps their client attached, room4.ts:127-131) or is auto-forfeited to a bot, session.room4/seat4 stay set, so game.move still routes to room4.move(seat4, token) (index.ts ~1116). During the bot seat's own auto-play window (phase 'awaiting-move', turn===seat, within BOT_MOVE_MS ~900ms after the bot's game.dice4), a crafted move is applied for the server/bot-controlled seat. Because settleStaked4 pays p.humans[winnerSeat] regardless of the bot flag (index.ts ~2159), a 'resigned' colluder can keep steering their seat to dump captures to a partner or even win the pot, defeating the bot-forfeit.",
+   "howToSend": "In a 4-player game at seat <mySeat>: send {\"t\":\"game.resign\"} (seat becomes bot, client stays attached). Then each time you receive game.dice4 with seat===<mySeat> (the bot rolled), immediately send {\"t\":\"game.move\",\"token\":<a value present in the most recent game.state4.legal>} within ~900ms. Repeat on every <mySeat> turn.",
+   "expectedServerBehavior": "ONLY acceptable: move for a bot-flagged seat is ignored (silent drop), exactly as Room4.roll() already does \u2014 the server must never apply a client-supplied move to a bot/server-driven seat. MUST NOT let a resigned/forfeited seat be manually driven, MUST NOT pay or credit a human for a bot-controlled seat, MUST NOT crash."
+  },
+  {
+   "id": "table-join-cross-game-double-book",
+   "category": "state-machine",
+   "description": "table.join and table.create guard only on session.room (index.ts ~1053, ~1070), never session.room4 or session.pendingGameId. A player already in a 4p game (room4 set) or mid staked-pending (pendingGameId set, Room not yet created) who sends table.join{code} for a FREE table passes the guard \u2192 startGame sets session.room while room4/pending is still live. The session is double-booked; game.roll/game.move route to room4 first, so the private-table host (who for a staked table has locked real escrow) is stranded with a ghost that clock-forfeits. table.create while in a 4p game has the symmetric hole (a friend then joins).",
+   "howToSend": "While session.room4 is set (in a free or staked 4p game), get a FREE code from a confederate host (host sends {\"t\":\"table.create\",\"stake\":0} \u2192 table.created{code:<code>}). Send {\"t\":\"table.join\",\"code\":\"<code>\"}. Alternatively, while pendingGameId is set (between match.found and the entropy-reveal/stake-lock), send the same table.join.",
+   "expectedServerBehavior": "ONLY acceptable: table.join (and table.create) reject with error code BAD_STATE ('already in a game') whenever session.room4 OR session.pendingGameId is set, not just session.room. MUST NOT seat the session in a second game, MUST NOT overwrite an active room4/pendingGameId, MUST NOT strand the host, MUST NOT crash."
+  },
+  {
+   "id": "hello-session-orphan-leak",
+   "category": "resource-exhaustion",
+   "description": "handle() processes 'hello' on every message; a hello WITHOUT sessionToken always mints a fresh Session (randomBytes(16) id) and does sessions.set(id, session), reassigning the connection's `session` closure (index.ts ~807-845). The previously-created Session is left in the global sessions map (alive=true, its ws still pointing at this live socket) and is NEVER removed \u2014 ws.on('close') (~1386-1435) tears down only the current closure `session` (`if (session.ws !== ws) return` / single-session cleanup). Repeated no-token hellos on one socket accumulate orphaned Sessions unbounded, plus a getOrCreatePlayer DB write each when a wallet is supplied \u2014 a slow memory/DB DoS bounded only by the rate limiter (~30 msg/s) times MAX_CONNS_PER_IP (24).",
+   "howToSend": "After the first hello, repeatedly send fresh {\"t\":\"hello\",\"entropyCommit\":\"<sha256(random 16-128 char string)>\"} (optionally add \"wallet\":\"0x...\" to force per-hello DB writes) as fast as the limiter allows; never close the socket. Each returns hello.ok with a new sessionToken while the prior Session leaks.",
+   "expectedServerBehavior": "ONLY acceptable: exactly one Session per connection \u2014 a redundant fresh hello reuses/replaces the connection's existing Session (or is rejected with error code BAD_STATE), and any superseded Session is deleted from the sessions map. Memory and DB work MUST stay bounded per connection; MUST NOT accumulate orphaned sessions; MUST NOT crash."
+  },
+  {
+   "id": "table-create-host-flood",
+   "category": "resource-exhaustion",
+   "description": "table.create (index.ts ~1052) has no per-session cap and no 'already hosting' check (unlike queue.join's dedup). Each call generateTableCode()s and inserts a privateTables entry that lives up to TABLE_TTL_MS (15 min) while the host stays alive (the sweep at ~681 only deletes dead/expired hosts). A client spamming table.create fills privateTables with thousands of live codes per connection (~30/s * 15min ~= 27k) and silently overwrites session.stake each time \u2014 unbounded host-table growth.",
+   "howToSend": "After hello, send {\"t\":\"table.create\",\"stake\":0} in a tight loop as fast as the rate limiter allows; each returns table.created with a distinct <code>. Never join, never close the socket.",
+   "expectedServerBehavior": "ONLY acceptable: a session is limited to one active hosted table \u2014 a second table.create replaces the prior entry or is rejected with error code BAD_STATE, keeping privateTables bounded per session. MUST NOT grow privateTables without bound, MUST NOT corrupt or leak other sessions' state, MUST NOT crash."
+  },
+  {
+   "id": "staked4-cross-stake-double-lock",
+   "category": "matchmaking-integrity",
+   "description": "The staked 4-player queue's duplicate guard is `sq.waiting.includes(session)` scoped to a SINGLE stake's queue (index.ts ~1016), and the top-level guard `session.room||session.room4||session.pendingGameId` is all null while merely waiting. queue.join4{stakeCents:25} then queue.join4{stakeCents:100} therefore enlists the session in two distinct staked4 queues. When each reaches TABLE4.seats stakers, startStakedRoom4 runs for both \u2192 sets session.pendingGameId twice (2nd overwrites 1st), sends two match.found4, double-counts addDailyStake (~2073), and pushes the player to lock two separate escrow stakes for two tables. Reachable only when arbiterN (staked 4p) is armed and the session has a proven wallet.",
+   "howToSend": "With STAKING_ENABLED and the N-player escrow live, wallet proven + consent recorded: send {\"t\":\"queue.join4\",\"stakeCents\":25} then {\"t\":\"queue.join4\",\"stakeCents\":100} (both return queue.ok). Fill each stake's queue with 4 stakers (confederates) so both tryStartStaked4 fire.",
+   "expectedServerBehavior": "ONLY acceptable: a session is in at most one staked4 (and one overall matchmaking) queue \u2014 the second queue.join4 is rejected with error code BAD_STATE ('already in a queue'). MUST NOT enqueue across stakes, MUST NOT overwrite pendingGameId, MUST NOT double-count daily stake, MUST NOT seat the player into two staked tables, MUST NOT crash."
+  }
+ ],
+ "invariants": [
+  {
+   "id": "INV-DIMS-CONSERVATION",
+   "description": "Piece conservation: the board dimensions are fixed for the life of a game. There are always exactly SEATS rows (2 for a 2p GameState, 4 for a Game4) and every row holds exactly TOKENS tokens (2 for 2p, 4 for 4p). No token is ever created, destroyed, added to, or removed from a seat \u2014 capture only relocates a token to base, it never changes the count.",
+   "howToCheck": "On the first observed state snapshot record SEATS=state.positions.length and TOKENS=state.positions[0].length (expect 2/2 for game.state, 4/4 for game.state4). After EVERY game.state/game.state4/game.moved(.state)/game.moved4(.state): assert state.positions.length===SEATS && state.positions.every(r => Array.isArray(r) && r.length===TOKENS). Any change in these dimensions mid-game is a violation."
+  },
+  {
+   "id": "INV-POS-DOMAIN",
+   "description": "Every token position is a valid encoded cell: -1 (base) or an integer in [0,56], where 0..50 = main track, 51..55 = home column, 56 = FINISHED. Nothing else is representable; in particular no position may exceed FINISHED (=56), which is the 'no overshoot past the centre' guarantee at the field level.",
+   "howToCheck": "After every state snapshot: for every seat s and token t, let p=state.positions[s][t]; assert Number.isInteger(p) && (p===-1 || (p>=0 && p<=56)). Fail if any p===undefined/null/NaN, p<-1, or p>56."
+  },
+  {
+   "id": "INV-MOVE-DELTA-EXACT",
+   "description": "A moved token advances by EXACTLY the die that was in play, with no overshoot past FINISHED. A token in base (-1) may only move on a 6, landing on relative cell 0. A token already on the board moves prevPos+die and that sum must be <=56. Exactly one of the mover's tokens changes; all of the mover's other tokens are unchanged by its own move.",
+   "howToCheck": "Keep prevState (snapshot before the move) and lastDie (value of the most recent game.dice/game.dice4 for the mover's seat). On game.moved{seat,token}/game.moved4{seat,token} with newState: let old=prevState.positions[seat][token], nw=newState.positions[seat][token]. Assert nw<=56. If old===-1 assert lastDie===6 && nw===0. Else assert nw===old+lastDie. Also assert every OTHER token of `seat` is identical between prevState and newState (only opponents may change, via capture)."
+  },
+  {
+   "id": "INV-CAPTURE-RETURNS-TO-BASE",
+   "description": "The only way a token leaves the track for base (transitions to -1) is being captured on an opponent's move. A capture-flagged move sends each LONE opponent token sitting on the mover's non-safe destination cell back to base (-1); a protected pair (two of one opponent's tokens on that cell) is NOT cut. A token can never spontaneously return to base, and a seat never captures itself.",
+   "howToCheck": "On a move by seat s to landing rel L (nw from INV-MOVE-DELTA), compute abs=absCell(s,L) (null for home/finished; using SEAT_START/SEAT_START4). For every seat o!=s and token t: if prevState.positions[o][t]!== -1 and newState.positions[o][t]=== -1, that is a return-to-base and REQUIRES: capture flag true (2p: event.capture; 4p: derive as any opponent token went to -1), abs!==null, abs not in SAFE_CELLS{0,8,13,21,26,34,39,47}, absCell(o,prevState.positions[o][t])===abs, and that o had exactly ONE token on abs (lone, not a pair). Conversely if no opponent token went to base, capture must be false. Also assert no token of the MOVER went to -1 on its own move (self-capture forbidden)."
+  },
+  {
+   "id": "INV-TURN-VALID-INPLAY",
+   "description": "Whenever the game is live, `turn` names a real seat that still has playable tokens. turn is an integer in [0,SEATS). While phase !== 'over', the seat on turn must have at least one token not yet FINISHED (a finished seat is out of the rotation \u2014 2p opponent, 4p nextSeat4 skips done/finished seats and never lands on a member of `done`).",
+   "howToCheck": "After every state snapshot: assert Number.isInteger(state.turn) && state.turn>=0 && state.turn<SEATS. If state.phase!=='over': assert state.positions[state.turn].some(p => p!==56). For Game4 additionally assert !(state.done||[]).includes(state.turn). (In 'over', turn===winner is allowed.)"
+  },
+  {
+   "id": "INV-PHASE-FIELD-CONSISTENCY",
+   "description": "phase is one of 'awaiting-roll' | 'awaiting-move' | 'over', and dice/legal/winner are consistent with it. awaiting-roll: dice===null and legal===[]. awaiting-move: dice is an integer 1..6 and legal is non-empty. over: dice===null, legal===[], winner is a valid seat. There is no 'over' with a null winner and no non-'over' with a non-null winner.",
+   "howToCheck": "After every state snapshot: assert ['awaiting-roll','awaiting-move','over'].includes(state.phase). If 'awaiting-roll': assert state.dice===null && state.legal.length===0. If 'awaiting-move': assert Number.isInteger(state.dice) && state.dice>=1 && state.dice<=6 && state.legal.length>=1. If 'over': assert state.dice===null && state.legal.length===0 && Number.isInteger(state.winner) && state.winner>=0 && state.winner<SEATS. Assert (state.phase==='over')===(state.winner!==null)."
+  },
+  {
+   "id": "INV-DICE-RANGE",
+   "description": "Every die the server produces is a fair six-sided value: an integer in 1..6. This holds for the standalone dice event and for the dice embedded in a move-phase state.",
+   "howToCheck": "On every game.dice/game.dice4 message assert Number.isInteger(value) && value>=1 && value<=6. Cross-check against state: whenever a snapshot has phase==='awaiting-move', assert its state.dice equals the value of the most recent dice event for state.turn."
+  },
+  {
+   "id": "INV-DICE-INDEX-MONOTONIC",
+   "description": "Dice indices for a single game form a gap-free strictly increasing sequence starting at 1 (server increments diceIndex before each emit). No index is ever repeated (replay/desync), skipped (dropped roll), or decreased. This ties every roll to a unique, ordered slot in the commit-reveal stream.",
+   "howToCheck": "Maintain lastIndex (init 0) per gameId. On each game.dice/game.dice4 assert index===lastIndex+1, then lastIndex=index. Violation if index<=lastIndex (repeat/rewind) or index>lastIndex+1 (gap). First observed index must be 1."
+  },
+  {
+   "id": "INV-LEGAL-SET-VALID",
+   "description": "The legal[] set the server offers contains only genuinely playable tokens of the seat on turn: each entry is a distinct token index in [0,TOKENS), and each is actually movable with the current die per the engine rule \u2014 a based token (-1) is legal only when die===6, an on-track token is legal only when pos+die<=56, and a FINISHED token is never legal. legal reflects legalMoves(state,turn,dice) exactly.",
+   "howToCheck": "When phase==='awaiting-move' with d=state.dice and seat=state.turn: assert legal entries are unique, integers in [0,TOKENS), and each t satisfies: let p=state.positions[seat][t]; p!==56 && (p===-1 ? d===6 : p+d<=56). Also recompute the full expected set E={t : p!==56 && (p===-1? d===6 : p+d<=56)} and assert new Set(legal) deep-equals E (server offered neither too few nor too many)."
+  },
+  {
+   "id": "INV-MOVED-TOKEN-WAS-LEGAL",
+   "description": "The server never executes a move for a token it did not itself offer. Every token actually moved was a member of the legal[] published in the immediately preceding awaiting-move state, and the mover is the seat that was on turn in that state (server authority: no NOT_YOUR_TURN / ILLEGAL_MOVE slips through).",
+   "howToCheck": "Track the last awaiting-move snapshot M (its turn and legal[]) since the previous move/roll. On game.moved{seat,token}/game.moved4{seat,token}: assert seat===M.turn and M.legal.includes(token). Violation if the moved token was absent from the offered legal set or the mover isn't the seat that legal was computed for."
+  },
+  {
+   "id": "INV-WINNER-ALL-HOME",
+   "description": "A declared winner has genuinely won: the moment phase becomes 'over' (or a game.over/game.over4 arrives), the winning seat's every token is FINISHED (56). No winner is declared while any of its tokens is still in base, on the track, or in the home column, and a game cannot be 'over' with no seat fully home.",
+   "howToCheck": "When a snapshot has phase==='over' (or on game.over/game.over4 with `winner`): let w=state.winner (or event.winner). Assert w is a valid seat and state.positions[w].every(p => p===56). Also assert no OTHER seat had all four/two tokens home in the prior live state before w was crowned (first-to-finish wins)."
+  },
+  {
+   "id": "INV-EXTRATURN-JUSTIFIED",
+   "description": "The same seat keeps the turn after a move ONLY for a legitimate Ludo-Club reason, and otherwise the turn passes to the correct next in-play seat. A repeat turn is granted iff the move (and the player did not just win) rolled a 6, made a capture, OR brought a token to FINISHED. This is the core server-bug detector for a seat illegitimately moving twice.",
+   "howToCheck": "On a move by seat s producing newState, derive: rolledSix=(lastDie===6), captured (INV-CAPTURE / 2p event.capture), finished=(the moved token's nw===56). If newState.phase==='over' skip (winner keeps turn trivially). Else compute repeated=(newState.turn===s). Assert repeated === (rolledSix || captured || finished). If repeated is TRUE but none of those three causes holds \u2192 server granted a free extra turn (BUG). If repeated is FALSE assert newState.turn===expectedNext: 2p=otherSeat(s); 4p=nextSeat4 skipping seats whose row is all-56/in done, i.e. the nearest s+k (mod 4) seat with a non-finished token."
+  },
+  {
+   "id": "INV-SIXSTREAK-FORFEIT",
+   "description": "The consecutive-sixes counter behaves per Ludo-Club rules: in any resting snapshot sixStreak is an integer in 0..2, it increases only on back-to-back 6s by the same uninterrupted seat, and it resets to 0 whenever the turn passes or a non-6 is rolled. Three 6s in a row burn the turn \u2014 the third six yields NO move and passes play on \u2014 so the counter is never observed at 3+ and a triple-six never produces a game.moved for that roll.",
+   "howToCheck": "After every snapshot assert Number.isInteger(state.sixStreak) && state.sixStreak>=0 && state.sixStreak<=2. Track per-seat consecutive 6s from the dice stream: when the same seat rolls a 3rd consecutive 6, assert the following event is a turn pass (next dice/turn belongs to a DIFFERENT seat and NO game.moved was emitted for that 3rd-six index). Any non-6 roll or turn change must reset the running count to 0."
+  },
+  {
+   "id": "INV-STATE-STABILITY-NONCONTRADICTION",
+   "description": "Two observations of the same game never contradict. Immutable facts (gameId, my seat, SEATS, TOKENS) stay constant. Positions change ONLY via a game.moved/game.moved4: a game.dice that yields no legal move (turn passes) must leave every position byte-identical, and the state embedded in a game.moved must match any following game.state redundantly sent for the same step. Additionally each token's relative progress is monotonic \u2014 a position never decreases between snapshots except a jump to -1 caused by capture, and a FINISHED (56) token stays 56 forever (can't leave home, can't be cut).",
+   "howToCheck": "Keep prevState. (a) Immutable: gameId/seat from match.found(4) never change; SEATS/TOKENS constant. (b) No phantom motion: if a transition was a turn-pass (a game.dice with empty resulting legal / no accompanying game.moved), assert JSON.stringify(newState.positions)===JSON.stringify(prevState.positions). (c) Redundant snapshots for the same step deep-equal. (d) Monotonic: for every seat s, token t, let o=prevState.positions[s][t], n=newState.positions[s][t]; assert n>=o OR n===-1 (capture); and if o===56 assert n===56."
+  }
+ ]
+}

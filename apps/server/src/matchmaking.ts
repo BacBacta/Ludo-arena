@@ -137,4 +137,17 @@ export class Matchmaker<T> {
     const q = this.queues.get(stake) ?? [];
     return q.findIndex((e) => e.session === session) + 1;
   }
+
+  /** Is this session waiting in ANY stake's queue? Queue membership must be
+   *  single-slot: the responsible-gaming daily-stake check runs at join time but
+   *  the counter is only debited when a game starts, so a session sitting in
+   *  several queues at once would let every entry pass a check that still reads
+   *  the pre-debit total, and blow past the daily limit as each entry pairs.
+   *  `position(stake, …)` only sees ONE queue and cannot catch that. */
+  isQueued(session: T): boolean {
+    for (const q of this.queues.values()) {
+      if (q.some((e) => e.session === session)) return true;
+    }
+    return false;
+  }
 }

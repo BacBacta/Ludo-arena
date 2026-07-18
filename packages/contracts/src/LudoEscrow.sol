@@ -41,17 +41,36 @@ contract LudoEscrow {
         uint40 createdAt;
         Status status;
         uint16 rakeBps;     // rake SNAPSHOT at creation — settle can't be re-priced mid-game
+        // Provably-fair anchor (added last so the getter's field order is stable):
+        // sha256(serverSeed) as sent to the players BEFORE any die is rolled. The
+        // seed is revealed on-chain in the FairnessRevealed event at settlement, so
+        // ANYONE can check sha256(seed) == this commit and recompute every die.
+        bytes32 fairnessCommit;
     }
 
     mapping(bytes32 => Game) public games;
     /// @notice Only allowlisted stablecoins may be staked. Keeps out fee-on-transfer
     ///         / rebasing / hostile tokens that would break `pot == stake*2`.
     mapping(address => bool) public allowedToken;
+    /// @notice Pull-payment credits (C3 fix): funds a PUSH could not deliver — e.g.
+    ///         a stablecoin (USDT/USDC) that blacklists/freezes one recipient — are
+    ///         recorded here instead of reverting the whole call. Without this, a
+    ///         single unpayable winner/refundee would lock BOTH stakes forever (no
+    ///         escape valve: settle, voidGame and refundActive all pushed). The
+    ///         credited party pulls it via withdraw() once it can receive again.
+    mapping(address => mapping(address => uint256)) public withdrawable; // token => account => amount
 
     // ---------- Events ----------
     event Joined(bytes32 indexed gameId, address indexed player, address token, uint96 stake);
+    /// @notice Emitted at settlement with the revealed dice seed + player entropies,
+    ///         so anyone can verify sha256(serverSeed) == the game's fairnessCommit
+    ///         (fixed before play) and recompute every die off the on-chain record.
+    event FairnessRevealed(bytes32 indexed gameId, string serverSeed, string entropyA, string entropyB);
     event Settled(bytes32 indexed gameId, address indexed winner, uint256 payout, uint256 rake);
     event Refunded(bytes32 indexed gameId);
+    /// @notice A push transfer could not be delivered; `amount` is now withdrawable by `account`.
+    event Credited(bytes32 indexed gameId, address indexed account, address token, uint256 amount);
+    event Withdrawn(address indexed account, address token, uint256 amount);
     event RakeChanged(uint256 oldBps, uint256 newBps);
     event OwnershipTransferred(address indexed from, address indexed to);
     event TokenAllowed(address indexed token, bool allowed);
@@ -67,6 +86,8 @@ contract LudoEscrow {
     error NotOwner();
     error LengthMismatch();
     error TokenNotAllowed();
+    error NothingToWithdraw();
+    error CommitMismatch();
 
     constructor(address _arbiter, address _treasury, uint256 _rakeBps) {
         require(_rakeBps <= MAX_RAKE_BPS, "rake > max");
@@ -115,9 +136,33 @@ contract LudoEscrow {
         if (!success || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed();
     }
 
+    /// @dev Non-reverting transfer: returns false instead of reverting, so ONE
+    ///      unpayable recipient can't abort a settlement/refund. Safe because only
+    ///      vetted, allowlisted stablecoins are ever the token — no ERC777 hooks,
+    ///      no reentrancy/gas-griefing surface.
+    function _tryTransfer(address token, address to, uint256 value) internal returns (bool) {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, value));
+        return success && (data.length == 0 || abi.decode(data, (bool)));
+    }
+
+    /// @dev Push `value` to `to`; if the token refuses it (blacklist / frozen
+    ///      account), record a withdrawable credit instead of reverting — the C3
+    ///      fix that keeps one bad recipient from locking both stakes.
+    function _payOrCredit(bytes32 gameId, address token, address to, uint256 value) internal {
+        if (value == 0) return;
+        if (!_tryTransfer(token, to, value)) {
+            withdrawable[token][to] += value;
+            emit Credited(gameId, to, token, value);
+        }
+    }
+
     /// @notice Joins (or creates) game `gameId` by locking one's stake.
     ///         The first call sets token + stake; the second must match.
-    function join(bytes32 gameId, address token, uint96 stake) external {
+    /// @param fairnessCommit sha256(serverSeed) the server published to BOTH players
+    ///        in match.found, before any die. The first joiner records it; the second
+    ///        must present the SAME value — so both stakers attest, on-chain, to the
+    ///        exact commit the dice will be checked against at settlement.
+    function join(bytes32 gameId, address token, uint96 stake, bytes32 fairnessCommit) external {
         if (stake == 0) revert BadStake();
         Game storage g = games[gameId];
 
@@ -129,9 +174,11 @@ contract LudoEscrow {
             g.createdAt = uint40(block.timestamp);
             g.status = Status.WaitingOpponent;
             g.rakeBps = uint16(rakeBps); // snapshot the fee at creation
+            g.fairnessCommit = fairnessCommit; // fix the dice commit before play
         } else if (g.status == Status.WaitingOpponent) {
             if (msg.sender == g.playerA) revert AlreadyJoined();
             if (token != g.token || stake != g.stake) revert BadStake();
+            if (fairnessCommit != g.fairnessCommit) revert CommitMismatch(); // both attest the same commit
             g.playerB = msg.sender;
             g.status = Status.Active;
         } else {
@@ -142,9 +189,13 @@ contract LudoEscrow {
         emit Joined(gameId, msg.sender, token, stake);
     }
 
-    /// @notice Settles the game. `sig` = the arbiter's ECDSA signature over
-    ///         keccak256(abi.encode(DOMAIN, gameId, winner)).
-    function settle(bytes32 gameId, address winner, bytes calldata sig) external {
+    /// @notice Settles the game AND reveals the dice fairness on-chain. `sig` = the
+    ///         arbiter's ECDSA signature over keccak256(abi.encode(DOMAIN, gameId,
+    ///         winner)) — UNCHANGED, so the reveal adds no new trust. The seed is not
+    ///         signed because it is self-verifying: anyone checks sha256(serverSeed)
+    ///         against the game's fairnessCommit (recorded at join, before play).
+    function settle(bytes32 gameId, address winner, string calldata serverSeed, string calldata entropyA, string calldata entropyB, bytes calldata sig) external {
+        emit FairnessRevealed(gameId, serverSeed, entropyA, entropyB);
         _settle(gameId, winner, sig);
     }
 
@@ -172,8 +223,11 @@ contract LudoEscrow {
         uint256 rake = (pot * g.rakeBps) / 10_000; // snapshotted at creation
         uint256 payout = pot - rake;
 
-        _safeTransfer(g.token, winner, payout);
-        if (rake > 0) _safeTransfer(g.token, treasury, rake);
+        // Pay-or-credit both legs: a blacklisted winner (or treasury) is credited
+        // for later withdrawal rather than reverting — one unpayable recipient can
+        // no longer strand the pot (C3 posture, matching LudoEscrowN).
+        _payOrCredit(gameId, g.token, winner, payout);
+        _payOrCredit(gameId, g.token, treasury, rake);
         emit Settled(gameId, winner, payout, rake);
     }
 
@@ -183,7 +237,8 @@ contract LudoEscrow {
         if (g.status != Status.WaitingOpponent) revert BadStatus();
         if (block.timestamp < g.createdAt + JOIN_TIMEOUT) revert NotExpired();
         g.status = Status.Refunded;
-        _safeTransfer(g.token, g.playerA, g.stake);
+        // Pay-or-credit: a blacklisted lone staker is credited, never blocked.
+        _payOrCredit(gameId, g.token, g.playerA, g.stake);
         emit Refunded(gameId);
     }
 
@@ -210,9 +265,23 @@ contract LudoEscrow {
         Game storage g = games[gameId];
         if (g.status != Status.Active) revert BadStatus();
         g.status = Status.Refunded;
-        _safeTransfer(g.token, g.playerA, g.stake);
-        _safeTransfer(g.token, g.playerB, g.stake);
+        // Pay-or-credit each player: one blacklisted/frozen depositor is credited
+        // for withdrawal and never blocks the other's refund (C3). Status is
+        // already Refunded (CEI), so this can't be re-entered to double-refund.
+        _payOrCredit(gameId, g.token, g.playerA, g.stake);
+        _payOrCredit(gameId, g.token, g.playerB, g.stake);
         emit Refunded(gameId);
+    }
+
+    /// @notice Pull a credit that a push transfer could not deliver (see
+    ///         `withdrawable`). CEI: the balance is zeroed before the transfer, so
+    ///         a still-failing transfer reverts the whole call and preserves it.
+    function withdraw(address token) external {
+        uint256 amount = withdrawable[token][msg.sender];
+        if (amount == 0) revert NothingToWithdraw();
+        withdrawable[token][msg.sender] = 0;
+        _safeTransfer(token, msg.sender, amount);
+        emit Withdrawn(msg.sender, token, amount);
     }
 
     // ---------- Signatures ----------

@@ -35,6 +35,9 @@ export interface DiceSkin {
   hintKey?: TKey; // unlock hint (undefined = free)
   unlocked(ctx: UnlockCtx): boolean;
   soon?: boolean; // future paid skin
+  /** Season-exclusive (Phase 4): grantable ONLY via the season track — never
+   *  progression-unlockable or purchasable. The picker labels it accordingly. */
+  season?: boolean;
 }
 
 export const DICE_SKINS: DiceSkin[] = [
@@ -163,6 +166,17 @@ export const DICE_SKINS: DiceSkin[] = [
     sound: 'gold',
     unlocked: () => false,
   },
+  // ---- Season-exclusive skins (Phase 4 content pool: SEASON_SKINS). Pass-only:
+  // never progression-unlockable or purchasable → only granted by the season track.
+  // Procedural (colour/material only), so new seasons add ids here with no art step.
+  { id: 'season-aurora', name: 'Aurora', body1: '#8ef0d0', body2: '#5a2fb0', pip: '#ffffff', stroke: '#2a1560', glow: 'rgba(140,240,210,.5)', material: 'irid', season: true, unlocked: () => false },
+  { id: 'season-crimson', name: 'Crimson', body1: '#ff8a7a', body2: '#8a0f24', pip: '#fff0ec', stroke: '#500810', glow: 'rgba(255,70,70,.5)', material: 'molten', season: true, unlocked: () => false },
+  { id: 'season-abyss', name: 'Abyss', body1: '#5a7fb0', body2: '#0a1830', pip: '#cfe4ff', stroke: '#050c1a', glow: 'rgba(60,120,220,.45)', material: 'glass', season: true, unlocked: () => false },
+  { id: 'season-verdant', name: 'Verdant', body1: '#a6f08a', body2: '#1c6a2e', pip: '#f0fff0', stroke: '#0d3316', glow: 'rgba(120,230,120,.45)', season: true, unlocked: () => false },
+  { id: 'season-solar', name: 'Solar', body1: '#ffe08a', body2: '#c85a10', pip: '#3a1e00', stroke: '#7a3a08', glow: 'rgba(255,170,50,.55)', material: 'metal', season: true, unlocked: () => false },
+  { id: 'season-frost', name: 'Frost', body1: '#dff2ff', body2: '#5aa0d8', pip: '#0a2a44', stroke: '#2a5a80', glow: 'rgba(150,210,255,.5)', material: 'gem', season: true, unlocked: () => false },
+  { id: 'season-void', name: 'Void', body1: '#9a7fd0', body2: '#1a0a30', pip: '#e0d0ff', stroke: '#0a0518', glow: 'rgba(150,90,230,.5)', material: 'irid', season: true, unlocked: () => false },
+  { id: 'season-royal', name: 'Royal', body1: '#f0d68a', body2: '#4a1a70', pip: '#fff6d8', stroke: '#2a0e42', glow: 'rgba(240,200,120,.5)', material: 'gem', season: true, unlocked: () => false },
 ];
 
 export function skinById(id: string): DiceSkin {

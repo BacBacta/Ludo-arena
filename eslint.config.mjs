@@ -16,6 +16,7 @@ export default tseslint.config(
       'packages/contracts/**', // Solidity + forge, not JS/TS-linted here
       'apps/web/scripts/**', // one-off screenshot tooling
       'e2e/**', // standalone audit harness (mixed browser/node globals, run via node/playwright — not app code)
+      'simulation/**', // standalone bot-sim harness (Phase 4, run via node/tsx — not app code)
       '**/*.config.{js,mjs,cjs,ts}',
     ],
   },

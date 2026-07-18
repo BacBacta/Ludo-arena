@@ -14,7 +14,7 @@ export function Die(props: Die3DProps) {
   return props.skin.material ? <DiePremium3D {...props} /> : <Die3D {...props} />;
 }
 
-function DiePremium3D({ value, rollKey, skin }: Die3DProps) {
+function DiePremium3D({ value, rollKey, skin, spinning }: Die3DProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<DieEngine | null>(null);
   const [ready, setReady] = useState(false);
@@ -48,10 +48,14 @@ function DiePremium3D({ value, rollKey, skin }: Die3DProps) {
 
   // Roll (tumble) when a fresh roll arrives; seat quietly on a value-only change.
   useEffect(() => {
-    if (!ready || !engineRef.current) {
-      lastRoll.current = rollKey;
-      return;
-    }
+    // Engine still loading: the CSS fallback is showing and animates the roll.
+    // Crucially do NOT advance lastRoll here — otherwise a roll that lands DURING
+    // the WebGL chunk load is "consumed", so when the engine becomes ready it sees
+    // rollKey === lastRoll and seats on the value WITHOUT tumbling. That made the
+    // FIRST roll(s) of a game just pop to the result on premium (WebGL) skins,
+    // while the bot's CSS die tumbled fine. Leaving lastRoll untouched lets the
+    // engine tumble the pending roll the moment it comes up.
+    if (!ready || !engineRef.current) return;
     const tumble = rollKey !== 0 && rollKey !== lastRoll.current;
     lastRoll.current = rollKey;
     engineRef.current.roll(value, tumble);
@@ -68,7 +72,7 @@ function DiePremium3D({ value, rollKey, skin }: Die3DProps) {
       <div ref={hostRef} className="diepremium__host" style={{ opacity: ready ? 1 : 0 }} />
       {!ready && (
         <div className="diepremium__fallback">
-          <Die3D value={value} rollKey={rollKey} skin={skin} />
+          <Die3D value={value} rollKey={rollKey} skin={skin} spinning={spinning} />
         </div>
       )}
     </div>
