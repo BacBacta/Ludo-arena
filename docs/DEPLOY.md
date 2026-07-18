@@ -27,8 +27,6 @@ flyctl secrets set \
   DATABASE_URL="postgres://…" \
   ARBITER_PRIVATE_KEY="0x…" \
   CHAIN="celo-sepolia" \
-  ESCROW_ADDRESS="0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6" \
-  ESCROW_N_ADDRESS="0x…" \
   STAKING_ENABLED="false" \
   STAKING_ALLOWED_COUNTRIES="" \
   TRUSTED_EDGE_SECRET="" \
@@ -127,12 +125,14 @@ deployer key funded from a faucet, never a real-funds key.**
 ### The G-2 trap this order avoids
 
 `deploy.ts` auto-syncs the **client** bundle copy (`apps/web/src/deployments.json`),
-but the **server** in production reads its escrow from the `ESCROW_ADDRESS` /
-`ESCROW_N_ADDRESS` **Fly secrets**, NOT from `deployments.json`. So after a
-redeploy the client bundle points at the NEW escrow while the server still settles
-the OLD one until you update the Fly secrets. The G-2 guard makes this fail SAFE
-(the client refuses to deposit into an escrow the server won't settle), but you
-must land BOTH updates to actually take stakes.
+and since the Dockerfile bakes `packages/contracts/deployments.json` into the
+server image, the **server** resolves the same file by `CHAIN` — client and server
+converge on the committed addresses at their next respective deploys. The
+`ESCROW_ADDRESS` / `ESCROW_N_ADDRESS` **Fly secrets** still WIN when set (override
+hook), which is exactly how a stale address outlives a redeploy: if they are set,
+either update them or `flyctl secrets unset` them. The G-2 guard makes a mismatch
+fail SAFE (the client refuses to deposit into an escrow the server won't settle),
+but you must land both deploys to actually take stakes.
 
 ### Steps (in this order)
 
@@ -144,16 +144,15 @@ NETWORK=celo-sepolia DEPLOYER_PRIVATE_KEY="0x<faucet-funded-testnet-key>" npm ru
 
 # 2. Verify on Celoscan that each is verified + the hardened one (has withdraw()).
 
-# 3. Point the SERVER at the new escrows (Fly secret — the manual step G-2 guards).
-flyctl secrets set \
-  ESCROW_ADDRESS="0x<new LudoEscrow>" \
-  ESCROW_N_ADDRESS="0x<new LudoEscrowN>"
-
-# 4. Commit the regenerated deployments.json (both files) and REDEPLOY THE WEB so
-#    the client bundle ships the new addresses (deploy.ts already updated the file).
+# 3. Commit the regenerated deployments.json (both files): Vercel rebuilds the web
+#    with the new bundled addresses, and the next server image bakes the same file.
 git add packages/contracts/deployments.json apps/web/src/deployments.json
-git commit -m "chore: redeploy hardened escrows on Celo Sepolia"
-#    → Vercel rebuilds the web with the new bundled addresses.
+git commit -m "chore: redeploy escrows on Celo Sepolia"
+
+# 4. Redeploy the SERVER so its image picks up the committed addresses — and make
+#    sure no stale override secret shadows them (unset is the steady state):
+flyctl secrets unset ESCROW_ADDRESS ESCROW_N_ADDRESS
+flyctl deploy
 
 # 5. Confirm concordance: a hello.ok from the server now advertises the new escrow,
 #    and the client bundle matches → deposits are accepted. If step 3 or 4 is

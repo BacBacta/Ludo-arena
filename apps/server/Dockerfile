@@ -11,6 +11,11 @@ COPY package.json package-lock.json ./
 COPY packages/game-engine ./packages/game-engine
 COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
+# The deployed contract addresses (NOT the contracts toolchain): the server
+# resolves escrow/store addresses from this file when the ESCROW_*/COSMETICS_*
+# env overrides are unset — without it, a stale pinned address in fly.toml was
+# the only source and silently outlived every redeploy.
+COPY packages/contracts/deployments.json ./packages/contracts/deployments.json
 
 # Non-ci install: the lockfile covers workspaces excluded from this image, so use
 # a lenient install. tsx (a devDependency) is required to run the TS entrypoint.

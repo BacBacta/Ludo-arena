@@ -1,7 +1,11 @@
 # Fly.io config for the Ludo Arena game server (apps/server).
 # Deploy: flyctl launch --no-deploy (first time) then flyctl deploy.
 # Secrets (flyctl secrets set ...): REDIS_URL, DATABASE_URL, ARBITER_PRIVATE_KEY,
-# CHAIN, ESCROW_ADDRESS, BLOCKED_COUNTRIES.
+# STAKING_ALLOWED_COUNTRIES, TRUSTED_EDGE_SECRET.
+# Escrow/store addresses are NOT pinned here: the image bakes
+# packages/contracts/deployments.json and the server resolves them by CHAIN —
+# a redeploy of the contracts lands with the next `flyctl deploy`, no env edit.
+# (ESCROW_ADDRESS / ESCROW_N_ADDRESS secrets still win if you must override.)
 app = "ludo-arena"
 primary_region = "ams"
 
@@ -11,7 +15,6 @@ primary_region = "ams"
 [env]
   PORT = "8080"
   CHAIN = "celo-sepolia"
-  ESCROW_ADDRESS = "0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6"
 
 [http_service]
   internal_port = 8080
