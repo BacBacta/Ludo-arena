@@ -802,14 +802,16 @@ small.muted { font-size: 12px; }
 
 .fairnote { text-align: center; color: rgba(255, 255, 255, 0.95); font-size: 11px; margin-top: 10px; }
 .fairnote--links { margin-top: 6px; font-weight: 600; }
-.fairnote--links a { white-space: nowrap; }
+.fairnote--links a, .fairnote--links .linklike { white-space: nowrap; }
 .help__card { max-height: 82dvh; display: flex; flex-direction: column; }
 .help__scroll { overflow-y: auto; margin: 4px 0 12px; text-align: left; }
 .help__sec { margin-bottom: 14px; }
 .help__sec h4 { font-family: var(--font-display); font-size: 14.5px; margin-bottom: 4px; color: var(--txt); }
 .help__sec p { font-size: 13px; line-height: 1.55; color: var(--txt); }
 .help__link { color: var(--p1); text-decoration: underline; cursor: pointer; }
-.fairnote a { color: #ffffff; text-decoration: underline; cursor: pointer; }
+.fairnote a, .fairnote .linklike { color: #ffffff; text-decoration: underline; cursor: pointer; }
+/* button reset so the footer "links" (which open modals) look like the anchors */
+.fairnote .linklike { background: none; border: none; padding: 0; font: inherit; }
 
 /* Matchmaking: expanding radar rings around the searching avatar */
 .radar { position: relative; width: 150px; height: 150px; }

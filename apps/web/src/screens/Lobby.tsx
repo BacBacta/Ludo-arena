@@ -144,7 +144,7 @@ export function Lobby({
             <HeroPeg colors={PEG_COLORS.yellow} idKey="hp-yellow" />
           </div>
         </div>
-        <div className="hero__tagline">{t('tagline')}</div>
+        <h1 className="hero__tagline">{t('tagline')}</h1>
       </div>
 
       <button className="btn btn--hero" onClick={() => { playTap(); onPlay(0); }}>
@@ -198,8 +198,11 @@ export function Lobby({
         <span><i>3</i>{t('howStep3')}</span>
       </div>
 
-      {/* SEASON PASS — the progression hub (crowns → tiers → rewards). */}
-      {season && (() => {
+      {/* SEASON PASS — the progression hub (crowns → tiers → rewards). Hidden
+          until the player has SOME history: a first-time visitor must not face
+          "Tier 0/50 · 0/30" walls of zeros plus a $ purchase before their first
+          game (same principle as the guarded profile stats below). */}
+      {season && hasHistory && (() => {
         const reached = season.tier;
         const maxed = reached >= season.tierCount;
         const prevCost = crownsForTier(reached);
@@ -317,22 +320,24 @@ export function Lobby({
         </div>
       )}
 
+      {/* modal-opening "links" are buttons (keyboard-focusable, exposed to AT);
+          only the mailto is a real anchor. */}
       <div className="fairnote">
         {t('fairnote')}{' '}
-        <a onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>{t('howItWorks')}</a>
+        <button type="button" className="linklike" onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>{t('howItWorks')}</button>
         {' · '}
-        <a onClick={() => dispatch({ type: 'SETTINGS', open: true })}>{t('rgLink')}</a>
+        <button type="button" className="linklike" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>{t('rgLink')}</button>
       </div>
       {/* info & legal: the landing said nothing about tickets/freeroll/league,
           and Terms/Privacy/Support had no entry point outside the staking gate. */}
       <div className="fairnote fairnote--links">
-        <a onClick={() => { playTap(); dispatch({ type: 'HELP_MODAL', open: true }); }}>{t('footHelp')}</a>
+        <button type="button" className="linklike" onClick={() => { playTap(); dispatch({ type: 'HELP_MODAL', open: true }); }}>{t('footHelp')}</button>
         {' · '}
         <a href={`mailto:${SUPPORT_EMAIL}`}>{t('footSupport')}</a>
         {' · '}
-        <a onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'tos' })}>{t('legalReadTos')}</a>
+        <button type="button" className="linklike" onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'tos' })}>{t('legalReadTos')}</button>
         {' · '}
-        <a onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'privacy' })}>{t('legalReadPrivacy')}</a>
+        <button type="button" className="linklike" onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'privacy' })}>{t('legalReadPrivacy')}</button>
       </div>
 
       <Table4Modal onPractice={sheetPractice} onFree={sheetFree} onStaked={sheetStaked} />

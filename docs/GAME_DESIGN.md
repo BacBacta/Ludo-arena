@@ -16,23 +16,23 @@
 | Loop | Mechanic | KPI |
 |---|---|---|
 | Session | 1-tap rematch, matchmaking < 10 s | ≥ 3 games/session |
-| Daily | daily challenge, login streak, 1 freeroll/day | D1 ≥ 40 % |
-| Weekly | divisional leagues (promotion/relegation on Mondays) | D7 ≥ 20 % |
+| Daily | daily challenge, login streak, daily freeroll (2-ticket entry) | D1 ≥ 40 % |
+| Seasonal | season pass: crowns per game → 50-tier reward track over 28 days (replaced the weekly divisional league) | D7 ≥ 20 % |
 | Social | private table via WhatsApp link, $0.25 referral | K ≥ 0.3 |
 
 ## Anti-churn
 
 - ELO matchmaking ± 100.
-- 3 consecutive staked losses → 20 % rake cashback + freeroll ticket.
+- 3 consecutive staked losses → freeroll ticket(s) (anti-tilt; the earlier cash-cashback design was dropped — it created an unbacked liability).
 - Daily spend limit (default $2), self-exclusion, no casino mechanics.
 - Disconnection ≠ loss (auto-move, 60 s reconnection).
 
 ## Business model (3-tier hybrid)
 
 1. 8-10 % rake on staked games ($0.10 – $2), 10-12 % on tournaments — **geo-gated** by legality.
-2. $0.99/month season pass + cosmetics.
+2. Premium season pass: $1.50 USDT once per 28-day season (a conversion loss-leader — see `SEASON_PASS_SPEC.md` §4) + cosmetics.
 3. Sponsored freerolls + MiniPay incentive program (CELO grants indexed on real on-chain activity).
 
 ## UI tone
 
-Understated premium: deep forest background (#0E1512), #16211C cards, gold accent #F5B301, player #2E9E6B, opponent #E8833A. Subtle micro-animations, never casino-style flashing. system-ui typography. FR/EN at launch (then PT/ES/SW).
+Playful premium (revised from the original dark-forest direction): royal-blue board-game background (#4666CF), white cards, gold accent #F5B301, player green #2E9E6B. Fredoka display type over system-ui body. Subtle micro-animations, never casino-style flashing — no artificial-urgency badges before a first game. EN default; FR/PT/ES/SW opt-in via `?lang=`.

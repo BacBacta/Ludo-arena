@@ -17,7 +17,7 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { ComebackModal, DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast, WelcomeModal } from './components/ui';
+import { ComebackModal, DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
 import { sendLimits, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
@@ -470,7 +470,12 @@ export default function App() {
           { kind: 'queue' },
           makeAuth(),
         );
-        freeFallback.current = setTimeout(toBot, FREE_MATCH_TIMEOUT_MS); // no human → bot
+        // No human after the full wait → bot, SAID OUT LOUD: the lobby promises
+        // "vs a real player", so a silent swap would make that promise a lie.
+        freeFallback.current = setTimeout(() => {
+          dispatch({ type: 'TOAST', message: t('botFallback') });
+          toBot();
+        }, FREE_MATCH_TIMEOUT_MS);
         return;
       }
 
@@ -961,7 +966,6 @@ export default function App() {
           run?.();
         }}
       />
-      <WelcomeModal onStartFree={() => startMatch(0)} />
       <StakingOverlay
         onCancel={() => {
           dispatch({ type: 'STAKING', status: 'failed' });

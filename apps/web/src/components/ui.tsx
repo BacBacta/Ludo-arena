@@ -40,11 +40,14 @@ function CloseHint({ onClose, top = 10 }: { onClose(): void; top?: number }) {
 }
 
 export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
-  const { balanceCents, walletBacked, soundOn, streak, challenge } = useAppState();
+  const { balanceCents, walletBacked, soundOn, streak, challenge, tickets, profile } = useAppState();
   const dispatch = useAppDispatch();
   // Draw the eye to Progression when there's something to do there: an unfinished
-  // daily challenge, or a live streak worth protecting.
-  const progNudge = !challenge.completed || streak.days > 0;
+  // daily challenge, or a live streak worth protecting. Only for a RETURNING
+  // player — `!challenge.completed` is true for everyone at first load, so
+  // without the history guard the red dot fires before the first game.
+  const returning = profile.games > 0 || streak.days > 0 || tickets > 0;
+  const progNudge = returning && (!challenge.completed || streak.days > 0);
   return (
     <div className="topbar">
       <div className="topbar__logo">
@@ -757,32 +760,6 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
         <button className="btn btn--ghost" style={{ marginTop: 8 }} onClick={() => dispatch({ type: 'LEGAL_MODAL', open: false })}>
           {t('cancel')}
         </button>
-      </div>
-    </div>
-  );
-}
-
-export function WelcomeModal({ onStartFree }: { onStartFree(): void }) {
-  const { onboardOpen } = useAppState();
-  const dispatch = useAppDispatch();
-  const doneOnboard = (): void => void dispatch({ type: 'ONBOARD_DONE' });
-  const trapRef = useFocusTrap<HTMLDivElement>(onboardOpen, doneOnboard);
-  if (!onboardOpen) return null;
-  return (
-    <div className="modal" onClick={() => dispatch({ type: 'ONBOARD_DONE' })}>
-      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-        <h3>{t('welcomeTitle')}</h3>
-        <p style={{ fontSize: 14, margin: '8px 0 14px' }}>{t('welcomeBody')}</p>
-        <button
-          className="btn"
-          onClick={() => {
-            dispatch({ type: 'ONBOARD_DONE' });
-            onStartFree();
-          }}
-        >
-          {t('welcomeCta')}
-        </button>
-        <CloseHint onClose={doneOnboard} />
       </div>
     </div>
   );
