@@ -13,10 +13,10 @@
   },
   "celo-sepolia": {
     "chainId": 11142220,
-    "escrow": "0x61c74f88ba8bb0cbb163e0aea3a6c036f55c4eed",
-    "escrowTx": "0xd1dc5f4014fbb913b5cfb846f438f188ab81fac584e71e1ac8dccaca58f512f0",
-    "escrowN": "0x03f874e3559dc7f81750efd45247ed9cafa2298f",
-    "escrowNTx": "0xd33a5cb4c654d18a9261b0fa6374ba9b48ce689bf59eb53709b0dbe7682bd55e",
+    "escrow": "0xcf84c912275e8a60d9c150d57fec3e6afe730072",
+    "escrowTx": "0xac607e15930dabd6b07afde2f4c285a3863f337ed2528fc81410916ebd5326f2",
+    "escrowN": "0x7c02f1352439949c3c9545bd0ad9d12b660f7a83",
+    "escrowNTx": "0x425ed199966d58583d5c4954842dc5b9cc0881177a10bed1d421d4d5dd247330",
     "cosmeticsStore": "0x63df70f34a804190b62ebcd79a5ec49ca5230506",
     "cosmeticsStoreTx": "0x885e790d48544f8b061a1fe3dec0194dbad0d2f6a8b4b2c7868523949a2446c8",
     "stablecoin": "0x862f0b37b4eb6d121e7d3d51c02c5e58461e5897",
@@ -24,6 +24,6 @@
     "arbiter": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
     "treasury": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
     "rakeBps": 900,
-    "deployedAt": "2026-07-17T18:03:15.934Z"
+    "deployedAt": "2026-07-18T22:40:23.158Z"
   }
 }
