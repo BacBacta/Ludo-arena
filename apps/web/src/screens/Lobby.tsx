@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ALLOWED_STAKES_CENTS, DIVISIONS, FREEROLL, STREAK_FREEZE, potCents, type StakeCents } from '@ludo/shared';
+import { ALLOWED_STAKES_CENTS, DIVISIONS, FREEROLL, SEASON_PREMIUM, STREAK_FREEZE, crownsForTier, potCents, type StakeCents } from '@ludo/shared';
+import { cosmeticsCusdAvailable } from '../lib/deployments';
 import { RIVAL_GAMES, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { SUPPORT_EMAIL, TopBar, Table4Modal } from '../components/ui';
 import { IconFlame, IconShield, IconTarget, IconTicket, IconTrophy, IconUsers } from '../components/icons';
@@ -195,28 +196,39 @@ export function Lobby({
 
       {/* MODE MENU — promoted right under the hero (was buried below the cards).
           The single scannable menu of everything you can play. */}
-      {season && (
-        <>
-          <div className="seclabel">👑 {t('seasonTitle')}</div>
-          <div className="card modelist">
-            <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'SEASON_MODAL', open: true }); }}>
-              <span className="mrow__ic mrow__ic--gold">👑</span>
-              <span className="mrow__txt">
-                <b>{t('seasonTier')} {season.tier}/{season.tierCount}</b>
-                <small>{t('seasonLobbyHint')}</small>
-              </span>
-              {(() => {
-                const claimable = season.claimedFree
-                  ? season.tiers.filter((d) => season.tier >= d.tier && !season.claimedFree.includes(d.tier)).length
-                  : 0;
-                return claimable > 0
-                  ? <span className="mrow__badge mrow__badge--claim">{claimable} {t('seasonClaim')}</span>
-                  : <span className="mrow__badge">👑 {season.crowns}</span>;
-              })()}
+      {season && (() => {
+        const reached = season.tier;
+        const maxed = reached >= season.tierCount;
+        const prevCost = crownsForTier(reached);
+        const nextCost = crownsForTier(Math.min(reached + 1, season.tierCount));
+        const pct = maxed ? 100 : Math.min(100, Math.round(((season.crowns - prevCost) / Math.max(1, nextCost - prevCost)) * 100));
+        const claimable = season.tiers.filter((d) => season.tier >= d.tier && !season.claimedFree.includes(d.tier)).length;
+        const openSheet = (): void => { playTap(); dispatch({ type: 'SEASON_MODAL', open: true }); };
+        return (
+          <>
+            <div className="seclabel">👑 {t('seasonTitle')}</div>
+            <button className="card seasoncard" onClick={openSheet}>
+              <div className="seasoncard__top">
+                <span className="seasoncard__crown" aria-hidden="true">👑</span>
+                <div className="seasoncard__id">
+                  <b>{t('seasonTier')} {reached}/{season.tierCount}</b>
+                  <small>{season.premium ? `✓ ${t('seasonPremiumOwned')}` : t('seasonCardValue')}</small>
+                </div>
+                <span className="seasoncard__crowns">👑 {season.crowns}{maxed ? '' : ` / ${nextCost}`}</span>
+              </div>
+              <div className="seasonbar__track seasoncard__bar"><span className="seasonbar__fill" style={{ width: `${pct}%` }} /></div>
+              <div className="seasoncard__foot">
+                {claimable > 0
+                  ? <span className="seasoncard__claim">🎁 {claimable} {t('seasonClaim')}</span>
+                  : <span className="seasoncard__hint">{t('seasonCardCta')}</span>}
+                {!season.premium && cosmeticsCusdAvailable && (
+                  <span className="seasoncard__prem">👑 {t('seasonPremiumTitle')} · {fmtUsd(SEASON_PREMIUM.cents)}</span>
+                )}
+              </div>
             </button>
-          </div>
-        </>
-      )}
+          </>
+        );
+      })()}
 
       <div className="seclabel">{t('gameModes')}</div>
       <div className="card modelist">
