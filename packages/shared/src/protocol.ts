@@ -182,21 +182,42 @@ export interface SeasonState {
   tiers: TierDef[]; // the reward table (content)
 }
 
-/** The season reward table (content). MVP rhythm per docs/SEASON_PASS_SPEC.md §15:
- *  no empty tier; free = tickets + a cosmetic every 10 + streak-freeze at 15/35;
- *  premium = crown boost early, cosmetics at milestones (10/25/40), legendary
- *  title at 50. Cosmetic ids are placeholders until the art content lands. */
-export function seasonTiers(): TierDef[] {
+/** Season-exclusive dice-skin pool (season Phase 4 — content cadence). These are
+ *  PASS-ONLY: never unlockable by progression or purchasable, so owning one is a
+ *  season badge of honour (scarcity/status, §10). The visuals are procedural (no
+ *  art assets) and live in the client's DICE_SKINS. Each season draws a distinct
+ *  set via `seasonSkinsFor`; the recurring content task APPENDS new ids here so the
+ *  rotation keeps producing fresh exclusives (docs/SEASON_PASS_SPEC.md §4-Content). */
+export const SEASON_SKINS: readonly string[] = [
+  'season-aurora', 'season-crimson', 'season-abyss', 'season-verdant',
+  'season-solar', 'season-frost', 'season-void', 'season-royal',
+];
+/** The `count` season-exclusive skins for a season, rotating so consecutive
+ *  seasons get disjoint sets until the pool wraps (then the art task has appended
+ *  more). Deterministic → the same season always yields the same set. */
+export function seasonSkinsFor(seasonId: number, count: number): string[] {
+  const base = ((seasonId - 1) * count) % SEASON_SKINS.length;
+  return Array.from({ length: count }, (_, i) => SEASON_SKINS[(base + i) % SEASON_SKINS.length]!);
+}
+
+/** The season reward table (content) for `seasonId`. Rhythm per §15: no empty
+ *  tier; free = tickets + streak-freeze at 15/35 + a season-exclusive skin at
+ *  25/50; premium = crown boost early, exclusive skins at 20/40, a legendary title
+ *  at 50. Cosmetic ids are the season's own exclusives (rotated per season). */
+export function seasonTiers(seasonId = 1): TierDef[] {
+  const [freeA, freeB, premA, premB] = seasonSkinsFor(seasonId, 4);
   const tiers: TierDef[] = [];
   for (let t = 1; t <= SEASON.tierCount; t++) {
     const free: Reward =
-      t % 10 === 0 ? { kind: 'cosmetic', id: `s-free-${t}` }
+      t === 25 ? { kind: 'cosmetic', id: freeA }
+      : t === SEASON.tierCount ? { kind: 'cosmetic', id: freeB }
       : t === 15 || t === 35 ? { kind: 'streakFreeze', amount: 1 }
       : { kind: 'tickets', amount: t % 5 === 0 ? 3 : 2 };
     const premium: Reward =
       t === 3 ? { kind: 'crownBoost', amount: 25 }
-      : t === SEASON.tierCount ? { kind: 'title', id: 'season-legend' }
-      : t === 10 || t === 25 || t === 40 ? { kind: 'cosmetic', id: `s-prem-${t}` }
+      : t === SEASON.tierCount ? { kind: 'title', id: `season-${seasonId}-legend` }
+      : t === 20 ? { kind: 'cosmetic', id: premA }
+      : t === 40 ? { kind: 'cosmetic', id: premB }
       : { kind: 'tickets', amount: t % 5 === 0 ? 5 : 3 };
     tiers.push({ tier: t, free, premium });
   }

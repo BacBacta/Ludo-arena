@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/store/memory.js';
 import { awardGameCrowns, baseCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from '../src/season.js';
-import { FREEROLL, SEASON, crownsForTier, seasonTiers, tierFromCrowns, winbackFor } from '@ludo/shared';
+import { FREEROLL, SEASON, SEASON_SKINS, crownsForTier, seasonSkinsFor, seasonTiers, tierFromCrowns, winbackFor } from '@ludo/shared';
 
 const NOW = '2026-07-18T00:00:00.000Z';
 const DAY = '2026-07-18';
@@ -175,6 +175,40 @@ describe('claiming a streak-freeze tier grants a freeze', () => {
     const r = await claimSeasonTier(store, 'anon:s1', 15, 'free', DAY);
     expect(r.ok).toBe(true);
     expect(await store.getStreakFreezes('anon:s1')).toBe(1);
+  });
+});
+
+describe('season-exclusive cosmetics (Phase 4)', () => {
+  it('rotates a distinct skin set for consecutive seasons', () => {
+    const s1 = seasonSkinsFor(1, 4);
+    const s2 = seasonSkinsFor(2, 4);
+    expect(s1).toHaveLength(4);
+    expect(new Set(s1).size).toBe(4); // no dupes within a season
+    // seasons 1 and 2 draw disjoint sets (pool is 8, 4 each)
+    expect(s1.some((id) => s2.includes(id))).toBe(false);
+    // all ids come from the pool, and the rotation wraps deterministically
+    expect(s1.every((id) => SEASON_SKINS.includes(id))).toBe(true);
+    expect(seasonSkinsFor(1, 4)).toEqual(s1); // deterministic
+  });
+
+  it("uses the season's own exclusive skins in its reward table", () => {
+    const [freeA] = seasonSkinsFor(2, 4);
+    const tiers = seasonTiers(2);
+    expect(tiers[24]!.free).toEqual({ kind: 'cosmetic', id: freeA }); // tier 25 free
+    // season 1 and season 2 tier-25 cosmetics differ (content cadence)
+    expect(seasonTiers(1)[24]!.free).not.toEqual(tiers[24]!.free);
+  });
+
+  it('claiming a cosmetic tier grants a real owned skin', async () => {
+    const store = await freshStore();
+    const tiers = seasonTiers(1);
+    const skinId = (tiers[24]!.free as { id: string }).id; // tier 25 free cosmetic
+    await store.addCrowns('anon:s1', crownsForTier(25), DAY);
+    expect(await store.getOwnedSkins('anon:s1')).not.toContain(skinId);
+    const r = await claimSeasonTier(store, 'anon:s1', 25, 'free', DAY);
+    expect(r.ok).toBe(true);
+    expect(r.reward).toMatchObject({ kind: 'cosmetic', id: skinId });
+    expect(await store.getOwnedSkins('anon:s1')).toContain(skinId);
   });
 });
 

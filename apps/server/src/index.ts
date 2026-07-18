@@ -1553,6 +1553,10 @@ wss.on('connection', (ws, req) => {
         telemetry('season.claim', { pid: tpid(clpid), tier: msg.tier, lane: msg.lane, reward: res.reward?.kind, tickets: res.ticketsGranted ?? 0 });
         // A streak-freeze reward changed the inventory → refresh the streak UI too.
         if (res.reward?.kind === 'streakFreeze') session.send({ t: 'streak.update', streak: await store.getStreak(clpid) });
+        // A cosmetic reward granted a real owned skin → push the new owned list.
+        if (res.reward?.kind === 'cosmetic') {
+          session.send({ t: 'skin.owned', ownedIds: await store.getOwnedSkins(clpid), tickets: (await store.getChallenge(clpid, utcToday())).tickets });
+        }
         session.send({ t: 'season.state', season: await buildSeasonState(store, clpid, new Date().toISOString()) });
         break;
       }
@@ -1592,6 +1596,8 @@ wss.on('connection', (ws, req) => {
           telemetry('tickets', { pid: tpid(bpid), delta: res.ticketsGranted, reason: 'season-premium-retro', total });
         }
         telemetry('season.premium', { pid: tpid(bpid), unlocked: res.unlockedTiers?.length ?? 0, tickets: res.ticketsGranted ?? 0 });
+        // The retroactive unlock may have granted premium-lane skins → refresh owned.
+        session.send({ t: 'skin.owned', ownedIds: await store.getOwnedSkins(bpid), tickets: (await store.getChallenge(bpid, utcToday())).tickets });
         session.send({ t: 'season.state', season: await buildSeasonState(store, bpid, new Date().toISOString()) });
         break;
       }

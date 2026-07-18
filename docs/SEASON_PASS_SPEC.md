@@ -277,3 +277,34 @@ inflation — build it first, measure, then layer 2-3.
    PLAYING, not by spending: paying more must NOT advance the pass faster
    (pay-to-progress ≈ pay-to-win on progression). Same crown rate free/staked; the
    10-games/day soft cap spans all games combined (no farming).
+
+---
+
+## 16. Content pipeline (Phase 4 — the recurring task)
+
+The plumbing is live: a season's exclusive cosmetics are **real, grantable,
+equippable** dice skins, drawn per season from a shared pool.
+
+**How it works (code):**
+- `SEASON_SKINS` (packages/shared) is the pool of pass-only skin ids. `seasonSkinsFor(seasonId, n)`
+  draws a **distinct set per season** (rotates; disjoint until the pool wraps).
+- `seasonTiers(seasonId)` places that season's skins at the cosmetic tiers
+  (free 25/50, premium 20/40). The server threads the current season id everywhere
+  (buildSeasonState / claim / retro-unlock), so each season's table is its own.
+- Claiming a cosmetic reward calls `store.ownSkin` → the skin is really owned; the
+  server pushes `skin.owned` so the client can equip it immediately.
+- The visuals are **procedural** (colour + optional 3D material in
+  `apps/web/src/lib/diceSkins.ts`) — no image assets, so a new skin is pure data.
+- Pass-only skins are `unlocked: () => false` + `season: true`; the picker labels
+  them "👑 Season reward" and never offers a buy.
+
+**The recurring per-season task (design/ops, ~30 min):**
+1. Add N new skin ids to `SEASON_SKINS` and matching entries in `DICE_SKINS`
+   (pick a palette + material; that's the whole "art" step for procedural skins).
+2. Optionally theme the season title (`season-<id>-legend`).
+3. Deploy web + server. `seasonTiers(seasonId)` picks the new set automatically at
+   the next rollover — no per-season code change.
+
+**Deferred (real art):** bespoke illustrated/animated skins + board themes remain a
+true art task; the pool + grant rails above already support them (add the asset,
+give it an id). Titles are cosmetic-only text today (no title-display UI yet).

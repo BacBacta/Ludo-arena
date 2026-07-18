@@ -52,7 +52,7 @@ export async function buildSeasonState(store: Store, playerId: string, nowIso: s
     premium: p.premium,
     claimedFree: p.claimedFree,
     claimedPrem: p.claimedPrem,
-    tiers: seasonTiers(),
+    tiers: seasonTiers(meta.id),
   };
 }
 
@@ -84,7 +84,7 @@ export async function claimSeasonTier(
   const p = await store.getSeasonProgress(playerId);
   if (tierFromCrowns(p.crowns) < tier) return { ok: false, error: 'locked' };
   if (lane === 'premium' && !p.premium) return { ok: false, error: 'not-premium' };
-  const def = seasonTiers()[tier - 1];
+  const def = seasonTiers(p.seasonId)[tier - 1];
   if (!def) return { ok: false, error: 'locked' };
   const reward = lane === 'free' ? def.free : def.premium;
 
@@ -110,6 +110,10 @@ async function grantReward(store: Store, playerId: string, reward: Reward): Prom
   }
   if (reward.kind === 'streakFreeze' && reward.amount && reward.amount > 0) {
     await store.grantStreakFreeze(playerId, reward.amount);
+  }
+  if (reward.kind === 'cosmetic' && reward.id) {
+    // grant the season-exclusive skin as a real owned cosmetic (equippable)
+    await store.ownSkin(playerId, reward.id);
   }
   return 0;
 }
@@ -149,7 +153,7 @@ export async function buySeasonPremium(
 
   // Retroactive unlock: auto-claim every premium reward for a reached tier.
   const reached = tierFromCrowns(p.crowns);
-  const tiers = seasonTiers();
+  const tiers = seasonTiers(p.seasonId);
   const unlockedTiers: number[] = [];
   let ticketsGranted = 0;
   for (let t = 1; t <= reached; t++) {

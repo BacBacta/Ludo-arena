@@ -296,9 +296,11 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                         ? `${t('skinUnlock')} ${price} 🎟️${cusdBuyable ? ` · ${fmtUsd(cusd)}` : ''}`
                         : cusdBuyable
                           ? `${fmtUsd(cusd)} USDT`
-                          : t(s.hintKey ?? 'skinSoon')}
+                          : s.season
+                            ? t('seasonExclusive')
+                            : t(s.hintKey ?? 'skinSoon')}
                 </small>
-                {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : '🔒'}</span>}
+                {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : s.season ? '👑' : '🔒'}</span>}
               </button>
             );
           })}
