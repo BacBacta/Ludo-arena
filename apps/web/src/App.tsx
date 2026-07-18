@@ -193,6 +193,7 @@ export default function App() {
         challenge: (challenge) => dispatch({ type: 'CHALLENGE_UPDATE', challenge }),
         streak: (streak) => dispatch({ type: 'STREAK_UPDATE', streak }),
         limits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
+        season: (season) => dispatch({ type: 'SEASON_STATE', season }),
       });
     if (isMiniPay()) void connectWalletCta(true).finally(sync);
     else sync();

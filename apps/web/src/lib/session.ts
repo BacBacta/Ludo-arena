@@ -353,6 +353,7 @@ export function syncLobby(
     challenge(challenge: ChallengeState): void;
     streak(streak: StreakState): void;
     limits(limits: LimitsState): void;
+    season?(season: SeasonState): void;
   },
 ): void {
   let ws: WebSocket;
@@ -392,6 +393,7 @@ export function syncLobby(
     if (msg.challenge) on.challenge(msg.challenge);
     if (msg.streak) on.streak(msg.streak);
     if (msg.limits) on.limits(msg.limits);
+    if (msg.season) on.season?.(msg.season);
     ws.close();
   };
   ws.onerror = () => clearTimeout(timer);
