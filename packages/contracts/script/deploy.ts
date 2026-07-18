@@ -205,6 +205,50 @@ const escrowN = await deployContract('LudoEscrowN', LudoEscrowN.abi, LudoEscrowN
   }
 }
 
+// Degressive per-tier rake (mirrors shared RAKE_BPS_BY_STAKE — keep in step):
+// the 25¢ acquisition tier carries the fixed settlement-gas overhead, the $5
+// retention tier is priced to keep high-stake players. Stake amounts are the
+// cash tiers converted at the stablecoin's OWN decimals. onlyOwner — skipped
+// with a loud warning when the deployer isn't the owner (same as setTokenAllowed).
+{
+  const TIER_RAKES: Array<{ cents: number; bps: number }> = [
+    { cents: 25, bps: 1000 },
+    { cents: 100, bps: 800 },
+    { cents: 500, bps: 600 },
+  ];
+  const stakeUnit = 10n ** BigInt(stablecoinDecimals - 2); // cents → base units
+  const owner = (await publicClient.readContract({
+    address: escrow.address,
+    abi: LudoEscrow.abi,
+    functionName: 'owner',
+  })) as Address;
+  if (owner.toLowerCase() === account.address.toLowerCase()) {
+    for (const [name, addr, abi] of [
+      ['LudoEscrow', escrow.address, LudoEscrow.abi],
+      ['LudoEscrowN', escrowN.address, LudoEscrowN.abi],
+    ] as const) {
+      for (const { cents, bps } of TIER_RAKES) {
+        const tx = await walletClient.writeContract({
+          account,
+          chain: preset.chain,
+          address: addr,
+          abi,
+          functionName: 'setTierRakeBps',
+          args: [stablecoin as Address, BigInt(cents) * stakeUnit, bps],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: tx });
+        console.log(`[deploy] ${name}: tier rake ${cents}¢ → ${bps} bps (tx ${tx})`);
+      }
+    }
+  } else {
+    console.warn(
+      `[deploy] ⚠ escrow owner (${owner}) != deployer; the owner must call setTierRakeBps ` +
+        `for the ${TIER_RAKES.map((t) => `${t.cents}¢→${t.bps}bps`).join(', ')} tiers on both escrows, ` +
+        `or every game settles at the flat global rake.`,
+    );
+  }
+}
+
 // Cosmetics store (rec 6): cUSD purchases of dice skins / board themes paid to the
 // treasury — non-rake revenue. Same stablecoin; owner (catalogue/prices) = deployer.
 const cosmetics = await deployContract('CosmeticsStore', CosmeticsStore.abi, CosmeticsStore.bytecode, [

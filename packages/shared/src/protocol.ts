@@ -12,8 +12,28 @@ import type { Game4, GameState, Seat } from '@ludo/game-engine';
 export const ALLOWED_STAKES_CENTS = [0, 25, 100, 500] as const;
 export type StakeCents = (typeof ALLOWED_STAKES_CENTS)[number];
 
-/** House share, in basis points (900 = 9%). */
+/** DEFAULT house share, in basis points (900 = 9%) — the fallback for any stake
+ *  without a per-tier entry, and what the escrows snapshot when no tier rake is
+ *  configured on-chain. */
 export const RAKE_BPS = 900;
+
+/** Degressive per-tier rake (bps). The flat 9% under-monetised the acquisition
+ *  tier (where fixed settlement gas rivals the fee) and over-taxed the retention
+ *  tier (where the most rake-productive players live) — the inverse of the cost
+ *  structure. Mirrored on-chain via LudoEscrow{,N}.setTierRakeBps(token, stake,
+ *  bps) — seeded by the deploy script; the contract snapshots the tier rake per
+ *  game at join, so this display table MUST be kept in step with the deployed
+ *  configuration (same rule as RAKE_BPS before it). */
+export const RAKE_BPS_BY_STAKE: Readonly<Record<number, number>> = {
+  25: 1000, // 10% — acquisition tier, carries the per-settlement gas overhead
+  100: 800, // 8%
+  500: 600, // 6% — retention tier, priced to keep high-stake players
+};
+
+/** The rake (bps) for a stake, falling back to the flat default. */
+export function rakeBpsFor(stakeCents: number): number {
+  return RAKE_BPS_BY_STAKE[stakeCents] ?? RAKE_BPS;
+}
 
 /** In-game quick emotes: a FIXED, curated, positive/neutral set (no free text →
  *  no moderation surface, no harassment vector in a real-money game). Server
@@ -411,13 +431,13 @@ export function isoWeek(date: Date): string {
 /** Winner payout = pot − rake, matching the server/escrow rounding (rake is floored). */
 export function potCents(stake: StakeCents): number {
   const pot = stake * 2;
-  return pot - Math.floor((pot * RAKE_BPS) / 10_000);
+  return pot - Math.floor((pot * rakeBpsFor(stake)) / 10_000);
 }
 
 /** 4-player winner payout = 4·stake − rake (same rounding as potCents). */
 export function potCents4(stake: number): number {
   const pot = stake * 4;
-  return pot - Math.floor((pot * RAKE_BPS) / 10_000);
+  return pot - Math.floor((pot * rakeBpsFor(stake)) / 10_000);
 }
 
 // ---------- Client -> Server ----------

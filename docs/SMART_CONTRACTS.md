@@ -15,6 +15,7 @@ Minimal escrow for staked 1v1 games in stablecoins (cUSD/USDC/USDT on Celo).
 
 - The contract can NEVER pay out more than the locked pot.
 - The rake is capped at 10 % (constant, immutable without redeploy).
+- Degressive per-tier rake: `setTierRakeBps(token, stake, bps)` (owner-only, same 10 % cap) overrides the global `rakeBps` for one exact (token, stake amount) pair; games snapshot the applicable rate at creation. Seeded by the deploy script to 10 %/8 %/6 % for the 25¢/$1/$5 tiers (mirrors shared `RAKE_BPS_BY_STAKE`).
 - The arbiter cannot steal funds: it can only designate one of the two players as winner.
 - A `gameId` can only be settled once.
 

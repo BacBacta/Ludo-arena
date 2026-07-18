@@ -29,7 +29,7 @@
 
 ## Business model (3-tier hybrid)
 
-1. 8-10 % rake on staked games ($0.10 – $2), 10-12 % on tournaments — **geo-gated** by legality.
+1. Degressive rake on staked games — 10 % (25¢) · 8 % ($1) · 6 % ($5): the acquisition tier carries the fixed settlement-gas overhead, the retention tier is priced to keep high-stake players — **geo-gated** by a legal allowlist (`STAKING_ALLOWED_COUNTRIES`).
 2. Premium season pass: $1.50 USDT once per 28-day season (a conversion loss-leader — see `SEASON_PASS_SPEC.md` §4) + cosmetics.
 3. Sponsored freerolls + MiniPay incentive program (CELO grants indexed on real on-chain activity).
 
