@@ -30,7 +30,7 @@ flyctl secrets set \
   ESCROW_ADDRESS="0x3fad6b9ecbc3f0c9064603dc762f8ebd6c7864d6" \
   ESCROW_N_ADDRESS="0x…" \
   STAKING_ENABLED="false" \
-  BLOCKED_COUNTRIES="" \
+  STAKING_ALLOWED_COUNTRIES="" \
   TRUSTED_EDGE_SECRET="" \
   MINIPAY_ALLOWED_ORIGINS=""
 
@@ -43,9 +43,9 @@ flyctl deploy
   is client-forgeable because the Fly server is directly reachable over WS. Put a
   trusted edge (Cloudflare/Vercel/Fly proxy) in front that sets both the country
   header **and** `x-edge-secret: <this>`; the server only believes the country when
-  the secret matches. **Geo now fails CLOSED**: once `BLOCKED_COUNTRIES` is set, an
-  unverifiable region (no/forged secret) is refused staked play — so wire the edge
-  BEFORE the deny list, or all staked play is refused (the server warns at boot).
+  the secret matches. **Geo fails CLOSED**: once `STAKING_ALLOWED_COUNTRIES` is set,
+  an unverifiable region (no/forged secret) is refused staked play — so wire the
+  edge BEFORE populating the allowlist, or all staked play is refused.
 - **`MINIPAY_ALLOWED_ORIGINS`** (R-AUTH-1 defence-in-depth) — comma-separated WS
   origins allowed to auto-prove a MiniPay wallet (e.g. the MiniPay webview origin).
   Browsers forbid JS from setting Origin, so this closes the malicious-website
@@ -67,9 +67,11 @@ per network only after launch sign-off.
 
 Before setting it `"true"` for real money, also confirm:
 
-- **`BLOCKED_COUNTRIES`** (R-COMP-1) holds the legal-reviewed deny list — it is
-  intentionally empty above and the server warns while it is. Real-money rake in
-  a prohibited jurisdiction is a compliance exposure.
+- **`STAKING_ALLOWED_COUNTRIES`** (R-COMP-1) holds the legal-reviewed ALLOWLIST —
+  staked play is legal-by-exception, so only listed countries may stake; set but
+  empty (as above) blocks staking everywhere, and leaving the variable UNSET
+  (dev/testnet open mode) makes the server warn at boot. Real-money rake in an
+  unreviewed jurisdiction is a compliance exposure.
 - **Arbiter key custody (R-KEY-1, ops task — NOT closed in code).** The single
   hot `ARBITER_PRIVATE_KEY` here signs every payout AND is the treasury+owner on
   the current deployment. A compromise lets the holder name themselves winner of

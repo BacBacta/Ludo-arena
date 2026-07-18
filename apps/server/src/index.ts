@@ -127,10 +127,14 @@ interface Session extends Client {
   miniPayOriginOk?: boolean;
 }
 
-// Geo-gating (E5.4): ISO country codes where staked play is disabled.
-const BLOCKED_COUNTRIES = new Set(
-  (process.env.BLOCKED_COUNTRIES ?? '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean),
-);
+// Geo-gating (E5.4/R-COMP-1): ALLOWLIST of ISO countries where staked play has
+// been legally cleared. Unset = dev/testnet open mode (warned below); set — even
+// to an empty string — = staking only in the listed countries, fail-closed on an
+// unknown/unproven region (see geo.ts).
+const STAKING_ALLOWED_COUNTRIES: ReadonlySet<string> | null =
+  process.env.STAKING_ALLOWED_COUNTRIES === undefined
+    ? null
+    : new Set(process.env.STAKING_ALLOWED_COUNTRIES.split(',').map((c) => c.trim().toUpperCase()).filter(Boolean));
 // Shared secret proving a request came through the trusted edge (Cloudflare/Vercel/
 // Fly proxy) that sets the geo header. The Fly server is directly reachable over
 // WS, so cf-ipcountry & friends are client-forgeable unless the edge authenticates
@@ -144,7 +148,7 @@ const MINIPAY_ALLOWED_ORIGINS = new Set(
 // Thin wrappers over the pure, unit-tested geo helpers (see geo.ts).
 const countryOf = (headers: Record<string, string | string[] | undefined>): string | undefined =>
   geoCountryOf(headers, TRUSTED_EDGE_SECRET);
-const isGeoBlocked = (country: string | undefined): boolean => geoIsBlocked(country, BLOCKED_COUNTRIES);
+const isGeoBlocked = (country: string | undefined): boolean => geoIsBlocked(country, STAKING_ALLOWED_COUNTRIES);
 
 const store = await createStore();
 /** Secret gate for QA test traffic (e2e runs against production). A session
@@ -346,17 +350,20 @@ const settlementQueue4 = arbiterN
 if (arbiter) console.log(`[ludo-server] settlement enabled — arbiter ${arbiter.address} on chain ${arbiter.chainId}`);
 if (arbiterN) console.log(`[ludo-server] staked 4-player enabled — LudoEscrowN arbiter ${arbiterN.address} on chain ${arbiterN.chainId}`);
 if (cosmeticsVerifier) console.log(`[ludo-server] cUSD cosmetics enabled — CosmeticsStore ${cosmeticsVerifier.address} on chain ${cosmeticsVerifier.chainId}`);
-// Compliance nudge: real settlement is on but no jurisdictions are geo-blocked and
+// Compliance nudge: real settlement is on but the staking allowlist is unset and
 // the country header is only trustworthy behind a trusted edge (Cloudflare/Vercel).
-if (arbiter && BLOCKED_COUNTRIES.size === 0) {
-  console.warn('[compliance] settlement is ENABLED but BLOCKED_COUNTRIES is empty — staked play is allowed in every region. Set a legal-reviewed deny list and enforce the country header behind a trusted edge before real-money launch.');
-} else if (arbiter && !TRUSTED_EDGE_SECRET) {
-  // A deny list is set but the country header is not authenticated: geo now fails
+// (Also fixes a mis-chained else: the full prod config used to log "settlement
+// disabled" even with an arbiter configured.)
+if (!arbiter) {
+  console.warn('[ludo-server] settlement disabled (no ARBITER_PRIVATE_KEY)');
+} else if (STAKING_ALLOWED_COUNTRIES === null) {
+  console.warn('[compliance] settlement is ENABLED but STAKING_ALLOWED_COUNTRIES is unset — staked play is open in EVERY region (dev/testnet mode). Set the legal-reviewed allowlist (empty value = staking blocked everywhere) before real-money launch.');
+} else if (!TRUSTED_EDGE_SECRET) {
+  // An allowlist is set but the country header is not authenticated: geo fails
   // CLOSED (unknown region ⇒ no staked play), so legit players will be refused
   // until the edge sets x-edge-secret. Loud, because it blocks real-money play.
-  console.warn('[compliance] BLOCKED_COUNTRIES is set but TRUSTED_EDGE_SECRET is NOT — the geo header is spoofable, so staked play FAILS CLOSED for every unverified region. Configure the trusted edge to set `x-edge-secret` + the country header before launch.');
+  console.warn('[compliance] STAKING_ALLOWED_COUNTRIES is set but TRUSTED_EDGE_SECRET is NOT — the geo header is spoofable, so staked play FAILS CLOSED for every unverified region. Configure the trusted edge to set `x-edge-secret` + the country header before launch.');
 }
-else console.warn('[ludo-server] settlement disabled (no ARBITER_PRIVATE_KEY)');
 
 /** Guest display-name pool. Kept LARGE on purpose: the name and flag together are
  *  a guest's whole identity, so a small pool means players meet their own double.

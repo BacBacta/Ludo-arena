@@ -30,26 +30,31 @@ describe('countryOf (trusted-edge authentication)', () => {
   });
 });
 
-describe('isGeoBlocked (fail-closed on unknown region)', () => {
-  const deny = new Set(['US', 'FR']);
+describe('isGeoBlocked (allowlist, fail-closed on unknown region)', () => {
+  const allowed = new Set(['KE', 'GH']);
 
-  it('blocks nothing when no deny list is configured', () => {
-    expect(isGeoBlocked(undefined, new Set())).toBe(false);
-    expect(isGeoBlocked('US', new Set())).toBe(false);
+  it('blocks nothing when the allowlist is NOT CONFIGURED (dev/testnet, null)', () => {
+    expect(isGeoBlocked(undefined, null)).toBe(false);
+    expect(isGeoBlocked('US', null)).toBe(false);
   });
 
-  it('blocks a country on the deny list', () => {
-    expect(isGeoBlocked('US', deny)).toBe(true);
-    expect(isGeoBlocked('FR', deny)).toBe(true);
+  it('allows a country ON the allowlist', () => {
+    expect(isGeoBlocked('KE', allowed)).toBe(false);
+    expect(isGeoBlocked('GH', allowed)).toBe(false);
   });
 
-  it('allows a country NOT on the deny list', () => {
-    expect(isGeoBlocked('NG', deny)).toBe(false);
-    expect(isGeoBlocked('BR', deny)).toBe(false);
+  it('blocks every country NOT on the allowlist (legal-by-exception posture)', () => {
+    expect(isGeoBlocked('US', allowed)).toBe(true);
+    expect(isGeoBlocked('FR', allowed)).toBe(true);
   });
 
-  it('FAILS CLOSED: an unknown country with a deny list configured is blocked', () => {
+  it('an EMPTY (but configured) allowlist blocks staking everywhere — the safe prod default', () => {
+    expect(isGeoBlocked('KE', new Set())).toBe(true);
+    expect(isGeoBlocked(undefined, new Set())).toBe(true);
+  });
+
+  it('FAILS CLOSED: an unknown country with an allowlist configured is blocked', () => {
     // this is the spoof defence — omit/forge the header ⇒ country undefined ⇒ blocked
-    expect(isGeoBlocked(undefined, deny)).toBe(true);
+    expect(isGeoBlocked(undefined, allowed)).toBe(true);
   });
 });
