@@ -879,6 +879,26 @@ small.muted { font-size: 12px; }
 /* button reset so the footer "links" (which open modals) look like the anchors */
 .fairnote .linklike { background: none; border: none; padding: 0; font: inherit; }
 
+/* Entrance effects (cosmetics phase 1): one emoji burst per player at match
+   start — mine rises from the bottom, theirs falls from the top. */
+.entrancefx { position: fixed; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
+.entrancefx__p { position: absolute; font-size: 26px; opacity: 0; }
+.entrancefx__p--up { bottom: 12%; animation: fxUp 1.4s ease-out forwards; }
+.entrancefx__p--down { top: 10%; animation: fxDown 1.4s ease-in forwards; }
+@keyframes fxUp {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  18% { opacity: 1; }
+  100% { transform: translateY(-46vh) scale(1.15) rotate(18deg); opacity: 0; }
+}
+@keyframes fxDown {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  18% { opacity: 1; }
+  100% { transform: translateY(46vh) scale(1.15) rotate(-18deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .entrancefx__p { animation: none; display: none; }
+}
+
 /* Matchmaking: expanding radar rings around the searching avatar */
 .radar { position: relative; width: 150px; height: 150px; }
 .radar i {

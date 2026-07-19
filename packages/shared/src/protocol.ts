@@ -258,7 +258,7 @@ export const TABLE4 = { seats: 4, botFillMs: 12_000, stakedFillMs: 60_000 } as c
  *     is advisory until `cosmeticsStoreAvailable` flips true on the client.
  *  `kind` groups the store UI (dice faces vs board themes). Ownership is one flat
  *  server-authoritative set keyed by id, shared by both rails and both kinds. */
-export type CosmeticKind = 'dice' | 'board';
+export type CosmeticKind = 'dice' | 'board' | 'token' | 'entrance';
 export interface CosmeticItem {
   id: string;
   kind: CosmeticKind;
@@ -284,6 +284,18 @@ export const PREMIUM_COSMETICS: readonly CosmeticItem[] = [
   { id: 'crystal', kind: 'dice', tickets: 120, cents: 200 }, // epic
   { id: 'ember', kind: 'dice', tickets: 50, cents: 150 }, // rare
   { id: 'gold', kind: 'dice', tickets: 250, cents: 300 }, // legendary
+  // TOKEN skins (cosmetics phase 1): the piece the OPPONENT stares at all game —
+  // the highest-visibility social surface (benchmark: Yalla entrance effects,
+  // Carrom animated strikers). Heritage patterns are pure SVG geometry (~2 KB),
+  // tinted by the seat colour so gameplay readability is never touched.
+  { id: 'tok-wax', kind: 'token', tickets: 15, cents: 49 }, // common — wax-print dots
+  { id: 'tok-kente', kind: 'token', tickets: 50, cents: 99 }, // rare — kente bands
+  { id: 'tok-bogolan', kind: 'token', tickets: 50, cents: 99 }, // rare — mudcloth zigzag
+  { id: 'tok-gilded', kind: 'token', tickets: 120, cents: 199 }, // epic — gold foil
+  // ENTRANCE effects (Yalla's proven #1 social item): played at match start,
+  // seen by BOTH players. Pure CSS/emoji bursts — zero asset bytes.
+  { id: 'fx-sparkle', kind: 'entrance', tickets: 50, cents: 99 }, // rare
+  { id: 'fx-goldrain', kind: 'entrance', tickets: 120, cents: 199 }, // epic
 ] as const;
 
 /** Ticket price map, derived for backward compatibility (server spend + skin.buy
@@ -457,6 +469,11 @@ export type ClientMsg =
       frame?: string;
       /** Chosen profile avatar id (AVATARS); client-authoritative like the frame. */
       avatar?: string;
+      /** Equipped token (pawn) skin id — relayed to the opponent in match.found
+       *  so they SEE it on my pieces (cosmetics phase 1). Catalog-validated. */
+      tokenSkin?: string;
+      /** Equipped entrance effect id, played at match start on my board side. */
+      entranceFx?: string;
       /** Custom display name (E-social: editable profile). Server SANITIZES it
        *  (length, charset, profanity/URL filter); an invalid value falls back to
        *  the derived name — the connection is never rejected over a cosmetic name. */
@@ -553,6 +570,11 @@ export interface OpponentInfo {
   frame?: string;
   /** Chosen profile avatar id (AVATARS); absent/'none' = show the flag. */
   avatar?: string;
+  /** Equipped token (pawn) skin — the opponent SEES it on my pieces all game
+   *  (cosmetics phase 1). Catalog-validated server-side; absent = classic. */
+  tokenSkin?: string;
+  /** Equipped entrance effect, played at match start on my side of the board. */
+  entranceFx?: string;
 }
 
 /** A friend (or friend-requester) as shown on the lobby: public identity only —
@@ -826,6 +848,10 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       if (m.frame !== undefined && (typeof m.frame !== 'string' || !isAvatarFrame(m.frame))) m.frame = undefined;
       // Avatar id: same cosmetic trust — drop an unknown value, never reject.
       if (m.avatar !== undefined && (typeof m.avatar !== 'string' || !isAvatar(m.avatar))) m.avatar = undefined;
+      // Token skin / entrance fx: must be catalog ids of the right kind — drop
+      // unknown values (same never-reject cosmetic posture as frame/avatar).
+      if (m.tokenSkin !== undefined && (typeof m.tokenSkin !== 'string' || cosmeticById(m.tokenSkin)?.kind !== 'token')) m.tokenSkin = undefined;
+      if (m.entranceFx !== undefined && (typeof m.entranceFx !== 'string' || cosmeticById(m.entranceFx)?.kind !== 'entrance')) m.entranceFx = undefined;
       // Custom name: loose bound here (≤64 raw); the server sanitizes/filters.
       // Drop obviously-bad values instead of rejecting the connection.
       if (m.name !== undefined && (typeof m.name !== 'string' || m.name.length > 64)) m.name = undefined;

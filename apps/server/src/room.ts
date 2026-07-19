@@ -28,6 +28,10 @@ export interface Client {
   frame?: string;
   /** Chosen profile avatar id; shown on the opponent's in-game corner. */
   avatar?: string;
+  /** Equipped token (pawn) skin; rendered on this player's pieces for BOTH sides. */
+  tokenSkin?: string;
+  /** Equipped entrance effect; played at match start on this player's side. */
+  entranceFx?: string;
 }
 
 export interface RoomResult {

@@ -21,6 +21,7 @@ import {
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
 import { loadSkinId, saveSkinId } from '../lib/diceSkins';
+import { loadTokenSkinId, saveTokenSkinId, loadEntranceFxId, saveEntranceFxId } from '../lib/tokenSkins';
 import { loadFrameId, saveFrameId } from '../lib/avatarFrames';
 import { loadAvatarId, saveAvatarId } from '../lib/avatars';
 import { t } from '../lib/i18n';
@@ -223,6 +224,9 @@ export interface AppState {
   soundOn: boolean;
   /** Equipped dice skin id + picker modal state. */
   diceSkin: string;
+  /** Equipped token (pawn) skin + entrance effect (cosmetics phase 1). */
+  tokenSkin: string;
+  entranceFx: string;
   avatarFrame: string;
   /** Chosen profile avatar id (AVATARS); 'none' = show the flag instead. */
   avatar: string;
@@ -318,6 +322,8 @@ export const initialState: AppState = {
   profileEditOpen: false,
   soundOn: soundEnabled(),
   diceSkin: loadSkinId(),
+  tokenSkin: loadTokenSkinId(),
+  entranceFx: loadEntranceFxId(),
   avatarFrame: loadFrameId(),
   avatar: loadAvatarId(),
   diceModalOpen: false,
@@ -381,6 +387,8 @@ export type Action =
   | { type: 'SETTINGS'; open: boolean }
   | { type: 'TOGGLE_SOUND' }
   | { type: 'SET_DICE_SKIN'; id: string }
+  | { type: 'SET_TOKEN_SKIN'; id: string }
+  | { type: 'SET_ENTRANCE_FX'; id: string }
   | { type: 'EQUIP_FRAME'; id: string }
   | { type: 'EQUIP_AVATAR'; id: string }
   | { type: 'DICE_MODAL'; open: boolean }
@@ -586,6 +594,12 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_DICE_SKIN':
       saveSkinId(a.id);
       return { ...s, diceSkin: a.id };
+    case 'SET_TOKEN_SKIN':
+      saveTokenSkinId(a.id);
+      return { ...s, tokenSkin: a.id };
+    case 'SET_ENTRANCE_FX':
+      saveEntranceFxId(a.id);
+      return { ...s, entranceFx: a.id };
     case 'EQUIP_FRAME':
       saveFrameId(a.id);
       return { ...s, avatarFrame: a.id };
