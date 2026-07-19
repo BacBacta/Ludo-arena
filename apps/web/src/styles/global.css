@@ -733,6 +733,39 @@ small.muted { font-size: 12px; }
 .profilecard__img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; display: block; }
 .profilesheet__img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: block; }
 
+/* Friends & challenges (E-social 2): the lobby circle — request rows to accept,
+   friend rows with a presence dot and a one-tap challenge. */
+.friendscard { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; }
+.friendrow { display: flex; align-items: center; gap: 10px; padding: 6px 2px; }
+.friendrow + .friendrow { border-top: 1px solid var(--line); }
+.friendrow__flag {
+  position: relative;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--card-2); font-size: 20px; flex-shrink: 0;
+}
+.friendrow__dot {
+  position: absolute; bottom: -1px; right: -1px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--me); border: 2px solid var(--card);
+}
+.friendrow__meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.friendrow__meta b { font-family: var(--font-display); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friendrow__meta small { font-size: 11px; color: var(--muted); }
+.friendrow__btn {
+  flex-shrink: 0; border: 1.5px solid var(--line); border-bottom-width: 3px;
+  background: linear-gradient(180deg, #ffffff, #f0f3fa); color: var(--txt);
+  border-radius: 12px; padding: 7px 12px; font-family: var(--font-display);
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.friendrow__btn:active { transform: scale(0.95); }
+.friendrow__btn--accept { border-color: rgba(46, 158, 107, 0.5); color: var(--me); }
+.friendrow--request .friendrow__meta small { color: var(--accent); font-weight: 700; }
+.challengeoffer__who { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.challengeoffer__who .profilecard__flag { width: 52px; height: 52px; font-size: 30px; }
+.endfriend { margin-bottom: 10px; }
+
 /* rivals & recent opponents (C4): a horizontal strip of faced players */
 .rivalrow { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .rivalrow::-webkit-scrollbar { display: none; }

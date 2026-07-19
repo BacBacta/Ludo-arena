@@ -12,6 +12,7 @@
     "abuse-test": "tsx scripts/abuseTest.ts",
     "private-table-test": "tsx scripts/privateTableTest.ts",
     "geo-test": "tsx scripts/geoTest.ts",
+    "friends-test": "tsx scripts/friendsTest.ts",
     "settle-verify": "tsx scripts/settleVerify.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

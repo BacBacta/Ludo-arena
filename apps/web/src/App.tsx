@@ -17,10 +17,10 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { ComebackModal, DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
+import { ChallengeOfferModal, ComebackModal, DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
-import { sendLimits, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
+import { sendLimits, sendFriendAction, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
@@ -195,6 +195,7 @@ export default function App() {
         streak: (streak) => dispatch({ type: 'STREAK_UPDATE', streak }),
         limits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
         season: (season) => dispatch({ type: 'SEASON_STATE', season }),
+        friends: (friends, requests) => dispatch({ type: 'FRIENDS', friends, requests }),
       });
     if (isMiniPay()) void connectWalletCta(true).finally(sync);
     else sync();
@@ -411,6 +412,8 @@ export default function App() {
         dispatch({ type: 'GO_LOBBY' });
       },
       // The opponent clicked Rematch and is waiting → show Accept/Decline.
+      onFriends: (friends, requests) => dispatch({ type: 'FRIENDS', friends, requests }),
+      onChallengeOffer: (offer) => dispatch({ type: 'CHALLENGE_OFFER', offer }),
       onRematchOffer: (name) => dispatch({ type: 'REMATCH_OFFER', name }),
       // A rematch we were waiting on fell through → tell the player, return home.
       onRematchCancelled: (reason) => {
@@ -545,6 +548,39 @@ export default function App() {
   const createTable = useCallback(
     (stake: StakeCents) => void openPrivate(stake, { kind: 'create' }),
     [openPrivate],
+  );
+
+  // ---- Friends & challenges (E-social 2) ----
+  /** Challenge a friend to a FREE 1v1 (one tap, no stake guard needed): the
+   *  server creates the table + pushes them a live offer; the normal private-
+   *  table waiting screen (code + WhatsApp share) covers the offline case. */
+  const challengeFriend = useCallback(
+    (pid: string) => void openPrivate(0, { kind: 'challenge', pid }),
+    [openPrivate],
+  );
+
+  /** Accept a live friend challenge: clear the offer and join their table. */
+  const acceptChallenge = useCallback(
+    (code: string) => {
+      dispatch({ type: 'CHALLENGE_OFFER', offer: null });
+      void openPrivate(0, { kind: 'join', code });
+    },
+    [dispatch, openPrivate],
+  );
+
+  /** friend.add over a one-shot socket (request OR reciprocal accept); the
+   *  server's friends.update reply refreshes both lobby lists. */
+  const addFriend = useCallback(
+    async (pid: string): Promise<boolean> => {
+      const lists = await sendFriendAction(SERVER_URL, { t: 'friend.add', pid }, walletRef.current?.address);
+      if (!lists) {
+        dispatch({ type: 'TOAST', message: t('friendActionFailed') });
+        return false;
+      }
+      dispatch({ type: 'FRIENDS', friends: lists.friends, requests: lists.requests });
+      return true;
+    },
+    [dispatch],
   );
 
   // 4-player online Sit&Go: ticket-gated table for up to 4 humans + bot-fill.
@@ -925,7 +961,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
@@ -956,7 +992,10 @@ export default function App() {
       {state.screen === 'game' && !state.practice4 && !state.online4 && (
         <GameScreen onRoll={roll} onMove={move} onLeave={() => sessionRef.current?.resign()} onEmote={(id) => sessionRef.current?.emote(id)} onGift={(to, id) => sessionRef.current?.gift(to, id)} onViewProfile={onViewProfile} />
       )}
-      {state.screen === 'end' && <EndScreen onRematch={rematch} onDecline={declineRematch} />}
+      {state.screen === 'end' && <EndScreen onRematch={rematch} onDecline={declineRematch} onAddFriend={addFriend} />}
+      {/* Live friend challenge (E-social 2): surfaced on the lobby only — an
+          offer arriving mid-game stays in state and shows on return. */}
+      {state.screen === 'lobby' && <ChallengeOfferModal onAccept={acceptChallenge} />}
       <LegalModal
         onAccept={() => {
           consentRef.current = true; // synchronous, so the pending staked action's hello carries consent

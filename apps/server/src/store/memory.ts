@@ -429,6 +429,39 @@ export class MemoryStore implements Store {
     return row.tickets;
   }
 
+  // Friends (E-social 2): directional edges; friendship = the mutual pair.
+  private friendEdges = new Map<string, Set<string>>();
+
+  async addFriend(playerId: string, otherId: string): Promise<'requested' | 'friends'> {
+    let mine = this.friendEdges.get(playerId);
+    if (!mine) {
+      mine = new Set();
+      this.friendEdges.set(playerId, mine);
+    }
+    mine.add(otherId);
+    return this.friendEdges.get(otherId)?.has(playerId) ? 'friends' : 'requested';
+  }
+
+  async removeFriend(playerId: string, otherId: string): Promise<void> {
+    this.friendEdges.get(playerId)?.delete(otherId);
+    this.friendEdges.get(otherId)?.delete(playerId);
+  }
+
+  async getFriendIds(playerId: string): Promise<string[]> {
+    const mine = this.friendEdges.get(playerId);
+    if (!mine) return [];
+    return [...mine].filter((other) => this.friendEdges.get(other)?.has(playerId));
+  }
+
+  async getFriendRequestIds(playerId: string): Promise<string[]> {
+    const mine = this.friendEdges.get(playerId);
+    const out: string[] = [];
+    for (const [other, targets] of this.friendEdges) {
+      if (other !== playerId && targets.has(playerId) && !mine?.has(other)) out.push(other);
+    }
+    return out;
+  }
+
   async getOwnedSkins(playerId: string): Promise<string[]> {
     return [...(this.players.get(playerId)?.ownedSkins ?? [])];
   }

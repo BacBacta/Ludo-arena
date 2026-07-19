@@ -72,8 +72,13 @@ function EloReveal({ delta, rating }: { delta: number; rating: number }) {
   );
 }
 
-export function EndScreen({ onRematch, onDecline }: { onRematch(): void; onDecline(): void }) {
-  const { result, match, settleTxHash, refunded, league, walletBacked, profile, rematchOffer, crownGain } = useAppState();
+export function EndScreen({ onRematch, onDecline, onAddFriend }: { onRematch(): void; onDecline(): void; onAddFriend(pid: string): Promise<boolean> }) {
+  const { result, match, settleTxHash, refunded, league, walletBacked, profile, rematchOffer, crownGain, friends } = useAppState();
+  // Friend request state for THIS opponent: idle → sent (one-way latch; the
+  // reciprocal add finalizing to 'friends' shows on the lobby friends card).
+  const [friendSent, setFriendSent] = useState(false);
+  const opponentPid = match?.opponent.pid;
+  const alreadyFriend = !!opponentPid && friends.some((f) => f.pid === opponentPid);
 
   const won = !!result && !!match && result.winner === match.seat;
   const staked = !!match && match.stakeCents > 0;
@@ -174,6 +179,21 @@ export function EndScreen({ onRematch, onDecline }: { onRematch(): void; onDecli
             <div className="rematchoffer" role="status">
               🔄 {rematchOffer} {t('wantsRematch')}
             </div>
+          )}
+          {/* Befriend the opponent at the peak-emotion moment (E-social 2):
+              only for real humans with a durable identity (pid present) and a
+              wallet on my side; hidden once we're already friends. */}
+          {opponentPid && walletBacked && !alreadyFriend && (
+            <button
+              className="btn btn--ghost endfriend"
+              disabled={friendSent}
+              onClick={() => {
+                setFriendSent(true);
+                void onAddFriend(opponentPid).then((ok) => { if (!ok) setFriendSent(false); });
+              }}
+            >
+              {friendSent ? `✓ ${t('friendRequestSent')}` : `➕ ${t('addFriend')} ${match.opponent.name}`}
+            </button>
           )}
           <button className="btn" onClick={onRematch}>
             {rematchOffer ? t('acceptRematch') : t('rematch')}

@@ -522,6 +522,16 @@ export type ClientMsg =
   | { t: 'season.buyPremium'; txHash: string }
   // Buy one streak-freeze with tickets (season Phase 3 sink).
   | { t: 'streak.buyFreeze' }
+  // ---- Friends & challenges (E-social 2): persistent, MUTUAL-consent graph ----
+  // add = "I want to be friends with pid": first direction is a request, the
+  // reciprocal add seals the friendship. remove tears down BOTH directions,
+  // silently (no notification to the other side — de-friending must not be a
+  // conflict trigger). challenge creates a private table AND (when the friend
+  // has a live session) pushes them an in-app offer; the code doubles as the
+  // WhatsApp deep link for offline friends — WhatsApp IS the notification layer.
+  | { t: 'friend.add'; pid: string }
+  | { t: 'friend.remove'; pid: string }
+  | { t: 'friend.challenge'; pid: string; stake: StakeCents }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -544,6 +554,25 @@ export interface OpponentInfo {
   /** Chosen profile avatar id (AVATARS); absent/'none' = show the flag. */
   avatar?: string;
 }
+
+/** A friend (or friend-requester) as shown on the lobby: public identity only —
+ *  keyed by opaque pid (never a wallet), same rule as PublicProfile. `online`
+ *  is a SNAPSHOT (the lobby sync is one-shot): true = the player has a live
+ *  server session right now (queueing or playing). */
+export interface FriendInfo {
+  pid: string;
+  name: string;
+  flag: string;
+  elo: number;
+  avatar?: string;
+  frame?: string;
+  online?: boolean;
+}
+
+/** Caps on the social graph: enough for a real circle, bounded for the hello
+ *  payload (each entry is a profile lookup at hello time). */
+export const FRIENDS_MAX = 24;
+export const FRIEND_REQUESTS_MAX = 12;
 
 export type GameOverReason = 'finish' | 'timeout-forfeit' | 'resign';
 
@@ -614,8 +643,22 @@ export type ServerMsg =
       // never settles — funds stuck until the 24 h refundActive. Present only when
       // settlement is armed (an arbiter is configured). See SettlementContracts.
       contracts?: SettlementContracts;
+      /** Mutual friends with an online SNAPSHOT (walletProven sessions only). */
+      friends?: FriendInfo[];
+      /** Players who asked to be my friend (pending my reciprocal add). */
+      friendRequests?: FriendInfo[];
     }
   | { t: 'queue.ok'; position: number }
+  // ---- Friends & challenges (E-social 2) ----
+  // Ack for friend.add: 'requested' = waiting for their reciprocal add,
+  // 'friends' = the edge just became mutual.
+  | { t: 'friend.added'; pid: string; status: 'requested' | 'friends' }
+  // Live refresh of both lists, pushed to a player whose graph just changed
+  // while they had an active session (their next hello re-syncs otherwise).
+  | { t: 'friends.update'; friends: FriendInfo[]; requests: FriendInfo[] }
+  // A friend challenges me RIGHT NOW: accept = the normal table.join(code);
+  // ignore/decline is simply not joining (tables expire server-side).
+  | { t: 'friend.challenge.offer'; code: string; stakeCents: StakeCents; from: FriendInfo }
   // Your last opponent clicked Rematch and is waiting; `name` is their display
   // label. The end screen surfaces an Accept/Decline offer instead of the game
   // silently depending on both sides happening to click.
@@ -809,6 +852,12 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'profile.get':
       // opaque pid: short hex hash — reject anything else (never a wallet)
       return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) ? m : null;
+    case 'friend.add':
+    case 'friend.remove':
+      // same opaque-pid rule as profile.get
+      return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) ? m : null;
+    case 'friend.challenge':
+      return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) && (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

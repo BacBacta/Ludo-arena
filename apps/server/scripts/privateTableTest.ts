@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import WebSocket from 'ws';
 import { applyRoll } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
-import type { ServerMsg } from '@ludo/shared';
+import { TOS_VERSION, type ServerMsg } from '@ludo/shared';
 
 const PORT = 8793;
 const URL = `ws://localhost:${PORT}`;
@@ -60,7 +60,9 @@ function open(): Promise<Client> {
 
     ws.on('open', () => {
       clearTimeout(timer);
-      send({ t: 'hello', entropy: randomBytes(16).toString('hex') });
+      // Consent like the real client's legal gate — stakeBlock refuses staked
+      // table.create without the current ToS (this test stakes 25¢).
+      send({ t: 'hello', entropy: randomBytes(16).toString('hex'), consent: { tosVersion: TOS_VERSION, age18: true } });
       resolve(c);
     });
     ws.on('message', (data) => {

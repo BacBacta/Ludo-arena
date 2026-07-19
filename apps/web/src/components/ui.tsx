@@ -134,6 +134,39 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
   );
 }
 
+/** Live friend challenge (E-social 2): a friend created a table for me RIGHT
+ *  NOW — accept joins it, decline just closes (their table expires server-side,
+ *  and they see the normal share screen, so ignoring is never an error). */
+export function ChallengeOfferModal({ onAccept }: { onAccept(code: string): void }) {
+  const { challengeOffer } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'CHALLENGE_OFFER', offer: null });
+  const trapRef = useFocusTrap<HTMLDivElement>(!!challengeOffer, close);
+  if (!challengeOffer) return null;
+  const { from, code, stakeCents } = challengeOffer;
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+        <div className="challengeoffer__who">
+          <span className={`profilecard__flag ${frameClass(from.frame)}`}>
+            {avatarSrc(from.avatar) ? <img className="profilecard__img" src={avatarSrc(from.avatar)!} alt="" /> : from.flag}
+          </span>
+          <h3>{from.name} {t('challengeTitle')}</h3>
+        </div>
+        <p className="muted" style={{ fontSize: 13, margin: '6px 0 14px' }}>
+          {stakeCents > 0 ? `${fmtUsd(stakeCents)} · ${t('challengeStakedSub')}` : t('challengeFreeSub')}
+        </p>
+        <button className="btn" onClick={() => { playTap(); onAccept(code); }}>
+          ⚔️ {t('challengeAccept')}
+        </button>
+        <button className="btn btn--ghost" style={{ marginTop: 8 }} onClick={close}>
+          {t('challengeDecline')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Toast() {
   const { toast } = useAppState();
   const dispatch = useAppDispatch();
