@@ -16,21 +16,12 @@ import { PremiumFrame } from '../components/PremiumFrame';
 import { playDice } from '../lib/sound';
 import { t } from '../lib/i18n';
 
-/** Fallback opponent die when they haven't equipped a non-default skin: THEIR
- *  seat colour (seat 0 = blue, seat 1 = green) so a roll is unmistakably theirs
- *  (a fixed green die used to collide with the joining player's green tokens). */
-const OPP_SKINS: Record<Seat, DiceSkin> = {
-  0: { id: 'seat-blue', name: 'Blue', body1: '#63C4EC', body2: '#105F97', pip: '#ffffff', stroke: '#0b3f66', unlocked: () => true },
-  1: { id: 'seat-green', name: 'Green', body1: '#5FCE79', body2: '#16792E', pip: '#ffffff', stroke: '#0d4a1c', unlocked: () => true },
-};
-
-/** The die shown for the opponent in my HUD: their REAL equipped skin (relayed
- *  in match.found) so premium dice are seen by both players — the flagship flex.
- *  Only when they're on the default 'classic' do we keep the seat-colour die,
- *  which stays more distinguishable than two white dice. */
-function opponentDie(diceSkin: string | undefined, seat: Seat): DiceSkin {
-  if (!diceSkin || diceSkin === 'classic') return OPP_SKINS[seat] ?? OPP_SKINS[0];
-  return skinById(diceSkin);
+/** The die shown for the opponent in my HUD: their REAL equipped skin, relayed
+ *  in match.found — premium dice are seen by both players (the flagship flex),
+ *  and a skinless opponent shows the plain Classic die, NOT a colour we invent
+ *  for them (a fabricated seat-colour die read as "a skin they don't have"). */
+function opponentDie(diceSkin: string | undefined): DiceSkin {
+  return skinById(diceSkin ?? 'classic');
 }
 
 /** Remaining fraction of the move clock (1 → 0), ticking every 100 ms. */
@@ -244,7 +235,7 @@ export function GameScreen({
               {/* smart Die: renders the opponent's PREMIUM (WebGL) die when they
                   equipped one, else the seat-colour CSS die — so premium dice
                   are visible to both players (the reported gap). */}
-              <Die value={oppDieVal} rollKey={oppRollIndex} skin={opponentDie(match.opponent.diceSkin, oppSeat)} />
+              <Die value={oppDieVal} rollKey={oppRollIndex} skin={opponentDie(match.opponent.diceSkin)} />
             </div>
             <button
               className="avtap"

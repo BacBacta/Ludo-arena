@@ -3,7 +3,7 @@
  * die shown beside it. Used by both the local practice screen (Game4Screen) and
  * the online Sit&Go screen (Game4OnlineScreen) so the two look identical.
  */
-import { Die3D } from './Die3D';
+import { Die } from './DiePremium';
 import type { DiceSkin } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
@@ -52,15 +52,17 @@ export function SeatAvatar({ name, flag, frame, avatar, active }: { name: string
   );
 }
 
-/** White 3D cube die shown beside a player's avatar; it somersaults on each new
- *  roll (rollKey) and lands on the value. */
-export function SeatDie({ value, rollKey, idle = false }: { value: number; rollKey: number; idle?: boolean }) {
-  // `idle` hides via CSS instead of the caller unmounting: Die3D animates with a
-  // CSS transition, and a freshly-mounted element can't transition — swapping the
-  // die in at roll time skipped the tumble (the value just popped in).
+/** 3D cube die shown beside a player's avatar; it somersaults on each new roll
+ *  (rollKey) and lands on the value. `skin` defaults to the white Ludo-Club die
+ *  (bots / no cosmetic), but each seat can pass its RELAYED skin so a premium
+ *  die is seen at every corner — the smart Die renders WebGL materials when set. */
+export function SeatDie({ value, rollKey, idle = false, skin = WHITE_DIE }: { value: number; rollKey: number; idle?: boolean; skin?: DiceSkin }) {
+  // `idle` hides via CSS instead of the caller unmounting: the die animates with
+  // a CSS/WebGL transition, and a freshly-mounted element can't transition —
+  // swapping the die in at roll time skipped the tumble (the value just popped in).
   return (
     <div className={`ludodie${idle ? ' ludodie--idle' : ''}`} aria-hidden={idle}>
-      <Die3D value={value} rollKey={rollKey} skin={WHITE_DIE} />
+      <Die value={value} rollKey={rollKey} skin={skin} />
     </div>
   );
 }

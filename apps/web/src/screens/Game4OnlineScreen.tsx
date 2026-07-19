@@ -136,7 +136,8 @@ export function Game4OnlineScreen({
         onDice: (value, index, seat) => {
           setShown({ seat, value, key: index });
           setRolling(false);
-          if (seat !== mySeatRef.current) playDice();
+          // the rolling seat's own die sound (premium dice relayed per seat)
+          if (seat !== mySeatRef.current) playDice(skinById(playersRef.current[seat]?.diceSkin ?? 'classic').sound);
         },
         onMoved: (_seat, _token, capture, state) => {
           if (capture) playCapture();
@@ -271,7 +272,7 @@ export function Game4OnlineScreen({
         <Die value={dieHere ? dieVal : 6} rollKey={dieHere ? dieKey : 0} skin={mySkin} />
       </button>
     ) : (
-      <SeatDie value={dieHere ? dieVal : 1} rollKey={dieHere ? dieKey : 0} idle={!dieHere} />
+      <SeatDie value={dieHere ? dieVal : 1} rollKey={dieHere ? dieKey : 0} idle={!dieHere} skin={skinById(players[seat]?.diceSkin ?? 'classic')} />
     );
 
     const av = (
