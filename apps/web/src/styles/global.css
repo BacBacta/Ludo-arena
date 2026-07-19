@@ -962,6 +962,31 @@ small.muted { font-size: 12px; }
 /* Build id in the lobby footer: lets support tell a stale cached bundle from
    the current deploy at a glance. Deliberately dim. */
 .buildtag { opacity: 0.55; font-weight: 400; }
+
+/* COSMETICS SHOP lobby card — the store must be findable (the topbar die icon
+   alone read as a settings toggle). Gold store language + a gold crown hairline
+   matching the premium modals. */
+.shopcard {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 14px; border: 1px solid rgba(245, 179, 1, 0.45);
+  background: linear-gradient(180deg, #fffdf4, #fff3d4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 10px 26px -8px rgba(150, 100, 0, 0.28);
+  cursor: pointer; text-align: left; font: inherit; color: var(--txt);
+  transition: transform 0.12s ease;
+}
+.shopcard:active { transform: scale(0.985); }
+.shopcard::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent) 28%, var(--accent-2) 50%, var(--accent) 72%, transparent);
+}
+.shopcard__ic {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  background: rgba(245, 179, 1, 0.16);
+}
+.shopcard .mrow__txt b { font-family: var(--font-display); font-size: 15px; }
+.shopcard__previews { flex-shrink: 0; font-size: 15px; letter-spacing: 3px; opacity: 0.9; }
 .fairnote--links a, .fairnote--links .linklike { white-space: nowrap; }
 .help__card { max-height: 82dvh; display: flex; flex-direction: column; }
 .help__scroll { overflow-y: auto; margin: 4px 0 12px; text-align: left; }

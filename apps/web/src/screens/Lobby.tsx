@@ -398,6 +398,21 @@ export function Lobby({
         </button>
       </div>
 
+      {/* COSMETICS SHOP — a real lobby entry. The ONLY way in used to be a tiny
+          unlabeled die icon in the topbar, indistinguishable from a settings
+          toggle ("the shop is invisible"). This card names it, previews the
+          catalog, and wears the gold store language — it IS the monetisation
+          surface. Opens the same cosmetics sheet as the topbar icon. */}
+      <button className="card shopcard" onClick={() => { playTap(); dispatch({ type: 'DICE_MODAL', open: true }); }}>
+        <span className="shopcard__ic" aria-hidden="true">🛍️</span>
+        <span className="mrow__txt">
+          <b>{t('shopCardTitle')}</b>
+          <small>{t('shopCardSub')}</small>
+        </span>
+        <span className="shopcard__previews" aria-hidden="true">🎲✨</span>
+        <span className="mrow__chev" aria-hidden="true">›</span>
+      </button>
+
       {/* ADD FRIENDS — the proactive invite entry the lobby was missing: players
           I recently faced (wallet-linked → have a pid) that I'm not already
           friends with / haven't already invited. Tapping ➕ sends a friend
