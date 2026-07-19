@@ -343,6 +343,17 @@ async function buildFriendLists(id: string): Promise<{ friends: FriendInfo[]; re
   return { friends, requests, outgoing };
 }
 
+/** Reply with a player's own friends.update on a SPECIFIC socket — the one that
+ *  sent the action. Friend actions travel over short-lived one-shot sockets
+ *  (sendFriendAction), and a concurrent lobby-sync one-shot rebinds the shared
+ *  Session.ws; replying via Session.ws (pushFriendsUpdate) could then land on the
+ *  wrong socket, so the acting socket hangs and "accept" silently fails. Sending
+ *  straight to `ws` makes the ack race-free. */
+async function sendFriendsTo(ws: WebSocket, id: string): Promise<void> {
+  const lists = await buildFriendLists(id);
+  send(ws, { t: 'friends.update', friends: lists.friends, requests: lists.requests, outgoing: lists.outgoing });
+}
+
 /** Push a live friends.update to a player's active session, if any. */
 async function pushFriendsUpdate(id: string): Promise<void> {
   const s = liveSessionFor(id);
@@ -1552,11 +1563,13 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const status = await store.addFriend(myId, target.id);
-        session.send({ t: 'friend.added', pid: msg.pid, status });
         telemetry('friend.add', { from: tpid(myId), to: tpid(target.id), status });
-        // Refresh my lists; notify the other side live if they're connected
-        // (otherwise their next hello re-syncs the request/friendship).
-        void pushFriendsUpdate(myId).catch(() => undefined);
+        // Ack + my refreshed lists on THE ACTING socket (race-free — see
+        // sendFriendsTo). The client's add/accept resolves on this friends.update.
+        send(ws, { t: 'friend.added', pid: msg.pid, status });
+        await sendFriendsTo(ws, myId);
+        // Live-notify the OTHER side on their own socket if connected (else their
+        // next hello/sync re-syncs the request/friendship).
         void pushFriendsUpdate(target.id).catch(() => undefined);
         break;
       }
@@ -1570,9 +1583,9 @@ wss.on('connection', (ws, req) => {
         const target = await store.getProfileByPid(msg.pid);
         if (!target) break;
         await store.removeFriend(myId, target.id);
-        // SILENT for the other side by design (de-friending must not be a
-        // conflict trigger) — only my own view refreshes now.
-        void pushFriendsUpdate(myId).catch(() => undefined);
+        // My own view refreshes on THE ACTING socket (race-free). SILENT for the
+        // other side by design (de-friending must not be a conflict trigger).
+        await sendFriendsTo(ws, myId);
         break;
       }
 

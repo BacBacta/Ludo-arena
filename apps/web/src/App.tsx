@@ -221,14 +221,15 @@ export default function App() {
     prevScreenSync.current = state.screen;
   }, [state.screen, syncLobbyNow]);
 
-  // Living presence: the lobby holds NO socket (offline-first, one-shot syncs),
-  // so friends' online/offline flips and fresh requests can't be pushed to it.
-  // A quiet periodic re-sync keeps the circle live; each sync also stamps OUR
-  // "last seen" server-side, which is what makes US read as online to friends
-  // (the server counts seen-within-90s as online). Skipped off-lobby.
+  // Living presence + near-instant social: the lobby holds NO persistent socket
+  // (offline-first, one-shot syncs), so a friend request / acceptance / presence
+  // flip can't be pushed to it — it's picked up by this short re-sync poll (each
+  // sync's hello.ok carries the fresh friend lists AND stamps OUR "last seen",
+  // which is what makes us read as online to friends). 8 s keeps requests feeling
+  // immediate without a held connection. Skipped off-lobby.
   useEffect(() => {
     if (state.screen !== 'lobby') return;
-    const id = setInterval(syncLobbyNow, 45_000);
+    const id = setInterval(syncLobbyNow, 8_000);
     return () => clearInterval(id);
   }, [state.screen, syncLobbyNow]);
 

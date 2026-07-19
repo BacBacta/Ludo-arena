@@ -448,7 +448,11 @@ export function sendFriendAction(
         /* already closing */
       }
     };
-    const timer = setTimeout(() => done(null), 4000);
+    // 10 s (was 4 s): on the target audience's slow mobile links, a fresh WS
+    // handshake + hello + friend.add + friends.update round-trip legitimately
+    // took >4 s, so the accept/add would spuriously report failure ("impossible
+    // d'accepter") even though the edge was created server-side.
+    const timer = setTimeout(() => done(null), 10_000);
     const entropy = (() => {
       const b = new Uint8Array(16);
       crypto.getRandomValues(b);
