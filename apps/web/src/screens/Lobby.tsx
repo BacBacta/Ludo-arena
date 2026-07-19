@@ -27,6 +27,7 @@ export function Lobby({
   onConnectWallet,
   onChallengeFriend,
   onAcceptFriend,
+  onWithdrawRequest,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
@@ -40,8 +41,10 @@ export function Lobby({
   onChallengeFriend(pid: string): void;
   /** Reciprocal friend.add (accept an incoming request). */
   onAcceptFriend(pid: string): Promise<boolean>;
+  /** Withdraw one of MY pending sent invitations (silent server-side). */
+  onWithdrawRequest(pid: string): void;
 }) {
-  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, friends, friendRequests } = useAppState();
+  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, friends, friendRequests, sentRequests } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
@@ -224,6 +227,35 @@ export function Lobby({
             </div>
           ))}
         </div>
+      )}
+
+      {/* SENT INVITATIONS — the sender's view: every request I made that the
+          other side hasn't answered yet, with a quiet withdraw. Without this
+          list a sent request was fire-and-forget ("did it even go through?"). */}
+      {sentRequests.length > 0 && (
+        <>
+          <div className="seclabel">⏳ {t('sentRequestsTitle')}</div>
+          <div className="card friendscard">
+            {sentRequests.map((r) => (
+              <div key={r.pid} className="friendrow">
+                <span className={`friendrow__flag ${frameClass(r.frame)}`}>
+                  {avatarSrc(r.avatar) ? <img className="profilecard__img" src={avatarSrc(r.avatar)!} alt="" /> : r.flag}
+                </span>
+                <span className="friendrow__meta">
+                  <b>{r.name}</b>
+                  <small>{t('sentPending')}</small>
+                </span>
+                <button
+                  className="friendrow__btn friendrow__btn--withdraw"
+                  aria-label={`${t('sentWithdraw')} ${r.name}`}
+                  onClick={() => { playTap(); onWithdrawRequest(r.pid); }}
+                >
+                  ✕ {t('sentWithdraw')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* SEASON PASS — the progression hub (crowns → tiers → rewards). Hidden

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { applyMove } from '@ludo/game-engine';
 import type { GameState } from '@ludo/game-engine';
-import { TOS_VERSION, cosmeticCents, SEASON_PREMIUM, type StakeCents } from '@ludo/shared';
+import { TOS_VERSION, cosmeticById, cosmeticCents, SEASON_PREMIUM, type StakeCents } from '@ludo/shared';
 import { syncLobby,
   LocalBotSession,
   RemoteSession,
@@ -188,19 +188,34 @@ export default function App() {
   // Then (everywhere) refresh lobby state over a one-shot hello: the league
   // card and daily counters self-heal at app OPEN (weekly rollover, resets)
   // instead of waiting for the next online game.
-  useEffect(() => {
-    const sync = (): void =>
+  const syncLobbyNow = useCallback(
+    (): void =>
       syncLobby(SERVER_URL, walletRef.current?.address, {
         league: (league) => dispatch({ type: 'LEAGUE_UPDATE', league }),
         challenge: (challenge) => dispatch({ type: 'CHALLENGE_UPDATE', challenge }),
         streak: (streak) => dispatch({ type: 'STREAK_UPDATE', streak }),
         limits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
         season: (season) => dispatch({ type: 'SEASON_STATE', season }),
-        friends: (friends, requests) => dispatch({ type: 'FRIENDS', friends, requests }),
-      });
-    if (isMiniPay()) void connectWalletCta(true).finally(sync);
-    else sync();
-  }, [connectWalletCta, dispatch]);
+        friends: (friends, requests, outgoing) => dispatch({ type: 'FRIENDS', friends, requests, outgoing }),
+      }),
+    [dispatch],
+  );
+
+  useEffect(() => {
+    if (isMiniPay()) void connectWalletCta(true).finally(syncLobbyNow);
+    else syncLobbyNow();
+  }, [connectWalletCta, syncLobbyNow]);
+
+  // Re-sync EVERY time the player lands back on the lobby (post-game, end
+  // screen exit, cancelled search): friend requests/acceptances that arrived
+  // while this client had no live socket only exist server-side, and the old
+  // open-of-app-only sync meant they stayed invisible until the next launch —
+  // "he never received my request" in practice.
+  const prevScreenSync = useRef<string>('lobby');
+  useEffect(() => {
+    if (state.screen === 'lobby' && prevScreenSync.current !== 'lobby') syncLobbyNow();
+    prevScreenSync.current = state.screen;
+  }, [state.screen, syncLobbyNow]);
 
   /** Lock the stake on-chain for a staked match; leave the match on failure. */
   const stakeForMatch = useCallback(
@@ -414,7 +429,7 @@ export default function App() {
         dispatch({ type: 'GO_LOBBY' });
       },
       // The opponent clicked Rematch and is waiting → show Accept/Decline.
-      onFriends: (friends, requests) => dispatch({ type: 'FRIENDS', friends, requests }),
+      onFriends: (friends, requests, outgoing) => dispatch({ type: 'FRIENDS', friends, requests, outgoing }),
       onChallengeOffer: (offer) => dispatch({ type: 'CHALLENGE_OFFER', offer }),
       // A friend gifted me a cosmetic while I'm connected: ownership is already
       // durable server-side — sync the owned list and celebrate in a toast.
@@ -585,8 +600,24 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('friendActionFailed') });
         return false;
       }
-      dispatch({ type: 'FRIENDS', friends: lists.friends, requests: lists.requests });
+      dispatch({ type: 'FRIENDS', friends: lists.friends, requests: lists.requests, outgoing: lists.outgoing });
+      dispatch({ type: 'TOAST', message: `➕ ${t('friendRequestSent')}` });
       return true;
+    },
+    [dispatch],
+  );
+
+  /** Withdraw a SENT invitation (friend.remove tears down my directional edge —
+   *  for a pending request that IS the withdrawal; the other side is never
+   *  notified, same silent semantics as de-friending). */
+  const withdrawFriendRequest = useCallback(
+    async (pid: string): Promise<void> => {
+      const lists = await sendFriendAction(SERVER_URL, { t: 'friend.remove', pid }, walletRef.current?.address);
+      if (!lists) {
+        dispatch({ type: 'TOAST', message: t('friendActionFailed') });
+        return;
+      }
+      dispatch({ type: 'FRIENDS', friends: lists.friends, requests: lists.requests, outgoing: lists.outgoing });
     },
     [dispatch],
   );
@@ -895,18 +926,34 @@ export default function App() {
     [refreshBalance],
   );
 
+  /** Equip whatever was just purchased, by its CATALOG kind — the old
+   *  hardcoded SET_DICE_SKIN mis-equipped every non-die purchase (buying a
+   *  pawn skin reset the equipped die to Classic). */
+  const equipPurchased = useCallback(
+    (id: string): void => {
+      const kind = cosmeticById(id)?.kind;
+      if (kind === 'dice') dispatch({ type: 'SET_DICE_SKIN', id });
+      else if (kind === 'token') dispatch({ type: 'SET_TOKEN_SKIN', id });
+      else if (kind === 'board') dispatch({ type: 'SET_BOARD_THEME', id });
+      else if (kind === 'entrance') dispatch({ type: 'SET_ENTRANCE_FX', id });
+      else if (kind === 'victory') dispatch({ type: 'SET_VICTORY_FX', id });
+      else if (kind === 'frame') dispatch({ type: 'EQUIP_FRAME', id });
+    },
+    [dispatch],
+  );
+
   const purchaseSkin = useCallback(
     async (skinId: string) => {
       const res = await buySkin(SERVER_URL, skinId, walletRef.current?.address);
       if (res) {
         dispatch({ type: 'OWNED_SKINS', ownedIds: res.ownedIds, tickets: res.tickets });
-        dispatch({ type: 'SET_DICE_SKIN', id: skinId }); // equip what you just unlocked
+        equipPurchased(skinId); // equip what you just unlocked (by catalog kind)
         dispatch({ type: 'TOAST', message: t('skinUnlocked') });
       } else {
         dispatch({ type: 'TOAST', message: t('offline') });
       }
     },
-    [dispatch],
+    [dispatch, equipPurchased],
   );
 
   // Claim a season-pass tier reward: the server validates + grants, then returns
@@ -944,7 +991,7 @@ export default function App() {
         const res = await claimCosmetic(SERVER_URL, buyTxHash, id, wallet.address);
         if (res) {
           dispatch({ type: 'OWNED_SKINS', ownedIds: res.ownedIds, tickets: res.tickets });
-          dispatch({ type: 'SET_DICE_SKIN', id });
+          equipPurchased(id);
           dispatch({ type: 'TOAST', message: t('skinUnlocked') });
           void refreshBalance(wallet);
         } else {
@@ -955,7 +1002,7 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('offline') });
       }
     },
-    [dispatch, refreshBalance],
+    [dispatch, equipPurchased, refreshBalance],
   );
 
   // Buy the premium season pass with USDT (Phase 2): pay $1.50 on-chain via the
@@ -986,7 +1033,7 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('offline') });
       }
     },
-    [dispatch, refreshBalance],
+    [dispatch, equipPurchased, refreshBalance],
   );
 
   // Buy a streak-freeze with tickets (Phase 3 sink). One-shot from the lobby.
@@ -1019,7 +1066,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onWithdrawRequest={(pid) => void withdrawFriendRequest(pid)} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking

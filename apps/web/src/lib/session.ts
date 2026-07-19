@@ -149,8 +149,9 @@ export interface SessionEvents {
   onResumed(match: MatchInfo, state: GameState): void;
   /** The in-progress game could not be resumed (gave up / session expired). */
   onGone(): void;
-  /** Friends & requests (hello.ok snapshot or a live friends.update push). */
-  onFriends?(friends: FriendInfo[], requests: FriendInfo[]): void;
+  /** Friends, incoming requests and SENT (outgoing) invitations —
+   *  hello.ok snapshot or a live friends.update push. */
+  onFriends?(friends: FriendInfo[], requests: FriendInfo[], outgoing?: FriendInfo[]): void;
   /** A friend challenges me RIGHT NOW (live in-app offer; code = their table). */
   onChallengeOffer?(offer: { code: string; stakeCents: StakeCents; from: FriendInfo }): void;
   /** A friend just GIFTED me a cosmetic (live push; ownership already durable). */
@@ -371,7 +372,7 @@ export function syncLobby(
     streak(streak: StreakState): void;
     limits(limits: LimitsState): void;
     season?(season: SeasonState): void;
-    friends?(friends: FriendInfo[], requests: FriendInfo[]): void;
+    friends?(friends: FriendInfo[], requests: FriendInfo[], outgoing?: FriendInfo[]): void;
   },
 ): void {
   let ws: WebSocket;
@@ -412,7 +413,7 @@ export function syncLobby(
     if (msg.streak) on.streak(msg.streak);
     if (msg.limits) on.limits(msg.limits);
     if (msg.season) on.season?.(msg.season);
-    if (msg.friends || msg.friendRequests) on.friends?.(msg.friends ?? [], msg.friendRequests ?? []);
+    if (msg.friends || msg.friendRequests || msg.friendsOutgoing) on.friends?.(msg.friends ?? [], msg.friendRequests ?? [], msg.friendsOutgoing ?? []);
     ws.close();
   };
   ws.onerror = () => clearTimeout(timer);
@@ -429,7 +430,7 @@ export function sendFriendAction(
   serverUrl: string,
   action: { t: 'friend.add' | 'friend.remove'; pid: string },
   walletAddress?: string,
-): Promise<{ friends: FriendInfo[]; requests: FriendInfo[] } | null> {
+): Promise<{ friends: FriendInfo[]; requests: FriendInfo[]; outgoing?: FriendInfo[] } | null> {
   return new Promise((resolve) => {
     let ws: WebSocket;
     try {
@@ -438,7 +439,7 @@ export function sendFriendAction(
       resolve(null);
       return;
     }
-    const done = (v: { friends: FriendInfo[]; requests: FriendInfo[] } | null): void => {
+    const done = (v: { friends: FriendInfo[]; requests: FriendInfo[]; outgoing?: FriendInfo[] } | null): void => {
       resolve(v);
       try {
         ws.close();
@@ -471,7 +472,7 @@ export function sendFriendAction(
       }
       if (msg.t === 'friends.update') {
         clearTimeout(timer);
-        done({ friends: msg.friends, requests: msg.requests });
+        done({ friends: msg.friends, requests: msg.requests, outgoing: msg.outgoing });
       }
     };
     ws.onerror = () => {
@@ -1304,7 +1305,7 @@ export class RemoteSession implements GameSession {
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
         if (msg.claimedSets) this.ev.onClaimedSets?.(msg.claimedSets);
         if (msg.season) this.ev.onSeasonState(msg.season);
-        if (msg.friends || msg.friendRequests) this.ev.onFriends?.(msg.friends ?? [], msg.friendRequests ?? []);
+        if (msg.friends || msg.friendRequests || msg.friendsOutgoing) this.ev.onFriends?.(msg.friends ?? [], msg.friendRequests ?? [], msg.friendsOutgoing ?? []);
         if (msg.comeback) this.ev.onComeback(msg.comeback);
         // Guests: pin the FIRST server-assigned identity (no-op once any name is
         // saved). Without this the server derives a NEW name per connection, so
@@ -1405,7 +1406,7 @@ export class RemoteSession implements GameSession {
         this.ev.onStreak(msg.streak);
         break;
       case 'friends.update':
-        this.ev.onFriends?.(msg.friends, msg.requests);
+        this.ev.onFriends?.(msg.friends, msg.requests, msg.outgoing);
         break;
       case 'friend.challenge.offer':
         this.ev.onChallengeOffer?.({ code: msg.code, stakeCents: msg.stakeCents, from: msg.from });

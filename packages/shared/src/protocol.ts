@@ -743,6 +743,9 @@ export type ServerMsg =
       friends?: FriendInfo[];
       /** Players who asked to be my friend (pending my reciprocal add). */
       friendRequests?: FriendInfo[];
+      /** Requests I SENT that await the other side's reciprocal add — the
+       *  sender's view of pending invitations (withdrawable via friend.remove). */
+      friendsOutgoing?: FriendInfo[];
     }
   | { t: 'queue.ok'; position: number }
   // ---- Friends & challenges (E-social 2) ----
@@ -751,7 +754,7 @@ export type ServerMsg =
   | { t: 'friend.added'; pid: string; status: 'requested' | 'friends' }
   // Live refresh of both lists, pushed to a player whose graph just changed
   // while they had an active session (their next hello re-syncs otherwise).
-  | { t: 'friends.update'; friends: FriendInfo[]; requests: FriendInfo[] }
+  | { t: 'friends.update'; friends: FriendInfo[]; requests: FriendInfo[]; outgoing?: FriendInfo[] }
   // A friend challenges me RIGHT NOW: accept = the normal table.join(code);
   // ignore/decline is simply not joining (tables expire server-side).
   | { t: 'friend.challenge.offer'; code: string; stakeCents: StakeCents; from: FriendInfo }

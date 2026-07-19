@@ -40,6 +40,7 @@ interface Client {
   proven: boolean;
   friends: FriendInfo[];
   requests: FriendInfo[];
+  outgoing: FriendInfo[];
   added: (ServerMsg & { t: 'friend.added' }) | null;
   offer: (ServerMsg & { t: 'friend.challenge.offer' }) | null;
   code: string | null;
@@ -51,7 +52,7 @@ interface Client {
 function open(wallet?: string): Promise<Client> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(URL);
-    const c: Client = { ws, pid: null, proven: false, friends: [], requests: [], added: null, offer: null, code: null, matched: false, error: null, send: (o) => ws.send(JSON.stringify(o)) };
+    const c: Client = { ws, pid: null, proven: false, friends: [], requests: [], outgoing: [], added: null, offer: null, code: null, matched: false, error: null, send: (o) => ws.send(JSON.stringify(o)) };
     const timer = setTimeout(() => reject(new Error('open timeout')), 10_000);
     ws.on('message', (data) => {
       const msg = JSON.parse(data.toString()) as ServerMsg;
@@ -66,6 +67,7 @@ function open(wallet?: string): Promise<Client> {
       if (msg.t === 'friends.update') {
         c.friends = msg.friends;
         c.requests = msg.requests;
+        if (msg.outgoing) c.outgoing = msg.outgoing;
       }
       if (msg.t === 'friend.added') c.added = msg;
       if (msg.t === 'friend.challenge.offer') c.offer = msg;
@@ -127,7 +129,8 @@ a.send({ t: 'friend.add', pid: b.pid });
 await sleep(500);
 if (a.added?.status !== 'requested') fail(`expected friend.added 'requested', got ${JSON.stringify(a.added)}`, server);
 if (!b.requests.some((r) => r.pid === a.pid)) fail(`B should see A's request live, got ${JSON.stringify(b.requests)}`, server);
-console.log("[friends-test] request delivered live to B's session");
+if (!a.outgoing.some((o) => o.pid === b.pid)) fail(`A should see the SENT invitation in outgoing, got ${JSON.stringify(a.outgoing)}`, server);
+console.log("[friends-test] request delivered live to B's session + visible in A's outgoing");
 
 // B reciprocates → mutual, both lists updated, presence visible.
 b.send({ t: 'friend.add', pid: a.pid });
@@ -136,7 +139,8 @@ if (b.added?.status !== 'friends') fail(`expected friend.added 'friends', got ${
 const bInA = a.friends.find((f) => f.pid === b.pid);
 if (!bInA) fail(`A should now list B as a friend, got ${JSON.stringify(a.friends)}`, server);
 if (bInA.online !== true) fail(`B has a live session — A must see online:true, got ${JSON.stringify(bInA)}`, server);
-console.log('[friends-test] mutual friendship + presence snapshot');
+if (a.outgoing.some((o) => o.pid === b.pid)) fail(`A's outgoing should clear once mutual, got ${JSON.stringify(a.outgoing)}`, server);
+console.log('[friends-test] mutual friendship + presence snapshot + outgoing cleared');
 
 // Gift to a MUTUAL friend passes every gate up to the spend — and a fresh
 // account holds 0 tickets, so the server must refuse with LIMIT_REACHED

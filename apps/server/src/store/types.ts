@@ -280,6 +280,8 @@ export interface Store {
   getFriendIds(playerId: string): Promise<string[]>;
   /** Ids that added the player and await their reciprocal add. */
   getFriendRequestIds(playerId: string): Promise<string[]>;
+  /** Ids the player added who have NOT reciprocated yet (sent invitations). */
+  getOutgoingRequestIds(playerId: string): Promise<string[]>;
 
   // Responsible gaming (E5.2). `today` is a UTC date string; the daily staked
   // total resets when the stored day differs. selfExcludedUntil is null when

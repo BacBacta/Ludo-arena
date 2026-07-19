@@ -710,6 +710,19 @@ export class PersistentStore implements Store {
     return res.rows.map((r) => r.requester);
   }
 
+  async getOutgoingRequestIds(playerId: string): Promise<string[]> {
+    // Mirror of getFriendRequestIds with the direction inverted: edges I created
+    // whose reciprocal doesn't exist yet (my pending sent invitations).
+    const res = await this.pool.query<{ target: string }>(
+      `SELECT f.target FROM friendships f
+       WHERE f.requester = $1
+         AND NOT EXISTS (SELECT 1 FROM friendships r WHERE r.requester = f.target AND r.target = $1)
+       ORDER BY f.created_at DESC`,
+      [playerId],
+    );
+    return res.rows.map((r) => r.target);
+  }
+
   async ownSkin(playerId: string, skinId: string): Promise<string[]> {
     // array_append only if not already present (idempotent), returns the new list.
     const res = await this.pool.query<{ owned_skins: string[] }>(
