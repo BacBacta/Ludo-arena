@@ -109,6 +109,8 @@ interface Session extends Client {
   frame?: string;
   /** Chosen profile avatar id (cosmetic, client-authoritative like the frame). */
   avatar?: string;
+  /** Equipped DICE skin — relayed so the opponent's HUD shows this player's die. */
+  diceSkin?: string;
   /** Equipped token (pawn) skin + entrance effect (cosmetics phase 1) — catalog-
    *  validated in parse, relayed to the opponent in match.found. */
   tokenSkin?: string;
@@ -2046,7 +2048,7 @@ function resumedGame(s: Session): ResumedGame | undefined {
     state: s.room.getState(),
     stakeCents: s.room.stakeCents,
     potCents: potCents(s.room.stakeCents),
-    opponent: { name: oppSession ? label(oppSession) : opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx, victoryFx: opp.victoryFx },
+    opponent: { name: oppSession ? label(oppSession) : opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, diceSkin: opp.diceSkin, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx, victoryFx: opp.victoryFx },
     youName: label(s),
     fairnessCommit: s.room.fairness.commit,
   };
@@ -2406,7 +2408,7 @@ function matchFoundMsg(gameId: string, seat: Seat, me: Session, opp: Session, st
     t: 'match.found',
     gameId,
     seat,
-    opponent: { name: label(opp), elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx, victoryFx: opp.victoryFx },
+    opponent: { name: label(opp), elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, diceSkin: opp.diceSkin, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx, victoryFx: opp.victoryFx },
     youName: label(me),
     stakeCents: stake,
     potCents: pot,
@@ -2638,7 +2640,7 @@ function startRoom4(humans: Session[]): void {
     if (h) {
       const name = uniqueAtTable(h.name, taken);
       taken.add(name.toLowerCase());
-      seats.push({ client: h, bot: false, sessionId: h.id, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx });
+      seats.push({ client: h, bot: false, sessionId: h.id, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, diceSkin: h.diceSkin, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
       const bot = pickBot4(taken, i);
@@ -2728,7 +2730,7 @@ function startStakedRoom4(humans: Session[], stake: number): void {
   // dice input is committed before the server can see it (matches the 2p scheme).
   const { serverSeed, commit } = createSeed4Commit();
   const seatCommits = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
-  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx }));
+  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, diceSkin: h.diceSkin, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx }));
   pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, serverSeed, commit, seatCommits, reveals: humans.map(() => null) });
   // NOTE: the daily-limit debit (E5.2) is applied in startStaked4Room, once all
   // four stakes are Active — not here. A table that never fills (any seat simply
@@ -2832,7 +2834,7 @@ function startStaked4Room(p: PendingStaked4): void {
   // Bind the committed seed to the now-revealed raw seat seeds. allRevealed4 gated
   // this call, so every reveal is present; `?? ''` only satisfies the type.
   const fairness = finalizeFairness4(p.serverSeed, p.commit, p.reveals.map((r) => r ?? ''));
-  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, sessionId: h.id, wallet: h.wallet, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx }));
+  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, sessionId: h.id, wallet: h.wallet, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, diceSkin: h.diceSkin, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx }));
   const room = new Room4(p.gameId, seats, fairness, 0, 0, p.pot, p.rake);
   // Restart-safe lifecycle: persist on every change, settle + record from the seats
   // (not the p.humans closure, which a restart loses) on finish (G-5).

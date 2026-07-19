@@ -86,6 +86,7 @@ export interface Room4Player {
   pid?: string;
   frame?: string;
   avatar?: string;
+  diceSkin?: string;
   tokenSkin?: string;
   entranceFx?: string;
   victoryFx?: string;

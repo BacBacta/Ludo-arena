@@ -530,6 +530,11 @@ export type ClientMsg =
       frame?: string;
       /** Chosen profile avatar id (AVATARS); client-authoritative like the frame. */
       avatar?: string;
+      /** Equipped DICE skin id — relayed so the opponent sees my die roll (the
+       *  flagship premium cosmetic). Not catalog-restricted: progression/season
+       *  dice ids live client-side, so it's a loose-bounded string; the client's
+       *  skinById falls back to classic for anything unknown. */
+      diceSkin?: string;
       /** Equipped token (pawn) skin id — relayed to the opponent in match.found
        *  so they SEE it on my pieces (cosmetics phase 1). Catalog-validated. */
       tokenSkin?: string;
@@ -641,6 +646,9 @@ export interface OpponentInfo {
   frame?: string;
   /** Chosen profile avatar id (AVATARS); absent/'none' = show the flag. */
   avatar?: string;
+  /** Equipped DICE skin — shown on this player's die in the opponent's HUD
+   *  (the premium 3D dice are the flagship flex). Absent = seat-colour die. */
+  diceSkin?: string;
   /** Equipped token (pawn) skin — the opponent SEES it on my pieces all game
    *  (cosmetics phase 1). Catalog-validated server-side; absent = classic. */
   tokenSkin?: string;
@@ -895,9 +903,10 @@ export interface Player4Info {
   frame?: string;
   /** Chosen profile avatar id (AVATARS); absent/'none' = show the flag. */
   avatar?: string;
-  /** Equipped cosmetics (4p extension): pawn skin drawn on this seat's pieces,
-   *  entrance burst at match start, victory flourish if this seat wins — same
-   *  catalog-validated ids as the 1v1 OpponentInfo. Absent for bots. */
+  /** Equipped cosmetics (4p extension): dice skin (shown on this seat's die),
+   *  pawn skin drawn on this seat's pieces, entrance burst at match start,
+   *  victory flourish if this seat wins. Absent for bots. */
+  diceSkin?: string;
   tokenSkin?: string;
   entranceFx?: string;
   victoryFx?: string;
@@ -944,6 +953,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       if (m.avatar !== undefined && (typeof m.avatar !== 'string' || !isAvatar(m.avatar))) m.avatar = undefined;
       // Token skin / entrance fx: must be catalog ids of the right kind — drop
       // unknown values (same never-reject cosmetic posture as frame/avatar).
+      // diceSkin is loose-bounded (progression/season dice ids aren't in the
+      // shared catalog); the client's skinById safely falls back to classic.
+      if (m.diceSkin !== undefined && (typeof m.diceSkin !== 'string' || m.diceSkin.length > 64)) m.diceSkin = undefined;
       if (m.tokenSkin !== undefined && (typeof m.tokenSkin !== 'string' || cosmeticById(m.tokenSkin)?.kind !== 'token')) m.tokenSkin = undefined;
       if (m.entranceFx !== undefined && (typeof m.entranceFx !== 'string' || cosmeticById(m.entranceFx)?.kind !== 'entrance')) m.entranceFx = undefined;
       if (m.victoryFx !== undefined && (typeof m.victoryFx !== 'string' || cosmeticById(m.victoryFx)?.kind !== 'victory')) m.victoryFx = undefined;

@@ -15,6 +15,7 @@
 export interface SessionCosmetics {
   frame?: string;
   avatar?: string;
+  diceSkin?: string;
   tokenSkin?: string;
   entranceFx?: string;
   victoryFx?: string;
@@ -23,6 +24,7 @@ export interface SessionCosmetics {
 export function applyHelloCosmetics(target: SessionCosmetics, msg: SessionCosmetics): void {
   if (msg.frame !== undefined) target.frame = msg.frame;
   if (msg.avatar !== undefined) target.avatar = msg.avatar;
+  if (msg.diceSkin !== undefined) target.diceSkin = msg.diceSkin;
   if (msg.tokenSkin !== undefined) target.tokenSkin = msg.tokenSkin;
   if (msg.entranceFx !== undefined) target.entranceFx = msg.entranceFx;
   if (msg.victoryFx !== undefined) target.victoryFx = msg.victoryFx;

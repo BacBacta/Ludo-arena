@@ -10,6 +10,7 @@ describe('applyHelloCosmetics (cosmetics relay — resumed vs fresh hello)', () 
     applyHelloCosmetics(session, {
       frame: 'gold',
       avatar: 'av-1',
+      diceSkin: 'crystal',
       tokenSkin: 'tok-kente',
       entranceFx: 'fx-sparkle',
       victoryFx: 'vx-fireworks',
@@ -17,6 +18,7 @@ describe('applyHelloCosmetics (cosmetics relay — resumed vs fresh hello)', () 
     expect(session).toEqual({
       frame: 'gold',
       avatar: 'av-1',
+      diceSkin: 'crystal',
       tokenSkin: 'tok-kente',
       entranceFx: 'fx-sparkle',
       victoryFx: 'vx-fireworks',

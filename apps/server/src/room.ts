@@ -28,6 +28,8 @@ export interface Client {
   frame?: string;
   /** Chosen profile avatar id; shown on the opponent's in-game corner. */
   avatar?: string;
+  /** Equipped DICE skin; shown on this player's die in the opponent's HUD. */
+  diceSkin?: string;
   /** Equipped token (pawn) skin; rendered on this player's pieces for BOTH sides. */
   tokenSkin?: string;
   /** Equipped entrance effect; played at match start on this player's side. */
