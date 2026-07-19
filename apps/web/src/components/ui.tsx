@@ -14,7 +14,7 @@ import { avatarSrc, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
 import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
 import { devUnlockCosmetics } from '../lib/devUnlock';
 import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
-import { DIVISIONS, PREMIUM_COSMETICS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticById, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
+import { COSMETIC_SETS, DIVISIONS, PREMIUM_COSMETICS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticById, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
 import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
@@ -174,6 +174,36 @@ export function ChallengeOfferModal({ onAccept }: { onAccept(code: string): void
  *  shared catalog and pay ITS ticket price to unlock it on the FRIEND's account
  *  (server validates mutual friendship + balance; grant is durable). Items the
  *  friend might already own are refused server-side with a clear message. */
+/** Preview tile + display name for ANY catalog cosmetic id — shared by the
+ *  gift picker (phase 2) and the collection album (phase 3). Kind-dispatched;
+ *  the id namespace is shared, so always resolve through cosmeticById. */
+export function CosmeticPreview({ id, idKey }: { id: string; idKey: string }) {
+  const kind = cosmeticById(id)?.kind;
+  if (kind === 'dice') {
+    const s = DICE_SKINS.find((d) => d.id === id);
+    return s ? <DieFace value={6} skin={s} /> : null;
+  }
+  if (kind === 'token') return <TokenPreview pattern={tokenSkinById(id).pattern} idKey={idKey} />;
+  if (kind === 'board') return <BoardThemePreview theme={boardThemeById(id)} />;
+  if (kind === 'frame') {
+    return (
+      <span className="frametile__ring" aria-hidden="true">
+        <PremiumFrame frame={id} />
+      </span>
+    );
+  }
+  const fx = kind === 'victory' ? victoryFxById(id) : entranceFxById(id);
+  return <span style={{ fontSize: 30, display: 'block', lineHeight: '50px' }} aria-hidden="true">{fx.particles[0] ?? '🎁'}</span>;
+}
+export function cosmeticName(id: string): string {
+  const kind = cosmeticById(id)?.kind;
+  if (kind === 'dice') return DICE_SKINS.find((d) => d.id === id)?.name ?? id;
+  if (kind === 'token') return tokenSkinById(id).name;
+  if (kind === 'board') return boardThemeById(id).name;
+  if (kind === 'frame') return t(frameById(id).nameKey);
+  return kind === 'victory' ? victoryFxById(id).name : entranceFxById(id).name;
+}
+
 export function GiftCosmeticModal({ onSend }: { onSend(pid: string, id: string): Promise<boolean> }) {
   const { giftFriend, tickets } = useAppState();
   const dispatch = useAppDispatch();
@@ -183,30 +213,6 @@ export function GiftCosmeticModal({ onSend }: { onSend(pid: string, id: string):
   if (!giftFriend) return null;
   // Every ticket-priced catalog item is giftable; preview + name resolve per kind.
   const giftables = PREMIUM_COSMETICS.filter((c) => c.tickets > 0);
-  const previewOf = (c: (typeof giftables)[number]) => {
-    if (c.kind === 'dice') {
-      const s = DICE_SKINS.find((d) => d.id === c.id);
-      return s ? <DieFace value={6} skin={s} /> : null;
-    }
-    if (c.kind === 'token') return <TokenPreview pattern={tokenSkinById(c.id).pattern} idKey={`gift-${c.id}`} />;
-    if (c.kind === 'board') return <BoardThemePreview theme={boardThemeById(c.id)} />;
-    if (c.kind === 'frame') {
-      return (
-        <span className="frametile__ring" aria-hidden="true">
-          <PremiumFrame frame={c.id} />
-        </span>
-      );
-    }
-    const fx = c.kind === 'victory' ? victoryFxById(c.id) : entranceFxById(c.id);
-    return <span style={{ fontSize: 30, display: 'block', lineHeight: '50px' }} aria-hidden="true">{fx.particles[0] ?? '🎁'}</span>;
-  };
-  const nameOf = (c: (typeof giftables)[number]): string => {
-    if (c.kind === 'dice') return DICE_SKINS.find((d) => d.id === c.id)?.name ?? c.id;
-    if (c.kind === 'token') return tokenSkinById(c.id).name;
-    if (c.kind === 'board') return boardThemeById(c.id).name;
-    if (c.kind === 'frame') return t(frameById(c.id).nameKey);
-    return c.kind === 'victory' ? victoryFxById(c.id).name : entranceFxById(c.id).name;
-  };
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
@@ -231,13 +237,78 @@ export function GiftCosmeticModal({ onSend }: { onSend(pid: string, id: string):
                   });
                 }}
               >
-                {previewOf(c)}
-                <b>{nameOf(c)}</b>
+                <CosmeticPreview id={c.id} idKey={`gift-${c.id}`} />
+                <b>{cosmeticName(c.id)}</b>
                 <small>{sendingId === c.id ? '…' : `${c.tickets} 🎟️`}</small>
               </button>
             );
           })}
         </div>
+        <CloseHint onClose={close} />
+      </div>
+    </div>
+  );
+}
+
+/** Collection album (cosmetics phase 3): every set with its item tiles, an
+ *  owned-count progress bar, and the one-time ticket bonus claim. Ownership is
+ *  server-authoritative (ownedSkins/claimedSets both come from hello.ok). */
+export function CollectionSheet({ onClaim }: { onClaim(setId: string): Promise<boolean> }) {
+  const { collectionOpen, ownedSkins, claimedSets, walletAddress } = useAppState();
+  const dispatch = useAppDispatch();
+  const [claiming, setClaiming] = useState<string | null>(null);
+  const close = (): void => void dispatch({ type: 'COLLECTION_MODAL', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(collectionOpen, close);
+  if (!collectionOpen) return null;
+  const devAll = devUnlockCosmetics(walletAddress);
+  const setName = (id: string): string =>
+    id === 'set-heritage' ? t('setHeritage') : id === 'set-gold' ? t('setGold') : t('setRoyale');
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>📚 {t('collectionTitle')}</h3>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t('collectionIntro')}</p>
+        {COSMETIC_SETS.map((set) => {
+          const ownedCount = set.itemIds.filter((i) => devAll || ownedSkins.includes(i)).length;
+          const complete = ownedCount === set.itemIds.length;
+          const claimed = claimedSets.includes(set.id);
+          const pct = Math.round((ownedCount / set.itemIds.length) * 100);
+          return (
+            <div key={set.id} className="collset">
+              <div className="collset__head">
+                <b>{setName(set.id)}</b>
+                <small className="muted">{ownedCount}/{set.itemIds.length}</small>
+              </div>
+              <div className="collset__items">
+                {set.itemIds.map((itemId) => {
+                  const owned = devAll || ownedSkins.includes(itemId);
+                  return (
+                    <span key={itemId} className={`collset__item${owned ? '' : ' collset__item--missing'}`} title={cosmeticName(itemId)}>
+                      <CosmeticPreview id={itemId} idKey={`coll-${set.id}-${itemId}`} />
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="seasonbar__track collset__bar"><span className="seasonbar__fill" style={{ width: `${pct}%` }} /></div>
+              {claimed ? (
+                <small className="collset__done">✓ {t('setClaimed')} +{set.rewardTickets} 🎟️</small>
+              ) : complete ? (
+                <button
+                  className="btn collset__claim"
+                  disabled={claiming !== null}
+                  onClick={() => {
+                    setClaiming(set.id);
+                    void onClaim(set.id).then(() => setClaiming(null));
+                  }}
+                >
+                  {claiming === set.id ? '…' : `🎁 ${t('setClaim')} +${set.rewardTickets} 🎟️`}
+                </button>
+              ) : (
+                <small className="muted">{t('setBonus')} +{set.rewardTickets} 🎟️</small>
+              )}
+            </div>
+          );
+        })}
         <CloseHint onClose={close} />
       </div>
     </div>
@@ -379,7 +450,7 @@ export function ComebackModal() {
 /** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
  *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
 export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {
-  const { diceModalOpen, diceSkin, tokenSkin, entranceFx, boardTheme, victoryFx, streak, tickets, league, ownedSkins, avatarFrame, walletAddress } = useAppState();
+  const { diceModalOpen, diceSkin, tokenSkin, entranceFx, boardTheme, victoryFx, streak, tickets, league, ownedSkins, claimedSets, avatarFrame, walletAddress } = useAppState();
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(diceModalOpen, close);
@@ -395,6 +466,22 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
         <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
           {t('diceIntro')}
         </p>
+        {/* Collection album entry (phase 3): completion bonuses live one tap away
+            from the tiles that fill them. Shows how many sets are claimable. */}
+        <button
+          className="btn btn--ghost collentry"
+          // Close the shop first: two stacked .modal overlays would fight for
+          // the top paint order (the album mounted below and stayed hidden).
+          onClick={() => { dispatch({ type: 'DICE_MODAL', open: false }); dispatch({ type: 'COLLECTION_MODAL', open: true }); }}
+        >
+          📚 {t('collectionTitle')}
+          {(() => {
+            const claimable = COSMETIC_SETS.filter(
+              (cs) => !claimedSets.includes(cs.id) && cs.itemIds.every((i) => devAll || ownedSkins.includes(i)),
+            ).length;
+            return claimable > 0 ? <span className="collentry__badge">{claimable}</span> : null;
+          })()}
+        </button>
         <div className="skingrid">
           {DICE_SKINS.map((s) => {
             const price = PREMIUM_SKINS[s.id]; // premium skins are ticket-priced

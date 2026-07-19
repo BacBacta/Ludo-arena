@@ -99,6 +99,7 @@ interface RetentionCache {
   league: LeagueState;
   tickets: number;
   ownedSkins: string[];
+  claimedSets: string[];
   limits: LimitsState;
   profile: Profile;
   /** Cached season pass state so the lobby chip renders before hello.ok lands. */
@@ -111,6 +112,7 @@ const DEFAULT_RETENTION: RetentionCache = {
   league: { division: DEFAULT_DIVISION, points: 0, rank: 0, size: 0, top: [] },
   tickets: 0,
   ownedSkins: [],
+  claimedSets: [],
   limits: { dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS, stakedTodayCents: 0, selfExcludedUntil: null },
   profile: { name: '', flag: '🌍', elo: 1200, games: 0, wins: 0 },
   season: null,
@@ -159,6 +161,8 @@ export interface AppState {
   tickets: number;
   /** Premium dice skins unlocked (server-authoritative; cached for the lobby). */
   ownedSkins: string[];
+  /** Cosmetic-set bonuses already claimed (phase 3; server-authoritative). */
+  claimedSets: string[];
   /** Season pass state (crowns, tier, claims, reward table); null until hello.ok. */
   season: SeasonState | null;
   /** Season track sheet open state. */
@@ -237,6 +241,8 @@ export interface AppState {
   /** Chosen profile avatar id (AVATARS); 'none' = show the flag instead. */
   avatar: string;
   diceModalOpen: boolean;
+  /** Collection album sheet (phase 3) open state. */
+  collectionOpen: boolean;
   /** 4-player mode chooser (practice / free online / real money) open state. */
   table4Open: boolean;
   /** "No wallet in this browser" sheet (Chrome mobile etc.): explains MiniPay. */
@@ -288,6 +294,7 @@ export const initialState: AppState = {
   league: loadRetention().league,
   tickets: loadRetention().tickets,
   ownedSkins: loadRetention().ownedSkins,
+  claimedSets: loadRetention().claimedSets,
   season: loadRetention().season,
   seasonOpen: false,
   progressionOpen: false,
@@ -336,6 +343,7 @@ export const initialState: AppState = {
   avatarFrame: loadFrameId(),
   avatar: loadAvatarId(),
   diceModalOpen: false,
+  collectionOpen: false,
   legalAccepted: legalAcceptedInit(),
   legalOpen: false,
   realityOpen: false,
@@ -373,6 +381,8 @@ export type Action =
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
   | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
+  | { type: 'CLAIMED_SETS'; setIds: string[]; tickets?: number }
+  | { type: 'COLLECTION_MODAL'; open: boolean }
   | { type: 'SEASON_STATE'; season: SeasonState }
   | { type: 'SEASON_PROGRESS'; crowns: number; tier: number; gained: number }
   | { type: 'SEASON_MODAL'; open: boolean }
@@ -514,6 +524,10 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, tickets: a.total };
     case 'OWNED_SKINS':
       return { ...s, ownedSkins: a.ownedIds, tickets: a.tickets ?? s.tickets };
+    case 'CLAIMED_SETS':
+      return { ...s, claimedSets: a.setIds, tickets: a.tickets ?? s.tickets };
+    case 'COLLECTION_MODAL':
+      return { ...s, collectionOpen: a.open };
     case 'SEASON_STATE':
       return { ...s, season: a.season };
     case 'SEASON_PROGRESS': {

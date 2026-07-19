@@ -83,6 +83,8 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS lost_rake_cents INTEGER NOT NULL DE
 ALTER TABLE players ADD COLUMN IF NOT EXISTS cashback_cents INTEGER NOT NULL DEFAULT 0;
 -- Premium dice skins unlocked with tickets (cosmetic sink).
 ALTER TABLE players ADD COLUMN IF NOT EXISTS owned_skins TEXT[] NOT NULL DEFAULT '{}';
+-- Cosmetic-set completion bonuses already claimed (phase 3, idempotent).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS claimed_sets TEXT[] NOT NULL DEFAULT '{}';
 
 -- Responsible gaming (E5.2).
 ALTER TABLE players ADD COLUMN IF NOT EXISTS stake_date DATE;
@@ -718,6 +720,23 @@ export class PersistentStore implements Store {
       [playerId, skinId],
     );
     return res.rows[0]?.owned_skins ?? [];
+  }
+
+  async getClaimedSets(playerId: string): Promise<string[]> {
+    const res = await this.pool.query<{ claimed_sets: string[] }>(`SELECT claimed_sets FROM players WHERE id = $1`, [playerId]);
+    return res.rows[0]?.claimed_sets ?? [];
+  }
+
+  async claimSet(playerId: string, setId: string): Promise<string[]> {
+    // Same idempotent array_append pattern as ownSkin.
+    const res = await this.pool.query<{ claimed_sets: string[] }>(
+      `UPDATE players SET
+         claimed_sets = CASE WHEN $2 = ANY(claimed_sets) THEN claimed_sets ELSE array_append(claimed_sets, $2) END,
+         updated_at = now()
+       WHERE id = $1 RETURNING claimed_sets`,
+      [playerId, setId],
+    );
+    return res.rows[0]?.claimed_sets ?? [];
   }
 
   async getLimits(playerId: string, today: string): Promise<LimitsState> {

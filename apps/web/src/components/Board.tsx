@@ -186,11 +186,29 @@ function PegPattern({ pattern, idKey, dark }: { pattern: TokenPattern; idKey: st
             <stop offset="100%" stopColor="#8a6400" />
           </linearGradient>
         )}
+        {pattern === 'lion' && (
+          // Legendary (phase 3): tawny coat wash; the mane strokes are drawn below.
+          <linearGradient id={pid} x1="0" y1="0" x2="0.15" y2="1">
+            <stop offset="0%" stopColor="#ffd98a" />
+            <stop offset="55%" stopColor="#e8a33d" />
+            <stop offset="100%" stopColor="#8a5a10" />
+          </linearGradient>
+        )}
       </defs>
-      {/* gilded = a stronger foil wash; heritage fabrics = soft cloth band */}
-      <path d={body} fill={`url(#${pid})`} opacity={pattern === 'gilded' ? 0.55 : 0.38} />
+      {/* gilded/lion = a stronger wash; heritage fabrics = soft cloth band */}
+      <path d={body} fill={`url(#${pid})`} opacity={pattern === 'gilded' ? 0.55 : pattern === 'lion' ? 0.5 : 0.38} />
       {pattern === 'gilded' && (
         <path d="M -0.1 0.24 C -0.14 0.06 -0.07 -0.08 -0.04 -0.18" fill="none" stroke="#fff8dc" strokeWidth={0.05} strokeLinecap="round" opacity={0.6} />
+      )}
+      {pattern === 'lion' && (
+        // Mane: dark amber strokes fanning around the shoulders of the body.
+        <g stroke="#6e4408" strokeWidth={0.032} strokeLinecap="round" fill="none" opacity={0.75}>
+          <path d="M -0.16 -0.12 C -0.2 -0.02 -0.2 0.08 -0.17 0.16" />
+          <path d="M 0.16 -0.12 C 0.2 -0.02 0.2 0.08 0.17 0.16" />
+          <path d="M -0.08 -0.2 C -0.12 -0.08 -0.12 0.06 -0.09 0.2" />
+          <path d="M 0.08 -0.2 C 0.12 -0.08 0.12 0.06 0.09 0.2" />
+          <path d="M 0 -0.22 C -0.02 -0.06 -0.02 0.1 0 0.24" />
+        </g>
       )}
     </>
   );

@@ -163,8 +163,16 @@ await sleep(1500);
 if (!a.matched || !b.matched) fail(`both should reach match.found (a=${a.matched} b=${b.matched})`, server);
 console.log('[friends-test] offer accepted → match.found on both sides');
 
+// Collection album (phase 3): claiming a set you don't own is refused — the
+// full handler path runs (proven wallet, set lookup, claimed check, ownership
+// scan); the grant composition itself is covered by the store tests.
+a.send({ t: 'collection.claim', setId: 'set-heritage' });
+await sleep(400);
+if (a.error !== 'BAD_STATE') fail(`expected BAD_STATE claiming an incomplete set, got ${a.error}`, server);
+console.log('[friends-test] incomplete collection set refused');
+
 a.ws.close();
 b.ws.close();
 server.kill('SIGTERM');
-console.log('FRIENDS-TEST OK — request, mutual consent, presence, live challenge, accepted duel, gift gates.');
+console.log('FRIENDS-TEST OK — request, mutual consent, presence, live challenge, accepted duel, gift gates, set-claim gate.');
 process.exit(0);

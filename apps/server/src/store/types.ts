@@ -259,6 +259,12 @@ export interface Store {
   getOwnedSkins(playerId: string): Promise<string[]>;
   ownSkin(playerId: string, skinId: string): Promise<string[]>;
 
+  /** Cosmetic-set completion bonuses (phase 3): claimSet records a claimed set
+   *  id (idempotent) and returns the full claimed list; ownership verification
+   *  and the ticket grant are the caller's job. */
+  getClaimedSets(playerId: string): Promise<string[]>;
+  claimSet(playerId: string, setId: string): Promise<string[]>;
+
   // Friends (E-social 2): DIRECTIONAL edges keyed by internal player ids; a
   // friendship is the mutual pair. Wallet-scoped in practice (anon ids are
   // ephemeral) — the caller gates on a proven wallet.

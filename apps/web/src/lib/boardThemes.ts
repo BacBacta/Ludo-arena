@@ -66,6 +66,19 @@ export const BOARD_THEMES: readonly BoardTheme[] = [
     homeEdge: 'rgba(122,83,0,.22)',
   },
   {
+    // Legendary "Savane Royale" line (phase 3): golden-hour savanna dusk.
+    id: 'brd-serengeti',
+    name: 'Serengeti',
+    blurb: 'Golden-hour dusk',
+    cell: '#fbe7c3',
+    cellStroke: '#d9a55e',
+    safe: '#f2d69e',
+    safeStar: '#b4641f',
+    home: '#fff3dc',
+    slot: '#e9cf9c',
+    homeEdge: 'rgba(140,84,15,.25)',
+  },
+  {
     id: 'brd-royal',
     name: 'Royal Court',
     blurb: 'Velvet purple & gold',

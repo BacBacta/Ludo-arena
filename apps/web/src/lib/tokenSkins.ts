@@ -8,7 +8,7 @@
  * like dice skins and travels to the opponent via hello → match.found.
  */
 
-export type TokenPattern = 'none' | 'wax' | 'kente' | 'bogolan' | 'gilded';
+export type TokenPattern = 'none' | 'wax' | 'kente' | 'bogolan' | 'gilded' | 'lion';
 
 export interface TokenSkin {
   id: string;
@@ -24,6 +24,8 @@ export const TOKEN_SKINS: readonly TokenSkin[] = [
   { id: 'tok-kente', name: 'Kente', pattern: 'kente', blurb: 'Woven gold bands' },
   { id: 'tok-bogolan', name: 'Bogolan', pattern: 'bogolan', blurb: 'Mudcloth zigzag' },
   { id: 'tok-gilded', name: 'Gilded', pattern: 'gilded', blurb: 'Gold-foil finish' },
+  // Legendary "Savane Royale" line (phase 3).
+  { id: 'tok-lion', name: 'Lion', pattern: 'lion', blurb: 'Golden mane' },
 ] as const;
 
 export function tokenSkinById(id: string | undefined): TokenSkin {
@@ -62,6 +64,8 @@ export const VICTORY_FX: readonly VictoryFx[] = [
   { id: 'vx-none', name: 'None', particles: [] },
   { id: 'vx-fireworks', name: 'Fireworks', particles: ['🎆', '🎇', '✨', '🎆', '🎇', '✨', '🎆', '🎇', '✨', '🎆'] },
   { id: 'vx-crown', name: 'Coronation', particles: ['👑', '✨', '💛', '👑', '✨', '💛', '👑', '✨', '👑', '✨'] },
+  // Legendary "Savane Royale" line (phase 3): the savanna parades for the winner.
+  { id: 'vx-stampede', name: 'Stampede', particles: ['🦁', '🦓', '🐘', '🦒', '🦁', '🦓', '🐘', '🦒', '🦁', '✨'] },
 ] as const;
 
 export function victoryFxById(id: string | undefined): VictoryFx {
