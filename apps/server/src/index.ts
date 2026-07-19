@@ -105,6 +105,10 @@ interface Session extends Client {
   frame?: string;
   /** Chosen profile avatar id (cosmetic, client-authoritative like the frame). */
   avatar?: string;
+  /** Equipped token (pawn) skin + entrance effect (cosmetics phase 1) — catalog-
+   *  validated in parse, relayed to the opponent in match.found. */
+  tokenSkin?: string;
+  entranceFx?: string;
   /** Last opponent + stake, for a true direct rematch (BACKLOG E4). */
   lastOpponentId?: string;
   lastStake?: StakeCents;
@@ -1112,6 +1116,8 @@ wss.on('connection', (ws, req) => {
       session.miniPayOriginOk = miniPayOriginOk; // origin gate for the auto-prove (R-AUTH-1)
       session.frame = msg.frame; // cosmetic; validated to AVATAR_FRAMES in parse
       session.avatar = msg.avatar; // cosmetic; validated to AVATARS in parse
+      session.tokenSkin = msg.tokenSkin; // cosmetic; catalog-validated in parse
+      session.entranceFx = msg.entranceFx; // cosmetic; catalog-validated in parse
       sessions.set(id, session);
       persistSession(session);
       // Key off the NORMALIZED wallet — never raw msg.wallet. normalizeWallet maps a
@@ -1936,7 +1942,7 @@ function resumedGame(s: Session): ResumedGame | undefined {
     state: s.room.getState(),
     stakeCents: s.room.stakeCents,
     potCents: potCents(s.room.stakeCents),
-    opponent: { name: oppSession ? label(oppSession) : opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar },
+    opponent: { name: oppSession ? label(oppSession) : opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx },
     youName: label(s),
     fairnessCommit: s.room.fairness.commit,
   };
@@ -2296,7 +2302,7 @@ function matchFoundMsg(gameId: string, seat: Seat, me: Session, opp: Session, st
     t: 'match.found',
     gameId,
     seat,
-    opponent: { name: label(opp), elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar },
+    opponent: { name: label(opp), elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx },
     youName: label(me),
     stakeCents: stake,
     potCents: pot,

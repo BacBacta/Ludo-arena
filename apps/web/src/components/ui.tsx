@@ -7,6 +7,8 @@ import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
 import { FRAMES, frameClass } from '../lib/avatarFrames';
+import { TOKEN_SKINS, ENTRANCE_FX } from '../lib/tokenSkins';
+import { TokenPreview } from './Board';
 import { avatarSrc, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
 import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
 import { devUnlockCosmetics } from '../lib/devUnlock';
@@ -302,7 +304,7 @@ export function ComebackModal() {
 /** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
  *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
 export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {
-  const { diceModalOpen, diceSkin, streak, tickets, league, ownedSkins, avatarFrame, walletAddress } = useAppState();
+  const { diceModalOpen, diceSkin, tokenSkin, entranceFx, streak, tickets, league, ownedSkins, avatarFrame, walletAddress } = useAppState();
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(diceModalOpen, close);
@@ -360,6 +362,89 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                             : t(s.hintKey ?? 'skinSoon')}
                 </small>
                 {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : s.season ? '👑' : '🔒'}</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Token (pawn) skins — the cosmetic the OPPONENT stares at all game
+            (cosmetics phase 1). Dual pricing (tickets · $) per CPC guidance. */}
+        <h3 style={{ marginTop: 16 }}>{t('tokensTitle')}</h3>
+        <div className="skingrid">
+          {TOKEN_SKINS.map((s) => {
+            const price = PREMIUM_SKINS[s.id];
+            const owned = devAll || ownedSkins.includes(s.id) || price === undefined;
+            const equipped = s.id === tokenSkin;
+            const ticketAffordable = !owned && price !== undefined && tickets >= price;
+            const cusd = cosmeticCents(s.id);
+            const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            const onClick = owned
+              ? () => dispatch({ type: 'SET_TOKEN_SKIN', id: s.id })
+              : ticketAffordable
+                ? () => onBuy(s.id)
+                : cusdBuyable
+                  ? () => onBuyCusd(s.id)
+                  : undefined;
+            return (
+              <button
+                key={s.id}
+                className={`skin${equipped ? ' skin--on' : ''}${owned ? '' : ' skin--locked'}`}
+                disabled={!owned && !ticketAffordable && !cusdBuyable}
+                onClick={onClick}
+              >
+                <TokenPreview pattern={s.pattern} idKey={`shop-${s.id}`} />
+                <b>{s.name}</b>
+                <small>
+                  {equipped
+                    ? t('skinEquipped')
+                    : owned
+                      ? t('skinTap')
+                      : price !== undefined
+                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        : s.blurb}
+                </small>
+                {!owned && <span className="skin__lock">🎟️</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Entrance effects — played at match start, seen by BOTH players. */}
+        <h3 style={{ marginTop: 16 }}>{t('entranceTitle')}</h3>
+        <div className="skingrid">
+          {ENTRANCE_FX.map((f) => {
+            const price = PREMIUM_SKINS[f.id];
+            const owned = devAll || ownedSkins.includes(f.id) || price === undefined;
+            const equipped = f.id === entranceFx;
+            const ticketAffordable = !owned && price !== undefined && tickets >= price;
+            const cusd = cosmeticCents(f.id);
+            const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            const onClick = owned
+              ? () => dispatch({ type: 'SET_ENTRANCE_FX', id: f.id })
+              : ticketAffordable
+                ? () => onBuy(f.id)
+                : cusdBuyable
+                  ? () => onBuyCusd(f.id)
+                  : undefined;
+            return (
+              <button
+                key={f.id}
+                className={`skin${equipped ? ' skin--on' : ''}${owned ? '' : ' skin--locked'}`}
+                disabled={!owned && !ticketAffordable && !cusdBuyable}
+                onClick={onClick}
+              >
+                <span style={{ fontSize: 30, display: 'block', lineHeight: '50px' }} aria-hidden="true">{f.particles[0] ?? '➖'}</span>
+                <b>{f.name}</b>
+                <small>
+                  {equipped
+                    ? t('skinEquipped')
+                    : owned
+                      ? t('skinTap')
+                      : price !== undefined
+                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        : t('skinTap')}
+                </small>
+                {!owned && <span className="skin__lock">🎟️</span>}
               </button>
             );
           })}

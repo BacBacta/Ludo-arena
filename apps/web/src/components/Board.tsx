@@ -19,6 +19,7 @@ import {
 } from '@ludo/game-engine';
 import type { GameState, Seat } from '@ludo/game-engine';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
+import type { TokenPattern } from '../lib/tokenSkins';
 import { playHop } from '../lib/sound';
 
 /** True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — matches the
@@ -140,13 +141,63 @@ function starPoints(cx: number, cy: number, r: number): string {
 }
 
 /** Chunky glossy Ludo-Club peg: bulb head, flared skirt, cast shadow, hot specular. */
-function Pawn({ seat }: { seat: Seat }) {
-  return <PegShape c={SEAT_COLOR[seat] ?? BLUE} idKey={`peg-${seat}`} />;
+function Pawn({ seat, pattern }: { seat: Seat; pattern?: TokenPattern }) {
+  return <PegShape c={SEAT_COLOR[seat] ?? BLUE} idKey={`peg-${seat}${pattern && pattern !== 'none' ? `-${pattern}` : ''}`} pattern={pattern} />;
+}
+
+/** Heritage pattern overlay (cosmetics phase 1): pure SVG geometry clipped to
+ *  the peg body, LOW-OPACITY over the seat gradient so the seat colour always
+ *  dominates (gameplay readability is untouchable). ~1-2 KB per pattern. */
+function PegPattern({ pattern, idKey, dark }: { pattern: TokenPattern; idKey: string; dark: string }) {
+  const pid = `${idKey}-pat`;
+  const body = 'M -0.3 0.28 C -0.3 0.06 -0.17 -0.06 -0.13 -0.24 C -0.1 -0.4 0.1 -0.4 0.13 -0.24 C 0.17 -0.06 0.3 0.06 0.3 0.28 Q 0.3 0.36 0 0.36 Q -0.3 0.36 -0.3 0.28 Z';
+  if (pattern === 'none') return null;
+  return (
+    <>
+      <defs>
+        {pattern === 'wax' && (
+          <pattern id={pid} width={0.14} height={0.14} patternUnits="userSpaceOnUse">
+            <circle cx={0.045} cy={0.045} r={0.03} fill="#fff6df" />
+            <circle cx={0.045} cy={0.045} r={0.012} fill={dark} />
+          </pattern>
+        )}
+        {pattern === 'kente' && (
+          <pattern id={pid} width={0.2} height={0.16} patternUnits="userSpaceOnUse">
+            <rect width={0.2} height={0.05} fill="#f5b301" />
+            <rect y={0.05} width={0.2} height={0.02} fill="#0c130f" />
+            <rect y={0.07} width={0.2} height={0.05} fill="#2e9e6b" />
+            <rect y={0.12} width={0.2} height={0.02} fill="#0c130f" />
+            <rect x={0.09} width={0.02} height={0.16} fill="#0c130f" opacity={0.7} />
+          </pattern>
+        )}
+        {pattern === 'bogolan' && (
+          <pattern id={pid} width={0.18} height={0.14} patternUnits="userSpaceOnUse">
+            <rect width={0.18} height={0.14} fill="#2a1c0e" />
+            <path d="M 0 0.045 L 0.045 0.1 L 0.09 0.045 L 0.135 0.1 L 0.18 0.045" fill="none" stroke="#f2e5c9" strokeWidth={0.02} />
+            <circle cx={0.09} cy={0.02} r={0.011} fill="#f2e5c9" />
+          </pattern>
+        )}
+        {pattern === 'gilded' && (
+          <linearGradient id={pid} x1="0" y1="0" x2="0.3" y2="1">
+            <stop offset="0%" stopColor="#fff3c4" />
+            <stop offset="35%" stopColor="#f5b301" />
+            <stop offset="65%" stopColor="#b98700" />
+            <stop offset="100%" stopColor="#8a6400" />
+          </linearGradient>
+        )}
+      </defs>
+      {/* gilded = a stronger foil wash; heritage fabrics = soft cloth band */}
+      <path d={body} fill={`url(#${pid})`} opacity={pattern === 'gilded' ? 0.55 : 0.38} />
+      {pattern === 'gilded' && (
+        <path d="M -0.1 0.24 C -0.14 0.06 -0.07 -0.08 -0.04 -0.18" fill="none" stroke="#fff8dc" strokeWidth={0.05} strokeLinecap="round" opacity={0.6} />
+      )}
+    </>
+  );
 }
 
 /** The peg geometry itself, parameterised so the lobby hero can reuse it with
  *  any of the four seat colours (gradient ids must be unique per instance). */
-function PegShape({ c, idKey }: { c: readonly [string, string, string]; idKey: string }) {
+function PegShape({ c, idKey, pattern = 'none' }: { c: readonly [string, string, string]; idKey: string; pattern?: TokenPattern }) {
   const dark = c[2];
   const rim = c[0];
   const gid = idKey;
@@ -182,6 +233,7 @@ function PegShape({ c, idKey }: { c: readonly [string, string, string]; idKey: s
         stroke={dark}
         strokeWidth={0.026}
       />
+      <PegPattern pattern={pattern} idKey={idKey} dark={dark} />
       <circle cx={0} cy={-0.28} r={0.17} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.026} />
       <path d="M -0.13 -0.24 Q 0 -0.14 0.13 -0.24" fill={`url(#${hid})`} stroke="none" />
       {/* glossy highlights: hot-spot on the ball + streak down the cone + rim reflection */}
@@ -194,6 +246,15 @@ function PegShape({ c, idKey }: { c: readonly [string, string, string]; idKey: s
 
 /** The four canonical seat colour triples, for use outside the board (lobby hero). */
 export const PEG_COLORS = { blue: BLUE, green: GREEN, red: RED, yellow: YELLOW } as const;
+
+/** Standalone peg preview for the cosmetics shop (token-skin tiles). */
+export function TokenPreview({ pattern, idKey }: { pattern: TokenPattern; idKey: string }) {
+  return (
+    <svg viewBox="-0.42 -0.52 0.84 0.98" style={{ width: 44, height: 50, display: 'block', margin: '0 auto' }} aria-hidden="true">
+      <PegShape c={BLUE} idKey={idKey} pattern={pattern} />
+    </svg>
+  );
+}
 
 /** One standalone pawn in its own <svg>, for the lobby hero scene. */
 export function HeroPeg({ colors, idKey }: { colors: readonly [string, string, string]; idKey: string }) {
@@ -245,9 +306,12 @@ export interface BoardProps {
   locked?: boolean;
   /** Name banners drawn on each seat's quadrant (Ludo-Club style). */
   banners?: PlayerBanner[];
+  /** Equipped token-skin PATTERN per seat (cosmetics phase 1) — mine from local
+   *  state, the opponent's from match.found. Absent seat = classic peg. */
+  tokenPatterns?: Partial<Record<Seat, TokenPattern>>;
 }
 
-export function Board({ game, mySeat, onTokenTap, locked, banners }: BoardProps) {
+export function Board({ game, mySeat, onTokenTap, locked, banners, tokenPatterns }: BoardProps) {
   // The two seats sit DIAGONALLY (0 = bottom-left, 1 = top-right) and the geometry
   // is fixed, so seat 1 would play from the far corner with the opponent sitting in
   // "their" place — the board read upside-down and every tap felt wrong. Mirror the
@@ -451,7 +515,7 @@ export function Board({ game, mySeat, onTokenTap, locked, banners }: BoardProps)
                       transform (scale/hop), and CSS beats the SVG transform
                       attribute — putting the rotate there left the pegs upside-down. */}
                   <g transform={flip ? 'rotate(180)' : undefined}>
-                    <Pawn seat={seat as Seat} />
+                    <Pawn seat={seat as Seat} pattern={tokenPatterns?.[seat as Seat]} />
                   </g>
                 </g>
               </g>
