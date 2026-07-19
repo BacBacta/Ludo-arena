@@ -26,7 +26,7 @@ import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBal
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
-import { recordGameResult } from './lib/diceSkins';
+import { recordGameResult, skinById } from './lib/diceSkins';
 import { t } from './lib/i18n';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
@@ -76,6 +76,10 @@ export default function App() {
   // on the searching screen). A ref: set before the matchmaking render.
   const freeSearchRef = useRef(false);
   const matchSeatRef = useRef<number>(0);
+  // The opponent's equipped-die roll SOUND (premium dice each have their own),
+  // so their roll sounds like THEIR die on my screen — not the default rattle.
+  // Set at match start/resume from the relayed diceSkin; undefined = default.
+  const oppDiceSoundRef = useRef<string | undefined>(undefined);
   // Gameplay pedagogy: a roll that ends the turn with NO move (no legal move, or
   // the three-sixes burn) looks like a silent bug — track the dice stream so the
   // UI can explain it. Reset on every match start/resume.
@@ -251,6 +255,7 @@ export default function App() {
       onMatchFound: (match) => {
         clearFreeFallback(); // a real opponent paired — cancel the bot fallback
         matchSeatRef.current = match.seat;
+        oppDiceSoundRef.current = skinById(match.opponent.diceSkin ?? 'classic').sound;
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };
@@ -276,8 +281,9 @@ export default function App() {
         // The authoritative roll arrived → the roll lock is released by the DICE
         // reducer; cancel its failsafe so it can't fire a stray release later.
         clearPendingTimer();
-        // own rolls already played the rattle on button press (no RTT lag)
-        if (seat !== matchSeatRef.current) playDice();
+        // own rolls already played the rattle on button press (no RTT lag);
+        // the opponent's roll sounds like THEIR equipped die (premium sound relayed)
+        if (seat !== matchSeatRef.current) playDice(oppDiceSoundRef.current);
         // consecutive-6 run per roller (three 6s burn the turn — Ludo Club rule)
         const r = sixRunRef.current;
         if (value === 6) r.run = r.seat === seat ? r.run + 1 : 1;
@@ -408,6 +414,7 @@ export default function App() {
       onReconnecting: () => dispatch({ type: 'RECONNECTING' }),
       onResumed: (match, game) => {
         matchSeatRef.current = match.seat;
+        oppDiceSoundRef.current = skinById(match.opponent.diceSkin ?? 'classic').sound;
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };
