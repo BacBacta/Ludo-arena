@@ -190,3 +190,21 @@ describe('Room4 (4-player online)', () => {
     });
   });
 });
+
+describe('Room4 cosmetics relay (4p extension)', () => {
+  it('players() and the snapshot round-trip carry each seat\'s equipped cosmetics', () => {
+    const seats: Seat4[] = [
+      { client: null, bot: false, name: 'Me', flag: '🌍', tokenSkin: 'tok-lion', entranceFx: 'fx-sparkle', victoryFx: 'vx-stampede' },
+      { client: null, bot: true, name: 'B1', flag: '🤖' },
+      { client: null, bot: true, name: 'B2', flag: '🤖' },
+      { client: null, bot: true, name: 'B3', flag: '🤖' },
+    ];
+    const room = new Room4('gc1', seats, createFairness4(['w', 'x', 'y', 'z']), 1, 3);
+    const players = room.players();
+    expect(players[0]).toMatchObject({ tokenSkin: 'tok-lion', entranceFx: 'fx-sparkle', victoryFx: 'vx-stampede' });
+    expect(players[1]?.tokenSkin).toBeUndefined(); // bots stay classic
+    // restart survival: cosmetics rebuild from the snapshot like identity does
+    const restored = Room4.fromSnapshot(room.toSnapshot());
+    expect(restored.players()[0]).toMatchObject({ tokenSkin: 'tok-lion', entranceFx: 'fx-sparkle', victoryFx: 'vx-stampede' });
+  });
+});

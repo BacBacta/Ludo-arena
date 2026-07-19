@@ -15,6 +15,8 @@ import { EMOTES } from '@ludo/shared';
 import { BOT_MOVE_MS, BOT_ROLL_MS, DIE_SETTLE_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
+import { tokenSkinById } from '../lib/tokenSkins';
+import { VictoryFxOverlay } from '../components/CosmeticFx';
 import { t } from '../lib/i18n';
 
 // Practice bots show the neutral globe: a flag only ever means "this player
@@ -29,7 +31,7 @@ const PLAYERS = [
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
 
 export function Game4Screen({ onLeave }: { onLeave(): void }) {
-  const { balanceCents, profile, avatarFrame, avatar, diceSkin } = useAppState();
+  const { balanceCents, profile, avatarFrame, avatar, diceSkin, tokenSkin, boardTheme, victoryFx } = useAppState();
   const dispatch = useAppDispatch();
   const mySeat = 0;
   const mySkin = skinById(diceSkin); // my equipped die reflects my cosmetic (my rolls)
@@ -195,6 +197,9 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           mySeat={mySeat}
           onTokenTap={(token) => myTurn && game.phase === 'awaiting-move' && doMove(gameRef.current, mySeat, token)}
           banners={PLAYERS.map((p, seat) => ({ seat, name: p.name, flag: seatFlag(seat), active: seat === activeSeat }))}
+          // Practice cosmetics: my theme + my pawn skin; the bots stay classic.
+          themeId={boardTheme}
+          tokenPatterns={{ [mySeat]: tokenSkinById(tokenSkin).pattern }}
         />
 
         {/* bottom corner avatars: YOU (left) / Dragan (right) */}
@@ -219,6 +224,10 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
         </div>
       </div>
 
+      {over && iWon && (
+        /* my equipped victory flourish over the practice win screen */
+        <VictoryFxOverlay fxId={victoryFx} />
+      )}
       {over && (
         <div className="g4over" role="dialog" aria-modal="true" aria-label={iWon ? t('victory') : t('defeat')}>
           <div className="g4over__card">

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { BLITZ, type Seat } from '@ludo/game-engine';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
-import { tokenSkinById, entranceFxById } from '../lib/tokenSkins';
+import { tokenSkinById } from '../lib/tokenSkins';
+import { EntranceFxOverlay } from '../components/CosmeticFx';
 import { Board } from '../components/Board';
 import { DieFace } from '../components/Die';
 import { Die3D } from '../components/Die3D';
@@ -101,36 +102,6 @@ function AvatarCard({
         {src ? <img className="avcard__img" src={src} alt="" /> : flag ? <span className="avcard__flag">{flag}</span> : initial}
       </div>
       <PremiumFrame frame={frame} />
-    </div>
-  );
-}
-
-/** Entrance effects (cosmetics phase 1): one emoji burst per player at match
- *  start — mine rises from the bottom, theirs falls from the top, both visible
- *  to BOTH players (that's the point). Plays ONCE per gameId, ~1.6 s, honours
- *  reduced-motion via the CSS (animation: none hides the particles). */
-function EntranceFxOverlay({ mine, theirs, gameId }: { mine?: string; theirs?: string; gameId: string }) {
-  const [playedFor, setPlayedFor] = useState<string | null>(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    if (playedFor === gameId) return;
-    setPlayedFor(gameId);
-    setVisible(true);
-    const id = setTimeout(() => setVisible(false), 1700);
-    return () => clearTimeout(id);
-  }, [gameId, playedFor]);
-  if (!visible) return null;
-  const my = entranceFxById(mine).particles;
-  const th = entranceFxById(theirs).particles;
-  if (my.length === 0 && th.length === 0) return null;
-  return (
-    <div className="entrancefx" aria-hidden="true">
-      {my.map((p, i) => (
-        <span key={`m${i}`} className="entrancefx__p entrancefx__p--up" style={{ left: `${8 + i * 11}%`, animationDelay: `${i * 0.07}s` }}>{p}</span>
-      ))}
-      {th.map((p, i) => (
-        <span key={`t${i}`} className="entrancefx__p entrancefx__p--down" style={{ left: `${8 + i * 11}%`, animationDelay: `${i * 0.07}s` }}>{p}</span>
-      ))}
     </div>
   );
 }
@@ -310,7 +281,7 @@ export function GameScreen({
         />
         <EntranceFxOverlay
           mine={entranceFx}
-          theirs={match.opponent.entranceFx}
+          others={[match.opponent.entranceFx]}
           gameId={match.gameId}
         />
 

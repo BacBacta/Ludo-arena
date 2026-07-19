@@ -19,6 +19,9 @@ export interface Client4 {
   flag: string;
   frame?: string;
   avatar?: string;
+  tokenSkin?: string;
+  entranceFx?: string;
+  victoryFx?: string;
 }
 
 export interface Seat4 {
@@ -38,6 +41,10 @@ export interface Seat4 {
   frame?: string;
   /** Chosen profile avatar id; absent for bots. */
   avatar?: string;
+  /** Equipped cosmetics relayed to every seat (4p extension); absent for bots. */
+  tokenSkin?: string;
+  entranceFx?: string;
+  victoryFx?: string;
 }
 
 export interface Room4Result {
@@ -95,7 +102,7 @@ export class Room4 {
   }
 
   players(): Player4Info[] {
-    return this.seats.map((s) => ({ name: s.name, flag: s.flag, bot: s.bot, pid: s.pid, frame: s.frame, avatar: s.avatar }));
+    return this.seats.map((s) => ({ name: s.name, flag: s.flag, bot: s.bot, pid: s.pid, frame: s.frame, avatar: s.avatar, tokenSkin: s.tokenSkin, entranceFx: s.entranceFx, victoryFx: s.victoryFx }));
   }
 
   /** Serialize for the store (G-5). Seats persist their identity (not the live
@@ -116,6 +123,9 @@ export class Room4 {
         pid: s.pid,
         frame: s.frame,
         avatar: s.avatar,
+        tokenSkin: s.tokenSkin,
+        entranceFx: s.entranceFx,
+        victoryFx: s.victoryFx,
       })),
       entryTickets: this.entryTickets,
       prizeTickets: this.prizeTickets,
@@ -139,6 +149,9 @@ export class Room4 {
       pid: s.pid,
       frame: s.frame,
       avatar: s.avatar,
+      tokenSkin: s.tokenSkin,
+      entranceFx: s.entranceFx,
+      victoryFx: s.victoryFx,
     }));
     const room = new Room4(
       snap.gameId,

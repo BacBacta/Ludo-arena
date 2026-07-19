@@ -148,8 +148,9 @@ function Pawn({ seat, pattern }: { seat: Seat; pattern?: TokenPattern }) {
 
 /** Heritage pattern overlay (cosmetics phase 1): pure SVG geometry clipped to
  *  the peg body, LOW-OPACITY over the seat gradient so the seat colour always
- *  dominates (gameplay readability is untouchable). ~1-2 KB per pattern. */
-function PegPattern({ pattern, idKey, dark }: { pattern: TokenPattern; idKey: string; dark: string }) {
+ *  dominates (gameplay readability is untouchable). ~1-2 KB per pattern.
+ *  Exported for Board4, whose peg shares the same body path. */
+export function PegPattern({ pattern, idKey, dark }: { pattern: TokenPattern; idKey: string; dark: string }) {
   const pid = `${idKey}-pat`;
   const body = 'M -0.3 0.28 C -0.3 0.06 -0.17 -0.06 -0.13 -0.24 C -0.1 -0.4 0.1 -0.4 0.13 -0.24 C 0.17 -0.06 0.3 0.06 0.3 0.28 Q 0.3 0.36 0 0.36 Q -0.3 0.36 -0.3 0.28 Z';
   if (pattern === 'none') return null;

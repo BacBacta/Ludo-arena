@@ -18,7 +18,7 @@ npm run dev:server          # server ws://localhost:8787
 1. **The engine (`packages/game-engine`) is pure and deterministic.** No `Math.random`, no I/O, no runtime dependency. Dice are always injected. Any rule change MUST go through this package and be covered by a test + the simulation.
 2. **The server is authoritative.** The client only sends intents (`roll`, `move`). Never trust state sent by a client.
 3. **No money logic client-side.** Displayed balances come from the wallet (viem) or the server. Real settlement goes through `packages/contracts`.
-4. **Frontend bundle budget: 300 KB gzipped max.** No new UI dependency without written justification in the PR. No CSS framework. Images are inline SVG.
+4. **Frontend bundle budget — two numbers, both enforced by `e2e/ui-perf.mjs`:** the CRITICAL PATH (all initial JS+CSS **excluding** the lazily-loaded 3D dice-engine chunk) stays **under 300 KB gzipped**; the TOTAL landing transfer (including that lazy three.js chunk the lobby hero pulls in after paint) stays **under 500 KB gzipped**. No new UI dependency without written justification in the PR. No CSS framework. Images are inline SVG.
 5. **MiniPay constraints** (docs/ARCHITECTURE.md §MiniPay): legacy transactions only (no EIP-1559), `feeCurrency` cUSD, stablecoins cUSD/USDC/USDT only, detection via `window.ethereum?.isMiniPay`.
 6. **Strict TypeScript everywhere.** `any` is forbidden except with a `// justified-any:` comment.
 7. **WebSocket messages**: any protocol evolution happens in `packages/shared/src/protocol.ts` FIRST, then server, then client — never the other way around.

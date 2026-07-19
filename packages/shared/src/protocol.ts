@@ -892,6 +892,12 @@ export interface Player4Info {
   frame?: string;
   /** Chosen profile avatar id (AVATARS); absent/'none' = show the flag. */
   avatar?: string;
+  /** Equipped cosmetics (4p extension): pawn skin drawn on this seat's pieces,
+   *  entrance burst at match start, victory flourish if this seat wins — same
+   *  catalog-validated ids as the 1v1 OpponentInfo. Absent for bots. */
+  tokenSkin?: string;
+  entranceFx?: string;
+  victoryFx?: string;
 }
 
 export type ErrorCode =
