@@ -73,12 +73,16 @@ function EloReveal({ delta, rating }: { delta: number; rating: number }) {
 }
 
 export function EndScreen({ onRematch, onDecline, onAddFriend }: { onRematch(): void; onDecline(): void; onAddFriend(pid: string): Promise<boolean> }) {
-  const { result, match, settleTxHash, refunded, league, walletBacked, profile, rematchOffer, crownGain, friends } = useAppState();
+  const { result, match, settleTxHash, refunded, league, walletBacked, profile, rematchOffer, crownGain, friends, friendRequests } = useAppState();
   // Friend request state for THIS opponent: idle → sent (one-way latch; the
   // reciprocal add finalizing to 'friends' shows on the lobby friends card).
   const [friendSent, setFriendSent] = useState(false);
   const opponentPid = match?.opponent.pid;
   const alreadyFriend = !!opponentPid && friends.some((f) => f.pid === opponentPid);
+  // The opponent ➕'d ME during this game (their request arrived live): the
+  // button flips to an ACCEPT — both players can seal the friendship without
+  // ever leaving the end screen, so no request is missed in the moment.
+  const incomingFromOpponent = !!opponentPid && friendRequests.some((r) => r.pid === opponentPid);
 
   const won = !!result && !!match && result.winner === match.seat;
   const staked = !!match && match.stakeCents > 0;
@@ -185,14 +189,18 @@ export function EndScreen({ onRematch, onDecline, onAddFriend }: { onRematch(): 
               wallet on my side; hidden once we're already friends. */}
           {opponentPid && walletBacked && !alreadyFriend && (
             <button
-              className="btn btn--ghost endfriend"
+              className={`btn endfriend${incomingFromOpponent ? '' : ' btn--ghost'}`}
               disabled={friendSent}
               onClick={() => {
                 setFriendSent(true);
                 void onAddFriend(opponentPid).then((ok) => { if (!ok) setFriendSent(false); });
               }}
             >
-              {friendSent ? `✓ ${t('friendRequestSent')}` : `➕ ${t('addFriend')} ${match.opponent.name}`}
+              {friendSent
+                ? `✓ ${t('friendRequestSent')}`
+                : incomingFromOpponent
+                  ? `✓ ${t('friendAccept')} — ${match.opponent.name}`
+                  : `➕ ${t('addFriend')} ${match.opponent.name}`}
             </button>
           )}
           <button className="btn" onClick={onRematch}>

@@ -168,7 +168,7 @@ export function Lobby({
           <span className="btn--usdt__coin" aria-hidden="true">$</span>
           {t('playForUsdt')}
         </span>
-        <span className="btn--usdt__hint">{stakedTiers.map((s) => (s >= 100 ? `$${s / 100}` : `${s}¢`)).join(' · ')} {showStakes ? '▲' : '▾'}</span>
+        <span className="btn--usdt__hint">{t('winUpTo')} {fmtUsd(potCents(500 as StakeCents))} {showStakes ? '▲' : '▾'}</span>
       </button>
       {showStakes && (
         <div className="gstakes gstakes--reveal">
@@ -203,6 +203,28 @@ export function Lobby({
         <span><i>2</i>{t('howStep2')}</span>
         <span><i>3</i>{t('howStep3')}</span>
       </div>
+
+      {/* PENDING FRIEND REQUESTS — promoted near the top: a request is the most
+          actionable social moment on the page, and it persists server-side until
+          answered, so surfacing it prominently is what stops it being "lost". */}
+      {friendRequests.length > 0 && (
+        <div className="card friendreqcard">
+          {friendRequests.map((r) => (
+            <div key={r.pid} className="friendrow friendrow--request">
+              <span className={`friendrow__flag ${frameClass(r.frame)}`}>
+                {avatarSrc(r.avatar) ? <img className="profilecard__img" src={avatarSrc(r.avatar)!} alt="" /> : r.flag}
+              </span>
+              <span className="friendrow__meta">
+                <b>{r.name}</b>
+                <small>{t('friendRequestLabel')}</small>
+              </span>
+              <button className="friendrow__btn friendrow__btn--accept" onClick={() => { playTap('select'); void onAcceptFriend(r.pid); }}>
+                ✓ {t('friendAccept')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* SEASON PASS — the progression hub (crowns → tiers → rewards). Hidden
           until the player has SOME history: a first-time visitor must not face
@@ -280,24 +302,10 @@ export function Lobby({
       {/* FRIENDS (E-social 2): the persistent circle — requests to accept, then
           friends with a presence snapshot and a one-tap free challenge. Hidden
           entirely until the player HAS a circle (no empty-state noise). */}
-      {(friends.length > 0 || friendRequests.length > 0) && (
+      {friends.length > 0 && (
         <>
           <div className="seclabel">{t('friendsTitle')}</div>
           <div className="card friendscard">
-            {friendRequests.map((r) => (
-              <div key={r.pid} className="friendrow friendrow--request">
-                <span className={`friendrow__flag ${frameClass(r.frame)}`}>
-                  {avatarSrc(r.avatar) ? <img className="profilecard__img" src={avatarSrc(r.avatar)!} alt="" /> : r.flag}
-                </span>
-                <span className="friendrow__meta">
-                  <b>{r.name}</b>
-                  <small>{t('friendRequestLabel')}</small>
-                </span>
-                <button className="friendrow__btn friendrow__btn--accept" onClick={() => { playTap('select'); void onAcceptFriend(r.pid); }}>
-                  ✓ {t('friendAccept')}
-                </button>
-              </div>
-            ))}
             {friends.map((f) => (
               <div key={f.pid} className="friendrow">
                 <span className={`friendrow__flag ${frameClass(f.frame)}`}>
