@@ -592,6 +592,10 @@ export function Lobby({
         <button type="button" className="linklike" onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'tos' })}>{t('legalReadTos')}</button>
         {' · '}
         <button type="button" className="linklike" onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'privacy' })}>{t('legalReadPrivacy')}</button>
+        {/* Build id — support can instantly tell whether a report comes from a
+            stale cached bundle (webview/service-worker) or the current deploy. */}
+        {' · '}
+        <span className="buildtag">v{__APP_VERSION__}</span>
       </div>
 
       <Table4Modal onPractice={sheetPractice} onFree={sheetFree} onStaked={sheetStaked} />

@@ -285,6 +285,15 @@ const lastSeenByPid = new Map<string, number>();
 const presencePushAt = new Map<string, number>();
 const PRESENCE_PUSH_MIN_MS = 10_000;
 
+/** Rolling ANONYMISED trace of the friends flow, for production diagnosis of
+ *  the reported "invitation not received / can't accept" without log access.
+ *  In-memory, capped, short pid prefixes only. Served read-only on /health. */
+const friendTrace: string[] = [];
+function ftrace(ev: string): void {
+  friendTrace.push(`${new Date().toISOString().slice(11, 19)} ${ev}`);
+  if (friendTrace.length > 60) friendTrace.shift();
+}
+
 /** Tell my LIVE friends my presence flipped (connect/disconnect), throttled. */
 async function notifyFriendsPresence(myId: string): Promise<void> {
   const fids = await store.getFriendIds(myId);
@@ -357,6 +366,7 @@ async function sendFriendsTo(ws: WebSocket, id: string): Promise<void> {
 /** Push a live friends.update to a player's active session, if any. */
 async function pushFriendsUpdate(id: string): Promise<void> {
   const s = liveSessionFor(id);
+  ftrace(`push→${pidFor(id).slice(0, 6)} live=${s ? 'yes' : 'no'}`);
   if (!s) return;
   const lists = await buildFriendLists(id);
   s.send({ t: 'friends.update', friends: lists.friends, requests: lists.requests, outgoing: lists.outgoing });
@@ -920,7 +930,10 @@ const http = createServer((req, res) => {
   // kills a running server just because a dependency blipped.
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, sessions: sessions.size, rooms: rooms.size }));
+    // `friends` = the rolling anonymised friend-flow trace (production diagnosis
+    // of "invitation not received / can't accept"); harmless to expose — short
+    // pid prefixes only, which are public in-app identifiers anyway.
+    res.end(JSON.stringify({ ok: true, sessions: sessions.size, rooms: rooms.size, friends: friendTrace.slice(-40) }));
     return;
   }
   // Readiness: only "ready" if we can actually persist and (when settlement is
@@ -1101,6 +1114,9 @@ wss.on('connection', (ws, req) => {
         // here left every real user's requests/friends invisible in the lobby
         // (they only ever arrived via the live friends.update push, lost on reload).
         const rFriendLists = rProof.walletProven ? await buildFriendLists(rpid) : undefined;
+        if (resumedSession.wallet) {
+          ftrace(`hello res pid=${pidFor(rpid).slice(0, 6)} proven=${rProof.walletProven === true} mini=${resumedSession.miniPay === true} orig=${resumedSession.miniPayOriginOk !== false} req=${rFriendLists?.requests.length ?? '-'} fr=${rFriendLists?.friends.length ?? '-'}`);
+        }
         send(ws, {
           t: 'hello.ok',
           sessionToken: resumedSession.id,
@@ -1214,6 +1230,9 @@ wss.on('connection', (ws, req) => {
       // (same gate as h2h in profile.get). Unproven browser sessions get their
       // lists on the sync after wallet.prove.
       const friendLists = proof.walletProven ? await buildFriendLists(pid) : undefined;
+      if (wallet) {
+        ftrace(`hello new pid=${pidFor(idKey).slice(0, 6)} proven=${proof.walletProven === true} mini=${session.miniPay === true} orig=${session.miniPayOriginOk !== false} req=${friendLists?.requests.length ?? '-'} fr=${friendLists?.friends.length ?? '-'}`);
+      }
       send(ws, {
         t: 'hello.ok',
         sessionToken: id,
@@ -1550,20 +1569,26 @@ wss.on('connection', (ws, req) => {
         // wallet must be PROVEN — an unproven hello could graft requests onto
         // any wallet's social graph. Same gate as h2h.
         if (!session.walletProven) {
+          ftrace(`add REJECT unproven (wallet=${session.wallet ? 'yes' : 'no'} mini=${session.miniPay === true} orig=${session.miniPayOriginOk !== false})`);
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to add friends.' });
           break;
         }
         const now = Date.now();
-        if (now - (session.lastFriendMsgAt ?? 0) < 1000) break;
+        if (now - (session.lastFriendMsgAt ?? 0) < 1000) {
+          ftrace(`add REJECT throttle pid=${msg.pid.slice(0, 6)}`);
+          break;
+        }
         session.lastFriendMsgAt = now;
         const myId = playerId(session.wallet, session.id);
         const target = await store.getProfileByPid(msg.pid);
         if (!target || target.id === myId) {
+          ftrace(`add REJECT ${target ? 'self' : 'unknown-target'} pid=${msg.pid.slice(0, 6)}`);
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Unknown player' });
           break;
         }
         const status = await store.addFriend(myId, target.id);
         telemetry('friend.add', { from: tpid(myId), to: tpid(target.id), status });
+        ftrace(`add OK ${pidFor(myId).slice(0, 6)}→${msg.pid.slice(0, 6)} status=${status}`);
         // Ack + my refreshed lists on THE ACTING socket (race-free — see
         // sendFriendsTo). The client's add/accept resolves on this friends.update.
         send(ws, { t: 'friend.added', pid: msg.pid, status });
@@ -1575,7 +1600,10 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'friend.remove': {
-        if (!session.walletProven) break;
+        if (!session.walletProven) {
+          ftrace('remove REJECT unproven');
+          break;
+        }
         const now = Date.now();
         if (now - (session.lastFriendMsgAt ?? 0) < 1000) break;
         session.lastFriendMsgAt = now;
