@@ -2178,6 +2178,13 @@ small.muted { font-size: 12px; }
    die's resting face renders at ~52px — matching the default die — while the
    spinning cube's diagonal still has room. The CSS-die fallback keeps the 52px. */
 .die3d-stage.diepremium { overflow: visible; }
+/* The compact opponent HUD tile (44px) is a flex row, and the fixed 52px stage
+   was flex-SHRUNK in width only (36×52). The CSS cube inside uses fixed px so
+   it stayed square, but the WebGL canvas fills the stage BY PERCENTAGE — the
+   square render buffer displayed as a stretched portrait rectangle. Never
+   shrink the stage: a 52px square centered on the tile is exactly the
+   footprint the CSS cube die already renders. */
+.huddie .die3d-stage { flex: 0 0 auto; }
 .diepremium__host { position: absolute; inset: -20%; transition: opacity 0.2s ease; }
 .diepremium__fallback { position: absolute; inset: 0; transition: opacity 0.2s ease; }
 .diepremium__host canvas { display: block; width: 100%; height: 100%; }
