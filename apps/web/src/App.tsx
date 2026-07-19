@@ -617,7 +617,7 @@ export default function App() {
         return false;
       }
       dispatch({ type: 'CLAIMED_SETS', setIds: res.claimedSets, tickets: res.tickets });
-      dispatch({ type: 'TOAST', message: `📚 ${t('setClaimedToast')}` });
+      dispatch({ type: 'TOAST', message: `📚 ${t('setClaimedToast')} +${res.granted} 🎟️` });
       return true;
     },
     [dispatch],

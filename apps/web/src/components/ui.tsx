@@ -14,7 +14,7 @@ import { avatarSrc, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
 import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
 import { devUnlockCosmetics } from '../lib/devUnlock';
 import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
-import { COSMETIC_SETS, DIVISIONS, PREMIUM_COSMETICS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticById, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
+import { COSMETIC_SETS, DIVISIONS, FEATURED_SET_MULTIPLIER, PREMIUM_COSMETICS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticById, cosmeticCents, featuredSetIdFor, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
 import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
@@ -254,13 +254,17 @@ export function GiftCosmeticModal({ onSend }: { onSend(pid: string, id: string):
  *  owned-count progress bar, and the one-time ticket bonus claim. Ownership is
  *  server-authoritative (ownedSkins/claimedSets both come from hello.ok). */
 export function CollectionSheet({ onClaim }: { onClaim(setId: string): Promise<boolean> }) {
-  const { collectionOpen, ownedSkins, claimedSets, walletAddress } = useAppState();
+  const { collectionOpen, ownedSkins, claimedSets, walletAddress, season } = useAppState();
   const dispatch = useAppDispatch();
   const [claiming, setClaiming] = useState<string | null>(null);
   const close = (): void => void dispatch({ type: 'COLLECTION_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(collectionOpen, close);
   if (!collectionOpen) return null;
   const devAll = devUnlockCosmetics(walletAddress);
+  // Seasonal rotation (phase 3b): the same deterministic pick the server pays
+  // ×2 on — plus the days left, for urgency. Absent until hello.ok syncs.
+  const featuredId = season ? featuredSetIdFor(season.id) : null;
+  const seasonDaysLeft = season ? Math.max(0, Math.ceil((new Date(season.endsAt).getTime() - Date.now()) / 86_400_000)) : 0;
   const setName = (id: string): string =>
     id === 'set-heritage' ? t('setHeritage') : id === 'set-gold' ? t('setGold') : t('setRoyale');
   return (
@@ -273,8 +277,15 @@ export function CollectionSheet({ onClaim }: { onClaim(setId: string): Promise<b
           const complete = ownedCount === set.itemIds.length;
           const claimed = claimedSets.includes(set.id);
           const pct = Math.round((ownedCount / set.itemIds.length) * 100);
+          const featured = set.id === featuredId && !claimed;
+          const bonus = set.rewardTickets * (featured ? FEATURED_SET_MULTIPLIER : 1);
           return (
-            <div key={set.id} className="collset">
+            <div key={set.id} className={`collset${featured ? ' collset--featured' : ''}`}>
+              {featured && (
+                <div className="collset__ribbon">
+                  ⭐ {t('featuredSet')} · ×{FEATURED_SET_MULTIPLIER} · {t('seasonEndsIn').replace('{d}', String(seasonDaysLeft))}
+                </div>
+              )}
               <div className="collset__head">
                 <b>{setName(set.id)}</b>
                 <small className="muted">{ownedCount}/{set.itemIds.length}</small>
@@ -291,7 +302,7 @@ export function CollectionSheet({ onClaim }: { onClaim(setId: string): Promise<b
               </div>
               <div className="seasonbar__track collset__bar"><span className="seasonbar__fill" style={{ width: `${pct}%` }} /></div>
               {claimed ? (
-                <small className="collset__done">✓ {t('setClaimed')} +{set.rewardTickets} 🎟️</small>
+                <small className="collset__done">✓ {t('setClaimed')}</small>
               ) : complete ? (
                 <button
                   className="btn collset__claim"
@@ -301,10 +312,10 @@ export function CollectionSheet({ onClaim }: { onClaim(setId: string): Promise<b
                     void onClaim(set.id).then(() => setClaiming(null));
                   }}
                 >
-                  {claiming === set.id ? '…' : `🎁 ${t('setClaim')} +${set.rewardTickets} 🎟️`}
+                  {claiming === set.id ? '…' : `🎁 ${t('setClaim')} +${bonus} 🎟️`}
                 </button>
               ) : (
-                <small className="muted">{t('setBonus')} +{set.rewardTickets} 🎟️</small>
+                <small className="muted">{t('setBonus')} +{bonus} 🎟️</small>
               )}
             </div>
           );

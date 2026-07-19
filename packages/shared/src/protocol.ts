@@ -346,6 +346,17 @@ export function cosmeticSetById(id: string): CosmeticSet | undefined {
   return COSMETIC_SETS.find((s) => s.id === id);
 }
 
+/** Seasonal rotation (phase 3b — content cadence without content cost): every
+ *  season FEATURES one set, rotating deterministically with the season id, and
+ *  claiming the featured set DURING its season pays ×FEATURED_SET_MULTIPLIER.
+ *  Sets never leave the album (off-season claims pay the base bonus) — the
+ *  rotation creates urgency, not unavailability. Client and server derive the
+ *  same answer from the same season id, zero sync needed. */
+export const FEATURED_SET_MULTIPLIER = 2;
+export function featuredSetIdFor(seasonId: number): string {
+  return COSMETIC_SETS[(Math.max(1, Math.floor(seasonId)) - 1) % COSMETIC_SETS.length]!.id;
+}
+
 /** Ticket price map, derived for backward compatibility (server spend + skin.buy
  *  validation + the dice picker all key off this). id → ticket price. */
 export const PREMIUM_SKINS: Record<string, number> = Object.fromEntries(
@@ -751,8 +762,10 @@ export type ServerMsg =
   // the item owned at their next hello (the giver tells them on WhatsApp).
   | { t: 'friend.gift.received'; from: FriendInfo; id: string; ownedIds: string[] }
   // Ack for collection.claim: the set bonus was granted (or had already been —
-  // idempotent). `tickets` = new balance; `claimedSets` = full claimed list.
-  | { t: 'collection.claimed'; setId: string; tickets: number; claimedSets: string[] }
+  // idempotent). `tickets` = new balance; `claimedSets` = full claimed list;
+  // `granted` = tickets THIS claim paid (base ×2 when the set was the season's
+  // featured one; 0 on an idempotent re-claim).
+  | { t: 'collection.claimed'; setId: string; tickets: number; claimedSets: string[]; granted: number }
   // Your last opponent clicked Rematch and is waiting; `name` is their display
   // label. The end screen surfaces an Accept/Decline offer instead of the game
   // silently depending on both sides happening to click.

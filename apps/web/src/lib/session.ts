@@ -490,7 +490,7 @@ export function claimCollection(
   serverUrl: string,
   setId: string,
   walletAddress?: string,
-): Promise<{ tickets: number; claimedSets: string[] } | null> {
+): Promise<{ tickets: number; claimedSets: string[]; granted: number } | null> {
   return new Promise((resolve) => {
     let ws: WebSocket;
     try {
@@ -499,7 +499,7 @@ export function claimCollection(
       resolve(null);
       return;
     }
-    const done = (v: { tickets: number; claimedSets: string[] } | null): void => {
+    const done = (v: { tickets: number; claimedSets: string[]; granted: number } | null): void => {
       resolve(v);
       try {
         ws.close();
@@ -532,7 +532,7 @@ export function claimCollection(
       }
       if (msg.t === 'collection.claimed') {
         clearTimeout(timer);
-        done({ tickets: msg.tickets, claimedSets: msg.claimedSets });
+        done({ tickets: msg.tickets, claimedSets: msg.claimedSets, granted: msg.granted });
       } else if (msg.t === 'error') {
         clearTimeout(timer);
         done(null);
