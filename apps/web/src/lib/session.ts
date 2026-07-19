@@ -358,6 +358,20 @@ export type JoinIntent =
 // (R-RT-1) lets the newest socket own the session and the stale one go quiet.
 const TOKEN_KEY = 'ludo.sessionToken';
 
+/** One-shot sockets all RESUME the tab's session token, and the server CLOSES
+ *  the previous socket whenever a newer resume lands (R-RT-1 double-tab
+ *  takeover). Two concurrent one-shots from this tab therefore kill each other
+ *  — in production the 8 s lobby presence poll landing mid friend-accept was
+ *  closing the accept's socket ("impossible d'accepter", intermittent).
+ *  Serialise EVERY one-shot through this queue so the tab never has two in
+ *  flight; each is bounded by its own timeout, so the queue cannot stall. */
+let oneShotChain: Promise<unknown> = Promise.resolve();
+function queueOneShot<T>(run: () => Promise<T>): Promise<T> {
+  const next = oneShotChain.then(run, run);
+  oneShotChain = next.catch(() => undefined);
+  return next;
+}
+
 /** One-shot lobby sync at app open: pulls fresh league standings + daily
  *  challenge/limits over a throwaway hello, so device-cached data self-heals
  *  (weekly rollover, server-side resets) without waiting for the next game.
@@ -376,48 +390,60 @@ export function syncLobby(
     friends?(friends: FriendInfo[], requests: FriendInfo[], outgoing?: FriendInfo[]): void;
   },
 ): void {
-  let ws: WebSocket;
-  try {
-    ws = new WebSocket(withQa(serverUrl));
-  } catch {
-    return;
-  }
-  const timer = setTimeout(() => ws.close(), 8_000);
-  ws.onopen = () => {
-    const b = new Uint8Array(16);
-    crypto.getRandomValues(b);
-    const entropy = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
-    let token: string | null = null;
-    try {
-      token = localStorage.getItem(TOKEN_KEY);
-    } catch {
-      /* storage unavailable */
-    }
-    ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
-  };
-  ws.onmessage = (e) => {
-    let msg: ServerMsg;
-    try {
-      msg = JSON.parse(String(e.data)) as ServerMsg;
-    } catch {
-      return;
-    }
-    if (msg.t !== 'hello.ok') return;
-    clearTimeout(timer);
-    try {
-      if (msg.sessionToken) localStorage.setItem(TOKEN_KEY, msg.sessionToken);
-    } catch {
-      /* storage unavailable */
-    }
-    if (msg.league) on.league(msg.league);
-    if (msg.challenge) on.challenge(msg.challenge);
-    if (msg.streak) on.streak(msg.streak);
-    if (msg.limits) on.limits(msg.limits);
-    if (msg.season) on.season?.(msg.season);
-    if (msg.friends || msg.friendRequests || msg.friendsOutgoing) on.friends?.(msg.friends ?? [], msg.friendRequests ?? [], msg.friendsOutgoing ?? []);
-    ws.close();
-  };
-  ws.onerror = () => clearTimeout(timer);
+  void queueOneShot(
+    () =>
+      new Promise<void>((resolve) => {
+        let ws: WebSocket;
+        try {
+          ws = new WebSocket(withQa(serverUrl));
+        } catch {
+          resolve();
+          return;
+        }
+        const timer = setTimeout(() => ws.close(), 8_000);
+        // onclose is the single completion signal (success, failure, or killed):
+        // it releases the one-shot queue for the next waiting socket.
+        ws.onclose = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        ws.onopen = () => {
+          const b = new Uint8Array(16);
+          crypto.getRandomValues(b);
+          const entropy = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+          let token: string | null = null;
+          try {
+            token = localStorage.getItem(TOKEN_KEY);
+          } catch {
+            /* storage unavailable */
+          }
+          ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+        };
+        ws.onmessage = (e) => {
+          let msg: ServerMsg;
+          try {
+            msg = JSON.parse(String(e.data)) as ServerMsg;
+          } catch {
+            return;
+          }
+          if (msg.t !== 'hello.ok') return;
+          clearTimeout(timer);
+          try {
+            if (msg.sessionToken) localStorage.setItem(TOKEN_KEY, msg.sessionToken);
+          } catch {
+            /* storage unavailable */
+          }
+          if (msg.league) on.league(msg.league);
+          if (msg.challenge) on.challenge(msg.challenge);
+          if (msg.streak) on.streak(msg.streak);
+          if (msg.limits) on.limits(msg.limits);
+          if (msg.season) on.season?.(msg.season);
+          if (msg.friends || msg.friendRequests || msg.friendsOutgoing) on.friends?.(msg.friends ?? [], msg.friendRequests ?? [], msg.friendsOutgoing ?? []);
+          ws.close();
+        };
+        ws.onerror = () => clearTimeout(timer);
+      }),
+  );
 }
 
 /**
@@ -432,7 +458,7 @@ export function sendFriendAction(
   action: { t: 'friend.add' | 'friend.remove'; pid: string },
   walletAddress?: string,
 ): Promise<{ friends: FriendInfo[]; requests: FriendInfo[]; outgoing?: FriendInfo[] } | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -484,7 +510,7 @@ export function sendFriendAction(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 
 /**
@@ -497,7 +523,7 @@ export function claimCollection(
   setId: string,
   walletAddress?: string,
 ): Promise<{ tickets: number; claimedSets: string[]; granted: number } | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -548,7 +574,7 @@ export function claimCollection(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 
 /**
@@ -563,7 +589,7 @@ export function sendFriendGift(
   cosmeticId: string,
   walletAddress?: string,
 ): Promise<{ tickets: number } | { error: string } | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -614,7 +640,7 @@ export function sendFriendGift(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 
 /**
@@ -630,7 +656,7 @@ export function pushIdentity(
   walletAddress?: string,
   avatar?: string,
 ): Promise<{ name: string; flag: string } | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -674,7 +700,7 @@ export function pushIdentity(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 
 /**
@@ -685,7 +711,7 @@ export function pushIdentity(
  * the head-to-head — is enough for a read.
  */
 export function fetchProfile(serverUrl: string, pid: string): Promise<PublicProfile | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -734,7 +760,7 @@ export function fetchProfile(serverUrl: string, pid: string): Promise<PublicProf
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 
 /**
@@ -746,7 +772,7 @@ export function sendLimits(
   payload: { dailyLimitCents?: number; selfExcludeDays?: number },
   walletAddress?: string,
 ): Promise<LimitsState | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -794,7 +820,7 @@ export function sendLimits(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 
 /**
@@ -807,7 +833,7 @@ export function buySkin(
   skinId: string,
   walletAddress?: string,
 ): Promise<{ ownedIds: string[]; tickets: number } | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -858,7 +884,7 @@ export function buySkin(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 
 /**
@@ -872,7 +898,7 @@ export function claimCosmetic(
   id: string,
   walletAddress?: string,
 ): Promise<{ ownedIds: string[]; tickets: number } | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -923,7 +949,7 @@ export function claimCosmetic(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 /**
  * One-shot: claim a season-pass tier reward. Opens a short-lived socket, hellos
@@ -937,7 +963,7 @@ export function claimSeasonReward(
   lane: 'free' | 'premium',
   walletAddress?: string,
 ): Promise<SeasonState | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -990,7 +1016,7 @@ export function claimSeasonReward(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 /**
  * One-shot: unlock the premium season pass. Sends the verified USDT purchase tx;
@@ -1002,7 +1028,7 @@ export function buySeasonPremium(
   txHash: string,
   walletAddress?: string,
 ): Promise<SeasonState | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -1053,14 +1079,14 @@ export function buySeasonPremium(
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 /**
  * One-shot: buy a streak-freeze with tickets. Resolves with the fresh StreakState
  * (freezes + ticket total) the server pushes back, or null on error/timeout.
  */
 export function buyStreakFreeze(serverUrl: string, walletAddress?: string): Promise<StreakState | null> {
-  return new Promise((resolve) => {
+  return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(withQa(serverUrl));
@@ -1111,7 +1137,7 @@ export function buyStreakFreeze(serverUrl: string, walletAddress?: string): Prom
       clearTimeout(timer);
       done(null);
     };
-  });
+  }));
 }
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
