@@ -15,6 +15,7 @@ import {
   STREAK_FREEZE,
   TABLE4,
   PREMIUM_SKINS,
+  cosmeticSetById,
   MAX_DAILY_GAMES_VS_SAME,
   parseClientMsg,
   PROFILE_NAME_MIN,
@@ -1137,6 +1138,7 @@ wss.on('connection', (ws, req) => {
       const comeback = wallet ? await applyWinback(pid, streak, limits) : undefined;
       if (comeback) challenge = await store.getChallenge(pid, utcToday()); // refresh ticket total
       const ownedSkins = await store.getOwnedSkins(pid);
+      const claimedSets = await store.getClaimedSets(pid);
       const season = await buildSeasonState(store, pid, new Date().toISOString());
       await recordConsent(session, msg.consent);
       const proof = issueWalletNonce(session);
@@ -1161,6 +1163,7 @@ wss.on('connection', (ws, req) => {
         streak,
         limits,
         ownedSkins,
+        claimedSets,
         season,
         comeback,
         stakingBlocked: isGeoBlocked(country),
@@ -1718,6 +1721,38 @@ wss.on('connection', (ws, req) => {
         const owned = await store.ownSkin(cpid, msg.id);
         const held = (await store.getChallenge(cpid, utcToday())).tickets;
         session.send({ t: 'skin.owned', ownedIds: owned, tickets: held });
+        break;
+      }
+
+      case 'collection.claim': {
+        // One-time ticket bonus for a COMPLETED cosmetic set (phase 3). Same
+        // wallet-keyed trust model as skin.buy: the claim credits a durable
+        // balance, so an unproven wallet-hello can't farm it.
+        if (walletKeyedWriteBlocked(session)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Verify your wallet to claim set bonuses.' });
+          break;
+        }
+        const set = cosmeticSetById(msg.setId);
+        if (!set) break; // parse already guarantees this; belt-and-braces
+        const setPid = playerId(session.wallet, session.id);
+        const alreadyClaimed = await store.getClaimedSets(setPid);
+        if (alreadyClaimed.includes(set.id)) {
+          // Idempotent: never grant twice, just restate the claimed state.
+          const bal = (await store.getChallenge(setPid, utcToday())).tickets;
+          session.send({ t: 'collection.claimed', setId: set.id, tickets: bal, claimedSets: alreadyClaimed });
+          break;
+        }
+        const ownedNow = await store.getOwnedSkins(setPid);
+        if (!set.itemIds.every((itemId) => ownedNow.includes(itemId))) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Own every item of the set first.' });
+          break;
+        }
+        // Record the claim BEFORE granting so a crash between the two can only
+        // under-pay (support-fixable), never open a repeat-grant loop.
+        const claimedNow = await store.claimSet(setPid, set.id);
+        const newBal = await store.grantTickets(setPid, set.rewardTickets);
+        session.send({ t: 'collection.claimed', setId: set.id, tickets: newBal, claimedSets: claimedNow });
+        telemetry('collection.claim', { pid: tpid(setPid), setId: set.id, tickets: set.rewardTickets });
         break;
       }
 

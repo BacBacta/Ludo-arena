@@ -312,7 +312,39 @@ export const PREMIUM_COSMETICS: readonly CosmeticItem[] = [
   // Ids must ALSO be in AVATAR_FRAMES (the hello allowlist).
   { id: 'fr-sunburst', kind: 'frame', tickets: 120, cents: 199 }, // epic — rotating rays
   { id: 'fr-leopard', kind: 'frame', tickets: 250, cents: 299 }, // legendary — spotted shimmer
+  // LEGENDARY "Savane Royale" line (cosmetics phase 3): the top of the catalog,
+  // one item per kind so completing the set means buying across the whole shop.
+  { id: 'tok-lion', kind: 'token', tickets: 250, cents: 499 }, // legendary — golden mane
+  { id: 'brd-serengeti', kind: 'board', tickets: 250, cents: 499 }, // legendary — dusk savanna
+  { id: 'vx-stampede', kind: 'victory', tickets: 250, cents: 499 }, // legendary — animal parade
 ] as const;
+
+/**
+ * Collection albums (cosmetics phase 3 — Monopoly-GO-style completion pull):
+ * a set is COMPLETE when every itemId is in the player's owned list; completing
+ * one pays a one-time ticket bonus, claimed explicitly via `collection.claim`
+ * (server-authoritative + idempotent — the claim is recorded per player).
+ * Free/progression cosmetics are deliberately excluded: sets are a catalog
+ * sink, so every slot is a purchase (or a gift — gifts count, same owned set).
+ */
+export interface CosmeticSet {
+  id: string;
+  /** Catalog item ids that complete the set (ALL must be owned). */
+  itemIds: readonly string[];
+  /** Freeroll tickets granted ONCE on claim. */
+  rewardTickets: number;
+}
+export const COSMETIC_SETS: readonly CosmeticSet[] = [
+  // Heritage fabrics — the phase-1 pawn line (entry-level set, common+rare).
+  { id: 'set-heritage', itemIds: ['tok-wax', 'tok-kente', 'tok-bogolan'], rewardTickets: 25 },
+  // All that glitters — gold across four kinds (rare+epic).
+  { id: 'set-gold', itemIds: ['tok-gilded', 'fx-goldrain', 'vx-crown', 'fr-sunburst'], rewardTickets: 50 },
+  // Savane Royale — the legendary line, one item per kind.
+  { id: 'set-royale', itemIds: ['tok-lion', 'brd-serengeti', 'vx-stampede', 'fr-leopard'], rewardTickets: 100 },
+] as const;
+export function cosmeticSetById(id: string): CosmeticSet | undefined {
+  return COSMETIC_SETS.find((s) => s.id === id);
+}
 
 /** Ticket price map, derived for backward compatibility (server spend + skin.buy
  *  validation + the dice picker all key off this). id → ticket price. */
@@ -574,6 +606,9 @@ export type ClientMsg =
   // Yalla's gift economy, ticket rail only). The grant is durable server-side;
   // the live in-app toast is best-effort (WhatsApp remains the offline channel).
   | { t: 'friend.gift'; pid: string; id: string }
+  // Claim the one-time ticket bonus for a COMPLETED cosmetic set (phase 3).
+  // Server verifies every item of the set is owned; idempotent per player.
+  | { t: 'collection.claim'; setId: string }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -674,6 +709,7 @@ export type ServerMsg =
       league?: LeagueState;
       limits?: LimitsState; // responsible-gaming state (E5.2)
       ownedSkins?: string[]; // premium skins the player has unlocked (server-authoritative)
+      claimedSets?: string[]; // cosmetic-set bonuses already claimed (phase 3)
       season?: SeasonState; // current season pass state (crowns, tier, claims, reward table)
       comeback?: Comeback; // win-back offer surfaced on return after an absence (Phase 3)
       stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
@@ -714,6 +750,9 @@ export type ServerMsg =
   // what it is, and their refreshed owned list. Offline recipients simply find
   // the item owned at their next hello (the giver tells them on WhatsApp).
   | { t: 'friend.gift.received'; from: FriendInfo; id: string; ownedIds: string[] }
+  // Ack for collection.claim: the set bonus was granted (or had already been —
+  // idempotent). `tickets` = new balance; `claimedSets` = full claimed list.
+  | { t: 'collection.claimed'; setId: string; tickets: number; claimedSets: string[] }
   // Your last opponent clicked Rematch and is waiting; `name` is their display
   // label. The end screen surfaces an Accept/Decline offer instead of the game
   // silently depending on both sides happening to click.
@@ -921,6 +960,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'friend.gift':
       // pid rule as above; the gift must be a real ticket-priced catalog item.
       return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) && typeof m.id === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.id) ? m : null;
+    case 'collection.claim':
+      return typeof m.setId === 'string' && cosmeticSetById(m.setId) !== undefined ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

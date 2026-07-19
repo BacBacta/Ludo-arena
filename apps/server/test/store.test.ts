@@ -352,6 +352,23 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       await store.close();
     });
 
+    it('records claimed cosmetic-set bonuses idempotently (phase 3)', async () => {
+      const store = make();
+      await store.init();
+      const id = 'anon:' + Math.random().toString(16).slice(2, 8);
+      await store.getOrCreatePlayer(id, { name: 'S', flag: '🌍' });
+
+      expect(await store.getClaimedSets(id)).toEqual([]);
+      expect(await store.claimSet(id, 'set-heritage')).toEqual(['set-heritage']);
+      // idempotent: re-claiming never duplicates (the handler grants ONCE)
+      expect(await store.claimSet(id, 'set-heritage')).toEqual(['set-heritage']);
+      const claimed = await store.claimSet(id, 'set-royale');
+      expect(claimed.sort()).toEqual(['set-heritage', 'set-royale']);
+      expect((await store.getClaimedSets(id)).sort()).toEqual(['set-heritage', 'set-royale']);
+
+      await store.close();
+    });
+
     it('tracks daily stake, resets next day, and honours self-exclusion (E5.2)', async () => {
       const store = make();
       await store.init();

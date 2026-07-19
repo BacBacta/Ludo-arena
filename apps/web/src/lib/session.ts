@@ -129,6 +129,8 @@ export interface SessionEvents {
   onTickets(granted: number, total: number, reason: 'anti-tilt' | 'freeroll-win' | 'sync'): void;
   /** Premium dice skins the player owns (from hello.ok). */
   onSkins(ownedIds: string[]): void;
+  /** Cosmetic-set bonuses already claimed (phase 3, from hello.ok). */
+  onClaimedSets?(setIds: string[]): void;
   /** Win-back comeback offer surfaced on return after an absence (Phase 3). */
   onComeback(c: Comeback): void;
   /** Full season pass state (hello.ok, or after a claim). */
@@ -470,6 +472,70 @@ export function sendFriendAction(
       if (msg.t === 'friends.update') {
         clearTimeout(timer);
         done({ friends: msg.friends, requests: msg.requests });
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
+
+/**
+ * One-shot: claim the ticket bonus for a COMPLETED cosmetic set (phase 3).
+ * Resumes the player's session, sends collection.claim, resolves with the new
+ * balance + claimed list (or null on failure/incomplete set).
+ */
+export function claimCollection(
+  serverUrl: string,
+  setId: string,
+  walletAddress?: string,
+): Promise<{ tickets: number; claimedSets: string[] } | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: { tickets: number; claimedSets: string[] } | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 5000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'collection.claim', setId }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'collection.claimed') {
+        clearTimeout(timer);
+        done({ tickets: msg.tickets, claimedSets: msg.claimedSets });
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
       }
     };
     ws.onerror = () => {
@@ -1236,6 +1302,7 @@ export class RemoteSession implements GameSession {
         if (msg.league) this.ev.onLeague(msg.league);
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
+        if (msg.claimedSets) this.ev.onClaimedSets?.(msg.claimedSets);
         if (msg.season) this.ev.onSeasonState(msg.season);
         if (msg.friends || msg.friendRequests) this.ev.onFriends?.(msg.friends ?? [], msg.friendRequests ?? []);
         if (msg.comeback) this.ev.onComeback(msg.comeback);

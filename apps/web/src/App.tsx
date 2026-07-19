@@ -17,10 +17,10 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { ChallengeOfferModal, ComebackModal, DiceModal, DocModal, FairnessModal, GiftCosmeticModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
+import { ChallengeOfferModal, CollectionSheet, ComebackModal, DiceModal, DocModal, FairnessModal, GiftCosmeticModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
-import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
+import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
@@ -137,11 +137,12 @@ export default function App() {
       league: state.league,
       tickets: state.tickets,
       ownedSkins: state.ownedSkins,
+      claimedSets: state.claimedSets,
       limits: state.limits,
       profile: state.profile,
       season: state.season,
     });
-  }, [state.challenge, state.streak, state.league, state.tickets, state.ownedSkins, state.limits, state.profile, state.season]);
+  }, [state.challenge, state.streak, state.league, state.tickets, state.ownedSkins, state.claimedSets, state.limits, state.profile, state.season]);
 
   const refreshBalance = useCallback(
     async (wallet: Wallet) => {
@@ -379,6 +380,7 @@ export default function App() {
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
       onSkins: (ownedIds) => dispatch({ type: 'OWNED_SKINS', ownedIds }),
+      onClaimedSets: (setIds) => dispatch({ type: 'CLAIMED_SETS', setIds }),
       onSeasonState: (season) => dispatch({ type: 'SEASON_STATE', season }),
       onSeasonProgress: (p) => dispatch({ type: 'SEASON_PROGRESS', crowns: p.crowns, tier: p.tier, gained: p.gained }),
       onProfile: (p) => dispatch({ type: 'PROFILE', profile: p }),
@@ -601,6 +603,22 @@ export default function App() {
       }
       dispatch({ type: 'TOAST', message: res && 'error' in res ? res.error : t('friendActionFailed') });
       return false;
+    },
+    [dispatch],
+  );
+
+  /** collection.claim over a one-shot socket (phase 3): the server verifies the
+   *  whole set is owned, grants the bonus ONCE, and returns the claimed list. */
+  const claimSetBonus = useCallback(
+    async (setId: string): Promise<boolean> => {
+      const res = await claimCollection(SERVER_URL, setId, walletRef.current?.address);
+      if (!res) {
+        dispatch({ type: 'TOAST', message: t('friendActionFailed') });
+        return false;
+      }
+      dispatch({ type: 'CLAIMED_SETS', setIds: res.claimedSets, tickets: res.tickets });
+      dispatch({ type: 'TOAST', message: `📚 ${t('setClaimedToast')}` });
+      return true;
     },
     [dispatch],
   );
@@ -1060,6 +1078,9 @@ export default function App() {
       <ProfileSheet />
       <ProfileEditor onSave={onSaveProfile} />
       <DiceModal onBuy={purchaseSkin} onBuyCusd={purchaseCosmeticCusd} />
+      {/* Collection album (phase 3), opened from the shop — mounted AFTER the
+          shop modal so it always paints on top when both are open. */}
+      <CollectionSheet onClaim={claimSetBonus} />
       <SettingsModal onApply={applyLimits} />
       <RealityCheckModal
         minutesPlayed={Math.max(1, Math.round((Date.now() - sessionStart.current) / 60_000))}

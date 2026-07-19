@@ -50,6 +50,7 @@ interface PlayerRow {
   lostRakeCents: number;
   cashbackCents: number;
   ownedSkins: string[];
+  claimedSets: string[];
   stakeDate?: string;
   stakedTodayCents: number;
   dailyLimitCents: number;
@@ -165,6 +166,7 @@ export class MemoryStore implements Store {
       lostRakeCents: 0,
       cashbackCents: 0,
       ownedSkins: [],
+      claimedSets: [],
       stakedTodayCents: 0,
       dailyLimitCents: DEFAULT_DAILY_STAKE_LIMIT_CENTS,
     };
@@ -471,6 +473,17 @@ export class MemoryStore implements Store {
     if (!row) return [];
     if (!row.ownedSkins.includes(skinId)) row.ownedSkins.push(skinId);
     return [...row.ownedSkins];
+  }
+
+  async getClaimedSets(playerId: string): Promise<string[]> {
+    return [...(this.players.get(playerId)?.claimedSets ?? [])];
+  }
+
+  async claimSet(playerId: string, setId: string): Promise<string[]> {
+    const row = this.players.get(playerId);
+    if (!row) return [];
+    if (!row.claimedSets.includes(setId)) row.claimedSets.push(setId);
+    return [...row.claimedSets];
   }
 
   async getLimits(playerId: string, today: string): Promise<LimitsState> {

@@ -901,6 +901,24 @@ small.muted { font-size: 12px; }
   .entrancefx__p { animation: none; display: none; }
 }
 
+/* Collection album (cosmetics phase 3): sets, item tiles, completion claim. */
+.collentry { position: relative; width: 100%; margin-bottom: 12px; }
+.collentry__badge {
+  position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px;
+  border-radius: 10px; background: var(--accent); color: #22300f;
+  font-size: 12px; font-weight: 800; line-height: 20px; padding: 0 5px;
+}
+.collset { border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; text-align: left; }
+.collset__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.collset__head b { font-family: var(--font-display); font-size: 14px; }
+.collset__items { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.collset__item { width: 48px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: #f0f3fa; position: relative; }
+.collset__item .frametile__ring { width: 40px; height: 40px; display: block; position: relative; }
+.collset__item--missing { opacity: 0.35; filter: grayscale(0.9); }
+.collset__bar { margin-bottom: 8px; }
+.collset__claim { width: 100%; padding: 9px 12px; font-size: 13.5px; }
+.collset__done { color: var(--me); font-weight: 700; }
+
 /* Victory effects (cosmetics phase 2): the winner's flourish over the end
    screen — bigger, slower rise than the entrance burst, both players see it. */
 .victoryfx { position: fixed; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
