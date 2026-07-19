@@ -47,6 +47,18 @@ export function Lobby({
   const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, friends, friendRequests, sentRequests } = useAppState();
   const dispatch = useAppDispatch();
 
+  /** Recent opponents I can still invite: wallet-linked (have a pid) and not
+   *  already a friend, an incoming request, or one I've already sent. This is
+   *  the lobby's proactive "invite a friend" surface (previously the only way
+   *  to add someone was the post-game screen). Deduped by pid, newest first. */
+  const addableOpponents = recentOpponents.filter(
+    (o): o is typeof o & { pid: string } =>
+      !!o.pid &&
+      !friends.some((f) => f.pid === o.pid) &&
+      !friendRequests.some((r) => r.pid === o.pid) &&
+      !sentRequests.some((r) => r.pid === o.pid),
+  );
+
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
    *  server-side). Must take the stake as an argument — the 4-player sheet has
    *  its own stake, decoupled from the 1v1 hero picker, so reading the global
@@ -330,6 +342,36 @@ export function Lobby({
           <span className="mrow__badge"><IconTicket className="mrow__ticket" /> {tickets}</span>
         </button>
       </div>
+
+      {/* ADD FRIENDS — the proactive invite entry the lobby was missing: players
+          I recently faced (wallet-linked → have a pid) that I'm not already
+          friends with / haven't already invited. Tapping ➕ sends a friend
+          request (onAcceptFriend = friend.add serves both invite and accept).
+          Wallet-gated like the whole feature — hidden for guests so there's no
+          dead button that always errors "connect a wallet". */}
+      {walletBacked && addableOpponents.length > 0 && (
+        <>
+          <div className="seclabel">{t('addFriendsTitle')}</div>
+          <div className="card friendscard">
+            {addableOpponents.map((o) => (
+              <div key={o.pid} className="friendrow">
+                <span className={`friendrow__flag ${frameClass(o.frame)}`}>{o.flag}</span>
+                <span className="friendrow__meta">
+                  <b>{o.name}</b>
+                  <small>{t('addFriendHint')}</small>
+                </span>
+                <button
+                  className="friendrow__btn friendrow__btn--accept"
+                  aria-label={`${t('addFriend')} ${o.name}`}
+                  onClick={() => { playTap('select'); void onAcceptFriend(o.pid!); }}
+                >
+                  ➕ {t('addFriend')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* FRIENDS (E-social 2): the persistent circle — requests to accept, then
           friends with a presence snapshot and a one-tap free challenge. Hidden

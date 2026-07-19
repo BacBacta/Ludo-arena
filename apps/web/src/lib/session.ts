@@ -1114,8 +1114,11 @@ const MAX_RECONNECT_ATTEMPTS = 12;
 /** The INITIAL connection is retried this many times before we declare the server
  *  unreachable. The target audience is low-end Android on slow 3G, where a single
  *  wss handshake can miss a tight window on jitter/packet loss — one slow attempt
- *  must NOT read as "server unreachable" (private tables have no bot fallback). */
-const MAX_INITIAL_ATTEMPTS = 4;
+ *  must NOT read as "server unreachable" (private tables have no bot fallback).
+ *  Raised from 4 → 7 so a brief server blip (a single-machine redeploy restart is
+ *  a few connection-refused seconds) is ridden out silently rather than surfacing
+ *  the alarming "Server unreachable" toast + bot drop the moment it happens. */
+const MAX_INITIAL_ATTEMPTS = 7;
 
 export class RemoteSession implements GameSession {
   private ws: WebSocket | null = null;
