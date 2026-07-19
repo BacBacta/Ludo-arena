@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/store/memory.js';
 import { awardGameCrowns, baseCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from '../src/season.js';
-import { FREEROLL, SEASON, SEASON_SKINS, crownsForTier, seasonSkinsFor, seasonTiers, tierFromCrowns, winbackFor } from '@ludo/shared';
+import { COSMETIC_SETS, FEATURED_SET_MULTIPLIER, FREEROLL, SEASON, SEASON_SKINS, crownsForTier, featuredSetIdFor, seasonSkinsFor, seasonTiers, tierFromCrowns, winbackFor } from '@ludo/shared';
 
 const NOW = '2026-07-18T00:00:00.000Z';
 const DAY = '2026-07-18';
@@ -222,5 +222,28 @@ describe('buildSeasonState', () => {
     expect(st.claimedFree).toEqual([1]);
     expect(st.tiers).toHaveLength(SEASON.tierCount);
     expect(st.tiers[0]).toMatchObject({ tier: 1 });
+  });
+});
+
+describe('featured cosmetic set (seasonal rotation, phase 3b)', () => {
+  it('rotates deterministically through every set and wraps', () => {
+    const n = COSMETIC_SETS.length;
+    // Each season features exactly one set; consecutive seasons differ; wraps at n.
+    const first = Array.from({ length: n }, (_, i) => featuredSetIdFor(i + 1));
+    expect(new Set(first).size).toBe(n); // full coverage before any repeat
+    expect(featuredSetIdFor(1)).toBe(COSMETIC_SETS[0]!.id);
+    expect(featuredSetIdFor(n + 1)).toBe(featuredSetIdFor(1)); // wrap
+    expect(featuredSetIdFor(0)).toBe(featuredSetIdFor(1)); // clamped, never crashes
+  });
+
+  it('doubles the bonus only for the featured set', () => {
+    for (const set of COSMETIC_SETS) {
+      const featuredSeason = COSMETIC_SETS.indexOf(set) + 1;
+      const featured = featuredSetIdFor(featuredSeason) === set.id;
+      expect(featured).toBe(true);
+      expect(set.rewardTickets * FEATURED_SET_MULTIPLIER).toBe(set.rewardTickets * 2);
+      // a different season → this set is NOT featured
+      expect(featuredSetIdFor(featuredSeason + 1) === set.id).toBe(false);
+    }
   });
 });

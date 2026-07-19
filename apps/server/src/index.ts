@@ -16,6 +16,8 @@ import {
   TABLE4,
   PREMIUM_SKINS,
   cosmeticSetById,
+  featuredSetIdFor,
+  FEATURED_SET_MULTIPLIER,
   MAX_DAILY_GAMES_VS_SAME,
   parseClientMsg,
   PROFILE_NAME_MIN,
@@ -1739,7 +1741,7 @@ wss.on('connection', (ws, req) => {
         if (alreadyClaimed.includes(set.id)) {
           // Idempotent: never grant twice, just restate the claimed state.
           const bal = (await store.getChallenge(setPid, utcToday())).tickets;
-          session.send({ t: 'collection.claimed', setId: set.id, tickets: bal, claimedSets: alreadyClaimed });
+          session.send({ t: 'collection.claimed', setId: set.id, tickets: bal, claimedSets: alreadyClaimed, granted: 0 });
           break;
         }
         const ownedNow = await store.getOwnedSkins(setPid);
@@ -1747,12 +1749,18 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Own every item of the set first.' });
           break;
         }
+        // Seasonal rotation (phase 3b): the season's FEATURED set pays ×2 when
+        // claimed during its season — the SERVER's season clock decides, with
+        // the same deterministic rotation the client renders the ribbon from.
+        const seasonNow = await store.getSeason(new Date().toISOString());
+        const featured = featuredSetIdFor(seasonNow.id) === set.id;
+        const grantTotal = set.rewardTickets * (featured ? FEATURED_SET_MULTIPLIER : 1);
         // Record the claim BEFORE granting so a crash between the two can only
         // under-pay (support-fixable), never open a repeat-grant loop.
         const claimedNow = await store.claimSet(setPid, set.id);
-        const newBal = await store.grantTickets(setPid, set.rewardTickets);
-        session.send({ t: 'collection.claimed', setId: set.id, tickets: newBal, claimedSets: claimedNow });
-        telemetry('collection.claim', { pid: tpid(setPid), setId: set.id, tickets: set.rewardTickets });
+        const newBal = await store.grantTickets(setPid, grantTotal);
+        session.send({ t: 'collection.claimed', setId: set.id, tickets: newBal, claimedSets: claimedNow, granted: grantTotal });
+        telemetry('collection.claim', { pid: tpid(setPid), setId: set.id, tickets: grantTotal, featured });
         break;
       }
 
