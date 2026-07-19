@@ -22,3 +22,7 @@ packages/contracts/cache/
 e2e/.qa-key
 docs/preview/
 simulation/out/
+# throwaway local scripts (session probes, one-off checks)
+*.tmp.mjs
+*.tmp.mts
+*.tmp.ts
