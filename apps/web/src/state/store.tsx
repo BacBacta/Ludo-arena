@@ -598,8 +598,18 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, table4Open: a.open };
     case 'PROFILE_EDIT':
       return { ...s, profileEditOpen: a.open };
-    case 'FRIENDS':
-      return { ...s, friends: a.friends, friendRequests: a.requests };
+    case 'FRIENDS': {
+      // A request that arrives LIVE (mid-session) deserves attention: toast the
+      // first newly-appeared requester so the moment isn't silently missed —
+      // the request itself persists server-side and re-surfaces on every hello.
+      const fresh = a.requests.find((r) => !s.friendRequests.some((p) => p.pid === r.pid));
+      return {
+        ...s,
+        friends: a.friends,
+        friendRequests: a.requests,
+        toast: fresh ? `➕ ${fresh.name} ${t('friendRequestLabel')}` : s.toast,
+      };
+    }
     case 'CHALLENGE_OFFER':
       return { ...s, challengeOffer: a.offer };
     case 'LEGAL_MODAL':

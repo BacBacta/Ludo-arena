@@ -668,6 +668,24 @@ export default function App() {
     }
   }, [state.screen, applyUpdate]);
 
+  // First-game name prompt: auto-generated pseudos (a 32-name pool) are a poor
+  // identity once friends/ELO/rivals exist — after the FIRST game ever, when the
+  // player lands back on the lobby, open the profile editor ONCE so they choose
+  // their own name. localStorage-latched; a dismiss never re-prompts.
+  const prevScreen = useRef(state.screen);
+  useEffect(() => {
+    const cameHome = prevScreen.current === 'end' && state.screen === 'lobby';
+    prevScreen.current = state.screen;
+    if (!cameHome) return;
+    try {
+      if (localStorage.getItem('ludo.namePrompted') === '1') return;
+      localStorage.setItem('ludo.namePrompted', '1');
+    } catch {
+      return; // no storage → never auto-open (avoid prompting every game)
+    }
+    dispatch({ type: 'PROFILE_EDIT', open: true });
+  }, [state.screen, dispatch]);
+
   // Responsible-gaming reality check: while a player who has staked today keeps
   // playing, periodically remind them of time played + amount staked (read via a
   // ref so the interval isn't reset on every limits update).

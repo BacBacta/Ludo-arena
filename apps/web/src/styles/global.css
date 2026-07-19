@@ -418,9 +418,12 @@ a.btn {
   font-family: var(--font-display);
   color: #ffffff;
   background: linear-gradient(180deg, #2d4193 0%, #22347a 100%);
-  border: 1px solid rgba(255, 202, 58, 0.55);
-  border-bottom: 3px solid #17245c;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 14px rgba(23, 43, 99, 0.3);
+  /* Louder than the old hairline: the money path was reading as a footnote
+     under the hero CTA. Still SECONDARY (navy body, no size change) — the gold
+     frame + glow lift it without competing with PLAY. */
+  border: 2px solid rgba(255, 202, 58, 0.9);
+  border-bottom: 4px solid #b98700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 16px rgba(245, 179, 1, 0.32);
   transition: transform 0.12s ease, border-color 0.2s ease;
 }
 .btn--usdt:active { transform: scale(0.99); }
@@ -440,8 +443,8 @@ a.btn {
   box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25);
 }
 .btn--usdt__hint {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 800; /* "win up to $9.40" is the hook — let it read like one */
   color: var(--accent-2); /* gold on navy: 7.5:1 */
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -736,6 +739,14 @@ small.muted { font-size: 12px; }
 /* Friends & challenges (E-social 2): the lobby circle — request rows to accept,
    friend rows with a presence dot and a one-tap challenge. */
 .friendscard { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; }
+/* Pending requests promoted near the top of the lobby: gold-tinted so the most
+   actionable social moment on the page cannot be scrolled past unnoticed. */
+.friendreqcard {
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 12px;
+  background: linear-gradient(180deg, #fff8e2, #ffefc2);
+  border: 1.5px solid rgba(245, 179, 1, 0.55);
+  box-shadow: 0 6px 16px rgba(245, 179, 1, 0.18);
+}
 .friendrow { display: flex; align-items: center; gap: 10px; padding: 6px 2px; }
 .friendrow + .friendrow { border-top: 1px solid var(--line); }
 .friendrow__flag {
