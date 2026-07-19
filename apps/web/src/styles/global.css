@@ -772,6 +772,8 @@ small.muted { font-size: 12px; }
 }
 .friendrow__btn:active { transform: scale(0.95); }
 .friendrow__btn--accept { border-color: rgba(46, 158, 107, 0.5); color: var(--me); }
+/* gift-a-cosmetic (phase 2): compact square next to the challenge button */
+.friendrow__btn--gift { padding: 7px 9px; font-size: 15px; line-height: 1; border-color: rgba(255, 202, 58, 0.55); }
 .friendrow--request .friendrow__meta small { color: var(--accent); font-weight: 700; }
 .challengeoffer__who { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .challengeoffer__who .profilecard__flag { width: 52px; height: 52px; font-size: 30px; }
@@ -897,6 +899,20 @@ small.muted { font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .entrancefx__p { animation: none; display: none; }
+}
+
+/* Victory effects (cosmetics phase 2): the winner's flourish over the end
+   screen — bigger, slower rise than the entrance burst, both players see it. */
+.victoryfx { position: fixed; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
+.victoryfx__p { position: absolute; bottom: -8%; opacity: 0; animation: vxRise 2.3s ease-out forwards; }
+@keyframes vxRise {
+  0% { transform: translateY(0) scale(0.5) rotate(0deg); opacity: 0; }
+  12% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translateY(-78vh) scale(1.25) rotate(14deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .victoryfx__p { animation: none; display: none; }
 }
 
 /* Matchmaking: expanding radar rings around the searching avatar */

@@ -258,7 +258,7 @@ export const TABLE4 = { seats: 4, botFillMs: 12_000, stakedFillMs: 60_000 } as c
  *     is advisory until `cosmeticsStoreAvailable` flips true on the client.
  *  `kind` groups the store UI (dice faces vs board themes). Ownership is one flat
  *  server-authoritative set keyed by id, shared by both rails and both kinds. */
-export type CosmeticKind = 'dice' | 'board' | 'token' | 'entrance';
+export type CosmeticKind = 'dice' | 'board' | 'token' | 'entrance' | 'victory' | 'frame';
 export interface CosmeticItem {
   id: string;
   kind: CosmeticKind;
@@ -296,6 +296,22 @@ export const PREMIUM_COSMETICS: readonly CosmeticItem[] = [
   // seen by BOTH players. Pure CSS/emoji bursts — zero asset bytes.
   { id: 'fx-sparkle', kind: 'entrance', tickets: 50, cents: 99 }, // rare
   { id: 'fx-goldrain', kind: 'entrance', tickets: 120, cents: 199 }, // epic
+  // BOARD themes (cosmetics phase 2): re-skin the board's NEUTRAL surfaces only
+  // (plate, track cells, home squares) — the four seat colours are untouchable
+  // (gameplay readability). Local view only, never relayed: like Ludo King,
+  // each player plays on the board THEY bought.
+  { id: 'brd-night', kind: 'board', tickets: 50, cents: 99 }, // rare — midnight plate
+  { id: 'brd-savanna', kind: 'board', tickets: 50, cents: 99 }, // rare — warm sand
+  { id: 'brd-royal', kind: 'board', tickets: 120, cents: 199 }, // epic — velvet + gold
+  // VICTORY effects (cosmetics phase 2): the winner's flourish on the end screen,
+  // seen by BOTH players — the loser watching your crown drop is the social sell.
+  { id: 'vx-fireworks', kind: 'victory', tickets: 50, cents: 99 }, // rare
+  { id: 'vx-crown', kind: 'victory', tickets: 120, cents: 199 }, // epic
+  // PURCHASABLE animated avatar frames (cosmetics phase 2): the existing eight
+  // premium frames stay progression rewards; these two are shop-only flexes.
+  // Ids must ALSO be in AVATAR_FRAMES (the hello allowlist).
+  { id: 'fr-sunburst', kind: 'frame', tickets: 120, cents: 199 }, // epic — rotating rays
+  { id: 'fr-leopard', kind: 'frame', tickets: 250, cents: 299 }, // legendary — spotted shimmer
 ] as const;
 
 /** Ticket price map, derived for backward compatibility (server spend + skin.buy
@@ -324,6 +340,8 @@ export const AVATAR_FRAMES = [
   'none', 'bronze', 'silver', 'gold', 'champion', 'neon',
   // Ultra-premium illustrated + animated frames (SVG overlays, client-rendered).
   'laurel', 'flame', 'frost', 'circuit', 'royal', 'nebula', 'ruby', 'jade',
+  // Shop-only animated frames (cosmetics phase 2) — also in PREMIUM_COSMETICS.
+  'fr-sunburst', 'fr-leopard',
 ] as const;
 export type AvatarFrame = (typeof AVATAR_FRAMES)[number];
 export function isAvatarFrame(id: string): id is AvatarFrame {
@@ -474,6 +492,9 @@ export type ClientMsg =
       tokenSkin?: string;
       /** Equipped entrance effect id, played at match start on my board side. */
       entranceFx?: string;
+      /** Equipped victory effect id — the flourish BOTH players see on the end
+       *  screen when I win (cosmetics phase 2). Catalog-validated. */
+      victoryFx?: string;
       /** Custom display name (E-social: editable profile). Server SANITIZES it
        *  (length, charset, profanity/URL filter); an invalid value falls back to
        *  the derived name — the connection is never rejected over a cosmetic name. */
@@ -549,6 +570,10 @@ export type ClientMsg =
   | { t: 'friend.add'; pid: string }
   | { t: 'friend.remove'; pid: string }
   | { t: 'friend.challenge'; pid: string; stake: StakeCents }
+  // Gift a premium cosmetic to a MUTUAL friend, paid with MY tickets (phase 2:
+  // Yalla's gift economy, ticket rail only). The grant is durable server-side;
+  // the live in-app toast is best-effort (WhatsApp remains the offline channel).
+  | { t: 'friend.gift'; pid: string; id: string }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -575,6 +600,8 @@ export interface OpponentInfo {
   tokenSkin?: string;
   /** Equipped entrance effect, played at match start on my side of the board. */
   entranceFx?: string;
+  /** Equipped victory effect — if THEY win, this plays on MY end screen too. */
+  victoryFx?: string;
 }
 
 /** A friend (or friend-requester) as shown on the lobby: public identity only —
@@ -681,6 +708,12 @@ export type ServerMsg =
   // A friend challenges me RIGHT NOW: accept = the normal table.join(code);
   // ignore/decline is simply not joining (tables expire server-side).
   | { t: 'friend.challenge.offer'; code: string; stakeCents: StakeCents; from: FriendInfo }
+  // Ack for friend.gift: tickets were spent, the friend now owns `id` (durable).
+  | { t: 'friend.gifted'; pid: string; id: string; tickets: number }
+  // Live push to the RECIPIENT of a gift (when they're connected): who sent it,
+  // what it is, and their refreshed owned list. Offline recipients simply find
+  // the item owned at their next hello (the giver tells them on WhatsApp).
+  | { t: 'friend.gift.received'; from: FriendInfo; id: string; ownedIds: string[] }
   // Your last opponent clicked Rematch and is waiting; `name` is their display
   // label. The end screen surfaces an Accept/Decline offer instead of the game
   // silently depending on both sides happening to click.
@@ -852,6 +885,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       // unknown values (same never-reject cosmetic posture as frame/avatar).
       if (m.tokenSkin !== undefined && (typeof m.tokenSkin !== 'string' || cosmeticById(m.tokenSkin)?.kind !== 'token')) m.tokenSkin = undefined;
       if (m.entranceFx !== undefined && (typeof m.entranceFx !== 'string' || cosmeticById(m.entranceFx)?.kind !== 'entrance')) m.entranceFx = undefined;
+      if (m.victoryFx !== undefined && (typeof m.victoryFx !== 'string' || cosmeticById(m.victoryFx)?.kind !== 'victory')) m.victoryFx = undefined;
       // Custom name: loose bound here (≤64 raw); the server sanitizes/filters.
       // Drop obviously-bad values instead of rejecting the connection.
       if (m.name !== undefined && (typeof m.name !== 'string' || m.name.length > 64)) m.name = undefined;
@@ -884,6 +918,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) ? m : null;
     case 'friend.challenge':
       return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) && (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
+    case 'friend.gift':
+      // pid rule as above; the gift must be a real ticket-priced catalog item.
+      return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) && typeof m.id === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.id) ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

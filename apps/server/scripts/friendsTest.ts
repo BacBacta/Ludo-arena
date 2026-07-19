@@ -112,6 +112,16 @@ if (a.error !== 'BAD_STATE') fail(`expected BAD_STATE challenging a non-friend, 
 a.error = null;
 console.log('[friends-test] challenge to a non-friend refused');
 
+// Gifting a NON-friend is refused too (phase 2: gifts are a bond, not spam).
+await sleep(1100); // clear the friend.* throttle window
+a.send({ t: 'friend.gift', pid: b.pid, id: 'tok-wax' });
+await sleep(500);
+if (a.error !== 'BAD_STATE') fail(`expected BAD_STATE gifting a non-friend, got ${a.error}`, server);
+a.error = null;
+console.log('[friends-test] gift to a non-friend refused');
+
+await sleep(700); // finish clearing the throttle before the add below
+
 // A requests B → B (live) sees the request.
 a.send({ t: 'friend.add', pid: b.pid });
 await sleep(500);
@@ -127,6 +137,16 @@ const bInA = a.friends.find((f) => f.pid === b.pid);
 if (!bInA) fail(`A should now list B as a friend, got ${JSON.stringify(a.friends)}`, server);
 if (bInA.online !== true) fail(`B has a live session — A must see online:true, got ${JSON.stringify(bInA)}`, server);
 console.log('[friends-test] mutual friendship + presence snapshot');
+
+// Gift to a MUTUAL friend passes every gate up to the spend — and a fresh
+// account holds 0 tickets, so the server must refuse with LIMIT_REACHED
+// (the positive spend→own→push composition is covered by the store tests).
+await sleep(1100); // clear the friend.* throttle window
+a.send({ t: 'friend.gift', pid: b.pid, id: 'tok-wax' });
+await sleep(500);
+if (a.error !== 'LIMIT_REACHED') fail(`expected LIMIT_REACHED gifting with 0 tickets, got ${a.error}`, server);
+a.error = null;
+console.log('[friends-test] mutual gift reaches the ticket spend (0 tickets → refused)');
 
 // A challenges B (free): A gets the table code, B gets the LIVE offer.
 await sleep(1100); // clear the friend.* throttle window
@@ -146,5 +166,5 @@ console.log('[friends-test] offer accepted → match.found on both sides');
 a.ws.close();
 b.ws.close();
 server.kill('SIGTERM');
-console.log('FRIENDS-TEST OK — request, mutual consent, presence, live challenge, accepted duel.');
+console.log('FRIENDS-TEST OK — request, mutual consent, presence, live challenge, accepted duel, gift gates.');
 process.exit(0);

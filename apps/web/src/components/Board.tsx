@@ -20,6 +20,7 @@ import {
 import type { GameState, Seat } from '@ludo/game-engine';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import type { TokenPattern } from '../lib/tokenSkins';
+import { boardThemeById, type BoardTheme } from '../lib/boardThemes';
 import { playHop } from '../lib/sound';
 
 /** True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — matches the
@@ -256,6 +257,35 @@ export function TokenPreview({ pattern, idKey }: { pattern: TokenPattern; idKey:
   );
 }
 
+/** Mini board swatch for the cosmetics shop (board-theme tiles): the four seat
+ *  corners around a themed track cross, so the NEUTRAL surfaces (what a theme
+ *  actually changes) carry the tile. */
+export function BoardThemePreview({ theme }: { theme: BoardTheme }) {
+  return (
+    <svg viewBox="0 0 15 15" style={{ width: 44, height: 44, display: 'block', margin: '0 auto', borderRadius: 6 }} aria-hidden="true">
+      <rect x={0} y={0} width={15} height={15} fill={theme.cell} />
+      <rect x={0} y={0} width={6} height={6} fill={RED[1]} />
+      <rect x={9} y={0} width={6} height={6} fill={GREEN[1]} />
+      <rect x={0} y={9} width={6} height={6} fill={BLUE[1]} />
+      <rect x={9} y={9} width={6} height={6} fill={YELLOW[1]} />
+      <rect x={1.1} y={1.1} width={3.8} height={3.8} rx={0.7} fill={theme.home} />
+      <rect x={10.1} y={1.1} width={3.8} height={3.8} rx={0.7} fill={theme.home} />
+      <rect x={1.1} y={10.1} width={3.8} height={3.8} rx={0.7} fill={theme.home} />
+      <rect x={10.1} y={10.1} width={3.8} height={3.8} rx={0.7} fill={theme.home} />
+      {[6, 7, 8].map((c) => (
+        <g key={c}>
+          <rect x={c} y={0} width={1} height={15} fill={theme.cell} stroke={theme.cellStroke} strokeWidth={0.08} />
+          <rect x={0} y={c} width={15} height={1} fill={theme.cell} stroke={theme.cellStroke} strokeWidth={0.08} />
+        </g>
+      ))}
+      <rect x={6} y={2.5} width={1} height={1} fill={theme.safe} />
+      <polygon points={starPoints(6.5, 3, 0.4)} fill={theme.safeStar} />
+      <rect x={8} y={11.5} width={1} height={1} fill={theme.safe} />
+      <polygon points={starPoints(8.5, 12, 0.4)} fill={theme.safeStar} />
+    </svg>
+  );
+}
+
 /** One standalone pawn in its own <svg>, for the lobby hero scene. */
 export function HeroPeg({ colors, idKey }: { colors: readonly [string, string, string]; idKey: string }) {
   return (
@@ -270,7 +300,7 @@ export function HeroPeg({ colors, idKey }: { colors: readonly [string, string, s
  * square with grey resting slots. The tray is nudged toward the board centre so
  * the outer band holds the name banner (rendered as HTML over the board).
  */
-function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [string, string, string] }) {
+function Quadrant({ x, y, colors, theme }: { x: number; y: number; colors: readonly [string, string, string]; theme: BoardTheme }) {
   const isTop = y === 0;
   const hy = isTop ? y + 1.05 : y + 0.45;
   const slots = quadSlots(x, y);
@@ -278,13 +308,13 @@ function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [st
     <g>
       {/* flat solid quadrant, square edges — the board reads as ONE continuous surface */}
       <rect x={x} y={y} width={6} height={6} fill={colors[1]} />
-      {/* white home square with a soft drop edge (Board4 geometry) */}
-      <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill="rgba(16,24,48,.16)" />
-      <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill="#ffffff" />
+      {/* home square with a soft drop edge (Board4 geometry) — themed surface */}
+      <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill={theme.homeEdge} />
+      <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill={theme.home} />
       {/* all four resting discs, exactly like the 4-player board — the unused
           seats' homes sit pristine and empty (Ludo-Club 1v1 look) */}
       {slots.map(([sx, sy], i) => (
-        <circle key={i} cx={sx} cy={sy} r={0.56} fill="#d4dae6" />
+        <circle key={i} cx={sx} cy={sy} r={0.56} fill={theme.slot} />
       ))}
     </g>
   );
@@ -309,9 +339,13 @@ export interface BoardProps {
   /** Equipped token-skin PATTERN per seat (cosmetics phase 1) — mine from local
    *  state, the opponent's from match.found. Absent seat = classic peg. */
   tokenPatterns?: Partial<Record<Seat, TokenPattern>>;
+  /** Equipped board theme id (cosmetics phase 2) — restyles ONLY the neutral
+   *  surfaces; seat colours never change. Absent/unknown = classic. */
+  themeId?: string;
 }
 
-export function Board({ game, mySeat, onTokenTap, locked, banners, tokenPatterns }: BoardProps) {
+export function Board({ game, mySeat, onTokenTap, locked, banners, tokenPatterns, themeId }: BoardProps) {
+  const theme = boardThemeById(themeId);
   // The two seats sit DIAGONALLY (0 = bottom-left, 1 = top-right) and the geometry
   // is fixed, so seat 1 would play from the far corner with the opponent sitting in
   // "their" place — the board read upside-down and every tap felt wrong. Mirror the
@@ -392,21 +426,21 @@ export function Board({ game, mySeat, onTokenTap, locked, banners, tokenPatterns
           </clipPath>
         </defs>
         <g clipPath="url(#boardclip)" transform={flip ? 'rotate(180 7.5 7.5)' : undefined}>
-        {/* flat white plate (edge-to-edge; the wrapper gives the soft shadow) */}
-        <rect x={0} y={0} width={15} height={15} fill="#ffffff" />
+        {/* flat plate (edge-to-edge; the wrapper gives the soft shadow) — themed */}
+        <rect x={0} y={0} width={15} height={15} fill={theme.cell} />
 
         {/* quadrants: red / green / blue / yellow (classic) */}
-        <Quadrant x={0} y={0} colors={RED} />
-        <Quadrant x={9} y={0} colors={GREEN} />
-        <Quadrant x={0} y={9} colors={BLUE} />
-        <Quadrant x={9} y={9} colors={YELLOW} />
+        <Quadrant x={0} y={0} colors={RED} theme={theme} />
+        <Quadrant x={9} y={0} colors={GREEN} theme={theme} />
+        <Quadrant x={0} y={9} colors={BLUE} theme={theme} />
+        <Quadrant x={9} y={9} colors={YELLOW} theme={theme} />
 
         {/* track cells: continuous grid, shared hairline borders (matches the 4-player board) */}
         {TRACK.map(([x, y], i) => (
-          <rect key={i} x={x} y={y} width={1} height={1} fill="#ffffff" stroke="#a6b0c0" strokeWidth={0.05} />
+          <rect key={i} x={x} y={y} width={1} height={1} fill={theme.cell} stroke={theme.cellStroke} strokeWidth={0.05} />
         ))}
 
-        {/* safe cells: grey-filled cell carrying a white star (matches the 4-player board) */}
+        {/* safe cells: filled cell carrying a star (matches the 4-player board) */}
         {[...SAFE_CELLS].map((i) => {
           const cell = TRACK[i];
           if (!cell) return null;
@@ -414,8 +448,8 @@ export function Board({ game, mySeat, onTokenTap, locked, banners, tokenPatterns
           const cy = cell[1] + 0.5;
           return (
             <g key={`s${i}`}>
-              <rect x={cell[0]} y={cell[1]} width={1} height={1} fill="#c9d1de" stroke="#a6b0c0" strokeWidth={0.05} />
-              <polygon points={starPoints(cx, cy, 0.36)} fill="#ffffff" strokeLinejoin="round" />
+              <rect x={cell[0]} y={cell[1]} width={1} height={1} fill={theme.safe} stroke={theme.cellStroke} strokeWidth={0.05} />
+              <polygon points={starPoints(cx, cy, 0.36)} fill={theme.safeStar} strokeLinejoin="round" />
             </g>
           );
         })}

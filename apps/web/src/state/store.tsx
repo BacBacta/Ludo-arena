@@ -21,7 +21,8 @@ import {
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
 import { loadSkinId, saveSkinId } from '../lib/diceSkins';
-import { loadTokenSkinId, saveTokenSkinId, loadEntranceFxId, saveEntranceFxId } from '../lib/tokenSkins';
+import { loadTokenSkinId, saveTokenSkinId, loadEntranceFxId, saveEntranceFxId, loadVictoryFxId, saveVictoryFxId } from '../lib/tokenSkins';
+import { loadBoardThemeId, saveBoardThemeId } from '../lib/boardThemes';
 import { loadFrameId, saveFrameId } from '../lib/avatarFrames';
 import { loadAvatarId, saveAvatarId } from '../lib/avatars';
 import { t } from '../lib/i18n';
@@ -176,6 +177,8 @@ export interface AppState {
   friendRequests: FriendInfo[];
   /** Live incoming friend challenge (accept = join their private table). */
   challengeOffer: { code: string; stakeCents: number; from: FriendInfo } | null;
+  /** Gift-a-cosmetic picker (phase 2): the friend being gifted, null = closed. */
+  giftFriend: FriendInfo | null;
   /** Tap-on-avatar profile sheet: pid being viewed; data null while loading. */
   viewProfile: { pid: string; data: PublicProfile | null; failed?: boolean } | null;
   /** Responsible-gaming limits (E5.2). */
@@ -227,6 +230,9 @@ export interface AppState {
   /** Equipped token (pawn) skin + entrance effect (cosmetics phase 1). */
   tokenSkin: string;
   entranceFx: string;
+  /** Equipped board theme + victory effect (cosmetics phase 2). */
+  boardTheme: string;
+  victoryFx: string;
   avatarFrame: string;
   /** Chosen profile avatar id (AVATARS); 'none' = show the flag instead. */
   avatar: string;
@@ -293,6 +299,7 @@ export const initialState: AppState = {
   friends: [],
   friendRequests: [],
   challengeOffer: null,
+  giftFriend: null,
   limits: loadRetention().limits,
   stakingBlocked: false,
   match: null,
@@ -324,6 +331,8 @@ export const initialState: AppState = {
   diceSkin: loadSkinId(),
   tokenSkin: loadTokenSkinId(),
   entranceFx: loadEntranceFxId(),
+  boardTheme: loadBoardThemeId(),
+  victoryFx: loadVictoryFxId(),
   avatarFrame: loadFrameId(),
   avatar: loadAvatarId(),
   diceModalOpen: false,
@@ -340,6 +349,7 @@ export type Action =
   | { type: 'MATCH_FOUND'; match: MatchInfo }
   | { type: 'FRIENDS'; friends: FriendInfo[]; requests: FriendInfo[] }
   | { type: 'CHALLENGE_OFFER'; offer: { code: string; stakeCents: number; from: FriendInfo } | null }
+  | { type: 'GIFT_MODAL'; friend: FriendInfo | null }
   | { type: 'GAME_STATE'; game: GameState }
   | { type: 'DICE'; value: number; index: number; seat: Seat }
   | { type: 'EMOTE'; seat: number; id: string }
@@ -389,6 +399,8 @@ export type Action =
   | { type: 'SET_DICE_SKIN'; id: string }
   | { type: 'SET_TOKEN_SKIN'; id: string }
   | { type: 'SET_ENTRANCE_FX'; id: string }
+  | { type: 'SET_BOARD_THEME'; id: string }
+  | { type: 'SET_VICTORY_FX'; id: string }
   | { type: 'EQUIP_FRAME'; id: string }
   | { type: 'EQUIP_AVATAR'; id: string }
   | { type: 'DICE_MODAL'; open: boolean }
@@ -600,6 +612,12 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'SET_ENTRANCE_FX':
       saveEntranceFxId(a.id);
       return { ...s, entranceFx: a.id };
+    case 'SET_BOARD_THEME':
+      saveBoardThemeId(a.id);
+      return { ...s, boardTheme: a.id };
+    case 'SET_VICTORY_FX':
+      saveVictoryFxId(a.id);
+      return { ...s, victoryFx: a.id };
     case 'EQUIP_FRAME':
       saveFrameId(a.id);
       return { ...s, avatarFrame: a.id };
@@ -626,6 +644,8 @@ export function reducer(s: AppState, a: Action): AppState {
     }
     case 'CHALLENGE_OFFER':
       return { ...s, challengeOffer: a.offer };
+    case 'GIFT_MODAL':
+      return { ...s, giftFriend: a.friend };
     case 'LEGAL_MODAL':
       return { ...s, legalOpen: a.open };
     case 'ACCEPT_LEGAL':

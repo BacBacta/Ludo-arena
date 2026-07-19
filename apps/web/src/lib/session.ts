@@ -13,7 +13,7 @@ import { deviceFingerprint } from './fingerprint';
 import { setServerContracts } from './settlementGuard';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
-import { loadTokenSkinId, loadEntranceFxId } from './tokenSkins';
+import { loadTokenSkinId, loadEntranceFxId, loadVictoryFxId } from './tokenSkins';
 import { loadAvatarId } from './avatars';
 import { adoptServerIdentity, loadCustomIdentity } from './profile';
 import { sha256Hex } from './fairnessVerify';
@@ -151,6 +151,8 @@ export interface SessionEvents {
   onFriends?(friends: FriendInfo[], requests: FriendInfo[]): void;
   /** A friend challenges me RIGHT NOW (live in-app offer; code = their table). */
   onChallengeOffer?(offer: { code: string; stakeCents: StakeCents; from: FriendInfo }): void;
+  /** A friend just GIFTED me a cosmetic (live push; ownership already durable). */
+  onGiftReceived?(gift: { from: FriendInfo; id: string; ownedIds: string[] }): void;
   /** The last opponent clicked Rematch and is waiting — surface Accept/Decline. */
   onRematchOffer(opponentName: string): void;
   /** A rematch we were waiting on won't happen (opponent declined or left). */
@@ -468,6 +470,72 @@ export function sendFriendAction(
       if (msg.t === 'friends.update') {
         clearTimeout(timer);
         done({ friends: msg.friends, requests: msg.requests });
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
+
+/**
+ * One-shot cosmetic gift to a MUTUAL friend (cosmetics phase 2). Same lifecycle
+ * as sendFriendAction: resume the tab's session, send friend.gift, resolve with
+ * the server's ack (new ticket balance) — or the error string, or null on
+ * timeout. The grant is durable server-side whether or not the friend is online.
+ */
+export function sendFriendGift(
+  serverUrl: string,
+  pid: string,
+  cosmeticId: string,
+  walletAddress?: string,
+): Promise<{ tickets: number } | { error: string } | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: { tickets: number } | { error: string } | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 4000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'friend.gift', pid, id: cosmeticId }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'friend.gifted') {
+        clearTimeout(timer);
+        done({ tickets: msg.tickets });
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done({ error: msg.message });
       }
     };
     ws.onerror = () => {
@@ -1068,6 +1136,7 @@ export class RemoteSession implements GameSession {
         avatar: loadAvatarId(), // chosen 3D profile avatar (broadcast to others)
         tokenSkin: loadTokenSkinId(), // equipped pawn skin (opponent sees it on my pieces)
         entranceFx: loadEntranceFxId(), // entrance effect (played at match start)
+        victoryFx: loadVictoryFxId(), // victory effect (the loser watches it too)
         ...loadCustomIdentity(), // edited display name / country flag
       });
       if (initial) {
@@ -1273,6 +1342,9 @@ export class RemoteSession implements GameSession {
         break;
       case 'friend.challenge.offer':
         this.ev.onChallengeOffer?.({ code: msg.code, stakeCents: msg.stakeCents, from: msg.from });
+        break;
+      case 'friend.gift.received':
+        this.ev.onGiftReceived?.({ from: msg.from, id: msg.id, ownedIds: msg.ownedIds });
         break;
       case 'rematch.offer':
         this.ev.onRematchOffer(msg.name);

@@ -41,6 +41,10 @@ export const FRAMES: FrameDef[] = [
   { id: 'frost', nameKey: 'frameFrost', hintKey: 'frameFrostHint', unlocked: (c) => c.games >= 40 },
   { id: 'nebula', nameKey: 'frameNebula', hintKey: 'frameNebulaHint', unlocked: (c) => c.games >= 80 },
   { id: 'circuit', nameKey: 'frameCircuit', hintKey: 'frameCircuitHint', unlocked: (c) => c.division <= 0 },
+  // Shop-only animated frames (cosmetics phase 2): never progression-unlocked —
+  // ownership comes from the ticket/cUSD purchase (ownedSkins), checked in the shop.
+  { id: 'fr-sunburst', nameKey: 'frameSunburst', hintKey: 'frameSunburstHint', unlocked: () => false },
+  { id: 'fr-leopard', nameKey: 'frameLeopard', hintKey: 'frameLeopardHint', unlocked: () => false },
 ];
 
 export function frameById(id: string): FrameDef {
