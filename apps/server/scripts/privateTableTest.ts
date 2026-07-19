@@ -1,7 +1,8 @@
 /**
- * E4.4 acceptance: private tables. Client A creates a table → gets a code;
- * client B joins with the code → both get match.found and play to game.over.
- * Also asserts a bogus code returns TABLE_NOT_FOUND. In-memory store (no infra).
+ * E4.4 acceptance: private tables. A bogus code returns TABLE_NOT_FOUND; a
+ * STAKED table refuses a same-IP joiner (the pre-launch anticheat guard — both
+ * test sockets come from 127.0.0.1, so this is asserted POSITIVELY, not worked
+ * around); a FREE table pairs and plays to game.over. In-memory store (no infra).
  * Run: npm run private-table-test -w apps/server
  */
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -132,12 +133,29 @@ if (bad.error !== 'TABLE_NOT_FOUND') fail(`expected TABLE_NOT_FOUND, got ${bad.e
 console.log('[private-table-test] bogus code rejected with TABLE_NOT_FOUND');
 bad.ws.close();
 
-// ---- create + join + play ----
+// ---- STAKED table: creating works, but a same-IP joiner is REFUSED ----
+// (E5.3 anticheat: staked pairings between two sockets on the same IP are
+// blocked to stop same-network chip-dumping. Both test clients are localhost,
+// so the refusal IS the expected behaviour — assert it instead of timing out.)
+const stakedHost = await open();
+send(stakedHost, { t: 'table.create', stake: 25 });
+await waitFor(() => stakedHost.code !== null, 'staked table.created');
+console.log('[private-table-test] staked table created, code =', stakedHost.code);
+
+const stakedGuest = await open();
+send(stakedGuest, { t: 'table.join', code: stakedHost.code! });
+await waitFor(() => stakedGuest.error !== null, 'same-IP staked join refusal');
+if (stakedGuest.error !== 'LIMIT_REACHED') fail(`expected LIMIT_REACHED for a same-IP staked join, got ${stakedGuest.error}`, server);
+console.log('[private-table-test] same-IP staked join refused (anticheat) ✓');
+stakedHost.ws.close();
+stakedGuest.ws.close();
+
+// ---- FREE table: create + join + play to the end ----
 const host = await open();
-send(host, { t: 'table.create', stake: 25 });
+send(host, { t: 'table.create', stake: 0 });
 await waitFor(() => host.code !== null, 'table.created');
 const code = host.code!;
-console.log('[private-table-test] table created, code =', code);
+console.log('[private-table-test] free table created, code =', code);
 
 const guest = await open();
 send(guest, { t: 'table.join', code });

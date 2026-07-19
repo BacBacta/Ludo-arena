@@ -1,0 +1,41 @@
+# Auto-deploy the game server to Fly on every push to main that touches it.
+# The Vercel frontend already auto-deploys from main; without this, the server
+# silently drifts behind (protocol mismatches like friend.* → BAD_MESSAGE).
+# ACTIVATION: add the FLY_API_TOKEN repo secret (Settings → Secrets → Actions;
+# generate with `flyctl tokens create deploy -a ludo-arena`). Until the secret
+# exists the job skips with a notice instead of failing the pipeline.
+name: deploy-server
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/server/**'
+      - 'packages/game-engine/**'
+      - 'packages/shared/**'
+      - 'packages/contracts/deployments.json'
+      - 'fly.toml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-server.yml'
+
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false # never kill an in-flight deploy of the single machine
+
+jobs:
+  fly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Notice when the token is missing
+        if: env.FLY_API_TOKEN == ''
+        run: echo "::notice::FLY_API_TOKEN secret not set — server deploy skipped (see workflow header for activation)."
+      - uses: actions/checkout@v4
+        if: env.FLY_API_TOKEN != ''
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: env.FLY_API_TOKEN != ''
+      - name: Deploy to Fly (remote build)
+        if: env.FLY_API_TOKEN != ''
+        run: flyctl deploy --remote-only
