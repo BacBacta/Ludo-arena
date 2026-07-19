@@ -67,6 +67,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
+import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
 import { telemetry, tpid } from './telemetry.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
@@ -1021,8 +1022,10 @@ wss.on('connection', (ws, req) => {
         resumedSession.ip = ip;
         resumedSession.miniPay = msg.miniPay === true;
         resumedSession.miniPayOriginOk = miniPayOriginOk;
-        if (msg.frame !== undefined) resumedSession.frame = msg.frame;
-        if (msg.avatar !== undefined) resumedSession.avatar = msg.avatar;
+        // ALL equipped cosmetics refresh on resume (not just frame/avatar) — see
+        // applyHelloCosmetics: the game hello always resumes, so dropping the
+        // phase-1/2 cosmetics here hid them from the opponent in match.found.
+        applyHelloCosmetics(resumedSession, msg);
         // Profile edit on a resumed session: apply the sanitized custom identity
         // (anon → session-only; wallet → persisted + re-read below).
         const rCustomName = sanitizeName(msg.name);
@@ -1124,11 +1127,7 @@ wss.on('connection', (ws, req) => {
       session.ip = ip;
       session.miniPay = msg.miniPay === true; // trusted address, no SIWE (before issueWalletNonce)
       session.miniPayOriginOk = miniPayOriginOk; // origin gate for the auto-prove (R-AUTH-1)
-      session.frame = msg.frame; // cosmetic; validated to AVATAR_FRAMES in parse
-      session.avatar = msg.avatar; // cosmetic; validated to AVATARS in parse
-      session.tokenSkin = msg.tokenSkin; // cosmetic; catalog-validated in parse
-      session.entranceFx = msg.entranceFx; // cosmetic; catalog-validated in parse
-      session.victoryFx = msg.victoryFx; // cosmetic; catalog-validated in parse
+      applyHelloCosmetics(session, msg); // frame/avatar/tokenSkin/entranceFx/victoryFx (validated in parse)
       sessions.set(id, session);
       persistSession(session);
       // Key off the NORMALIZED wallet — never raw msg.wallet. normalizeWallet maps a
