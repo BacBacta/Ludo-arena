@@ -275,10 +275,42 @@ function liveSessionFor(targetId: string): Session | undefined {
   return undefined;
 }
 
+/** Presence bookkeeping (E-social 2, living presence). In-memory ONLY: a server
+ *  restart just degrades "seen 2 h ago" to plain offline — acceptable for a
+ *  hint, and it spares the store a new table + write per disconnect. */
+const lastSeenByPid = new Map<string, number>();
+/** Last PRESENCE-driven friends.update per target — throttles flappy
+ *  connections (metro wifi…) to one refresh per friend per window; graph
+ *  changes (add/accept/remove) bypass this and always push. */
+const presencePushAt = new Map<string, number>();
+const PRESENCE_PUSH_MIN_MS = 10_000;
+
+/** Tell my LIVE friends my presence flipped (connect/disconnect), throttled. */
+async function notifyFriendsPresence(myId: string): Promise<void> {
+  const fids = await store.getFriendIds(myId);
+  const now = Date.now();
+  for (const fid of fids.slice(0, FRIENDS_MAX)) {
+    if (!liveSessionFor(fid)) continue;
+    if (now - (presencePushAt.get(fid) ?? 0) < PRESENCE_PUSH_MIN_MS) continue;
+    presencePushAt.set(fid, now);
+    void pushFriendsUpdate(fid).catch(() => undefined);
+  }
+}
+
 /** Public FriendInfo for an internal id (null for unknown/ephemeral players). */
+/** A player counts as ONLINE this long after their last socket closed. The
+ *  lobby is offline-first (one-shot hello syncs, no held socket), so a player
+ *  parked on it flickers live only ~1 s per sync — a strict live-socket test
+ *  would show them "offline" to every friend. Seen-within-90s covers the
+ *  lobby's 45 s presence poll with margin. */
+const ONLINE_GRACE_MS = 90_000;
+
 async function friendInfoOf(id: string, withPresence: boolean): Promise<FriendInfo | null> {
   const prof = await store.getProfileByPid(pidFor(id));
   if (!prof) return null;
+  const online = withPresence
+    ? liveSessionFor(id) !== undefined || Date.now() - (lastSeenByPid.get(id) ?? 0) < ONLINE_GRACE_MS
+    : undefined;
   return {
     pid: pidFor(id),
     name: prof.name,
@@ -286,7 +318,9 @@ async function friendInfoOf(id: string, withPresence: boolean): Promise<FriendIn
     elo: prof.elo,
     avatar: prof.avatar,
     frame: prof.frame,
-    online: withPresence ? liveSessionFor(id) !== undefined : undefined,
+    online,
+    // "seen 2 h ago" hint for OFFLINE friends (in-memory, best effort).
+    lastSeenTs: online === false ? lastSeenByPid.get(id) : undefined,
   };
 }
 
@@ -298,6 +332,8 @@ async function buildFriendLists(id: string): Promise<{ friends: FriendInfo[]; re
   const friends = (await Promise.all(fids.slice(0, FRIENDS_MAX).map((f) => friendInfoOf(f, true)))).filter(
     (x): x is FriendInfo => x !== null,
   );
+  // Online friends first — they're the actionable ones (one-tap challenge).
+  friends.sort((a, b) => Number(b.online ?? false) - Number(a.online ?? false));
   const requests = (await Promise.all(rids.slice(0, FRIEND_REQUESTS_MAX).map((f) => friendInfoOf(f, false)))).filter(
     (x): x is FriendInfo => x !== null,
   );
@@ -1081,6 +1117,8 @@ wss.on('connection', (ws, req) => {
           friendRequests: rFriendLists?.requests,
           friendsOutgoing: rFriendLists?.outgoing,
         });
+        // Living presence: my friends' lobbies flip me to "online now".
+        if (rProof.walletProven) void notifyFriendsPresence(rpid).catch(() => undefined);
         // R-WEB-1: if this session had a live 4-player seat (staked table), rebind
         // the new socket to it and resync — a dropped staker resumes instead of
         // forfeiting their locked stake. The room kept the seat during the grace
@@ -1192,6 +1230,8 @@ wss.on('connection', (ws, req) => {
         friendRequests: friendLists?.requests,
         friendsOutgoing: friendLists?.outgoing,
       });
+      // Living presence: my friends' lobbies flip me to "online now".
+      if (proof.walletProven) void notifyFriendsPresence(pid).catch(() => undefined);
       return;
     }
 
@@ -2005,6 +2045,13 @@ wss.on('connection', (ws, req) => {
     if (session.ws !== ws) return;
     session.ws = null;
     session.alive = false;
+    // Living presence: stamp "last seen" and flip me to offline in my friends'
+    // lobbies. Only proven sessions can have friends (same gate as friend.*).
+    if (session.walletProven) {
+      const goneId = playerId(session.wallet, session.id);
+      lastSeenByPid.set(goneId, Date.now());
+      void notifyFriendsPresence(goneId).catch(() => undefined);
+    }
     // If the last opponent is waiting on us for a rematch, don't leave them
     // hanging on "searching…" — tell them we left. (They can still get a fresh
     // offer if we reconnect and click rematch again.)

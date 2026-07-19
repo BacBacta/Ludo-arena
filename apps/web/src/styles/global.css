@@ -738,27 +738,114 @@ small.muted { font-size: 12px; }
 
 /* Friends & challenges (E-social 2): the lobby circle — request rows to accept,
    friend rows with a presence dot and a one-tap challenge. */
-.friendscard { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; }
-/* Pending requests promoted near the top of the lobby: gold-tinted so the most
-   actionable social moment on the page cannot be scrolled past unnoticed. */
+.friendscard { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; }
+/* Pending requests promoted near the top of the lobby — premium language (same
+   family as the modals): light gradient sheet, gold crown hairline, real depth. */
 .friendreqcard {
-  display: flex; flex-direction: column; gap: 4px; padding: 10px 12px;
-  background: linear-gradient(180deg, #fff8e2, #ffefc2);
-  border: 1.5px solid rgba(245, 179, 1, 0.55);
-  box-shadow: 0 6px 16px rgba(245, 179, 1, 0.18);
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; gap: 4px; padding: 12px 14px;
+  background: linear-gradient(180deg, #fffdf4, #fff3d4);
+  border: 1px solid rgba(245, 179, 1, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 10px 26px -8px rgba(150, 100, 0, 0.28);
 }
-.friendrow { display: flex; align-items: center; gap: 10px; padding: 6px 2px; }
+.friendreqcard::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent) 28%, var(--accent-2) 50%, var(--accent) 72%, transparent);
+}
+/* Section header inside social cards: title + count pill + live-online hint. */
+.friendhead { display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px; }
+.friendhead b { font-family: var(--font-display); font-size: 14.5px; }
+.friendhead__count {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  color: #3a2c00; font-size: 12px; font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.friendhead__online { margin-left: auto; font-size: 11.5px; color: var(--me); font-weight: 700; }
+
+.friendrow { display: flex; align-items: center; gap: 8px; padding: 7px 2px; }
 .friendrow + .friendrow { border-top: 1px solid var(--line); }
+/* Cascade-in: each row slides up with a small stagger (index set inline). */
+.friendrow--anim { animation: rowin 0.32s ease both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes rowin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* The avatar+name area is one tap target → the player's public profile. */
+.friendrow__hit {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;
+  background: none; border: none; padding: 0; font: inherit; color: inherit;
+  text-align: left; cursor: pointer;
+}
+.friendrow__hit:active .friendrow__flag { transform: scale(0.94); }
+/* Head-to-head chip: my on-device record vs them ("2-1 vs you"). */
+.h2hchip {
+  margin-left: 6px; font-style: normal; font-size: 10px; font-weight: 800;
+  color: var(--muted); background: var(--card-2); border-radius: 8px;
+  padding: 1.5px 6px; vertical-align: 1px; white-space: nowrap;
+}
+/* Harmonised social buttons: gold = the ONE primary action of the row,
+   ghost = secondary, danger = destructive (2-tap confirm arms it red). */
+.frbtn {
+  flex-shrink: 0; border: none; border-bottom: 3px solid rgba(0, 0, 0, 0.18);
+  border-radius: 12px; padding: 8px 12px; font-family: var(--font-display);
+  font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+.frbtn:active { transform: scale(0.95); }
+.frbtn--gold {
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  border-bottom-color: #a97a00; color: #3a2c00;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.frbtn--ghost {
+  background: linear-gradient(180deg, #ffffff, #f0f3fa);
+  border: 1.5px solid var(--line); border-bottom-width: 3px; color: var(--txt);
+}
+.frbtn--icon {
+  background: var(--card-2); border-bottom-color: rgba(0, 0, 0, 0.1);
+  padding: 8px 10px; font-size: 14px;
+}
+.frbtn--danger {
+  background: var(--card-2); border-bottom-color: rgba(0, 0, 0, 0.1);
+  color: var(--muted); padding: 8px 10px;
+}
+.frbtn--armed { background: linear-gradient(180deg, #ffe3e3, #ffc9c9); border-bottom-color: #b34040; color: #8a1f1f; }
+/* Empty-state teaser: quiet discoverability card for a walleted player with no
+   social circle yet — the feature must not be invisible. */
+.friendteaser { display: flex; align-items: center; gap: 12px; padding: 14px; }
+.friendteaser__ic { font-size: 28px; }
+.friendteaser b { font-family: var(--font-display); font-size: 14px; display: block; }
+.friendteaser small { font-size: 12px; color: var(--muted); }
+/* Challenge stake picker (⚔️ on a friend). */
+.challengesheet__opts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.challengesheet__opts .frbtn { width: 100%; padding: 12px; font-size: 14px; }
+@media (prefers-reduced-motion: reduce) {
+  .friendrow--anim { animation: none; }
+}
 .friendrow__flag {
   position: relative;
-  width: 34px; height: 34px; border-radius: 50%;
+  width: 38px; height: 38px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: var(--card-2); font-size: 20px; flex-shrink: 0;
+  background: var(--card-2); font-size: 21px; flex-shrink: 0;
+  transition: transform 0.12s ease;
 }
 .friendrow__dot {
   position: absolute; bottom: -1px; right: -1px;
   width: 10px; height: 10px; border-radius: 50%;
   background: var(--me); border: 2px solid var(--card);
+  z-index: 6; /* above the premium frame overlay */
+}
+/* Living presence: a soft radiating ring says "online RIGHT NOW". */
+.friendrow__dot::after {
+  content: ''; position: absolute; inset: -2px; border-radius: 50%;
+  border: 2px solid var(--me); opacity: 0;
+  animation: dotpulse 2.2s ease-out infinite;
+}
+@keyframes dotpulse {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  70%, 100% { transform: scale(2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .friendrow__dot::after { animation: none; }
 }
 .friendrow__meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .friendrow__meta b { font-family: var(--font-display); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

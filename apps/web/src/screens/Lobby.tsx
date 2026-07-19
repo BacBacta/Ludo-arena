@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ALLOWED_STAKES_CENTS, FREEROLL, SEASON_PREMIUM, crownsForTier, potCents, type StakeCents } from '@ludo/shared';
 import { cosmeticsCusdAvailable } from '../lib/deployments';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
@@ -27,7 +27,8 @@ export function Lobby({
   onConnectWallet,
   onChallengeFriend,
   onAcceptFriend,
-  onWithdrawRequest,
+  onRemoveFriendEdge,
+  onViewProfile,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
@@ -37,12 +38,15 @@ export function Lobby({
   onPractice4(): void;
   /** Connect MiniPay/injected wallet; resolves true when connected. */
   onConnectWallet(): Promise<boolean>;
-  /** Challenge a friend to a free 1v1 (creates their private table + offer). */
-  onChallengeFriend(pid: string): void;
+  /** Challenge a friend at a chosen stake (0 = free private table + offer). */
+  onChallengeFriend(pid: string, stake: StakeCents): void;
   /** Reciprocal friend.add (accept an incoming request). */
   onAcceptFriend(pid: string): Promise<boolean>;
-  /** Withdraw one of MY pending sent invitations (silent server-side). */
-  onWithdrawRequest(pid: string): void;
+  /** friend.remove — withdraw a sent invitation, decline an incoming request,
+   *  or unfriend (the server tears down both directions, silently). */
+  onRemoveFriendEdge(pid: string): void;
+  /** Open a player's public profile sheet (ELO, W/L, head-to-head vs me). */
+  onViewProfile(pid: string): void;
 }) {
   const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, friends, friendRequests, sentRequests } = useAppState();
   const dispatch = useAppDispatch();
@@ -58,6 +62,40 @@ export function Lobby({
       !friendRequests.some((r) => r.pid === o.pid) &&
       !sentRequests.some((r) => r.pid === o.pid),
   );
+
+  // ---- Friends lifecycle UI state (P1) ----
+  /** Friend the stake-picker sheet targets (⚔️ tap) — null = closed. */
+  const [challengeTarget, setChallengeTarget] = useState<{ pid: string; name: string } | null>(null);
+  /** pid whose ✕ is in its "tap again to confirm" window (mobile-friendly
+   *  destructive confirm without a full modal); auto-disarms after 2.6 s. */
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const removeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armRemove = (pid: string): void => {
+    playTap();
+    if (removeTimer.current) clearTimeout(removeTimer.current);
+    if (confirmRemove === pid) {
+      setConfirmRemove(null);
+      onRemoveFriendEdge(pid);
+      return;
+    }
+    setConfirmRemove(pid);
+    removeTimer.current = setTimeout(() => setConfirmRemove(null), 2600);
+  };
+
+  /** My on-device record vs a pid (recent opponents) → the "2-1 vs you" chip.
+   *  Local by design: zero extra round-trips for the whole list. */
+  const recordVs = (pid: string | undefined): string | null => {
+    const o = pid ? recentOpponents.find((r) => r.pid === pid) : undefined;
+    return o && o.wins + o.losses > 0 ? `${o.wins}-${o.losses}` : null;
+  };
+  /** "Seen 2 h ago" for an offline friend (compact, best-effort server hint). */
+  const seenAgo = (ts?: number): string | null => {
+    if (!ts) return null;
+    const min = Math.max(1, Math.round((Date.now() - ts) / 60_000));
+    const txt = min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`;
+    return t('seenAgo').replace('{t}', txt);
+  };
+  const onlineCount = friends.filter((f) => f.online).length;
 
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
    *  server-side). Must take the stake as an argument — the 4-player sheet has
@@ -221,20 +259,33 @@ export function Lobby({
 
       {/* PENDING FRIEND REQUESTS — promoted near the top: a request is the most
           actionable social moment on the page, and it persists server-side until
-          answered, so surfacing it prominently is what stops it being "lost". */}
+          answered, so surfacing it prominently is what stops it being "lost".
+          Full lifecycle: accept (gold) OR decline (✕ → friend.remove clears the
+          edge server-side); tapping the person opens their public profile so
+          you're not accepting blind. */}
       {friendRequests.length > 0 && (
         <div className="card friendreqcard">
-          {friendRequests.map((r) => (
-            <div key={r.pid} className="friendrow friendrow--request">
-              <span className={`friendrow__flag ${frameClass(r.frame)}`}>
-                {avatarSrc(r.avatar) ? <img className="profilecard__img" src={avatarSrc(r.avatar)!} alt="" /> : r.flag}
-              </span>
-              <span className="friendrow__meta">
-                <b>{r.name}</b>
-                <small>{t('friendRequestLabel')}</small>
-              </span>
-              <button className="friendrow__btn friendrow__btn--accept" onClick={() => { playTap('select'); void onAcceptFriend(r.pid); }}>
+          <div className="friendhead">
+            <b>🔔 {t('friendRequestsTitle')}</b>
+            <span className="friendhead__count">{friendRequests.length}</span>
+          </div>
+          {friendRequests.map((r, i) => (
+            <div key={r.pid} className="friendrow friendrow--anim" style={{ '--i': i } as React.CSSProperties}>
+              <button className="friendrow__hit" onClick={() => { playTap(); onViewProfile(r.pid); }} aria-label={`${r.name} profile`}>
+                <span className={`friendrow__flag ${frameClass(r.frame)}`}>
+                  {avatarSrc(r.avatar) ? <img className="profilecard__img" src={avatarSrc(r.avatar)!} alt="" /> : r.flag}
+                  <PremiumFrame frame={r.frame} />
+                </span>
+                <span className="friendrow__meta">
+                  <b>{r.name}{recordVs(r.pid) && <em className="h2hchip">{recordVs(r.pid)} {t('vsYou')}</em>}</b>
+                  <small>{t('friendRequestLabel')} · {r.elo} ELO</small>
+                </span>
+              </button>
+              <button className="frbtn frbtn--gold" onClick={() => { playTap('select'); void onAcceptFriend(r.pid); }}>
                 ✓ {t('friendAccept')}
+              </button>
+              <button className="frbtn frbtn--danger" aria-label={`${t('friendRemove')} ${r.name}`} onClick={() => { playTap(); onRemoveFriendEdge(r.pid); }}>
+                ✕
               </button>
             </div>
           ))}
@@ -245,29 +296,33 @@ export function Lobby({
           other side hasn't answered yet, with a quiet withdraw. Without this
           list a sent request was fire-and-forget ("did it even go through?"). */}
       {sentRequests.length > 0 && (
-        <>
-          <div className="seclabel">⏳ {t('sentRequestsTitle')}</div>
-          <div className="card friendscard">
-            {sentRequests.map((r) => (
-              <div key={r.pid} className="friendrow">
+        <div className="card friendscard">
+          <div className="friendhead">
+            <b>⏳ {t('sentRequestsTitle')}</b>
+            <span className="friendhead__count">{sentRequests.length}</span>
+          </div>
+          {sentRequests.map((r, i) => (
+            <div key={r.pid} className="friendrow friendrow--anim" style={{ '--i': i } as React.CSSProperties}>
+              <button className="friendrow__hit" onClick={() => { playTap(); onViewProfile(r.pid); }} aria-label={`${r.name} profile`}>
                 <span className={`friendrow__flag ${frameClass(r.frame)}`}>
                   {avatarSrc(r.avatar) ? <img className="profilecard__img" src={avatarSrc(r.avatar)!} alt="" /> : r.flag}
+                  <PremiumFrame frame={r.frame} />
                 </span>
                 <span className="friendrow__meta">
                   <b>{r.name}</b>
                   <small>{t('sentPending')}</small>
                 </span>
-                <button
-                  className="friendrow__btn friendrow__btn--withdraw"
-                  aria-label={`${t('sentWithdraw')} ${r.name}`}
-                  onClick={() => { playTap(); onWithdrawRequest(r.pid); }}
-                >
-                  ✕ {t('sentWithdraw')}
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
+              </button>
+              <button
+                className="frbtn frbtn--ghost"
+                aria-label={`${t('sentWithdraw')} ${r.name}`}
+                onClick={() => { playTap(); onRemoveFriendEdge(r.pid); }}
+              >
+                ✕ {t('sentWithdraw')}
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* SEASON PASS — the progression hub (crowns → tiers → rewards). Hidden
@@ -350,61 +405,124 @@ export function Lobby({
           Wallet-gated like the whole feature — hidden for guests so there's no
           dead button that always errors "connect a wallet". */}
       {walletBacked && addableOpponents.length > 0 && (
-        <>
-          <div className="seclabel">{t('addFriendsTitle')}</div>
-          <div className="card friendscard">
-            {addableOpponents.map((o) => (
-              <div key={o.pid} className="friendrow">
-                <span className={`friendrow__flag ${frameClass(o.frame)}`}>{o.flag}</span>
+        <div className="card friendscard">
+          <div className="friendhead">
+            <b>➕ {t('addFriendsTitle')}</b>
+            <span className="friendhead__count">{addableOpponents.length}</span>
+          </div>
+          {addableOpponents.map((o, i) => (
+            <div key={o.pid} className="friendrow friendrow--anim" style={{ '--i': i } as React.CSSProperties}>
+              <button className="friendrow__hit" onClick={() => { playTap(); onViewProfile(o.pid); }} aria-label={`${o.name} profile`}>
+                <span className={`friendrow__flag ${frameClass(o.frame)}`}>
+                  {o.flag}
+                  <PremiumFrame frame={o.frame} />
+                </span>
                 <span className="friendrow__meta">
-                  <b>{o.name}</b>
+                  <b>{o.name}{recordVs(o.pid) && <em className="h2hchip">{recordVs(o.pid)} {t('vsYou')}</em>}</b>
                   <small>{t('addFriendHint')}</small>
                 </span>
-                <button
-                  className="friendrow__btn friendrow__btn--accept"
-                  aria-label={`${t('addFriend')} ${o.name}`}
-                  onClick={() => { playTap('select'); void onAcceptFriend(o.pid!); }}
-                >
-                  ➕ {t('addFriend')}
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
+              </button>
+              <button
+                className="frbtn frbtn--gold"
+                aria-label={`${t('addFriend')} ${o.name}`}
+                onClick={() => { playTap('select'); void onAcceptFriend(o.pid); }}
+              >
+                ➕ {t('addFriend')}
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* FRIENDS (E-social 2): the persistent circle — requests to accept, then
-          friends with a presence snapshot and a one-tap free challenge. Hidden
-          entirely until the player HAS a circle (no empty-state noise). */}
+      {/* FRIENDS (E-social 2): the persistent circle. Living presence (online
+          first, pulsing dot, "seen 2 h ago"), tap-through to the public profile
+          (head-to-head), gift, stake-picked challenge, and a 2-tap unfriend. */}
       {friends.length > 0 && (
-        <>
-          <div className="seclabel">{t('friendsTitle')}</div>
-          <div className="card friendscard">
-            {friends.map((f) => (
-              <div key={f.pid} className="friendrow">
+        <div className="card friendscard">
+          <div className="friendhead">
+            <b>{t('friendsTitle')}</b>
+            <span className="friendhead__count">{friends.length}</span>
+            {onlineCount > 0 && <small className="friendhead__online">● {onlineCount} {t('friendOnline')}</small>}
+          </div>
+          {friends.map((f, i) => (
+            <div key={f.pid} className="friendrow friendrow--anim" style={{ '--i': i } as React.CSSProperties}>
+              <button className="friendrow__hit" onClick={() => { playTap(); onViewProfile(f.pid); }} aria-label={`${f.name} profile`}>
                 <span className={`friendrow__flag ${frameClass(f.frame)}`}>
                   {avatarSrc(f.avatar) ? <img className="profilecard__img" src={avatarSrc(f.avatar)!} alt="" /> : f.flag}
+                  <PremiumFrame frame={f.frame} />
                   {f.online && <i className="friendrow__dot" title={t('friendOnline')} />}
                 </span>
                 <span className="friendrow__meta">
-                  <b>{f.name}</b>
-                  <small>{f.online ? t('friendOnline') : `${f.elo} ELO`}</small>
+                  <b>{f.name}{recordVs(f.pid) && <em className="h2hchip">{recordVs(f.pid)} {t('vsYou')}</em>}</b>
+                  <small>{f.online ? t('friendOnline') : seenAgo(f.lastSeenTs) ?? `${f.elo} ELO`}</small>
                 </span>
-                {/* Gift a cosmetic (phase 2): opens the catalog picker for this friend. */}
+              </button>
+              {/* Gift a cosmetic (phase 2): opens the catalog picker for this friend. */}
+              <button
+                className="frbtn frbtn--icon"
+                aria-label={`${t('giftTitle')} ${f.name}`}
+                onClick={() => { playTap(); dispatch({ type: 'GIFT_MODAL', friend: f }); }}
+              >
+                🎁
+              </button>
+              <button className="frbtn frbtn--gold" onClick={() => { playTap(); setChallengeTarget({ pid: f.pid, name: f.name }); }}>
+                ⚔️ {t('friendChallenge')}
+              </button>
+              <button
+                className={`frbtn frbtn--danger${confirmRemove === f.pid ? ' frbtn--armed' : ''}`}
+                aria-label={`${t('friendRemove')} ${f.name}`}
+                onClick={() => armRemove(f.pid)}
+              >
+                {confirmRemove === f.pid ? t('friendRemoveConfirm') : '✕'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* EMPTY-STATE TEASER — discoverability: with no circle at all, the whole
+          feature used to be invisible (every section hidden when empty), so a
+          new player never learnt it existed. One quiet card explains it. */}
+      {walletBacked && friends.length === 0 && friendRequests.length === 0 && sentRequests.length === 0 && addableOpponents.length === 0 && (
+        <div className="card friendteaser">
+          <span className="friendteaser__ic">🤝</span>
+          <span className="friendrow__meta">
+            <b>{t('emptyFriendsTitle')}</b>
+            <small>{t('emptyFriendsBody')}</small>
+          </span>
+        </div>
+      )}
+
+      {/* CHALLENGE STAKE SHEET (P1): ⚔️ on a friend opens this picker instead of
+          silently creating a FREE table — staked friend duels are the product's
+          core loop and the server has always accepted a stake here. Staked picks
+          run the same wallet/compliance/balance guard as every staked entry. */}
+      {challengeTarget && (
+        <div className="modal" onClick={() => setChallengeTarget(null)}>
+          <div className="modal__card challengesheet" onClick={(e) => e.stopPropagation()}>
+            <h3>⚔️ {t('friendChallenge')} {challengeTarget.name}</h3>
+            <div className="challengesheet__opts">
+              {lobbyStakes.map((s) => (
                 <button
-                  className="friendrow__btn friendrow__btn--gift"
-                  aria-label={`${t('giftTitle')} ${f.name}`}
-                  onClick={() => { playTap(); dispatch({ type: 'GIFT_MODAL', friend: f }); }}
+                  key={s}
+                  className={`frbtn ${s === 0 ? 'frbtn--ghost' : 'frbtn--gold'}`}
+                  onClick={() => {
+                    if (s > 0 && guardStaked(s)) return; // wallet/RG/balance gate — sheet stays open
+                    const pid = challengeTarget.pid;
+                    setChallengeTarget(null);
+                    playTap('select');
+                    onChallengeFriend(pid, s as StakeCents);
+                  }}
                 >
-                  🎁
+                  {s === 0 ? t('challengeFree') : `${fmtUsd(s)} → ${fmtUsd(potCents(s as StakeCents))}`}
                 </button>
-                <button className="friendrow__btn" onClick={() => { playTap(); onChallengeFriend(f.pid); }}>
-                  ⚔️ {t('friendChallenge')}
-                </button>
-              </div>
-            ))}
+              ))}
+            </div>
+            <button className="closehint" onClick={() => { playTap(); setChallengeTarget(null); }}>
+              {t('cancel')}
+            </button>
           </div>
-        </>
+        </div>
       )}
 
       {/* Identity + progression. Stats (ELO/W-L/division) are shown ONLY for a
