@@ -670,6 +670,9 @@ export interface FriendInfo {
   avatar?: string;
   frame?: string;
   online?: boolean;
+  /** When an OFFLINE friend was last connected (ms epoch) — the "seen 2 h ago"
+   *  hint. Best-effort (in-memory server-side): absent = unknown/never. */
+  lastSeenTs?: number;
 }
 
 /** Caps on the social graph: enough for a real circle, bounded for the hello

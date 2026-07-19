@@ -221,6 +221,17 @@ export default function App() {
     prevScreenSync.current = state.screen;
   }, [state.screen, syncLobbyNow]);
 
+  // Living presence: the lobby holds NO socket (offline-first, one-shot syncs),
+  // so friends' online/offline flips and fresh requests can't be pushed to it.
+  // A quiet periodic re-sync keeps the circle live; each sync also stamps OUR
+  // "last seen" server-side, which is what makes US read as online to friends
+  // (the server counts seen-within-90s as online). Skipped off-lobby.
+  useEffect(() => {
+    if (state.screen !== 'lobby') return;
+    const id = setInterval(syncLobbyNow, 45_000);
+    return () => clearInterval(id);
+  }, [state.screen, syncLobbyNow]);
+
   /** Lock the stake on-chain for a staked match; leave the match on failure. */
   const stakeForMatch = useCallback(
     async (gameId: string, stakeCents: number, fairnessCommit: string) => {
@@ -581,11 +592,12 @@ export default function App() {
   );
 
   // ---- Friends & challenges (E-social 2) ----
-  /** Challenge a friend to a FREE 1v1 (one tap, no stake guard needed): the
+  /** Challenge a friend at the stake the lobby sheet picked (0 = free): the
    *  server creates the table + pushes them a live offer; the normal private-
-   *  table waiting screen (code + WhatsApp share) covers the offline case. */
+   *  table waiting screen (code + WhatsApp share) covers the offline case.
+   *  openPrivate already gates staked play on a connected wallet. */
   const challengeFriend = useCallback(
-    (pid: string) => void openPrivate(0, { kind: 'challenge', pid }),
+    (pid: string, stake: StakeCents) => void openPrivate(stake, { kind: 'challenge', pid }),
     [openPrivate],
   );
 
@@ -614,10 +626,10 @@ export default function App() {
     [dispatch],
   );
 
-  /** Withdraw a SENT invitation (friend.remove tears down my directional edge —
-   *  for a pending request that IS the withdrawal; the other side is never
-   *  notified, same silent semantics as de-friending). */
-  const withdrawFriendRequest = useCallback(
+  /** friend.remove serves the WHOLE removal lifecycle — withdraw a SENT
+   *  invitation, DECLINE an incoming request, or UNFRIEND — because the server
+   *  tears down both directional edges. Silent for the other side by design. */
+  const removeFriendEdge = useCallback(
     async (pid: string): Promise<void> => {
       const lists = await sendFriendAction(SERVER_URL, { t: 'friend.remove', pid }, walletRef.current?.address);
       if (!lists) {
@@ -1073,7 +1085,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onWithdrawRequest={(pid) => void withdrawFriendRequest(pid)} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
