@@ -71,16 +71,28 @@ export function createCosmeticsVerifier(env: NodeJS.ProcessEnv = process.env): C
   const chain = CHAINS[env.CHAIN?.trim() || 'celo-sepolia'];
   if (!chain) return null;
 
-  let store = env.COSMETICS_STORE_ADDRESS?.trim() as Address | undefined;
-  if (!store) {
-    const deploymentsPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'contracts', 'deployments.json');
-    try {
-      const deployments = JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, DeploymentC>;
-      store = Object.values(deployments).find((d) => d.chainId === chain.id)?.cosmeticsStore;
-    } catch {
-      /* no deployments file bundled */
-    }
+  // Resolve BOTH sources so an env override that has drifted from the bundled
+  // deployments.json screams at boot instead of silently verifying against a
+  // store the CLIENT no longer buys on. (Exactly that happened in production:
+  // a COSMETICS_STORE_ADDRESS secret from the first setup outlived two store
+  // redeploys — every cUSD purchase failed its claim with "could not verify".)
+  const override = env.COSMETICS_STORE_ADDRESS?.trim() as Address | undefined;
+  let fromDeployments: Address | undefined;
+  const deploymentsPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'contracts', 'deployments.json');
+  try {
+    const deployments = JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, DeploymentC>;
+    fromDeployments = Object.values(deployments).find((d) => d.chainId === chain.id)?.cosmeticsStore;
+  } catch {
+    /* no deployments file bundled */
   }
+  if (override && fromDeployments && override.toLowerCase() !== fromDeployments.toLowerCase()) {
+    console.warn(
+      `[cosmetics] ⚠ COSMETICS_STORE_ADDRESS override (${override}) differs from deployments.json ` +
+        `(${fromDeployments}) — the CLIENT buys on the deployments address, so cUSD claims will fail. ` +
+        `Unset the secret (deployments.json is authoritative) or update it.`,
+    );
+  }
+  const store = override ?? fromDeployments;
   if (!store) return null; // store not deployed yet → cUSD cosmetic claims disabled
   return new CosmeticsVerifier(chain, store, env.SETTLEMENT_RPC?.trim() || undefined);
 }
