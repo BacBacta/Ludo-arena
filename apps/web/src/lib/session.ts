@@ -14,6 +14,7 @@ import { setServerContracts } from './settlementGuard';
 import { isMiniPay } from './minipay';
 import { loadFrameId } from './avatarFrames';
 import { loadTokenSkinId, loadEntranceFxId, loadVictoryFxId } from './tokenSkins';
+import { loadSkinId } from './diceSkins';
 import { loadAvatarId } from './avatars';
 import { adoptServerIdentity, loadCustomIdentity } from './profile';
 import { sha256Hex } from './fairnessVerify';
@@ -1201,6 +1202,7 @@ export class RemoteSession implements GameSession {
         miniPay: isMiniPay(), // trusted address → server accepts it without SIWE
         frame: loadFrameId(), // equipped avatar frame (cosmetic, broadcast to others)
         avatar: loadAvatarId(), // chosen 3D profile avatar (broadcast to others)
+        diceSkin: loadSkinId(), // equipped DICE skin (opponent sees my die roll)
         tokenSkin: loadTokenSkinId(), // equipped pawn skin (opponent sees it on my pieces)
         entranceFx: loadEntranceFxId(), // entrance effect (played at match start)
         victoryFx: loadVictoryFxId(), // victory effect (the loser watches it too)
