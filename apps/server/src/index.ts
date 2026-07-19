@@ -1047,6 +1047,13 @@ wss.on('connection', (ws, req) => {
         const rLimits = await store.getLimits(rpid, utcToday());
         const rComeback = resumedSession.wallet ? await applyWinback(rpid, rStreak, rLimits) : undefined;
         if (rComeback) rChallenge = await store.getChallenge(rpid, utcToday()); // refresh ticket total
+        // Friends (E-social 2): the wallet-proven hello that actually populates the
+        // lobby is almost ALWAYS this resumed path — the first (token-minting) hello
+        // fires before the MiniPay wallet connects, so it's unproven, and the sync
+        // after wallet-connect carries the token and RESUMES. Omitting the lists
+        // here left every real user's requests/friends invisible in the lobby
+        // (they only ever arrived via the live friends.update push, lost on reload).
+        const rFriendLists = rProof.walletProven ? await buildFriendLists(rpid) : undefined;
         send(ws, {
           t: 'hello.ok',
           sessionToken: resumedSession.id,
@@ -1070,6 +1077,9 @@ wss.on('connection', (ws, req) => {
           walletNonce: rProof.walletNonce,
           walletProven: rProof.walletProven,
           consentTosVersion: resumedSession.consentTos,
+          friends: rFriendLists?.friends,
+          friendRequests: rFriendLists?.requests,
+          friendsOutgoing: rFriendLists?.outgoing,
         });
         // R-WEB-1: if this session had a live 4-player seat (staked table), rebind
         // the new socket to it and resync — a dropped staker resumes instead of
@@ -1207,6 +1217,10 @@ wss.on('connection', (ws, req) => {
           if (getAddress(recovered) === getAddress(session.wallet)) {
             session.walletProven = true;
             session.walletNonce = undefined;
+            // Now that the wallet is proven, this session can hold friends: push
+            // the lists so a regular-wallet (non-MiniPay/SIWE) user gets them
+            // without a second hello — mirrors the MiniPay resume path.
+            void pushFriendsUpdate(playerId(session.wallet, session.id)).catch(() => undefined);
           } else {
             session.send({ t: 'error', code: 'BAD_STATE', message: 'Wallet verification failed.' });
           }
