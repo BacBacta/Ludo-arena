@@ -959,6 +959,9 @@ small.muted { font-size: 12px; }
 
 .fairnote { text-align: center; color: rgba(255, 255, 255, 0.95); font-size: 11px; margin-top: 10px; }
 .fairnote--links { margin-top: 6px; font-weight: 600; }
+/* Build id in the lobby footer: lets support tell a stale cached bundle from
+   the current deploy at a glance. Deliberately dim. */
+.buildtag { opacity: 0.55; font-weight: 400; }
 .fairnote--links a, .fairnote--links .linklike { white-space: nowrap; }
 .help__card { max-height: 82dvh; display: flex; flex-direction: column; }
 .help__scroll { overflow-y: auto; margin: 4px 0 12px; text-align: left; }
