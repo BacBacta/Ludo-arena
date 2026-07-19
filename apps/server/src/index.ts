@@ -287,16 +287,21 @@ async function friendInfoOf(id: string, withPresence: boolean): Promise<FriendIn
   };
 }
 
-/** Both friend lists (capped) as sent in hello.ok / friends.update. */
-async function buildFriendLists(id: string): Promise<{ friends: FriendInfo[]; requests: FriendInfo[] }> {
-  const [fids, rids] = await Promise.all([store.getFriendIds(id), store.getFriendRequestIds(id)]);
+/** All three friend lists (capped) as sent in hello.ok / friends.update:
+ *  mutual friends, INCOMING requests, and OUTGOING (sent, unanswered) — the
+ *  sender's view of pending invitations, withdrawable via friend.remove. */
+async function buildFriendLists(id: string): Promise<{ friends: FriendInfo[]; requests: FriendInfo[]; outgoing: FriendInfo[] }> {
+  const [fids, rids, oids] = await Promise.all([store.getFriendIds(id), store.getFriendRequestIds(id), store.getOutgoingRequestIds(id)]);
   const friends = (await Promise.all(fids.slice(0, FRIENDS_MAX).map((f) => friendInfoOf(f, true)))).filter(
     (x): x is FriendInfo => x !== null,
   );
   const requests = (await Promise.all(rids.slice(0, FRIEND_REQUESTS_MAX).map((f) => friendInfoOf(f, false)))).filter(
     (x): x is FriendInfo => x !== null,
   );
-  return { friends, requests };
+  const outgoing = (await Promise.all(oids.slice(0, FRIEND_REQUESTS_MAX).map((f) => friendInfoOf(f, false)))).filter(
+    (x): x is FriendInfo => x !== null,
+  );
+  return { friends, requests, outgoing };
 }
 
 /** Push a live friends.update to a player's active session, if any. */
@@ -304,7 +309,7 @@ async function pushFriendsUpdate(id: string): Promise<void> {
   const s = liveSessionFor(id);
   if (!s) return;
   const lists = await buildFriendLists(id);
-  s.send({ t: 'friends.update', friends: lists.friends, requests: lists.requests });
+  s.send({ t: 'friends.update', friends: lists.friends, requests: lists.requests, outgoing: lists.outgoing });
 }
 
 /**
@@ -1174,6 +1179,7 @@ wss.on('connection', (ws, req) => {
         consentTosVersion: session.consentTos,
         friends: friendLists?.friends,
         friendRequests: friendLists?.requests,
+        friendsOutgoing: friendLists?.outgoing,
       });
       return;
     }

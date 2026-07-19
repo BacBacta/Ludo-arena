@@ -179,6 +179,8 @@ export interface AppState {
   /** Friends & requests (E-social 2), server-authoritative (hello.ok / pushes). */
   friends: FriendInfo[];
   friendRequests: FriendInfo[];
+  /** Invitations I SENT that await the other side (withdrawable). */
+  sentRequests: FriendInfo[];
   /** Live incoming friend challenge (accept = join their private table). */
   challengeOffer: { code: string; stakeCents: number; from: FriendInfo } | null;
   /** Gift-a-cosmetic picker (phase 2): the friend being gifted, null = closed. */
@@ -305,6 +307,7 @@ export const initialState: AppState = {
   recentOpponents: loadRecentOpponents(),
   friends: [],
   friendRequests: [],
+  sentRequests: [],
   challengeOffer: null,
   giftFriend: null,
   limits: loadRetention().limits,
@@ -355,7 +358,7 @@ export type Action =
   | { type: 'START_PRACTICE4' }
   | { type: 'START_ONLINE4'; stakeCents: number }
   | { type: 'MATCH_FOUND'; match: MatchInfo }
-  | { type: 'FRIENDS'; friends: FriendInfo[]; requests: FriendInfo[] }
+  | { type: 'FRIENDS'; friends: FriendInfo[]; requests: FriendInfo[]; outgoing?: FriendInfo[] }
   | { type: 'CHALLENGE_OFFER'; offer: { code: string; stakeCents: number; from: FriendInfo } | null }
   | { type: 'GIFT_MODAL'; friend: FriendInfo | null }
   | { type: 'GAME_STATE'; game: GameState }
@@ -649,11 +652,23 @@ export function reducer(s: AppState, a: Action): AppState {
       // first newly-appeared requester so the moment isn't silently missed —
       // the request itself persists server-side and re-surfaces on every hello.
       const fresh = a.requests.find((r) => !s.friendRequests.some((p) => p.pid === r.pid));
+      // A SENT invitation that just became mutual (its pid moved from my
+      // outgoing list into friends) is the acceptance moment — celebrate it.
+      const accepted = a.friends.find(
+        (f) => s.sentRequests.some((o) => o.pid === f.pid) && !s.friends.some((p) => p.pid === f.pid),
+      );
+      const toast = fresh
+        ? `➕ ${fresh.name} ${t('friendRequestLabel')}`
+        : accepted
+          ? `✅ ${accepted.name} ${t('friendAccepted')}`
+          : s.toast;
       return {
         ...s,
         friends: a.friends,
         friendRequests: a.requests,
-        toast: fresh ? `➕ ${fresh.name} ${t('friendRequestLabel')}` : s.toast,
+        // outgoing is optional on older servers — keep the last known list then.
+        sentRequests: a.outgoing ?? s.sentRequests,
+        toast,
       };
     }
     case 'CHALLENGE_OFFER':

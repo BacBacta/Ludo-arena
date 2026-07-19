@@ -543,9 +543,14 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
       expect(await store.getFriendRequestIds(b)).toEqual([a]);
       expect(await store.getFriendRequestIds(a)).toEqual([]);
       expect(await store.getFriendIds(a)).toEqual([]);
+      // the request A sent shows up in A's OUTGOING list until B reciprocates
+      expect(await store.getOutgoingRequestIds(a)).toEqual([b]);
+      expect(await store.getOutgoingRequestIds(b)).toEqual([]);
 
       // the reciprocal add seals the friendship and clears the request
       expect(await store.addFriend(b, a)).toBe('friends');
+      // sender's view: once mutual, the outgoing list is empty again
+      expect(await store.getOutgoingRequestIds(a)).toEqual([]);
       expect(await store.getFriendIds(a)).toEqual([b]);
       expect(await store.getFriendIds(b)).toEqual([a]);
       expect(await store.getFriendRequestIds(b)).toEqual([]);

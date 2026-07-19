@@ -464,6 +464,12 @@ export class MemoryStore implements Store {
     return out;
   }
 
+  async getOutgoingRequestIds(playerId: string): Promise<string[]> {
+    const mine = this.friendEdges.get(playerId);
+    if (!mine) return [];
+    return [...mine].filter((other) => !this.friendEdges.get(other)?.has(playerId));
+  }
+
   async getOwnedSkins(playerId: string): Promise<string[]> {
     return [...(this.players.get(playerId)?.ownedSkins ?? [])];
   }

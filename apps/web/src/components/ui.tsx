@@ -458,6 +458,51 @@ export function ComebackModal() {
   );
 }
 
+/** Explicit purchase sheet (UX fix): tapping a LOCKED premium tile used to
+ *  silently pick a payment rail by precedence (tickets if affordable, else
+ *  cUSD) — nobody could SEE where to pay money. This sheet shows the item and
+ *  two labelled buttons: unlock with tickets (with the player's balance) and
+ *  pay in USDT (wallet flow) — the choice is the player's, in one obvious place. */
+function PurchaseSheet({ id, tickets, onClose, onBuy, onBuyCusd }: {
+  id: string;
+  tickets: number;
+  onClose(): void;
+  onBuy(id: string): void;
+  onBuyCusd(id: string): void;
+}) {
+  const item = cosmeticById(id);
+  const ticketPrice = item && item.tickets > 0 ? item.tickets : undefined;
+  const cents = item?.cents ?? 0;
+  const affordable = ticketPrice !== undefined && tickets >= ticketPrice;
+  const trapRef = useFocusTrap<HTMLDivElement>(true, onClose);
+  return (
+    <div className="modal" onClick={onClose}>
+      <div className="modal__card buysheet" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <CosmeticPreview id={id} idKey={`buy-${id}`} />
+        <h3>{cosmeticName(id)}</h3>
+        {ticketPrice !== undefined && (
+          <>
+            <button
+              className="btn"
+              disabled={!affordable}
+              onClick={() => { playTap('select'); onBuy(id); onClose(); }}
+            >
+              🎟️ {t('buyTicketsBtn')} — {ticketPrice} 🎟️
+            </button>
+            <small className="muted buysheet__bal">{t('yourTickets')}: {tickets} 🎟️{affordable ? '' : ` · ${t('notEnoughTickets')}`}</small>
+          </>
+        )}
+        {cosmeticsCusdAvailable && cents > 0 && (
+          <button className="btn buysheet__usdt" onClick={() => { playTap('select'); onBuyCusd(id); onClose(); }}>
+            💵 {t('buyUsdtBtn')} — {fmtUsd(cents)} USDT
+          </button>
+        )}
+        <button className="btn btn--ghost" onClick={onClose}>{t('cancel')}</button>
+      </div>
+    </div>
+  );
+}
+
 /** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
  *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
 export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {
@@ -465,6 +510,8 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(diceModalOpen, close);
+  // Purchase sheet target: a LOCKED premium tile was tapped (see PurchaseSheet).
+  const [buyingId, setBuyingId] = useState<string | null>(null);
   if (!diceModalOpen) return null;
   const stats = loadStats();
   const ctx = { ...stats, streakDays: streak.days, tickets, division: league.division };
@@ -504,19 +551,19 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
             // cUSD buy is a fallback path, live only once the store is deployed.
             const cusd = cosmeticCents(s.id);
             const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
-            // onClick precedence: equip → ticket-buy (if affordable) → cUSD-buy.
+            // A locked PREMIUM tile opens the purchase sheet (explicit rails);
+            // progression/season tiles keep their unlock hints.
+            const purchasable = canBuyTickets || cusdBuyable;
             const onClick = unlocked
               ? () => dispatch({ type: 'SET_DICE_SKIN', id: s.id })
-              : ticketAffordable
-                ? () => onBuy(s.id)
-                : cusdBuyable
-                  ? () => onBuyCusd(s.id)
-                  : undefined;
+              : purchasable
+                ? () => setBuyingId(s.id)
+                : undefined;
             return (
               <button
                 key={s.id}
                 className={`skin${equipped ? ' skin--on' : ''}${unlocked ? '' : ' skin--locked'}`}
-                disabled={!unlocked && !ticketAffordable && !cusdBuyable}
+                disabled={!unlocked && !purchasable}
                 onClick={onClick}
               >
                 <DieFace value={6} skin={s} />
@@ -551,18 +598,17 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
             const ticketAffordable = !owned && price !== undefined && tickets >= price;
             const cusd = cosmeticCents(s.id);
             const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            const purchasable = !owned && (price !== undefined || cusdBuyable);
             const onClick = owned
               ? () => dispatch({ type: 'SET_TOKEN_SKIN', id: s.id })
-              : ticketAffordable
-                ? () => onBuy(s.id)
-                : cusdBuyable
-                  ? () => onBuyCusd(s.id)
-                  : undefined;
+              : purchasable
+                ? () => setBuyingId(s.id)
+                : undefined;
             return (
               <button
                 key={s.id}
                 className={`skin${equipped ? ' skin--on' : ''}${owned ? '' : ' skin--locked'}`}
-                disabled={!owned && !ticketAffordable && !cusdBuyable}
+                disabled={!owned && !purchasable}
                 onClick={onClick}
               >
                 <TokenPreview pattern={s.pattern} idKey={`shop-${s.id}`} />
@@ -593,18 +639,17 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
             const ticketAffordable = !owned && price !== undefined && tickets >= price;
             const cusd = cosmeticCents(b.id);
             const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            const purchasable = !owned && (price !== undefined || cusdBuyable);
             const onClick = owned
               ? () => dispatch({ type: 'SET_BOARD_THEME', id: b.id })
-              : ticketAffordable
-                ? () => onBuy(b.id)
-                : cusdBuyable
-                  ? () => onBuyCusd(b.id)
-                  : undefined;
+              : purchasable
+                ? () => setBuyingId(b.id)
+                : undefined;
             return (
               <button
                 key={b.id}
                 className={`skin${equipped ? ' skin--on' : ''}${owned ? '' : ' skin--locked'}`}
-                disabled={!owned && !ticketAffordable && !cusdBuyable}
+                disabled={!owned && !purchasable}
                 onClick={onClick}
               >
                 <BoardThemePreview theme={b} />
@@ -634,18 +679,17 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
             const ticketAffordable = !owned && price !== undefined && tickets >= price;
             const cusd = cosmeticCents(f.id);
             const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            const purchasable = !owned && (price !== undefined || cusdBuyable);
             const onClick = owned
               ? () => dispatch({ type: 'SET_ENTRANCE_FX', id: f.id })
-              : ticketAffordable
-                ? () => onBuy(f.id)
-                : cusdBuyable
-                  ? () => onBuyCusd(f.id)
-                  : undefined;
+              : purchasable
+                ? () => setBuyingId(f.id)
+                : undefined;
             return (
               <button
                 key={f.id}
                 className={`skin${equipped ? ' skin--on' : ''}${owned ? '' : ' skin--locked'}`}
-                disabled={!owned && !ticketAffordable && !cusdBuyable}
+                disabled={!owned && !purchasable}
                 onClick={onClick}
               >
                 <span style={{ fontSize: 30, display: 'block', lineHeight: '50px' }} aria-hidden="true">{f.particles[0] ?? '➖'}</span>
@@ -676,18 +720,17 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
             const ticketAffordable = !owned && price !== undefined && tickets >= price;
             const cusd = cosmeticCents(f.id);
             const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            const purchasable = !owned && (price !== undefined || cusdBuyable);
             const onClick = owned
               ? () => dispatch({ type: 'SET_VICTORY_FX', id: f.id })
-              : ticketAffordable
-                ? () => onBuy(f.id)
-                : cusdBuyable
-                  ? () => onBuyCusd(f.id)
-                  : undefined;
+              : purchasable
+                ? () => setBuyingId(f.id)
+                : undefined;
             return (
               <button
                 key={f.id}
                 className={`skin${equipped ? ' skin--on' : ''}${owned ? '' : ' skin--locked'}`}
-                disabled={!owned && !ticketAffordable && !cusdBuyable}
+                disabled={!owned && !purchasable}
                 onClick={onClick}
               >
                 <span style={{ fontSize: 30, display: 'block', lineHeight: '50px' }} aria-hidden="true">{f.particles[0] ?? '➖'}</span>
@@ -724,18 +767,17 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
             const ticketAffordable = !unlocked && price !== undefined && tickets >= price;
             const cusd = item?.kind === 'frame' ? item.cents : 0;
             const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !unlocked;
+            const purchasable = !unlocked && (price !== undefined || cusdBuyable);
             const onClick = unlocked
               ? () => dispatch({ type: 'EQUIP_FRAME', id: f.id })
-              : ticketAffordable
-                ? () => onBuy(f.id)
-                : cusdBuyable
-                  ? () => onBuyCusd(f.id)
-                  : undefined;
+              : purchasable
+                ? () => setBuyingId(f.id)
+                : undefined;
             return (
               <button
                 key={f.id}
                 className={`frametile${equipped ? ' frametile--on' : ''}${unlocked ? '' : ' frametile--locked'}`}
-                disabled={!unlocked && !ticketAffordable && !cusdBuyable}
+                disabled={!unlocked && !purchasable}
                 onClick={onClick}
               >
                 <span className={`frametile__ring ${frameClass(f.id)}`} aria-hidden="true">
@@ -759,6 +801,15 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
 
         <CloseHint onClose={close} />
       </div>
+      {buyingId && (
+        <PurchaseSheet
+          id={buyingId}
+          tickets={tickets}
+          onClose={() => setBuyingId(null)}
+          onBuy={onBuy}
+          onBuyCusd={onBuyCusd}
+        />
+      )}
     </div>
   );
 }
