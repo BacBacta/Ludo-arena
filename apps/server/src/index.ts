@@ -26,7 +26,10 @@ import {
   TOS_VERSION,
   walletProofMessage,
   winbackFor,
+  FRIENDS_MAX,
+  FRIEND_REQUESTS_MAX,
   type Comeback,
+  type FriendInfo,
   type LimitsState,
   type StreakState,
   type Player4Info,
@@ -94,6 +97,8 @@ interface Session extends Client {
   consentTos?: string;
   /** profile.get throttle: last lookup timestamp (anti-spam, DB-bound query). */
   lastProfileGetAt?: number;
+  /** friend.* throttle: same anti-spam posture as profile.get (DB-bound). */
+  lastFriendMsgAt?: number;
   /** QA test session (see QA_KEY): isolated matchmaking, no ladder writes. */
   qa?: boolean;
   /** Equipped avatar frame (cosmetic, client-authoritative like dice skins). */
@@ -244,6 +249,53 @@ function generateTableCode(): string {
     if (!privateTables.has(code)) return code;
   }
   throw new Error('could not allocate a table code');
+}
+
+// ---- Friends & challenges (E-social 2) --------------------------------------
+
+/** The live session (if any) for an internal player id — presence + push
+ *  routing. Linear scan over the sessions map: bounded by concurrent sockets on
+ *  this single-machine server, and only run on friend actions / hello. */
+function liveSessionFor(targetId: string): Session | undefined {
+  for (const s of sessions.values()) {
+    if (s.alive && playerId(s.wallet, s.id) === targetId) return s;
+  }
+  return undefined;
+}
+
+/** Public FriendInfo for an internal id (null for unknown/ephemeral players). */
+async function friendInfoOf(id: string, withPresence: boolean): Promise<FriendInfo | null> {
+  const prof = await store.getProfileByPid(pidFor(id));
+  if (!prof) return null;
+  return {
+    pid: pidFor(id),
+    name: prof.name,
+    flag: prof.flag,
+    elo: prof.elo,
+    avatar: prof.avatar,
+    frame: prof.frame,
+    online: withPresence ? liveSessionFor(id) !== undefined : undefined,
+  };
+}
+
+/** Both friend lists (capped) as sent in hello.ok / friends.update. */
+async function buildFriendLists(id: string): Promise<{ friends: FriendInfo[]; requests: FriendInfo[] }> {
+  const [fids, rids] = await Promise.all([store.getFriendIds(id), store.getFriendRequestIds(id)]);
+  const friends = (await Promise.all(fids.slice(0, FRIENDS_MAX).map((f) => friendInfoOf(f, true)))).filter(
+    (x): x is FriendInfo => x !== null,
+  );
+  const requests = (await Promise.all(rids.slice(0, FRIEND_REQUESTS_MAX).map((f) => friendInfoOf(f, false)))).filter(
+    (x): x is FriendInfo => x !== null,
+  );
+  return { friends, requests };
+}
+
+/** Push a live friends.update to a player's active session, if any. */
+async function pushFriendsUpdate(id: string): Promise<void> {
+  const s = liveSessionFor(id);
+  if (!s) return;
+  const lists = await buildFriendLists(id);
+  s.send({ t: 'friends.update', friends: lists.friends, requests: lists.requests });
 }
 
 /**
@@ -1079,6 +1131,11 @@ wss.on('connection', (ws, req) => {
       const season = await buildSeasonState(store, pid, new Date().toISOString());
       await recordConsent(session, msg.consent);
       const proof = issueWalletNonce(session);
+      // Friends (E-social 2): only for a PROVEN wallet — the graph is durable
+      // identity, and an unproven hello could claim any wallet's social circle
+      // (same gate as h2h in profile.get). Unproven browser sessions get their
+      // lists on the sync after wallet.prove.
+      const friendLists = proof.walletProven ? await buildFriendLists(pid) : undefined;
       send(ws, {
         t: 'hello.ok',
         sessionToken: id,
@@ -1101,6 +1158,8 @@ wss.on('connection', (ws, req) => {
         walletNonce: proof.walletNonce,
         walletProven: proof.walletProven,
         consentTosVersion: session.consentTos,
+        friends: friendLists?.friends,
+        friendRequests: friendLists?.requests,
       });
       return;
     }
@@ -1396,6 +1455,96 @@ wss.on('connection', (ws, req) => {
           t: 'profile.info',
           profile: { pid: msg.pid, name: prof.name, flag: prof.flag, elo: prof.elo, games: prof.gamesPlayed, wins: prof.wins, division: prof.division, frame: prof.frame, avatar: prof.avatar, h2h },
         });
+        break;
+      }
+
+      // ---- Friends & challenges (E-social 2) ----
+      case 'friend.add': {
+        // Durable identity required (anon ids evaporate at disconnect) and the
+        // wallet must be PROVEN — an unproven hello could graft requests onto
+        // any wallet's social graph. Same gate as h2h.
+        if (!session.walletProven) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to add friends.' });
+          break;
+        }
+        const now = Date.now();
+        if (now - (session.lastFriendMsgAt ?? 0) < 1000) break;
+        session.lastFriendMsgAt = now;
+        const myId = playerId(session.wallet, session.id);
+        const target = await store.getProfileByPid(msg.pid);
+        if (!target || target.id === myId) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Unknown player' });
+          break;
+        }
+        const status = await store.addFriend(myId, target.id);
+        session.send({ t: 'friend.added', pid: msg.pid, status });
+        telemetry('friend.add', { from: tpid(myId), to: tpid(target.id), status });
+        // Refresh my lists; notify the other side live if they're connected
+        // (otherwise their next hello re-syncs the request/friendship).
+        void pushFriendsUpdate(myId).catch(() => undefined);
+        void pushFriendsUpdate(target.id).catch(() => undefined);
+        break;
+      }
+
+      case 'friend.remove': {
+        if (!session.walletProven) break;
+        const now = Date.now();
+        if (now - (session.lastFriendMsgAt ?? 0) < 1000) break;
+        session.lastFriendMsgAt = now;
+        const myId = playerId(session.wallet, session.id);
+        const target = await store.getProfileByPid(msg.pid);
+        if (!target) break;
+        await store.removeFriend(myId, target.id);
+        // SILENT for the other side by design (de-friending must not be a
+        // conflict trigger) — only my own view refreshes now.
+        void pushFriendsUpdate(myId).catch(() => undefined);
+        break;
+      }
+
+      case 'friend.challenge': {
+        if (session.room) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
+          break;
+        }
+        if (!session.walletProven) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to challenge friends.' });
+          break;
+        }
+        const now = Date.now();
+        if (now - (session.lastFriendMsgAt ?? 0) < 1000) break;
+        session.lastFriendMsgAt = now;
+        const myId = playerId(session.wallet, session.id);
+        const target = await store.getProfileByPid(msg.pid);
+        if (!target) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Unknown player' });
+          break;
+        }
+        // Only MUTUAL friends can be challenged — no challenge-spam to
+        // arbitrary pids scraped from profiles.
+        const myFriends = await store.getFriendIds(myId);
+        if (!myFriends.includes(target.id)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Not friends yet.' });
+          break;
+        }
+        const blockedChallenge = await stakeBlock(session, msg.stake);
+        if (blockedChallenge) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: blockedChallenge });
+          break;
+        }
+        // Same machinery as table.create: the code doubles as the WhatsApp deep
+        // link for an offline friend, and table.join enforces every existing
+        // guard (stake parity, anti-collusion pair cap, RG) on acceptance.
+        session.stake = msg.stake;
+        const code = generateTableCode();
+        privateTables.set(code, { host: session, stake: msg.stake, createdAt: Date.now() });
+        session.send({ t: 'table.created', code, stakeCents: msg.stake });
+        // Live in-app offer when the friend is connected right now.
+        const live = liveSessionFor(target.id);
+        if (live && !live.room) {
+          const from = await friendInfoOf(myId, false);
+          if (from) live.send({ t: 'friend.challenge.offer', code, stakeCents: msg.stake, from });
+        }
+        telemetry('friend.challenge', { from: tpid(myId), to: tpid(target.id), stakeCents: msg.stake, live: !!live });
         break;
       }
 

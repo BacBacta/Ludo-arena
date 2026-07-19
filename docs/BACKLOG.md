@@ -48,6 +48,13 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 - [x] **E6.4 First-session onboarding**: welcome message + a free sponsored practice game on the first session (localStorage-gated).
 - [x] **E6.5 PWA**: `manifest.webmanifest` + SVG icon + `sw.js` (network-first navigations, cache-first assets) registered in prod; offline → app shell loads → bot mode.
 
+## E-social 2 — Friends & challenges
+
+- [x] **ES2.1 Friend graph + one-tap challenge**: mutual-consent friendships (pid-keyed, proven-wallet-gated, silent removal), lobby Friends card with presence snapshot + requests, add-friend on the end screen, one-tap FREE challenge (server creates the private table, pushes a live in-app offer when the friend is connected, WhatsApp deep link covers offline — WhatsApp is the notification layer). *AC: store contract (request→mutual→lists→removal) on memory + Postgres (`test/store.test.ts`); full wire journey incl. unproven/non-friend refusals — `npm run friends-test -w apps/server`.*
+- [ ] **ES2.2 Staked friend challenges UI** (server already accepts any allowed stake) + friends weekly mini-leaderboard.
+- [ ] **ES2.3 Private tournaments between friends** (bracket over private tables).
+- [ ] **BUG (pre-existing, surfaced by ES2.1 verification)**: the E4.4 acceptance script fails on UNMODIFIED main — first on the ToS consent gate (now fixed in the script: the test hello sends `consent`), then pairing never reaches `match.found` (`timeout waiting for both matched`, reproduced identically with the feature branch stashed). Likely the pre-launch entropy-commit/lock-gating changes broke the demo staked table.join path. Reproduce: `npm run private-table-test -w apps/server`.
+
 ## E7 — MiniPay listing
 
 - [ ] **E7.1 ToS + privacy policy** (static pages, required by the Mini Apps ToS).

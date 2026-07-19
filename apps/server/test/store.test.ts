@@ -513,6 +513,35 @@ function storeContract(name: string, make: () => Store, cleanup?: () => Promise<
 
       await store.close();
     });
+
+    it('friendships: request → mutual → lists → silent removal (E-social 2)', async () => {
+      const store = make();
+      await store.init();
+      const a = playerId('0xF41Ea', 'sA');
+      const b = playerId('0xF41Eb', 'sB');
+
+      // first direction is a request (idempotent), not yet a friendship
+      expect(await store.addFriend(a, b)).toBe('requested');
+      expect(await store.addFriend(a, b)).toBe('requested');
+      expect(await store.getFriendRequestIds(b)).toEqual([a]);
+      expect(await store.getFriendRequestIds(a)).toEqual([]);
+      expect(await store.getFriendIds(a)).toEqual([]);
+
+      // the reciprocal add seals the friendship and clears the request
+      expect(await store.addFriend(b, a)).toBe('friends');
+      expect(await store.getFriendIds(a)).toEqual([b]);
+      expect(await store.getFriendIds(b)).toEqual([a]);
+      expect(await store.getFriendRequestIds(b)).toEqual([]);
+
+      // removal tears down BOTH directions (silent de-friend)
+      await store.removeFriend(a, b);
+      expect(await store.getFriendIds(a)).toEqual([]);
+      expect(await store.getFriendIds(b)).toEqual([]);
+      expect(await store.getFriendRequestIds(a)).toEqual([]);
+      expect(await store.getFriendRequestIds(b)).toEqual([]);
+
+      await store.close();
+    });
   });
 }
 

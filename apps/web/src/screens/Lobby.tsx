@@ -25,6 +25,8 @@ export function Lobby({
   onPlay4,
   onPractice4,
   onConnectWallet,
+  onChallengeFriend,
+  onAcceptFriend,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
@@ -34,8 +36,12 @@ export function Lobby({
   onPractice4(): void;
   /** Connect MiniPay/injected wallet; resolves true when connected. */
   onConnectWallet(): Promise<boolean>;
+  /** Challenge a friend to a free 1v1 (creates their private table + offer). */
+  onChallengeFriend(pid: string): void;
+  /** Reciprocal friend.add (accept an incoming request). */
+  onAcceptFriend(pid: string): Promise<boolean>;
 }) {
-  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season } = useAppState();
+  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, friends, friendRequests } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Compliance + responsible-gaming gate for a SPECIFIC stake (also enforced
@@ -270,6 +276,46 @@ export function Lobby({
           <span className="mrow__badge"><IconTicket className="mrow__ticket" /> {tickets}</span>
         </button>
       </div>
+
+      {/* FRIENDS (E-social 2): the persistent circle — requests to accept, then
+          friends with a presence snapshot and a one-tap free challenge. Hidden
+          entirely until the player HAS a circle (no empty-state noise). */}
+      {(friends.length > 0 || friendRequests.length > 0) && (
+        <>
+          <div className="seclabel">{t('friendsTitle')}</div>
+          <div className="card friendscard">
+            {friendRequests.map((r) => (
+              <div key={r.pid} className="friendrow friendrow--request">
+                <span className={`friendrow__flag ${frameClass(r.frame)}`}>
+                  {avatarSrc(r.avatar) ? <img className="profilecard__img" src={avatarSrc(r.avatar)!} alt="" /> : r.flag}
+                </span>
+                <span className="friendrow__meta">
+                  <b>{r.name}</b>
+                  <small>{t('friendRequestLabel')}</small>
+                </span>
+                <button className="friendrow__btn friendrow__btn--accept" onClick={() => { playTap('select'); void onAcceptFriend(r.pid); }}>
+                  ✓ {t('friendAccept')}
+                </button>
+              </div>
+            ))}
+            {friends.map((f) => (
+              <div key={f.pid} className="friendrow">
+                <span className={`friendrow__flag ${frameClass(f.frame)}`}>
+                  {avatarSrc(f.avatar) ? <img className="profilecard__img" src={avatarSrc(f.avatar)!} alt="" /> : f.flag}
+                  {f.online && <i className="friendrow__dot" title={t('friendOnline')} />}
+                </span>
+                <span className="friendrow__meta">
+                  <b>{f.name}</b>
+                  <small>{f.online ? t('friendOnline') : `${f.elo} ELO`}</small>
+                </span>
+                <button className="friendrow__btn" onClick={() => { playTap(); onChallengeFriend(f.pid); }}>
+                  ⚔️ {t('friendChallenge')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Identity + progression. Stats (ELO/W-L/division) are shown ONLY for a
           wallet-backed account: a guest carries default-looking numbers (Silver,

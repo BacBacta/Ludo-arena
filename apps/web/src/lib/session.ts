@@ -29,6 +29,7 @@ import {
   walletProofMessage,
   type ChallengeState,
   type ErrorCode,
+  type FriendInfo,
   type GameOverReason,
   type OpponentInfo,
   type LeagueState,
@@ -145,6 +146,10 @@ export interface SessionEvents {
   onResumed(match: MatchInfo, state: GameState): void;
   /** The in-progress game could not be resumed (gave up / session expired). */
   onGone(): void;
+  /** Friends & requests (hello.ok snapshot or a live friends.update push). */
+  onFriends?(friends: FriendInfo[], requests: FriendInfo[]): void;
+  /** A friend challenges me RIGHT NOW (live in-app offer; code = their table). */
+  onChallengeOffer?(offer: { code: string; stakeCents: StakeCents; from: FriendInfo }): void;
   /** The last opponent clicked Rematch and is waiting — surface Accept/Decline. */
   onRematchOffer(opponentName: string): void;
   /** A rematch we were waiting on won't happen (opponent declined or left). */
@@ -332,7 +337,11 @@ export type JoinIntent =
   | { kind: 'queue' }
   | { kind: 'freeroll' } // ticket-gated free 1v1 (entry spent server-side at match)
   | { kind: 'create' }
-  | { kind: 'join'; code: string };
+  | { kind: 'join'; code: string }
+  // Challenge a FRIEND (E-social 2): the server creates a private table AND
+  // pushes them a live in-app offer when they're connected; the table.created
+  // reply drives the same waiting/share UI as a normal private table.
+  | { kind: 'challenge'; pid: string };
 
 // R-WEB-2: the resume token lives in localStorage, not sessionStorage, so it
 // SURVIVES an OS-initiated webview/tab kill (a routine Android/MiniPay lifecycle
@@ -357,6 +366,7 @@ export function syncLobby(
     streak(streak: StreakState): void;
     limits(limits: LimitsState): void;
     season?(season: SeasonState): void;
+    friends?(friends: FriendInfo[], requests: FriendInfo[]): void;
   },
 ): void {
   let ws: WebSocket;
@@ -397,9 +407,73 @@ export function syncLobby(
     if (msg.streak) on.streak(msg.streak);
     if (msg.limits) on.limits(msg.limits);
     if (msg.season) on.season?.(msg.season);
+    if (msg.friends || msg.friendRequests) on.friends?.(msg.friends ?? [], msg.friendRequests ?? []);
     ws.close();
   };
   ws.onerror = () => clearTimeout(timer);
+}
+
+/**
+ * One-shot friend action (add = request/accept, remove = silent de-friend).
+ * Resumes the tab's session token, includes the MiniPay flag so the wallet is
+ * PROVEN (friend.* is gated on walletProven server-side), sends the action and
+ * resolves with the refreshed lists from the server's friends.update push (or
+ * null on timeout / unproven wallet).
+ */
+export function sendFriendAction(
+  serverUrl: string,
+  action: { t: 'friend.add' | 'friend.remove'; pid: string },
+  walletAddress?: string,
+): Promise<{ friends: FriendInfo[]; requests: FriendInfo[] } | null> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: { friends: FriendInfo[]; requests: FriendInfo[] } | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 4000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify(action));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'friends.update') {
+        clearTimeout(timer);
+        done({ friends: msg.friends, requests: msg.requests });
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
 }
 
 /**
@@ -996,6 +1070,7 @@ export class RemoteSession implements GameSession {
       if (initial) {
         if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });
         else if (this.intent.kind === 'join') this.send({ t: 'table.join', code: this.intent.code });
+        else if (this.intent.kind === 'challenge') this.send({ t: 'friend.challenge', pid: this.intent.pid, stake: this.stakeCents });
         else if (this.intent.kind === 'freeroll') this.send({ t: 'queue.join', stake: 0, freeroll: true });
         else this.send({ t: 'queue.join', stake: this.stakeCents });
       }
@@ -1090,6 +1165,7 @@ export class RemoteSession implements GameSession {
         if (msg.limits) this.ev.onLimits(msg.limits);
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
         if (msg.season) this.ev.onSeasonState(msg.season);
+        if (msg.friends || msg.friendRequests) this.ev.onFriends?.(msg.friends ?? [], msg.friendRequests ?? []);
         if (msg.comeback) this.ev.onComeback(msg.comeback);
         // Guests: pin the FIRST server-assigned identity (no-op once any name is
         // saved). Without this the server derives a NEW name per connection, so
@@ -1188,6 +1264,12 @@ export class RemoteSession implements GameSession {
         break;
       case 'streak.update':
         this.ev.onStreak(msg.streak);
+        break;
+      case 'friends.update':
+        this.ev.onFriends?.(msg.friends, msg.requests);
+        break;
+      case 'friend.challenge.offer':
+        this.ev.onChallengeOffer?.({ code: msg.code, stakeCents: msg.stakeCents, from: msg.from });
         break;
       case 'rematch.offer':
         this.ev.onRematchOffer(msg.name);

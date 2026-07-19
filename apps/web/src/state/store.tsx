@@ -16,6 +16,7 @@ import {
   type PublicProfile,
   type SeasonState,
   type Comeback,
+  type FriendInfo,
 } from '@ludo/shared';
 import type { GameResult, MatchInfo } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
@@ -169,6 +170,11 @@ export interface AppState {
   /** Own stable profile (identity + ELO + W/L), cached for the lobby card. */
   profile: Profile;
   recentOpponents: RecentOpponent[];
+  /** Friends & requests (E-social 2), server-authoritative (hello.ok / pushes). */
+  friends: FriendInfo[];
+  friendRequests: FriendInfo[];
+  /** Live incoming friend challenge (accept = join their private table). */
+  challengeOffer: { code: string; stakeCents: number; from: FriendInfo } | null;
   /** Tap-on-avatar profile sheet: pid being viewed; data null while loading. */
   viewProfile: { pid: string; data: PublicProfile | null; failed?: boolean } | null;
   /** Responsible-gaming limits (E5.2). */
@@ -280,6 +286,9 @@ export const initialState: AppState = {
   profile: loadRetention().profile,
   viewProfile: null,
   recentOpponents: loadRecentOpponents(),
+  friends: [],
+  friendRequests: [],
+  challengeOffer: null,
   limits: loadRetention().limits,
   stakingBlocked: false,
   match: null,
@@ -323,6 +332,8 @@ export type Action =
   | { type: 'START_PRACTICE4' }
   | { type: 'START_ONLINE4'; stakeCents: number }
   | { type: 'MATCH_FOUND'; match: MatchInfo }
+  | { type: 'FRIENDS'; friends: FriendInfo[]; requests: FriendInfo[] }
+  | { type: 'CHALLENGE_OFFER'; offer: { code: string; stakeCents: number; from: FriendInfo } | null }
   | { type: 'GAME_STATE'; game: GameState }
   | { type: 'DICE'; value: number; index: number; seat: Seat }
   | { type: 'EMOTE'; seat: number; id: string }
@@ -587,6 +598,10 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, table4Open: a.open };
     case 'PROFILE_EDIT':
       return { ...s, profileEditOpen: a.open };
+    case 'FRIENDS':
+      return { ...s, friends: a.friends, friendRequests: a.requests };
+    case 'CHALLENGE_OFFER':
+      return { ...s, challengeOffer: a.offer };
     case 'LEGAL_MODAL':
       return { ...s, legalOpen: a.open };
     case 'ACCEPT_LEGAL':

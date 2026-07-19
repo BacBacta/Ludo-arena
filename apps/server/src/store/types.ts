@@ -259,6 +259,19 @@ export interface Store {
   getOwnedSkins(playerId: string): Promise<string[]>;
   ownSkin(playerId: string, skinId: string): Promise<string[]>;
 
+  // Friends (E-social 2): DIRECTIONAL edges keyed by internal player ids; a
+  // friendship is the mutual pair. Wallet-scoped in practice (anon ids are
+  // ephemeral) — the caller gates on a proven wallet.
+  /** Record "playerId wants otherId as a friend" (idempotent). Returns the
+   *  resulting state: 'requested' (awaiting reciprocal) or 'friends' (mutual). */
+  addFriend(playerId: string, otherId: string): Promise<'requested' | 'friends'>;
+  /** Remove BOTH directions (silent de-friend / request withdrawal). */
+  removeFriend(playerId: string, otherId: string): Promise<void>;
+  /** Ids the player is MUTUALLY friends with. */
+  getFriendIds(playerId: string): Promise<string[]>;
+  /** Ids that added the player and await their reciprocal add. */
+  getFriendRequestIds(playerId: string): Promise<string[]>;
+
   // Responsible gaming (E5.2). `today` is a UTC date string; the daily staked
   // total resets when the stored day differs. selfExcludedUntil is null when
   // not excluded or the exclusion has expired.

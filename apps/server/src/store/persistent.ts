@@ -174,6 +174,17 @@ CREATE TABLE IF NOT EXISTS premium_purchases (
   season_id  INTEGER NOT NULL,
   at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Friends (E-social 2): one row per DIRECTIONAL edge; a friendship is the
+-- mutual pair. No FK on the ids: edges may be created toward players whose row
+-- appears later (and anon ids never get a row — they simply never mutualize).
+CREATE TABLE IF NOT EXISTS friendships (
+  requester  TEXT NOT NULL,
+  target     TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (requester, target)
+);
+CREATE INDEX IF NOT EXISTS friendships_target ON friendships (target);
 `;
 
 export class PersistentStore implements Store {
@@ -664,6 +675,37 @@ export class PersistentStore implements Store {
   async getOwnedSkins(playerId: string): Promise<string[]> {
     const res = await this.pool.query<{ owned_skins: string[] }>(`SELECT owned_skins FROM players WHERE id = $1`, [playerId]);
     return res.rows[0]?.owned_skins ?? [];
+  }
+
+  async addFriend(playerId: string, otherId: string): Promise<'requested' | 'friends'> {
+    await this.pool.query(`INSERT INTO friendships (requester, target) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [playerId, otherId]);
+    const reciprocal = await this.pool.query(`SELECT 1 FROM friendships WHERE requester = $1 AND target = $2`, [otherId, playerId]);
+    return reciprocal.rowCount ? 'friends' : 'requested';
+  }
+
+  async removeFriend(playerId: string, otherId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM friendships WHERE (requester = $1 AND target = $2) OR (requester = $2 AND target = $1)`, [playerId, otherId]);
+  }
+
+  async getFriendIds(playerId: string): Promise<string[]> {
+    const res = await this.pool.query<{ target: string }>(
+      `SELECT f1.target FROM friendships f1
+        JOIN friendships f2 ON f2.requester = f1.target AND f2.target = f1.requester
+       WHERE f1.requester = $1 ORDER BY f1.created_at DESC`,
+      [playerId],
+    );
+    return res.rows.map((r) => r.target);
+  }
+
+  async getFriendRequestIds(playerId: string): Promise<string[]> {
+    const res = await this.pool.query<{ requester: string }>(
+      `SELECT f.requester FROM friendships f
+       WHERE f.target = $1
+         AND NOT EXISTS (SELECT 1 FROM friendships r WHERE r.requester = $1 AND r.target = f.requester)
+       ORDER BY f.created_at DESC`,
+      [playerId],
+    );
+    return res.rows.map((r) => r.requester);
   }
 
   async ownSkin(playerId: string, skinId: string): Promise<string[]> {

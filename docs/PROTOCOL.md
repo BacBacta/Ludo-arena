@@ -14,6 +14,9 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `queue.join4` | `{ stakeCents? }` | Joins the 4-player online table. `stakeCents` 0 (or omitted) = FREE table (empty seats bot-filled after a short wait). `stakeCents` > 0 (an allowed cUSD stake) = staked table — requires 4 real stakers (bots have no funds) and locks each stake in `LudoEscrowN` (staked path lands with the escrow integration). In-game it shares `game.roll`/`game.move`/`game.resign`. |
 | `table.create` | `{ stake }` | Creates a private table (E4.4); server replies `table.created` with a shareable code. |
 | `table.join` | `{ code }` | Joins a private table by its 6-char code; pairs with the host or returns `error TABLE_NOT_FOUND`. |
+| `friend.add` | `{ pid }` | Friends (E-social 2): "I want to be friends with `pid`". MUTUAL-consent: the first direction is a request, the reciprocal add seals the friendship. Requires a PROVEN wallet (durable identity); throttled 1/s. Server replies `friend.added` and pushes `friends.update` to both sides' live sessions. |
+| `friend.remove` | `{ pid }` | Tears down BOTH directions, silently — the other side is NOT notified (their next hello reflects it); de-friending must not be a conflict trigger. |
+| `friend.challenge` | `{ pid, stake }` | Challenge a MUTUAL friend: creates a private table on the challenger's session (reply `table.created`, same machinery/guards as `table.create`) and pushes `friend.challenge.offer` to the friend's live session when they're connected. The code doubles as the WhatsApp deep link for offline friends. |
 | `game.roll` | `{}` | Requests the roll (if it is their turn and phase is `awaiting-roll`). |
 | `game.move` | `{ token }` | Plays token `token` (0 or 1). |
 | `game.resign` | `{}` | Deliberately forfeits the current match — the opponent wins and the normal `game.over`/settlement path runs. |
@@ -27,6 +30,9 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `hello.ok` | `{ sessionToken, elo, resumed?, challenge?, streak?, league?, limits?, ownedSkins?, stakingBlocked?, walletNonce?, walletProven?, consentTosVersion? }` | Session established. If a game is in progress, `resumed` = `{ gameId, seat, state, stakeCents, potCents, opponent, fairnessCommit }` — everything needed to rebuild the game screen after a reconnection or a server restart. `challenge` = daily-challenge state (E4.1); `streak` = login-streak state (E4.2); `league` = weekly-league standings + top-5 board (E4.3). `walletNonce` = string to sign via `wallet.prove` when a wallet is unproven; `walletProven` reflects proof state; `consentTosVersion` = the accepted ToS version on record. |
 | `queue.ok` | `{ position }` | Queued. |
 | `table.created` | `{ code, stakeCents }` | Private table created (E4.4); share `code` with a friend. |
+| `friend.added` | `{ pid, status }` | Ack for `friend.add`: `requested` (awaiting their reciprocal add) or `friends` (the edge just became mutual). |
+| `friends.update` | `{ friends, requests }` | Live refresh of both `FriendInfo` lists, pushed to a player whose graph changed while they had an active session. Also included in `hello.ok` (`friends`/`friendRequests`, walletProven sessions only) with an `online` presence SNAPSHOT. |
+| `friend.challenge.offer` | `{ code, stakeCents, from }` | A friend challenges you RIGHT NOW: accept = the normal `table.join(code)`; ignoring is safe (tables expire, the challenger keeps the share screen). |
 | `match.found` | `{ gameId, seat, opponent: { name, elo, flag }, stakeCents, potCents, fairnessCommit }` | Match found. `fairnessCommit` = hash of the server seed, to display. |
 | `game.state` | `{ state }` | Full state (resync, game start). `state` = engine `GameState`. |
 | `game.dice` | `{ value, index, seat }` | Roll result (index = roll number, verifiable). |
