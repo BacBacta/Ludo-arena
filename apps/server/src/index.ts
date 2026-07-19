@@ -2633,7 +2633,7 @@ function startRoom4(humans: Session[]): void {
     if (h) {
       const name = uniqueAtTable(h.name, taken);
       taken.add(name.toLowerCase());
-      seats.push({ client: h, bot: false, sessionId: h.id, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar });
+      seats.push({ client: h, bot: false, sessionId: h.id, name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx });
       seatSeeds.push(h.entropyCommit || h.entropy || randomSeatSeed());
     } else {
       const bot = pickBot4(taken, i);
@@ -2723,7 +2723,7 @@ function startStakedRoom4(humans: Session[], stake: number): void {
   // dice input is committed before the server can see it (matches the 2p scheme).
   const { serverSeed, commit } = createSeed4Commit();
   const seatCommits = humans.map((h) => h.entropyCommit || h.entropy || randomSeatSeed());
-  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
+  const players: Player4Info[] = humans.map((h) => ({ name: h.name, flag: h.flag, bot: false, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx }));
   pendingStaked4.set(gameId, { gameId, humans, stake, pot, rake, serverSeed, commit, seatCommits, reveals: humans.map(() => null) });
   // NOTE: the daily-limit debit (E5.2) is applied in startStaked4Room, once all
   // four stakes are Active — not here. A table that never fills (any seat simply
@@ -2827,7 +2827,7 @@ function startStaked4Room(p: PendingStaked4): void {
   // Bind the committed seed to the now-revealed raw seat seeds. allRevealed4 gated
   // this call, so every reveal is present; `?? ''` only satisfies the type.
   const fairness = finalizeFairness4(p.serverSeed, p.commit, p.reveals.map((r) => r ?? ''));
-  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, sessionId: h.id, wallet: h.wallet, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar }));
+  const seats: Seat4[] = p.humans.map((h) => ({ client: h, bot: false, sessionId: h.id, wallet: h.wallet, name: h.name, flag: h.flag, pid: h.wallet ? pidFor(playerId(h.wallet, h.id)) : undefined, frame: h.frame, avatar: h.avatar, tokenSkin: h.tokenSkin, entranceFx: h.entranceFx, victoryFx: h.victoryFx }));
   const room = new Room4(p.gameId, seats, fairness, 0, 0, p.pot, p.rake);
   // Restart-safe lifecycle: persist on every change, settle + record from the seats
   // (not the p.humans closure, which a restart loses) on finish (G-5).

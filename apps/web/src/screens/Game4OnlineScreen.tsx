@@ -18,6 +18,8 @@ import type { StakeStatus } from '../lib/escrow';
 import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { skinById } from '../lib/diceSkins';
+import { tokenSkinById, type TokenPattern } from '../lib/tokenSkins';
+import { EntranceFxOverlay, VictoryFxOverlay } from '../components/CosmeticFx';
 import { t } from '../lib/i18n';
 
 type Status = 'connecting' | 'waiting' | 'playing' | 'over';
@@ -50,11 +52,14 @@ export function Game4OnlineScreen({
   onViewProfile(pid: string): void;
 }) {
   const dispatch = useAppDispatch();
-  const mySkin = skinById(useAppState().diceSkin); // my equipped die (shown on my rolls)
+  const appState = useAppState();
+  const mySkin = skinById(appState.diceSkin); // my equipped die (shown on my rolls)
+  const { tokenSkin: myTokenSkin, entranceFx: myEntranceFx, victoryFx: myVictoryFx, boardTheme } = appState;
   const remoteRef = useRef<Remote4 | null>(null);
 
   const [status, setStatus] = useState<Status>('connecting');
   const [players, setPlayers] = useState<Player4Info[]>([]);
+  const [gameId, setGameId] = useState<string | null>(null);
   const [mySeat, setMySeat] = useState(0);
   const [game, setGame] = useState<Game4 | null>(null);
   const [activeTurn, setActiveTurn] = useState(0);
@@ -96,6 +101,7 @@ export function Game4OnlineScreen({
     dispatch({ type: 'CLEAR_EMOTES' }); // rematch reuses this screen; drop last game's emotes
     setStatus('connecting');
     setPlayers([]);
+    setGameId(null);
     setGame(null);
     setShown(null);
     setOver(null);
@@ -109,6 +115,7 @@ export function Game4OnlineScreen({
           setPlayers(m.players);
           setMySeat(m.seat);
           setPotCents(m.potCents);
+          setGameId(m.gameId);
           // Staked table: lock my seat's stake on-chain now. The server waits for
           // all 4 deposits (Active) before dealing, then game.state4 arrives.
           if (m.stakeCents > 0) {
@@ -314,7 +321,27 @@ export function Game4OnlineScreen({
           {renderCorner(seatAtQuad4(2, mySeat))}
         </div>
 
-        <Board4 game={game} mySeat={mySeat} onTokenTap={doMove} banners={banners} />
+        <Board4
+          game={game}
+          mySeat={mySeat}
+          onTokenTap={doMove}
+          banners={banners}
+          // Cosmetics (4p extension): my theme is local; every seat's pawn skin
+          // comes from match.found4 players (mine included — server echo), bots
+          // have none and stay classic.
+          themeId={boardTheme}
+          tokenPatterns={Object.fromEntries(
+            players.map((p, seat) => [seat, tokenSkinById(seat === mySeat ? myTokenSkin : p.tokenSkin).pattern]),
+          ) as Partial<Record<number, TokenPattern>>}
+        />
+        {/* entrance bursts at match start: mine rises, every human opponent's falls */}
+        {gameId && status === 'playing' && (
+          <EntranceFxOverlay
+            mine={myEntranceFx}
+            others={players.filter((_, seat) => seat !== mySeat).map((p) => p.entranceFx)}
+            gameId={gameId}
+          />
+        )}
 
         {/* bottom corners: quadrant 0 (left) is ALWAYS me / 3 (right) */}
         <div className="avrow">
@@ -323,6 +350,10 @@ export function Game4OnlineScreen({
         </div>
       </div>
 
+      {over && (
+        /* the WINNER's equipped victory effect — every seat watches it */
+        <VictoryFxOverlay key={`vx-${over.winner}`} fxId={iWon ? myVictoryFx : players[over.winner]?.victoryFx} />
+      )}
       {over && (
         <div className="g4over" role="dialog" aria-modal="true" aria-label={iWon ? t('victory') : t('defeat')}>
           <div className="g4over__card">

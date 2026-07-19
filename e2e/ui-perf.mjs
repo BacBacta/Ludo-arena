@@ -3,8 +3,12 @@
  *   - 3G throttling (750 kb/s, 100 ms RTT) via CDP Network.emulateNetworkConditions
  *   - low-end CPU profile (4x slowdown) via CDP Emulation.setCPUThrottlingRate
  *   - Android 360x800 webview viewport
- * Budgets: initial bundle < 500 KB gzipped (measured over the real transfer) and
- * time-to-interactive < 5 s.
+ * Budgets (the single source of truth — AGENTS.md golden rule 4 mirrors these):
+ *   - CRITICAL PATH (all JS+CSS except the lazily-loaded 3D dice engine chunk)
+ *     < 300 KB gzipped — this is what gates interactivity;
+ *   - TOTAL landing transfer (including the lazy three.js diceEngine chunk the
+ *     lobby hero pulls in after paint) < 500 KB gzipped;
+ *   - time-to-interactive < 5 s.
  *
  * IMPORTANT: serve the build from a COMPRESSING origin, like production does
  * (Vercel gzip/brotli). `python3 -m http.server` does NOT compress — measuring
@@ -24,8 +28,9 @@ const CPU_SLOWDOWN = 4; // low-end device profile
 try {
   const { ctx, page } = await newPlayer(browser, MOBILE_CONTEXT);
 
-  // measure the REAL transferred bytes of the initial critical path
+  // measure the REAL transferred bytes of the initial landing
   let jsCss = 0;
+  let critical = 0; // everything except the lazy 3D dice-engine chunk
   let compressed = 0;
   let assets = 0;
   const seen = new Set();
@@ -37,7 +42,9 @@ try {
     try {
       const h = await res.allHeaders();
       const len = Number(h['content-length'] || 0);
-      jsCss += len || (await res.body().catch(() => Buffer.alloc(0))).length;
+      const bytes = len || (await res.body().catch(() => Buffer.alloc(0))).length;
+      jsCss += bytes;
+      if (!/diceEngine/.test(url)) critical += bytes; // the lazy three.js chunk is budgeted separately
       assets++;
       if (/gzip|br|deflate/.test(h['content-encoding'] || '')) compressed++;
     } catch { /* redirected/aborted */ }
@@ -59,7 +66,8 @@ try {
   // Guard the measurement itself: an origin that doesn't compress makes the two
   // budgets below meaningless (they'd measure raw bytes, not what users download).
   t.check('origin serves COMPRESSED assets (production-like)', assets > 0 && compressed === assets, `${compressed}/${assets} assets gzip/br — use a compressing server, not python http.server`);
-  t.check(`initial JS+CSS transferred < 500 KB`, jsCss > 0 && jsCss < 500 * 1024, `${(jsCss / 1024).toFixed(0)} KB (gzipped over the wire)`);
+  t.check(`critical-path JS+CSS (excl. lazy dice engine) < 300 KB`, critical > 0 && critical < 300 * 1024, `${(critical / 1024).toFixed(0)} KB (gzipped over the wire)`);
+  t.check(`total JS+CSS transferred < 500 KB`, jsCss > 0 && jsCss < 500 * 1024, `${(jsCss / 1024).toFixed(0)} KB (gzipped over the wire)`);
   t.check('time-to-interactive < 5 s on 3G + low-end CPU', tti < 5000, `${tti} ms`);
 
   // the app must be usable, not just painted

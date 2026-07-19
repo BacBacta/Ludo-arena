@@ -7,6 +7,9 @@ import { useEffect, useRef, useState } from 'react';
 import { LAST_TRACK_REL, SAFE_CELLS, TRACK } from '@ludo/game-engine';
 import { HOME_COLUMNS4, SEAT_START4, tokenXY4, type Game4 } from '@ludo/game-engine';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
+import type { TokenPattern } from '../lib/tokenSkins';
+import { boardThemeById, type BoardTheme } from '../lib/boardThemes';
+import { PegPattern } from './Board';
 import { playHop } from '../lib/sound';
 
 /* True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — saturated,
@@ -78,7 +81,7 @@ function baseSlotXY(seat: number, token: number): [number, number] {
 }
 
 /** Chunky injection-moulded glossy peg with hot-spot, Fresnel rim + soft shadow. */
-function Pawn({ seat }: { seat: number }) {
+function Pawn({ seat, pattern }: { seat: number; pattern?: TokenPattern }) {
   const c = SEAT_COLORS[seat] ?? BLUE;
   const dark = c[2];
   const rim = c[0];
@@ -110,6 +113,8 @@ function Pawn({ seat }: { seat: number }) {
         stroke={dark}
         strokeWidth={0.026}
       />
+      {/* equipped pawn-skin pattern (4p extension) — same overlay as the 1v1 peg */}
+      <PegPattern pattern={pattern ?? 'none'} idKey={`peg4-${seat}${pattern && pattern !== 'none' ? `-${pattern}` : ''}`} dark={dark} />
       {/* ball top overlapping the cone (no pinched chess neck) */}
       <circle cx={0} cy={-0.28} r={0.17} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.026} />
       <path d="M -0.13 -0.24 Q 0 -0.14 0.13 -0.24" fill={`url(#${hid})`} stroke="none" />
@@ -121,7 +126,7 @@ function Pawn({ seat }: { seat: number }) {
   );
 }
 
-function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [string, string, string] }) {
+function Quadrant({ x, y, colors, theme }: { x: number; y: number; colors: readonly [string, string, string]; theme: BoardTheme }) {
   const isTop = y === 0;
   const hy = isTop ? y + 1.05 : y + 0.45;
   const slots = quadSlots(x, y);
@@ -129,13 +134,13 @@ function Quadrant({ x, y, colors }: { x: number; y: number; colors: readonly [st
     <g>
       {/* flat solid quadrant, square edges — the board reads as ONE continuous surface */}
       <rect x={x} y={y} width={6} height={6} fill={colors[1]} />
-      {/* white home square with a soft drop edge */}
-      <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill="rgba(16,24,48,.16)" />
-      <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill="#ffffff" />
+      {/* home square with a soft drop edge — themed neutral surface (phase 2 ext) */}
+      <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill={theme.homeEdge} />
+      <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill={theme.home} />
       {/* All four resting discs — the 4-player engine gives each seat four base
           tokens, so every disc frames an actual peg foot (Ludo Club). */}
       {slots.map(([sx, sy], i) => (
-        <circle key={i} cx={sx} cy={sy} r={0.56} fill="#d4dae6" />
+        <circle key={i} cx={sx} cy={sy} r={0.56} fill={theme.slot} />
       ))}
     </g>
   );
@@ -200,9 +205,16 @@ export interface Board4Props {
   mySeat: number;
   onTokenTap(token: number): void;
   banners?: PlayerBanner4[];
+  /** Equipped board theme id — restyles ONLY the neutral surfaces (seat colours
+   *  never change). Local view, like the 1v1 board. Absent/unknown = classic. */
+  themeId?: string;
+  /** Equipped pawn-skin PATTERN per seat: mine from local state, the others'
+   *  from match.found4 players (bots = classic). */
+  tokenPatterns?: Partial<Record<number, TokenPattern>>;
 }
 
-export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
+export function Board4({ game, mySeat, onTokenTap, banners, themeId, tokenPatterns }: Board4Props) {
+  const theme = boardThemeById(themeId);
   const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
   const positions = useAnimated4(game.positions);
 
@@ -290,18 +302,18 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
           </radialGradient>
         </defs>
         <g clipPath="url(#board4clip)" transform={rot ? `rotate(${rot} 7.5 7.5)` : undefined}>
-        <rect x={0} y={0} width={15} height={15} fill="#ffffff" />
+        <rect x={0} y={0} width={15} height={15} fill={theme.cell} />
 
         {QUADS.map((q) => (
-          <Quadrant key={`${q.o[0]}-${q.o[1]}`} x={q.o[0]} y={q.o[1]} colors={q.c} />
+          <Quadrant key={`${q.o[0]}-${q.o[1]}`} x={q.o[0]} y={q.o[1]} colors={q.c} theme={theme} />
         ))}
 
         {/* track cells: continuous grid, shared hairline borders (no gaps) */}
         {TRACK.map(([x, y], i) => (
-          <rect key={i} x={x} y={y} width={1} height={1} fill="#ffffff" stroke="#a6b0c0" strokeWidth={0.05} />
+          <rect key={i} x={x} y={y} width={1} height={1} fill={theme.cell} stroke={theme.cellStroke} strokeWidth={0.05} />
         ))}
 
-        {/* safe cells: grey-filled cell carrying a white star (Ludo Club) */}
+        {/* safe cells: filled cell carrying a star (Ludo Club) — themed */}
         {[...SAFE_CELLS].map((i) => {
           const cell = TRACK[i];
           if (!cell) return null;
@@ -309,8 +321,8 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
           const cy = cell[1] + 0.5;
           return (
             <g key={`s${i}`}>
-              <rect x={cell[0]} y={cell[1]} width={1} height={1} fill="#c9d1de" stroke="#a6b0c0" strokeWidth={0.05} />
-              <polygon points={starPoints(cx, cy, 0.36)} fill="#ffffff" strokeLinejoin="round" />
+              <rect x={cell[0]} y={cell[1]} width={1} height={1} fill={theme.safe} stroke={theme.cellStroke} strokeWidth={0.05} />
+              <polygon points={starPoints(cx, cy, 0.36)} fill={theme.safeStar} strokeLinejoin="round" />
             </g>
           );
         })}
@@ -410,7 +422,7 @@ export function Board4({ game, mySeat, onTokenTap, banners }: Board4Props) {
                       transform (scale/hop), and CSS beats the SVG transform
                       attribute — putting the rotate there leaves the pegs tilted. */}
                   <g transform={rot ? `rotate(${-rot})` : undefined}>
-                    <Pawn seat={seat} />
+                    <Pawn seat={seat} pattern={tokenPatterns?.[seat]} />
                   </g>
                 </g>
               </g>

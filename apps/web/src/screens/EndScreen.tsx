@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { DIVISIONS } from '@ludo/shared';
 import { fmtUsd, useAppState } from '../state/store';
 import { activeChain } from '../lib/chains';
-import { victoryFxById } from '../lib/tokenSkins';
+import { VictoryFxOverlay } from '../components/CosmeticFx';
 import { playPayout, playLose } from '../lib/sound';
 import { t } from '../lib/i18n';
 
@@ -52,33 +52,6 @@ function Confetti() {
             transform: `rotate(${p.rot}deg)`,
           }}
         />
-      ))}
-    </div>
-  );
-}
-
-/** Victory effect (cosmetics phase 2): the WINNER's flourish, shown to BOTH
- *  players — mine if I won, the opponent's (relayed via match.found) if they
- *  did. Same zero-asset emoji-burst tech as the entrance effects; plays once
- *  per result, honours reduced-motion via the CSS. */
-function VictoryFxOverlay({ fxId }: { fxId?: string }) {
-  const [visible, setVisible] = useState(true);
-  useEffect(() => {
-    const id = setTimeout(() => setVisible(false), 2600);
-    return () => clearTimeout(id);
-  }, []);
-  const particles = victoryFxById(fxId).particles;
-  if (!visible || particles.length === 0) return null;
-  return (
-    <div className="victoryfx" aria-hidden="true">
-      {particles.map((p, i) => (
-        <span
-          key={i}
-          className="victoryfx__p"
-          style={{ left: `${5 + i * 10}%`, animationDelay: `${i * 0.12}s`, fontSize: `${26 + (i % 3) * 8}px` }}
-        >
-          {p}
-        </span>
       ))}
     </div>
   );

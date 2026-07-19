@@ -86,6 +86,9 @@ export interface Room4Player {
   pid?: string;
   frame?: string;
   avatar?: string;
+  tokenSkin?: string;
+  entranceFx?: string;
+  victoryFx?: string;
 }
 
 /** A 4-player room snapshot (G-5). Staked 4p carries real on-chain money, so —
