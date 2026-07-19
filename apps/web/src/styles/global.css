@@ -1273,23 +1273,25 @@ small.muted { font-size: 12px; }
 .controls { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 96px; }
 .gamemsg--center { flex: 0 1 auto; text-align: center; }
 
+/* Discreet roll control: the bold blue button read as heavy next to the premium
+   die, so it's now a faint translucent tile — still a clear tap target (soft
+   inset ring + the die's own nudge pulse invite the tap), just far less loud. */
 .dicebtn {
   flex: 0 0 90px;
   height: 90px;
   border-radius: 22px;
   border: none;
-  border-bottom: 4px solid #24408f;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #7CA0F4, #3E63DD 60%, #2C4BB8);
+  background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45), 0 0 0 3px rgba(62, 99, 221, 0.5), 0 8px 18px rgba(23, 43, 99, 0.35);
-  transition: transform 0.1s ease;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.14);
+  transition: transform 0.1s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
-.dicebtn:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; }
-/* disabled only occurs mid-turn (picking a token): stay gold, just inert */
-.dicebtn:disabled { cursor: default; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 6px 14px rgba(23, 43, 99, 0.3); }
+.dicebtn:active:not(:disabled) { transform: translateY(2px); background: rgba(255, 255, 255, 0.09); }
+/* disabled only occurs mid-turn (picking a token): inert, no tap ring */
+.dicebtn:disabled { cursor: default; box-shadow: none; background: transparent; }
 /* Hidden-but-MOUNTED between turns (same trick as .huddie--idle): the die element
    must exist before its roll arrives or the Die3D tumble transition can't play,
    which made the first roll after each turn just pop to the result. */
