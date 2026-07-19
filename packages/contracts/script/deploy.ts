@@ -26,6 +26,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { compileAll } from './compile.js';
+import { PREMIUM_COSMETICS, SEASON_PREMIUM } from '../../shared/src/protocol.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -256,12 +257,16 @@ const cosmetics = await deployContract('CosmeticsStore', CosmeticsStore.abi, Cos
   stablecoin,
 ]);
 
-// Seed the initial cosmetics catalogue (mirrors shared PREMIUM_COSMETICS) so the
-// store is purchasable the moment it's deployed. itemId = keccak256(bytes(id));
-// price = cents → base units at the stablecoin's OWN decimals (read above).
+// Seed the FULL cosmetics catalogue straight from shared (type-only deps, safe
+// under tsx) so the store is purchasable the moment it's deployed and listings
+// can never drift from the client display. A hardcoded 2-item seed here once
+// left everything after 'aurora' unlisted (fixed by script/listCosmetics.ts,
+// which is also the way to sync an ALREADY-deployed store after catalogue
+// additions). itemId = keccak256(bytes(id)); price = cents → base units at the
+// stablecoin's OWN decimals (read above).
 const COSMETIC_SEED: Array<{ id: string; cents: number }> = [
-  { id: 'obsidian', cents: 100 },
-  { id: 'aurora', cents: 200 },
+  ...PREMIUM_COSMETICS.filter((c) => c.cents > 0).map((c) => ({ id: c.id, cents: c.cents })),
+  { id: SEASON_PREMIUM.itemId, cents: SEASON_PREMIUM.cents },
 ];
 const priceUnit = 10n ** BigInt(stablecoinDecimals - 2); // cents → base units
 const STORE_SEED_ABI = [
