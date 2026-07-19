@@ -109,6 +109,8 @@ interface Session extends Client {
    *  validated in parse, relayed to the opponent in match.found. */
   tokenSkin?: string;
   entranceFx?: string;
+  /** Equipped victory effect (cosmetics phase 2) — the loser watches it too. */
+  victoryFx?: string;
   /** Last opponent + stake, for a true direct rematch (BACKLOG E4). */
   lastOpponentId?: string;
   lastStake?: StakeCents;
@@ -1118,6 +1120,7 @@ wss.on('connection', (ws, req) => {
       session.avatar = msg.avatar; // cosmetic; validated to AVATARS in parse
       session.tokenSkin = msg.tokenSkin; // cosmetic; catalog-validated in parse
       session.entranceFx = msg.entranceFx; // cosmetic; catalog-validated in parse
+      session.victoryFx = msg.victoryFx; // cosmetic; catalog-validated in parse
       sessions.set(id, session);
       persistSession(session);
       // Key off the NORMALIZED wallet — never raw msg.wallet. normalizeWallet maps a
@@ -1554,6 +1557,59 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'friend.gift': {
+        // Gift a premium cosmetic to a MUTUAL friend, paid with MY tickets
+        // (cosmetics phase 2 — Yalla's gift economy, ticket rail only). Same
+        // gates as the other friend.* writes: proven wallet + 1/s throttle.
+        if (!session.walletProven) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect a wallet to send gifts.' });
+          break;
+        }
+        const now = Date.now();
+        if (now - (session.lastFriendMsgAt ?? 0) < 1000) break;
+        session.lastFriendMsgAt = now;
+        const myId = playerId(session.wallet, session.id);
+        const target = await store.getProfileByPid(msg.pid);
+        if (!target || target.id === myId) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Unknown player' });
+          break;
+        }
+        // Mutual friends only — gifting is a bond, not a spam channel.
+        const myFriends = await store.getFriendIds(myId);
+        if (!myFriends.includes(target.id)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Not friends yet.' });
+          break;
+        }
+        const price = PREMIUM_SKINS[msg.id];
+        if (price === undefined) {
+          session.send({ t: 'error', code: 'BAD_MESSAGE', message: 'Unknown cosmetic.' });
+          break;
+        }
+        const theirSkins = await store.getOwnedSkins(target.id);
+        if (theirSkins.includes(msg.id)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'They already own that one.' });
+          break;
+        }
+        // MY tickets pay; the grant lands on THEIR account (durable either way).
+        const left = await store.spendTickets(myId, price);
+        if (left === null) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Not enough freeroll tickets for this gift.' });
+          break;
+        }
+        const theirOwned = await store.ownSkin(target.id, msg.id);
+        session.send({ t: 'friend.gifted', pid: msg.pid, id: msg.id, tickets: left });
+        // Live in-app moment when the friend is connected right now; offline
+        // friends simply find it owned at their next hello (the giver tells
+        // them on WhatsApp — same notification model as challenges).
+        const liveFriend = liveSessionFor(target.id);
+        if (liveFriend) {
+          const from = await friendInfoOf(myId, false);
+          if (from) liveFriend.send({ t: 'friend.gift.received', from, id: msg.id, ownedIds: theirOwned });
+        }
+        telemetry('friend.gift', { from: tpid(myId), to: tpid(target.id), id: msg.id, tickets: price, live: !!liveFriend });
+        break;
+      }
+
       case 'game.entropy': {
         // Anti-grinding reveal: verify the raw entropy against the hello commit,
         // store it, and finalize the game once both players have revealed.
@@ -1942,7 +1998,7 @@ function resumedGame(s: Session): ResumedGame | undefined {
     state: s.room.getState(),
     stakeCents: s.room.stakeCents,
     potCents: potCents(s.room.stakeCents),
-    opponent: { name: oppSession ? label(oppSession) : opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx },
+    opponent: { name: oppSession ? label(oppSession) : opp.name, elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx, victoryFx: opp.victoryFx },
     youName: label(s),
     fairnessCommit: s.room.fairness.commit,
   };
@@ -2302,7 +2358,7 @@ function matchFoundMsg(gameId: string, seat: Seat, me: Session, opp: Session, st
     t: 'match.found',
     gameId,
     seat,
-    opponent: { name: label(opp), elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx },
+    opponent: { name: label(opp), elo: opp.elo, flag: opp.flag, pid: opp.wallet ? pidFor(playerId(opp.wallet, opp.id)) : undefined, frame: opp.frame, avatar: opp.avatar, tokenSkin: opp.tokenSkin, entranceFx: opp.entranceFx, victoryFx: opp.victoryFx },
     youName: label(me),
     stakeCents: stake,
     potCents: pot,

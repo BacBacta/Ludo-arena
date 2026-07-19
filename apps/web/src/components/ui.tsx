@@ -6,14 +6,15 @@ import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats } from '../lib/diceSkins';
-import { FRAMES, frameClass } from '../lib/avatarFrames';
-import { TOKEN_SKINS, ENTRANCE_FX } from '../lib/tokenSkins';
-import { TokenPreview } from './Board';
+import { FRAMES, frameById, frameClass } from '../lib/avatarFrames';
+import { TOKEN_SKINS, ENTRANCE_FX, VICTORY_FX, tokenSkinById, entranceFxById, victoryFxById } from '../lib/tokenSkins';
+import { BOARD_THEMES, boardThemeById } from '../lib/boardThemes';
+import { TokenPreview, BoardThemePreview } from './Board';
 import { avatarSrc, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
 import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
 import { devUnlockCosmetics } from '../lib/devUnlock';
 import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
-import { DIVISIONS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
+import { DIVISIONS, PREMIUM_COSMETICS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticById, cosmeticCents, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
 import { isMiniPay } from '../lib/minipay';
 import { playTap } from '../lib/sound';
@@ -169,6 +170,80 @@ export function ChallengeOfferModal({ onAccept }: { onAccept(code: string): void
   );
 }
 
+/** Gift-a-cosmetic picker (cosmetics phase 2): choose a premium item from the
+ *  shared catalog and pay ITS ticket price to unlock it on the FRIEND's account
+ *  (server validates mutual friendship + balance; grant is durable). Items the
+ *  friend might already own are refused server-side with a clear message. */
+export function GiftCosmeticModal({ onSend }: { onSend(pid: string, id: string): Promise<boolean> }) {
+  const { giftFriend, tickets } = useAppState();
+  const dispatch = useAppDispatch();
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const close = (): void => void dispatch({ type: 'GIFT_MODAL', friend: null });
+  const trapRef = useFocusTrap<HTMLDivElement>(!!giftFriend, close);
+  if (!giftFriend) return null;
+  // Every ticket-priced catalog item is giftable; preview + name resolve per kind.
+  const giftables = PREMIUM_COSMETICS.filter((c) => c.tickets > 0);
+  const previewOf = (c: (typeof giftables)[number]) => {
+    if (c.kind === 'dice') {
+      const s = DICE_SKINS.find((d) => d.id === c.id);
+      return s ? <DieFace value={6} skin={s} /> : null;
+    }
+    if (c.kind === 'token') return <TokenPreview pattern={tokenSkinById(c.id).pattern} idKey={`gift-${c.id}`} />;
+    if (c.kind === 'board') return <BoardThemePreview theme={boardThemeById(c.id)} />;
+    if (c.kind === 'frame') {
+      return (
+        <span className="frametile__ring" aria-hidden="true">
+          <PremiumFrame frame={c.id} />
+        </span>
+      );
+    }
+    const fx = c.kind === 'victory' ? victoryFxById(c.id) : entranceFxById(c.id);
+    return <span style={{ fontSize: 30, display: 'block', lineHeight: '50px' }} aria-hidden="true">{fx.particles[0] ?? '🎁'}</span>;
+  };
+  const nameOf = (c: (typeof giftables)[number]): string => {
+    if (c.kind === 'dice') return DICE_SKINS.find((d) => d.id === c.id)?.name ?? c.id;
+    if (c.kind === 'token') return tokenSkinById(c.id).name;
+    if (c.kind === 'board') return boardThemeById(c.id).name;
+    if (c.kind === 'frame') return t(frameById(c.id).nameKey);
+    return c.kind === 'victory' ? victoryFxById(c.id).name : entranceFxById(c.id).name;
+  };
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>🎁 {t('giftTitle')} {giftFriend.name}</h3>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          {t('giftIntro')} · 🎟️ {tickets}
+        </p>
+        <div className="skingrid">
+          {giftables.map((c) => {
+            const affordable = tickets >= c.tickets;
+            const busy = sendingId !== null;
+            return (
+              <button
+                key={c.id}
+                className={`skin${affordable ? '' : ' skin--locked'}`}
+                disabled={!affordable || busy}
+                onClick={() => {
+                  setSendingId(c.id);
+                  void onSend(giftFriend.pid, c.id).then((ok) => {
+                    setSendingId(null);
+                    if (ok) close();
+                  });
+                }}
+              >
+                {previewOf(c)}
+                <b>{nameOf(c)}</b>
+                <small>{sendingId === c.id ? '…' : `${c.tickets} 🎟️`}</small>
+              </button>
+            );
+          })}
+        </div>
+        <CloseHint onClose={close} />
+      </div>
+    </div>
+  );
+}
+
 export function Toast() {
   const { toast } = useAppState();
   const dispatch = useAppDispatch();
@@ -304,7 +379,7 @@ export function ComebackModal() {
 /** Dice-skin picker: progression unlocks + ticket buys, plus cUSD buys once the
  *  CosmeticsStore is deployed (cosmeticsCusdAvailable — dormant until then). */
 export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; onBuyCusd(id: string): void }) {
-  const { diceModalOpen, diceSkin, tokenSkin, entranceFx, streak, tickets, league, ownedSkins, avatarFrame, walletAddress } = useAppState();
+  const { diceModalOpen, diceSkin, tokenSkin, entranceFx, boardTheme, victoryFx, streak, tickets, league, ownedSkins, avatarFrame, walletAddress } = useAppState();
   const dispatch = useAppDispatch();
   const close = (): void => void dispatch({ type: 'DICE_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(diceModalOpen, close);
@@ -409,6 +484,48 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
           })}
         </div>
 
+        {/* Board themes (phase 2) — restyle the neutral board surfaces; the four
+            seat colours never change. Local view only (like Ludo King). */}
+        <h3 style={{ marginTop: 16 }}>{t('boardsTitle')}</h3>
+        <div className="skingrid">
+          {BOARD_THEMES.map((b) => {
+            const price = PREMIUM_SKINS[b.id];
+            const owned = devAll || ownedSkins.includes(b.id) || price === undefined;
+            const equipped = b.id === boardTheme;
+            const ticketAffordable = !owned && price !== undefined && tickets >= price;
+            const cusd = cosmeticCents(b.id);
+            const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            const onClick = owned
+              ? () => dispatch({ type: 'SET_BOARD_THEME', id: b.id })
+              : ticketAffordable
+                ? () => onBuy(b.id)
+                : cusdBuyable
+                  ? () => onBuyCusd(b.id)
+                  : undefined;
+            return (
+              <button
+                key={b.id}
+                className={`skin${equipped ? ' skin--on' : ''}${owned ? '' : ' skin--locked'}`}
+                disabled={!owned && !ticketAffordable && !cusdBuyable}
+                onClick={onClick}
+              >
+                <BoardThemePreview theme={b} />
+                <b>{b.name}</b>
+                <small>
+                  {equipped
+                    ? t('skinEquipped')
+                    : owned
+                      ? t('skinTap')
+                      : price !== undefined
+                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        : b.blurb}
+                </small>
+                {!owned && <span className="skin__lock">🎟️</span>}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Entrance effects — played at match start, seen by BOTH players. */}
         <h3 style={{ marginTop: 16 }}>{t('entranceTitle')}</h3>
         <div className="skingrid">
@@ -450,25 +567,93 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
           })}
         </div>
 
-        {/* Avatar frames — the cosmetic everyone sees on your profile (C3). */}
+        {/* Victory effects (phase 2) — the winner's flourish; the LOSER watches
+            it too (relayed like the entrance effect). */}
+        <h3 style={{ marginTop: 16 }}>{t('victoryTitle')}</h3>
+        <div className="skingrid">
+          {VICTORY_FX.map((f) => {
+            const price = PREMIUM_SKINS[f.id];
+            const owned = devAll || ownedSkins.includes(f.id) || price === undefined;
+            const equipped = f.id === victoryFx;
+            const ticketAffordable = !owned && price !== undefined && tickets >= price;
+            const cusd = cosmeticCents(f.id);
+            const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !owned;
+            const onClick = owned
+              ? () => dispatch({ type: 'SET_VICTORY_FX', id: f.id })
+              : ticketAffordable
+                ? () => onBuy(f.id)
+                : cusdBuyable
+                  ? () => onBuyCusd(f.id)
+                  : undefined;
+            return (
+              <button
+                key={f.id}
+                className={`skin${equipped ? ' skin--on' : ''}${owned ? '' : ' skin--locked'}`}
+                disabled={!owned && !ticketAffordable && !cusdBuyable}
+                onClick={onClick}
+              >
+                <span style={{ fontSize: 30, display: 'block', lineHeight: '50px' }} aria-hidden="true">{f.particles[0] ?? '➖'}</span>
+                <b>{f.name}</b>
+                <small>
+                  {equipped
+                    ? t('skinEquipped')
+                    : owned
+                      ? t('skinTap')
+                      : price !== undefined
+                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        : t('skinTap')}
+                </small>
+                {!owned && <span className="skin__lock">🎟️</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Avatar frames — the cosmetic everyone sees on your profile (C3).
+            Progression rewards, plus two SHOP-ONLY animated frames (phase 2)
+            that follow the same ticket/cUSD buy path as the other cosmetics. */}
         <h3 style={{ marginTop: 16 }}>{t('framesTitle')}</h3>
         <div className="framegrid">
           {FRAMES.map((f) => {
-            const unlocked = devAll || f.unlocked(ctx);
+            // Catalog lookup MUST be kind-gated: the id namespace is shared with
+            // dice skins ('gold' is both a die and a frame), so a bare
+            // PREMIUM_SKINS[f.id] would price the progression frame as the die.
+            const item = cosmeticById(f.id);
+            const price = item?.kind === 'frame' ? item.tickets : undefined;
+            const owned = item?.kind === 'frame' && ownedSkins.includes(f.id);
+            const unlocked = devAll || owned || (price === undefined && f.unlocked(ctx));
             const equipped = f.id === avatarFrame;
+            const ticketAffordable = !unlocked && price !== undefined && tickets >= price;
+            const cusd = item?.kind === 'frame' ? item.cents : 0;
+            const cusdBuyable = cosmeticsCusdAvailable && cusd > 0 && !unlocked;
+            const onClick = unlocked
+              ? () => dispatch({ type: 'EQUIP_FRAME', id: f.id })
+              : ticketAffordable
+                ? () => onBuy(f.id)
+                : cusdBuyable
+                  ? () => onBuyCusd(f.id)
+                  : undefined;
             return (
               <button
                 key={f.id}
                 className={`frametile${equipped ? ' frametile--on' : ''}${unlocked ? '' : ' frametile--locked'}`}
-                disabled={!unlocked}
-                onClick={unlocked ? () => dispatch({ type: 'EQUIP_FRAME', id: f.id }) : undefined}
+                disabled={!unlocked && !ticketAffordable && !cusdBuyable}
+                onClick={onClick}
               >
                 <span className={`frametile__ring ${frameClass(f.id)}`} aria-hidden="true">
                   {isPremiumFrame(f.id) && <PremiumFrame frame={f.id} />}
                 </span>
                 <b>{t(f.nameKey)}</b>
-                <small>{equipped ? t('skinEquipped') : unlocked ? t('skinTap') : t(f.hintKey ?? 'skinSoon')}</small>
-                {!unlocked && <span className="skin__lock">🔒</span>}
+                <small>
+                  {equipped
+                    ? t('skinEquipped')
+                    : unlocked
+                      ? t('skinTap')
+                      : price !== undefined
+                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        : t(f.hintKey ?? 'skinSoon')}
+                </small>
+                {!unlocked && <span className="skin__lock">{price !== undefined ? '🎟️' : '🔒'}</span>}
               </button>
             );
           })}

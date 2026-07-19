@@ -49,8 +49,28 @@ export function entranceFxById(id: string | undefined): EntranceFx {
   return ENTRANCE_FX.find((f) => f.id === id) ?? ENTRANCE_FX[0]!;
 }
 
+/** Victory effects (cosmetics phase 2): the WINNER's flourish on the end screen,
+ *  seen by both players — relayed like entranceFx so the loser watches it too.
+ *  Same zero-asset emoji-burst tech as the entrance effects. */
+export interface VictoryFx {
+  id: string;
+  name: string;
+  particles: readonly string[];
+}
+
+export const VICTORY_FX: readonly VictoryFx[] = [
+  { id: 'vx-none', name: 'None', particles: [] },
+  { id: 'vx-fireworks', name: 'Fireworks', particles: ['🎆', '🎇', '✨', '🎆', '🎇', '✨', '🎆', '🎇', '✨', '🎆'] },
+  { id: 'vx-crown', name: 'Coronation', particles: ['👑', '✨', '💛', '👑', '✨', '💛', '👑', '✨', '👑', '✨'] },
+] as const;
+
+export function victoryFxById(id: string | undefined): VictoryFx {
+  return VICTORY_FX.find((f) => f.id === id) ?? VICTORY_FX[0]!;
+}
+
 const TOKEN_KEY = 'ludo.tokenSkin';
 const FX_KEY = 'ludo.entranceFx';
+const VX_KEY = 'ludo.victoryFx';
 
 export function loadTokenSkinId(): string {
   try {
@@ -76,6 +96,20 @@ export function loadEntranceFxId(): string {
 export function saveEntranceFxId(id: string): void {
   try {
     localStorage.setItem(FX_KEY, id);
+  } catch {
+    /* storage unavailable */
+  }
+}
+export function loadVictoryFxId(): string {
+  try {
+    return localStorage.getItem(VX_KEY) ?? 'vx-none';
+  } catch {
+    return 'vx-none';
+  }
+}
+export function saveVictoryFxId(id: string): void {
+  try {
+    localStorage.setItem(VX_KEY, id);
   } catch {
     /* storage unavailable */
   }

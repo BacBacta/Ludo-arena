@@ -17,10 +17,10 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { ChallengeOfferModal, ComebackModal, DiceModal, DocModal, FairnessModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
+import { ChallengeOfferModal, ComebackModal, DiceModal, DocModal, FairnessModal, GiftCosmeticModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
-import { sendLimits, sendFriendAction, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
+import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
@@ -414,6 +414,12 @@ export default function App() {
       // The opponent clicked Rematch and is waiting → show Accept/Decline.
       onFriends: (friends, requests) => dispatch({ type: 'FRIENDS', friends, requests }),
       onChallengeOffer: (offer) => dispatch({ type: 'CHALLENGE_OFFER', offer }),
+      // A friend gifted me a cosmetic while I'm connected: ownership is already
+      // durable server-side — sync the owned list and celebrate in a toast.
+      onGiftReceived: (gift) => {
+        dispatch({ type: 'OWNED_SKINS', ownedIds: gift.ownedIds });
+        dispatch({ type: 'TOAST', message: `🎁 ${gift.from.name} · ${t('giftReceived')}` });
+      },
       onRematchOffer: (name) => dispatch({ type: 'REMATCH_OFFER', name }),
       // A rematch we were waiting on fell through → tell the player, return home.
       onRematchCancelled: (reason) => {
@@ -579,6 +585,22 @@ export default function App() {
       }
       dispatch({ type: 'FRIENDS', friends: lists.friends, requests: lists.requests });
       return true;
+    },
+    [dispatch],
+  );
+
+  /** friend.gift over a one-shot socket (cosmetics phase 2): pay MY tickets,
+   *  unlock the item on the FRIEND's account. Resolves true on success. */
+  const giftCosmetic = useCallback(
+    async (pid: string, id: string): Promise<boolean> => {
+      const res = await sendFriendGift(SERVER_URL, pid, id, walletRef.current?.address);
+      if (res && 'tickets' in res) {
+        dispatch({ type: 'TICKETS', total: res.tickets });
+        dispatch({ type: 'TOAST', message: `🎁 ${t('giftSent')}` });
+        return true;
+      }
+      dispatch({ type: 'TOAST', message: res && 'error' in res ? res.error : t('friendActionFailed') });
+      return false;
     },
     [dispatch],
   );
@@ -1014,6 +1036,8 @@ export default function App() {
       {/* Live friend challenge (E-social 2): surfaced on the lobby only — an
           offer arriving mid-game stays in state and shows on return. */}
       {state.screen === 'lobby' && <ChallengeOfferModal onAccept={acceptChallenge} />}
+      {/* Gift-a-cosmetic picker (phase 2), opened from a friend row's 🎁. */}
+      <GiftCosmeticModal onSend={giftCosmetic} />
       <LegalModal
         onAccept={() => {
           consentRef.current = true; // synchronous, so the pending staked action's hello carries consent

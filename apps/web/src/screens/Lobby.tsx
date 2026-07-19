@@ -316,6 +316,14 @@ export function Lobby({
                   <b>{f.name}</b>
                   <small>{f.online ? t('friendOnline') : `${f.elo} ELO`}</small>
                 </span>
+                {/* Gift a cosmetic (phase 2): opens the catalog picker for this friend. */}
+                <button
+                  className="friendrow__btn friendrow__btn--gift"
+                  aria-label={`${t('giftTitle')} ${f.name}`}
+                  onClick={() => { playTap(); dispatch({ type: 'GIFT_MODAL', friend: f }); }}
+                >
+                  🎁
+                </button>
                 <button className="friendrow__btn" onClick={() => { playTap(); onChallengeFriend(f.pid); }}>
                   ⚔️ {t('friendChallenge')}
                 </button>

@@ -32,6 +32,8 @@ export interface Client {
   tokenSkin?: string;
   /** Equipped entrance effect; played at match start on this player's side. */
   entranceFx?: string;
+  /** Equipped victory effect; shown to BOTH players when this player wins. */
+  victoryFx?: string;
 }
 
 export interface RoomResult {

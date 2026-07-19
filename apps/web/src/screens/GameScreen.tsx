@@ -151,7 +151,7 @@ export function GameScreen({
   /** Tap the opponent's avatar → their public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, tokenSkin, entranceFx, activeTurn, balanceCents, soundOn, profile, avatarFrame, avatar, botMode, pendingAction } =
+  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, tokenSkin, entranceFx, boardTheme, activeTurn, balanceCents, soundOn, profile, avatarFrame, avatar, botMode, pendingAction } =
     useAppState();
   const dispatch = useAppDispatch();
   const skin = skinById(diceSkin);
@@ -304,6 +304,9 @@ export function GameScreen({
             [mySeat]: tokenSkinById(tokenSkin).pattern,
             [oppSeat]: tokenSkinById(match.opponent.tokenSkin).pattern,
           }}
+          // Board theme (phase 2): MY equipped theme — local view only, the
+          // opponent plays on theirs (never relayed, like Ludo King).
+          themeId={boardTheme}
         />
         <EntranceFxOverlay
           mine={entranceFx}

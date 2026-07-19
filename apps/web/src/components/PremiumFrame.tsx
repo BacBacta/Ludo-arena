@@ -5,7 +5,7 @@
  * lab exactly. Rendered via an SVG string (a fixed closed set of ids, never user
  * input) sized to the parent, so it scales to every avatar (corner, sheet, lobby).
  */
-export const PREMIUM_FRAME_IDS = ['laurel', 'flame', 'frost', 'circuit', 'royal', 'nebula', 'ruby', 'jade'] as const;
+export const PREMIUM_FRAME_IDS = ['laurel', 'flame', 'frost', 'circuit', 'royal', 'nebula', 'ruby', 'jade', 'fr-sunburst', 'fr-leopard'] as const;
 export type PremiumFrameId = (typeof PREMIUM_FRAME_IDS)[number];
 
 export function isPremiumFrame(id: string | undefined): id is PremiumFrameId {
@@ -75,6 +75,28 @@ export function frameSvg(id: string): string {
       st += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${1 + (i % 3)}" fill="#cbb8ff"><animate attributeName="opacity" values=".3;1;.3" dur="${(1.5 + (i % 4) * 0.5).toFixed(1)}s" repeatCount="indefinite"/></circle>`;
     }
     return svg(`<circle cx="${c}" cy="${c}" r="43" fill="none" stroke="#6a5be0" stroke-width="4"/><circle cx="${c}" cy="${c}" r="43" fill="none" stroke="#c56aff" stroke-width="1.5" opacity=".6"/><g><animateTransform attributeName="transform" type="rotate" from="0 ${c} ${c}" to="360 ${c} ${c}" dur="20s" repeatCount="indefinite"/>${st}</g>`);
+  }
+  if (id === 'fr-sunburst') {
+    // Shop-only (cosmetics phase 2): a slowly-rotating golden ray crown.
+    let rays = '';
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const x1 = c + Math.cos(a) * 38, y1 = c + Math.sin(a) * 38;
+      const x2 = c + Math.cos(a) * (i % 2 ? 46 : 48), y2 = c + Math.sin(a) * (i % 2 ? 46 : 48);
+      rays += `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} L${x2.toFixed(1)} ${y2.toFixed(1)}" stroke="url(#pfGold)" stroke-width="${i % 2 ? 3 : 5}" stroke-linecap="round"/>`;
+    }
+    return svg(`<defs>${DEFS}</defs><g><animateTransform attributeName="transform" type="rotate" from="0 ${c} ${c}" to="360 ${c} ${c}" dur="16s" repeatCount="indefinite"/>${rays}</g><circle cx="${c}" cy="${c}" r="38" fill="none" stroke="url(#pfGold)" stroke-width="4"/>${SHINE}`);
+  }
+  if (id === 'fr-leopard') {
+    // Shop-only (cosmetics phase 2): leopard-spot ring with a slow shimmer.
+    let spots = '';
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2 + (i % 2 ? 0.11 : 0);
+      const rr = 42 + (i % 3 === 0 ? 2.4 : -1.6);
+      const x = c + Math.cos(a) * rr, y = c + Math.sin(a) * rr;
+      spots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(2.2 + (i % 3)).toFixed(1)}" fill="#2a1c0e" opacity=".92"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1 + (i % 3) * 0.6).toFixed(1)}" fill="#c98a3b"/>`;
+    }
+    return svg(`<circle cx="${c}" cy="${c}" r="42" fill="none" stroke="#e8b96a" stroke-width="8"/>${spots}<circle cx="${c}" cy="${c}" r="42" fill="none" stroke="url(#pfShine)" stroke-width="8" stroke-dasharray="26 260" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 ${c} ${c}" to="360 ${c} ${c}" dur="4.5s" repeatCount="indefinite"/></circle><defs>${DEFS}</defs>`);
   }
   if (id === 'ruby' || id === 'jade') {
     const col = id === 'ruby' ? ['#ffd0d8', '#ff4d6d', '#8a1030'] : ['#c4ffe0', '#3ddc97', '#0f7a4a'];
