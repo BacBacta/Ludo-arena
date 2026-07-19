@@ -6,6 +6,11 @@
 # exists the job skips with a notice instead of failing the pipeline.
 name: deploy-server
 on:
+  # Manual re-deploy: GitHub occasionally drops the `push` event of a PR merge
+  # (the merge commit lands on main but no workflow fires), leaving the Fly
+  # server drifted behind. workflow_dispatch lets us redeploy the current main
+  # without an empty commit. `ref` must be main (that's where fly.toml lives).
+  workflow_dispatch: {}
   push:
     branches: [main]
     paths:
