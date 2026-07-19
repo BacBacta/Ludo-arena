@@ -6,7 +6,30 @@
  * on screen (my own die in 1v1), and only while it tumbles (render-on-demand),
  * so it stays light even on low-end phones. Materials mirror the cosmetics lab.
  */
-import * as THREE from 'three';
+// NAMED imports, and a size audit so nobody re-litigates this chunk blindly:
+// Rollup already tree-shakes three's ESM (probing the built chunk finds no
+// audio/curves/extra geometries/raycaster) — what remains (~117 KB gzip) is the
+// WebGLRenderer's irreducible support graph + MeshPhysicalMaterial. Upgrading
+// three makes it WORSE (0.185 builds 131.7 KB vs 0.160's 117.4). The chunk is
+// also LAZY and GATED: DiePremium only imports it when a skin declares a
+// `material` (ultra-premium dice) — the landing critical path never pays it.
+// Real further reduction = swapping WebGL engines and re-creating the PBR look.
+import {
+  ACESFilmicToneMapping,
+  AmbientLight,
+  CanvasTexture,
+  Color,
+  DirectionalLight,
+  Mesh,
+  MeshPhysicalMaterial,
+  PMREMGenerator,
+  PerspectiveCamera,
+  Scene,
+  SRGBColorSpace,
+  WebGLRenderer,
+  type Euler,
+  type Material,
+} from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { DiceSkin, DieMaterial } from '../lib/diceSkins';
@@ -27,7 +50,7 @@ const REST: Record<number, [number, number]> = {
   4: [0, Math.PI / 2], 5: [-Math.PI / 2, 0], 6: [0, Math.PI],
 };
 
-function pipTexture(val: number, base: string, pip: string): THREE.CanvasTexture {
+function pipTexture(val: number, base: string, pip: string): CanvasTexture {
   const S = 256;
   const c = document.createElement('canvas');
   c.width = c.height = S;
@@ -45,12 +68,12 @@ function pipTexture(val: number, base: string, pip: string): THREE.CanvasTexture
     x.arc(cx - r * 0.3, cy - r * 0.35, r * 0.35, 0, 7);
     x.fill();
   }
-  const t = new THREE.CanvasTexture(c);
+  const t = new CanvasTexture(c);
   t.anisotropy = 4;
-  t.colorSpace = THREE.SRGBColorSpace;
+  t.colorSpace = SRGBColorSpace;
   return t;
 }
-function emissiveTexture(val: number, color: string, edge?: string): THREE.CanvasTexture {
+function emissiveTexture(val: number, color: string, edge?: string): CanvasTexture {
   const S = 256;
   const c = document.createElement('canvas');
   c.width = c.height = S;
@@ -68,7 +91,7 @@ function emissiveTexture(val: number, color: string, edge?: string): THREE.Canva
     x.arc(px * S, py * S, S * 0.075, 0, 7);
     x.fill();
   }
-  const t = new THREE.CanvasTexture(c);
+  const t = new CanvasTexture(c);
   t.anisotropy = 4;
   return t;
 }
@@ -83,15 +106,15 @@ const SPEC: Record<DieMaterial, { base: string; pip: string }> = {
   molten: { base: '#2a0a06', pip: '#2a0a06' },
 };
 
-function buildMaterials(mat: DieMaterial): THREE.Material[] {
+function buildMaterials(mat: DieMaterial): Material[] {
   const spec = SPEC[mat];
   return FACE_VALS.map((v) => {
-    const m = new THREE.MeshPhysicalMaterial({ map: pipTexture(v, spec.base, spec.pip) });
+    const m = new MeshPhysicalMaterial({ map: pipTexture(v, spec.base, spec.pip) });
     if (mat === 'metal') {
       m.metalness = 1; m.roughness = 0.22; m.envMapIntensity = 1.5; m.color.set('#ffd777');
     } else if (mat === 'glass') {
       m.metalness = 0.35; m.roughness = 0.12; m.clearcoat = 1; m.clearcoatRoughness = 0.08;
-      m.color.set('#0d0d12'); m.emissive = new THREE.Color('#ff2d55'); m.emissiveMap = emissiveTexture(v, '#ff2d55'); m.emissiveIntensity = 2.2;
+      m.color.set('#0d0d12'); m.emissive = new Color('#ff2d55'); m.emissiveMap = emissiveTexture(v, '#ff2d55'); m.emissiveIntensity = 2.2;
     } else if (mat === 'gem') {
       // Opaque icy diamond: a hint of translucency for depth, but readable pips
       // (was transmission 0.9 → too see-through). Clearcoat + reflections = sparkle.
@@ -100,17 +123,17 @@ function buildMaterials(mat: DieMaterial): THREE.Material[] {
     } else if (mat === 'irid') {
       m.metalness = 1; m.roughness = 0.25; m.iridescence = 1; m.iridescenceIOR = 1.6; m.envMapIntensity = 1.4; m.color.set('#9a8cff');
     } else if (mat === 'cyber') {
-      m.metalness = 0.5; m.roughness = 0.3; m.color.set('#0a1620'); m.emissive = new THREE.Color('#39f6d2'); m.emissiveMap = emissiveTexture(v, '#39f6d2', '#39f6d2'); m.emissiveIntensity = 2.6;
+      m.metalness = 0.5; m.roughness = 0.3; m.color.set('#0a1620'); m.emissive = new Color('#39f6d2'); m.emissiveMap = emissiveTexture(v, '#39f6d2', '#39f6d2'); m.emissiveIntensity = 2.6;
     } else if (mat === 'molten') {
-      m.metalness = 0.2; m.roughness = 0.55; m.color.set('#1a0603'); m.emissive = new THREE.Color('#ff5a1e'); m.emissiveMap = emissiveTexture(v, '#ff7a2e', '#ff7a2e'); m.emissiveIntensity = 2.4;
+      m.metalness = 0.2; m.roughness = 0.55; m.color.set('#1a0603'); m.emissive = new Color('#ff5a1e'); m.emissiveMap = emissiveTexture(v, '#ff7a2e', '#ff7a2e'); m.emissiveIntensity = 2.4;
     }
     return m;
   });
 }
-function disposeMaterials(mats: THREE.Material[] | THREE.Material): void {
+function disposeMaterials(mats: Material[] | Material): void {
   const arr = Array.isArray(mats) ? mats : [mats];
   for (const m of arr) {
-    const pm = m as THREE.MeshPhysicalMaterial;
+    const pm = m as MeshPhysicalMaterial;
     pm.map?.dispose();
     pm.emissiveMap?.dispose();
     m.dispose();
@@ -137,31 +160,31 @@ export function createDieEngine(host: HTMLElement, skin: DiceSkin, value: number
   // preserveDrawingBuffer keeps the last frame on screen when we render on-demand
   // (a die at rest is drawn once, then the loop stops) — without it the browser
   // clears the buffer after compositing and the die vanishes a frame later.
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.setSize(size, size, false);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(32, 1, 0.1, 100);
   // Farther back so the die fills ~71% of the canvas: its resting face then
   // matches the default 52px die (host is ~140% of the stage) AND the spinning
   // diagonal still fits the canvas without clipping.
   camera.position.set(0, 0, 4.64);
 
-  const pmrem = new THREE.PMREMGenerator(renderer);
+  const pmrem = new PMREMGenerator(renderer);
   const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
   scene.environment = envRT.texture;
 
-  const key = new THREE.DirectionalLight(0xffffff, 1.5);
+  const key = new DirectionalLight(0xffffff, 1.5);
   key.position.set(3, 4, 5);
   scene.add(key);
-  scene.add(new THREE.AmbientLight(0x99aaff, 0.4));
+  scene.add(new AmbientLight(0x99aaff, 0.4));
 
   const geo = new RoundedBoxGeometry(1.6, 1.6, 1.6, 6, 0.2);
   let materials = buildMaterials(skin.material ?? 'metal');
-  const die = new THREE.Mesh(geo, materials);
+  const die = new Mesh(geo, materials);
   scene.add(die);
 
   const rest = (v: number): [number, number] => REST[v] ?? [0, 0];
@@ -169,7 +192,7 @@ export function createDieEngine(host: HTMLElement, skin: DiceSkin, value: number
   seat(value);
 
   let raf = 0;
-  let anim: { from: THREE.Euler; toX: number; toY: number; toZ: number; end: [number, number]; start: number } | null = null;
+  let anim: { from: Euler; toX: number; toY: number; toZ: number; end: [number, number]; start: number } | null = null;
   const renderOnce = (): void => renderer.render(scene, camera);
   renderOnce();
 

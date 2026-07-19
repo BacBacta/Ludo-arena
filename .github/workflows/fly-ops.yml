@@ -1,0 +1,48 @@
+# One-off Fly.io maintenance operations, run on demand from the Actions tab
+# (workflow_dispatch) with the same FLY_API_TOKEN the deploy workflow uses.
+# Each operation is a FIXED, named script — no free-form commands from inputs,
+# so the token can never be steered into arbitrary flyctl calls.
+#
+# unset-cosmetics-store-address: removes the COSMETICS_STORE_ADDRESS secret
+# left over from the first manual setup. It silently OVERRODE the baked
+# deployments.json and pinned the cosmetics verifier to the first historical
+# store through two redeploys (every cUSD claim failed "could not verify"
+# until deployments.json was re-aligned). The server resolves the store from
+# deployments.json on its own, and warns at boot if an override diverges —
+# the secret is now pure drift risk. Unsetting restarts the machine.
+name: fly-ops
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Maintenance operation to run'
+        required: true
+        type: choice
+        options:
+          - unset-cosmetics-store-address
+
+concurrency: fly-ops
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: unset COSMETICS_STORE_ADDRESS
+        if: ${{ inputs.operation == 'unset-cosmetics-store-address' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN secret is not configured"; exit 1
+          fi
+          echo "Secrets BEFORE (names only):"
+          flyctl secrets list -a ludo-arena
+          if flyctl secrets list -a ludo-arena | grep -q COSMETICS_STORE_ADDRESS; then
+            flyctl secrets unset COSMETICS_STORE_ADDRESS -a ludo-arena
+            echo "COSMETICS_STORE_ADDRESS unset — machine restarts with deployments.json as the only source."
+          else
+            echo "COSMETICS_STORE_ADDRESS is not set — nothing to do."
+          fi
+          echo "Secrets AFTER (names only):"
+          flyctl secrets list -a ludo-arena
