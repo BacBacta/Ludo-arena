@@ -78,6 +78,9 @@ export function getBurnerWallet(): Wallet {
     walletClient: walletClient as unknown as WalletClient,
     publicClient: publicClient as unknown as PublicClient,
     address: account.address,
+    // The whole point of the burner: we build the tx, so it pays gas in cUSD
+    // (Celo feeCurrency) and the player never needs native CELO.
+    payGasInStable: true,
   };
 }
 

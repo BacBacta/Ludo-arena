@@ -50,6 +50,12 @@ export interface Wallet {
   walletClient: WalletClient;
   publicClient: PublicClient;
   address: Address;
+  /** Whether this wallet's txs should pay gas in the stablecoin (Celo feeCurrency)
+   *  instead of native CELO. True when WE control tx construction — MiniPay (which
+   *  mandates it) and the app-minted burner (B1) — so the player never needs CELO.
+   *  False for an external wallet (MetaMask/WalletConnect) that builds its own txs
+   *  and can't be told to use feeCurrency → it pays in the native coin. */
+  payGasInStable: boolean;
 }
 
 /** Minimal EIP-1193 provider shape viem's `custom()` transport needs. Both the
@@ -71,6 +77,8 @@ export async function connectWalletWith(provider: Eip1193Provider): Promise<Wall
     walletClient: walletClient as unknown as WalletClient,
     publicClient: publicClient as unknown as PublicClient,
     address,
+    // MiniPay's injected provider pays gas in cUSD; a plain external wallet does not.
+    payGasInStable: isMiniPay(),
   };
 }
 
@@ -107,7 +115,7 @@ export async function lockStake(
     stakeCents,
     fairnessCommit,
     // MiniPay pays gas in cUSD; on Celo Sepolia the stake token doubles as gas token
-    feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
+    feeCurrency: wallet.payGasInStable ? dep.stablecoin : undefined,
     onStatus,
   });
 }
@@ -139,7 +147,7 @@ export async function lockStake4(
     stakeCents,
     fairnessCommit,
     seatCount: 4,
-    feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
+    feeCurrency: wallet.payGasInStable ? dep.stablecoin : undefined,
     onStatus,
   });
 }
@@ -167,7 +175,7 @@ export async function buyCosmetic(
     token: dep.stablecoin,
     id,
     priceCents,
-    feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
+    feeCurrency: wallet.payGasInStable ? dep.stablecoin : undefined,
     onStatus,
   });
 }
@@ -226,8 +234,9 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
   const dep = deploymentForChain(chainId);
   const chain = wallet.walletClient.chain ?? null;
   const signer = wallet.walletClient.account ?? wallet.address;
-  // MiniPay legacy-tx gas is paid in the stake token; browsers pay the native coin.
-  const extra = isMiniPay() && dep ? { feeCurrency: dep.stablecoin } : {};
+  // Gas in cUSD when we control tx construction (MiniPay or the burner); a plain
+  // external wallet builds its own tx and pays the native coin.
+  const extra = wallet.payGasInStable && dep ? { feeCurrency: dep.stablecoin } : {};
   const hash = await wallet.walletClient.writeContract({
     account: signer,
     chain,
