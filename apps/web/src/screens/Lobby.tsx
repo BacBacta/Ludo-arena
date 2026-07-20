@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ALLOWED_STAKES_CENTS, FREEROLL, SEASON_PREMIUM, crownsForTier, potCents, type StakeCents } from '@ludo/shared';
 import { cosmeticsCusdAvailable } from '../lib/deployments';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
@@ -57,8 +57,17 @@ export function Lobby({
   /** Race Week: launch a subsidised event 1v1 at the micro-stake. */
   onPlayRace(): void;
 }) {
-  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceJoining, friends, friendRequests, sentRequests } = useAppState();
+  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceBoard, raceJoining, friends, friendRequests, sentRequests } = useAppState();
   const dispatch = useAppDispatch();
+
+  // Race Week live countdown: re-render every 30 s while the event card shows a
+  // deadline, so "ends in 2 h 05 min" actually counts down on an idle lobby.
+  const [raceNow, setRaceNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!race?.active || !race.endsAt) return;
+    const id = setInterval(() => setRaceNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [race?.active, race?.endsAt]);
 
   /** Recent opponents I can still invite: wallet-linked (have a pid) and not
    *  already a friend, an incoming request, or one I've already sent. This is
@@ -269,22 +278,31 @@ export function Lobby({
       {/* RACE WEEK — the live event surface (only while the server reports it
           armed). A time-limited leaderboard with a subsidised micro-stake: the
           player mints a soulbound RacePass (anti-sybil entry) and the pool funds
-          their stake quota, then event 1v1s score on the board. Placed high —
-          an event is the most time-sensitive thing on the page. */}
+          their stake quota, then event 1v1s score on the board. Premium event
+          styling: dark racing card, LIVE badge, ticking countdown, pool gauge and
+          a podium preview — an event must read as the most special thing on the
+          page, not another grey row. */}
       {race?.active && (() => {
         // No endsAt configured = open-ended armed event: never read as "ended",
-        // no countdown chip. With an endsAt, show a live countdown and disable
-        // the join once it's elapsed.
-        const remaining = race.endsAt ? new Date(race.endsAt).getTime() - Date.now() : Infinity;
+        // no countdown chip. With an endsAt, a live (30 s tick) countdown; the
+        // join CTA disables once it's elapsed.
+        const remaining = race.endsAt ? new Date(race.endsAt).getTime() - raceNow : Infinity;
         const ended = remaining <= 0;
         const endsLabel =
           remaining === Infinity
             ? null
             : ended
               ? t('raceEnded')
-              : remaining < 86_400_000
-                ? t('raceEndsIn').replace('{t}', `${Math.max(1, Math.round(remaining / 3_600_000))} h`)
-                : t('raceEndsIn').replace('{t}', `${Math.ceil(remaining / 86_400_000)} ${t('days')}`);
+              : remaining < 3_600_000
+                ? t('raceEndsIn').replace('{t}', `${Math.max(1, Math.floor(remaining / 60_000))} min`)
+                : remaining < 86_400_000
+                  ? t('raceEndsIn').replace('{t}', `${Math.floor(remaining / 3_600_000)} h ${Math.floor((remaining % 3_600_000) / 60_000)} min`)
+                  : t('raceEndsIn').replace('{t}', `${Math.floor(remaining / 86_400_000)} d ${Math.floor((remaining % 86_400_000) / 3_600_000)} h`);
+        // Pool gauge: % of the provisioned pool still available (old servers omit
+        // poolCents → hide the gauge rather than showing a wrong bar).
+        const poolPct = race.poolCents ? Math.max(0, Math.min(100, Math.round((race.poolLeftCents / race.poolCents) * 100))) : null;
+        const top3 = (raceBoard?.top ?? []).slice(0, 3);
+        const medals = ['🥇', '🥈', '🥉'];
         return (
           <>
             <div className="seclabel">🏁 {t('raceTitle')}</div>
@@ -292,14 +310,42 @@ export function Lobby({
               <div className="racecard__top">
                 <span className="racecard__flag" aria-hidden="true">🏁</span>
                 <div className="racecard__id">
-                  <b>{t('raceCardTitle')}</b>
+                  <b>
+                    {t('raceCardTitle')}
+                    {!ended && <em className="racecard__live">● {t('raceLiveBadge')}</em>}
+                  </b>
                   <small>{race.funded ? `✅ ${t('raceFundedLabel')} · ${fmtUsd(race.quotaCents)} ${t('raceQuota')}` : t('raceCardSub')}</small>
                 </div>
-                {endsLabel && <span className="racecard__timer">⏳ {endsLabel}</span>}
+                {endsLabel && <span className={`racecard__timer${remaining < 86_400_000 ? ' racecard__timer--soon' : ''}`}>⏱ {endsLabel}</span>}
               </div>
+
+              {/* Podium preview: the top 3 as one glanceable strip — the social
+                  pull ("I could be up there") without opening the sheet. */}
+              {top3.length > 0 && (
+                <button className="racecard__podium" onClick={() => { playTap(); onOpenRaceBoard(); }}>
+                  {top3.map((r, i) => (
+                    <span key={r.rank} className={`racecard__podchip${i === 0 ? ' racecard__podchip--first' : ''}`}>
+                      {medals[i]} <b>{r.name}</b> {r.points}
+                    </span>
+                  ))}
+                </button>
+              )}
+
+              {/* Prize-pool gauge: how much of the event budget is still up for
+                  grabs — scarcity is the join trigger. */}
+              {poolPct !== null && !race.funded && (
+                <div className="racebar">
+                  <div className="racebar__head">
+                    <span>💰 {t('racePoolLabel')}</span>
+                    <b>{fmtUsd(race.poolLeftCents)} / {fmtUsd(race.poolCents!)}</b>
+                  </div>
+                  <div className="racebar__track"><span className="racebar__fill" style={{ width: `${poolPct}%` }} /></div>
+                </div>
+              )}
+
               <div className="racecard__actions">
                 {race.funded ? (
-                  <button className="btn btn--race" onClick={() => { playTap('select'); onPlayRace(); }}>
+                  <button className="btn btn--race btn--race-play" onClick={() => { playTap('select'); onPlayRace(); }}>
                     🎲 {t('racePlayCta')} <small>{fmtUsd(1)} · {t('racePlaySub')}</small>
                   </button>
                 ) : (
@@ -311,13 +357,11 @@ export function Lobby({
                     {raceJoining ? `⏳ ${t('raceJoining')}` : <>🎟️ {t('raceMintCta')} <small>{t('raceMintSub')}</small></>}
                   </button>
                 )}
-                <button className="frbtn frbtn--ghost racecard__board" onClick={() => { playTap(); onOpenRaceBoard(); }}>
-                  🏆 {t('raceBoardCta')}
+                <button className="racecard__board" onClick={() => { playTap(); onOpenRaceBoard(); }} aria-label={t('raceBoardCta')}>
+                  🏆<small>{t('raceBoardCta')}</small>
                 </button>
               </div>
-              {race.poolLeftCents > 0 && !race.funded && (
-                <small className="racecard__pool">{t('racePoolLeft').replace('{a}', fmtUsd(race.poolLeftCents))}</small>
-              )}
+              <small className="racecard__rule">{t('raceScoring')}</small>
             </div>
           </>
         );

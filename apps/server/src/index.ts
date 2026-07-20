@@ -423,6 +423,7 @@ async function raceStateFor(wallet: string | undefined): Promise<RaceState | und
     endsAt: raceFaucet.endsAt,
     funded,
     poolLeftCents: Math.max(0, raceFaucet.poolCents - spent),
+    poolCents: raceFaucet.poolCents,
   };
 }
 // N-player settlement for staked 4-player games (LudoEscrowN). null unless staking
