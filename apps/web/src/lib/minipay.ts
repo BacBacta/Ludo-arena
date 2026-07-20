@@ -52,10 +52,16 @@ export interface Wallet {
   address: Address;
 }
 
-/** Connects the injected wallet on the active chain. null when none is present. */
-export async function connectWallet(): Promise<Wallet | null> {
-  if (!window.ethereum) return null;
-  const walletClient = createWalletClient({ chain: activeChain, transport: custom(window.ethereum) });
+/** Minimal EIP-1193 provider shape viem's `custom()` transport needs. Both the
+ *  injected wallet (window.ethereum) and a WalletConnect provider satisfy it. */
+export interface Eip1193Provider {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+}
+
+/** Builds a Wallet on the active chain from ANY EIP-1193 provider (injected or
+ *  WalletConnect). Returns null when the provider yields no account. */
+export async function connectWalletWith(provider: Eip1193Provider): Promise<Wallet | null> {
+  const walletClient = createWalletClient({ chain: activeChain, transport: custom(provider) });
   const [address] = await walletClient.requestAddresses();
   if (!address) return null;
   const publicClient = createPublicClient({ chain: activeChain, transport: http() });
@@ -66,6 +72,12 @@ export async function connectWallet(): Promise<Wallet | null> {
     publicClient: publicClient as unknown as PublicClient,
     address,
   };
+}
+
+/** Connects the injected wallet on the active chain. null when none is present. */
+export async function connectWallet(): Promise<Wallet | null> {
+  if (!window.ethereum) return null;
+  return connectWalletWith(window.ethereum);
 }
 
 /**
