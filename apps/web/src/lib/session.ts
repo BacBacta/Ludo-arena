@@ -1152,18 +1152,31 @@ export function buyStreakFreeze(serverUrl: string, walletAddress?: string): Prom
     };
   }));
 }
+export type RaceClaimResult = { fundedCents: number; alreadyFunded: boolean; txHash?: string } | { error: string };
+
 /**
  * One-shot Race Week claim: hand the server the RacePass mint tx hash. The server
  * verifies the Minted(myWallet) event on-chain (anti-sybil proof), then funds the
- * one-time stake quota to my wallet. Resolves with the ack — `fundedCents` sent (0
- * if already funded), `alreadyFunded`, and the funding tx — or null on failure.
- * The chain read + funding transfer are slow, so the timeout is generous.
+ * one-time stake quota to my wallet.
+ *
+ * `race.claim` is gated on a PROVEN wallet. MiniPay auto-proves (trusted origin),
+ * but a regular browser wallet (WalletConnect / injected) must answer the server's
+ * SIWE nonce first — so when `signMessage` is provided AND the server issued a
+ * walletNonce AND we're not in MiniPay, we sign the proof and send `wallet.prove`
+ * BEFORE claiming. The claim is only sent once the wallet is actually proven — we
+ * key that off the `friends.update` the server pushes on a successful prove (with a
+ * timeout fallback), because messages are processed as they arrive and firing the
+ * claim too early would race the prove and be rejected ("Connect your wallet").
+ *
+ * Resolves with the ack, or `{ error }` carrying the server's reason (so the UI can
+ * say WHY it failed instead of a generic message), or null on timeout / no socket.
  */
 export function sendRaceClaim(
   serverUrl: string,
   passTxHash: string,
   walletAddress?: string,
-): Promise<{ fundedCents: number; alreadyFunded: boolean; txHash?: string } | null> {
+  signMessage?: (message: string) => Promise<string>,
+): Promise<RaceClaimResult | null> {
   return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
     try {
@@ -1172,8 +1185,11 @@ export function sendRaceClaim(
       resolve(null);
       return;
     }
-    const done = (v: { fundedCents: number; alreadyFunded: boolean; txHash?: string } | null): void => {
+    let claimSent = false;
+    let proveFallback: ReturnType<typeof setTimeout> | null = null;
+    const done = (v: RaceClaimResult | null): void => {
       resolve(v);
+      if (proveFallback) clearTimeout(proveFallback);
       try {
         ws.close();
       } catch {
@@ -1181,6 +1197,12 @@ export function sendRaceClaim(
       }
     };
     const timer = setTimeout(() => done(null), 30000); // chain verify + transfer
+    const sendClaim = (): void => {
+      if (claimSent) return;
+      claimSent = true;
+      if (proveFallback) clearTimeout(proveFallback);
+      ws.send(JSON.stringify({ t: 'race.claim', passTxHash }));
+    };
     const entropy = (() => {
       const b = new Uint8Array(16);
       crypto.getRandomValues(b);
@@ -1193,8 +1215,8 @@ export function sendRaceClaim(
       /* storage unavailable */
     }
     ws.onopen = () => {
+      // Hello only — the claim waits until we know whether the wallet is proven.
       ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
-      ws.send(JSON.stringify({ t: 'race.claim', passTxHash }));
     };
     ws.onmessage = (e) => {
       let msg: ServerMsg;
@@ -1203,12 +1225,31 @@ export function sendRaceClaim(
       } catch {
         return;
       }
-      if (msg.t === 'race.claimed') {
+      if (msg.t === 'hello.ok') {
+        // Regular browser wallet not yet proven → do the SIWE proof, then claim
+        // once the server confirms (friends.update) or a short fallback elapses.
+        if (msg.walletNonce && signMessage && !isMiniPay()) {
+          signMessage(walletProofMessage(msg.walletNonce))
+            .then((signature) => {
+              ws.send(JSON.stringify({ t: 'wallet.prove', signature }));
+              // Fallback: if the proven-ack push never arrives, claim anyway
+              // (degrades to the pre-fix behaviour rather than hanging).
+              proveFallback = setTimeout(sendClaim, 4000);
+            })
+            .catch(() => done({ error: 'signature-declined' }));
+        } else {
+          // MiniPay (auto-proven) or no signer → claim straight away.
+          sendClaim();
+        }
+      } else if (msg.t === 'friends.update') {
+        // The server pushes this right after a successful wallet.prove → proven.
+        sendClaim();
+      } else if (msg.t === 'race.claimed') {
         clearTimeout(timer);
         done({ fundedCents: msg.fundedCents, alreadyFunded: msg.alreadyFunded, txHash: msg.txHash });
       } else if (msg.t === 'error') {
         clearTimeout(timer);
-        done(null);
+        done({ error: msg.message });
       }
     };
     ws.onerror = () => {
