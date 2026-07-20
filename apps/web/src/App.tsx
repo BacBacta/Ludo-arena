@@ -1133,8 +1133,13 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('raceClaimFailed') });
         return;
       }
-      const res = await sendRaceClaim(SERVER_URL, passTx!, wallet.address);
-      if (res) {
+      // A non-MiniPay wallet must SIGN the server's SIWE nonce to prove ownership
+      // before the gated race.claim (MiniPay auto-proves, so no signer there).
+      const signer = isMiniPay()
+        ? undefined
+        : (message: string) => wallet.walletClient.signMessage({ account: wallet.address, message });
+      const res = await sendRaceClaim(SERVER_URL, passTx!, wallet.address, signer);
+      if (res && 'fundedCents' in res) {
         dispatch({ type: 'RACE_FUNDED' });
         dispatch({
           type: 'TOAST',
@@ -1142,11 +1147,29 @@ export default function App() {
         });
         syncLobbyNow(); // pull fresh race state (funded + poolLeft) + balances
         void refreshBalance(wallet);
+      } else if (res && 'error' in res) {
+        // Surface WHY (localised for the common cases, else the server's words).
+        const raw = res.error.toLowerCase();
+        const msg =
+          res.error === 'signature-declined' || raw.includes('connect your wallet') || raw.includes('verification')
+            ? t('raceSignNeeded')
+            : raw.includes('already claimed') || raw.includes('device')
+              ? t('raceDeviceClaimed')
+              : raw.includes('pool') || raw.includes('exhaust')
+                ? t('racePoolEmpty')
+                : raw.includes('verify') || raw.includes('pass')
+                  ? t('raceVerifyFailed')
+                  : res.error;
+        dispatch({ type: 'TOAST', message: msg });
       } else {
-        dispatch({ type: 'TOAST', message: t('raceClaimFailed') });
+        dispatch({ type: 'TOAST', message: t('raceClaimFailed') }); // null = timeout / no socket
       }
-    } catch {
-      dispatch({ type: 'TOAST', message: t('raceClaimFailed') });
+    } catch (e) {
+      // Mint (or connect) threw — most often the wallet is on the wrong network
+      // or has no gas. Point at that instead of a generic failure.
+      const m = String((e as Error)?.message ?? e).toLowerCase();
+      const wrongChain = m.includes('deployment') || m.includes('chain') || m.includes('network') || m.includes('unsupported') || m.includes('gas') || m.includes('funds');
+      dispatch({ type: 'TOAST', message: wrongChain ? t('raceWrongNetwork') : t('raceClaimFailed') });
     } finally {
       dispatch({ type: 'RACE_JOINING', joining: false });
     }
