@@ -181,6 +181,37 @@ const RACE_PASS_ABI = [
 ] as const;
 
 /**
+ * Ensure the connected wallet is on the app's active chain (Celo Sepolia). A plain
+ * browser wallet (WalletConnect / MetaMask) is usually on some OTHER network, so a
+ * tx built for the active chain would just fail "wrong chain". Prompt the wallet to
+ * switch — and if it doesn't know the chain yet (a new testnet), add it first, then
+ * switch. Skipped for MiniPay (it manages its own network and has no switch RPC).
+ * Throws WRONG_CHAIN:<current>:<wanted> when the user declines, so the caller can
+ * show a precise "switch to Celo Sepolia" message instead of a raw viem error.
+ */
+export async function ensureActiveChain(wallet: Wallet): Promise<void> {
+  if (isMiniPay()) return;
+  let current: number;
+  try {
+    current = await wallet.walletClient.getChainId();
+  } catch {
+    return; // can't read the chain → let the tx surface the real error
+  }
+  if (current === activeChain.id) return;
+  try {
+    await wallet.walletClient.switchChain({ id: activeChain.id });
+  } catch {
+    // 4902 / unrecognised chain → add Celo Sepolia (rpc + explorer + CELO), then switch.
+    try {
+      await wallet.walletClient.addChain({ chain: activeChain });
+      await wallet.walletClient.switchChain({ id: activeChain.id });
+    } catch {
+      throw new Error(`WRONG_CHAIN:${current}:${activeChain.id}`);
+    }
+  }
+}
+
+/**
  * Mint the caller's Race Week Pass (the anti-sybil event entry): a free, soulbound
  * ERC-721, one per wallet. Returns the mint tx hash to hand to the server, which
  * verifies the Minted event before funding the stake quota. Throws if the RacePass
@@ -188,6 +219,7 @@ const RACE_PASS_ABI = [
  * reports the event armed). Under MiniPay, gas is paid in the stake token (legacy tx).
  */
 export async function mintRacePass(wallet: Wallet): Promise<Hex> {
+  await ensureActiveChain(wallet); // switch/add Celo Sepolia before the tx
   const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
   const racePass = racePassFor(chainId);
   if (!racePass) throw new Error(`No RacePass deployment for chain ${chainId}`);
