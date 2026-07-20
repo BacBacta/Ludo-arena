@@ -35,7 +35,18 @@ const celoSepolia = defineChain({
   testnet: true,
 });
 
-export const CHAINS: Record<string, Chain> = { celo, 'celo-sepolia': celoSepolia };
+// Local dev chain (hardhat/anvil) — lets the full on-chain stack (settlement,
+// cosmetics, Race Week faucet) run against a local node for E2E tests. Never a
+// real deployment target; CHAIN=localhost is opt-in.
+const localhost = defineChain({
+  id: 31_337,
+  name: 'Localhost',
+  nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: [process.env.LOCAL_RPC?.trim() || 'http://127.0.0.1:8545'] } },
+  testnet: true,
+});
+
+export const CHAINS: Record<string, Chain> = { celo, 'celo-sepolia': celoSepolia, localhost };
 
 const SETTLE_ABI = [
   { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'winner', type: 'address' }, { name: 'serverSeed', type: 'string' }, { name: 'entropyA', type: 'string' }, { name: 'entropyB', type: 'string' }, { name: 'sig', type: 'bytes' }], outputs: [] },

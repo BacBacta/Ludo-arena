@@ -681,6 +681,17 @@ export interface FriendInfo {
   lastSeenTs?: number;
 }
 
+/** Race Week event state, surfaced in hello.ok while the event is armed (absent
+ *  off-event). `funded` = this wallet already claimed its one-time Pass-gated
+ *  grant; `endsAt` drives the client countdown; `poolLeftCents` = budget left. */
+export interface RaceState {
+  active: boolean;
+  quotaCents: number;
+  endsAt?: string;
+  funded: boolean;
+  poolLeftCents: number;
+}
+
 /** Caps on the social graph: enough for a real circle, bounded for the hello
  *  payload (each entry is a profile lookup at hello time). */
 export const FRIENDS_MAX = 24;
@@ -739,6 +750,7 @@ export type ServerMsg =
       ownedSkins?: string[]; // premium skins the player has unlocked (server-authoritative)
       claimedSets?: string[]; // cosmetic-set bonuses already claimed (phase 3)
       season?: SeasonState; // current season pass state (crowns, tier, claims, reward table)
+      race?: RaceState; // Race Week event state (absent off-event) — see RaceState
       comeback?: Comeback; // win-back offer surfaced on return after an absence (Phase 3)
       stakingBlocked?: boolean; // geo-gated region, staked play disabled (E5.4)
       // Wallet ownership proof (SIWE): if a wallet was supplied but isn't proven
