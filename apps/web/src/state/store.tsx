@@ -14,11 +14,12 @@ import {
   type StakeCents,
   type StreakState,
   type PublicProfile,
+  type RaceState,
   type SeasonState,
   type Comeback,
   type FriendInfo,
 } from '@ludo/shared';
-import type { GameResult, MatchInfo } from '../lib/session';
+import type { GameResult, MatchInfo, RaceBoard } from '../lib/session';
 import { setSoundEnabled, soundEnabled } from '../lib/sound';
 import { loadSkinId, saveSkinId } from '../lib/diceSkins';
 import { loadTokenSkinId, saveTokenSkinId, loadEntranceFxId, saveEntranceFxId, loadVictoryFxId, saveVictoryFxId } from '../lib/tokenSkins';
@@ -189,6 +190,14 @@ export interface AppState {
   viewProfile: { pid: string; data: PublicProfile | null; failed?: boolean } | null;
   /** Responsible-gaming limits (E5.2). */
   limits: LimitsState;
+  /** Race Week event state (hello.ok while the event is armed); null = off-event. */
+  race: RaceState | null;
+  /** Race Week leaderboard sheet open state. */
+  raceOpen: boolean;
+  /** Fetched Race Week leaderboard (top + my rank); null until first fetch. */
+  raceBoard: RaceBoard | null;
+  /** True while a Race Week join (mint Pass → claim) is in flight — locks the CTA. */
+  raceJoining: boolean;
   /** Geo-gating (E5.4): staked play disabled in this region. */
   stakingBlocked: boolean;
   match: MatchInfo | null;
@@ -311,6 +320,10 @@ export const initialState: AppState = {
   challengeOffer: null,
   giftFriend: null,
   limits: loadRetention().limits,
+  race: null,
+  raceOpen: false,
+  raceBoard: null,
+  raceJoining: false,
   stakingBlocked: false,
   match: null,
   game: null,
@@ -398,6 +411,11 @@ export type Action =
   | { type: 'PROFILE_INFO'; pid: string; profile: PublicProfile | null }
   | { type: 'PROFILE_CLOSE' }
   | { type: 'LIMITS_UPDATE'; limits: LimitsState }
+  | { type: 'RACE_STATE'; race: RaceState }
+  | { type: 'RACE_FUNDED' }
+  | { type: 'RACE_MODAL'; open: boolean }
+  | { type: 'RACE_BOARD'; board: RaceBoard | null }
+  | { type: 'RACE_JOINING'; joining: boolean }
   | { type: 'GEO'; stakingBlocked: boolean }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'SET_WALLET_ADDRESS'; address: string | null }
@@ -574,6 +592,18 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, viewProfile: null };
     case 'LIMITS_UPDATE':
       return { ...s, limits: a.limits };
+    case 'RACE_STATE':
+      return { ...s, race: a.race };
+    case 'RACE_FUNDED':
+      // Optimistic flip after a successful claim, so the card shows "funded"
+      // immediately without waiting for the next hello.ok round-trip.
+      return { ...s, race: s.race ? { ...s.race, funded: true } : s.race };
+    case 'RACE_MODAL':
+      return { ...s, raceOpen: a.open };
+    case 'RACE_BOARD':
+      return { ...s, raceBoard: a.board };
+    case 'RACE_JOINING':
+      return { ...s, raceJoining: a.joining };
     case 'GEO':
       return { ...s, stakingBlocked: a.stakingBlocked };
     case 'RECONNECTING':

@@ -34,6 +34,7 @@ import {
   type Comeback,
   type FriendInfo,
   type LimitsState,
+  type RaceState,
   type StreakState,
   type Player4Info,
   type ResumedGame,
@@ -409,6 +410,21 @@ const cosmeticsVerifier = createCosmeticsVerifier();
 // Race Week faucet (event). null unless RACE_WEEK_ACTIVE=true + a funded faucet
 // key + a deployed RacePass → race.claim stays dormant off-event.
 const raceFaucet = createRaceFaucet();
+
+/** Client-facing Race Week state for hello.ok: dormant (undefined) off-event,
+ *  else whether THIS wallet already claimed its grant + the funding params. */
+async function raceStateFor(wallet: string | undefined): Promise<RaceState | undefined> {
+  if (!raceFaucet) return undefined;
+  const funded = wallet ? !!(await store.getMeta(`race:grant:${wallet.toLowerCase()}`)) : false;
+  const spent = Number((await store.getMeta('race:pool:spent')) || '0');
+  return {
+    active: true,
+    quotaCents: raceFaucet.quotaCents,
+    endsAt: raceFaucet.endsAt,
+    funded,
+    poolLeftCents: Math.max(0, raceFaucet.poolCents - spent),
+  };
+}
 // N-player settlement for staked 4-player games (LudoEscrowN). null unless staking
 // is armed AND the N-player escrow is deployed + configured.
 const arbiterN = stakingEnabled ? createArbiterN() : null;
@@ -1156,6 +1172,7 @@ wss.on('connection', (ws, req) => {
           limits: rLimits,
           ownedSkins: await store.getOwnedSkins(rpid),
           season: await buildSeasonState(store, rpid, new Date().toISOString()),
+          race: await raceStateFor(resumedSession.wallet),
           comeback: rComeback,
           stakingBlocked: isGeoBlocked(country),
           walletNonce: rProof.walletNonce,
@@ -1272,6 +1289,7 @@ wss.on('connection', (ws, req) => {
         ownedSkins,
         claimedSets,
         season,
+        race: await raceStateFor(wallet),
         comeback,
         stakingBlocked: isGeoBlocked(country),
         walletNonce: proof.walletNonce,

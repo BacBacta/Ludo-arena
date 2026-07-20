@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { applyMove } from '@ludo/game-engine';
 import type { GameState } from '@ludo/game-engine';
-import { TOS_VERSION, cosmeticById, cosmeticCents, SEASON_PREMIUM, type StakeCents } from '@ludo/shared';
+import { TOS_VERSION, cosmeticById, cosmeticCents, SEASON_PREMIUM, RACE_STAKE_CENTS, type StakeCents } from '@ludo/shared';
 import { syncLobby,
   LocalBotSession,
   RemoteSession,
@@ -10,7 +10,7 @@ import { syncLobby,
   type SessionEvents,
   type WalletAuth,
 } from './lib/session';
-import { saveRetention, useAppDispatch, useAppState } from './state/store';
+import { fmtUsd, saveRetention, useAppDispatch, useAppState } from './state/store';
 import { Lobby } from './screens/Lobby';
 import { Matchmaking } from './screens/Matchmaking';
 import { GameScreen } from './screens/GameScreen';
@@ -19,10 +19,11 @@ import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { ChallengeOfferModal, CollectionSheet, ComebackModal, DiceModal, DocModal, FairnessModal, GiftCosmeticModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
+import { RaceSheet } from './components/RaceSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
-import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity } from './lib/session';
+import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, fetchRaceLeaderboard } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
-import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
+import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
@@ -200,6 +201,7 @@ export default function App() {
         streak: (streak) => dispatch({ type: 'STREAK_UPDATE', streak }),
         limits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
         season: (season) => dispatch({ type: 'SEASON_STATE', season }),
+        race: (race) => dispatch({ type: 'RACE_STATE', race }),
         friends: (friends, requests, outgoing) => dispatch({ type: 'FRIENDS', friends, requests, outgoing }),
       }),
     [dispatch],
@@ -412,6 +414,7 @@ export default function App() {
         }
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
+      onRace: (race) => dispatch({ type: 'RACE_STATE', race }),
       onSkins: (ownedIds) => dispatch({ type: 'OWNED_SKINS', ownedIds }),
       onClaimedSets: (setIds) => dispatch({ type: 'CLAIMED_SETS', setIds }),
       onSeasonState: (season) => dispatch({ type: 'SEASON_STATE', season }),
@@ -1083,10 +1086,82 @@ export default function App() {
     [dispatch],
   );
 
+  // ---- Race Week (event) ----
+  /** localStorage key for a wallet's RacePass mint tx, so a resumed session can
+   *  reprove the mint (server verifies the Minted event) without re-minting. */
+  const RACE_TX_KEY = 'ludo.racePassTx';
+  /** Join Race Week: mint the soulbound RacePass (anti-sybil entry, once per
+   *  wallet), then hand the mint tx to the server, which verifies it on-chain and
+   *  funds the one-time subsidised-stake quota. Idempotent: reuses an existing
+   *  Pass + its stored mint tx instead of re-minting, and the server no-ops a
+   *  second grant (alreadyFunded). */
+  const joinRaceWeek = useCallback(async () => {
+    if (!(await connectWalletCta())) return;
+    const wallet = walletRef.current;
+    if (!wallet) return;
+    dispatch({ type: 'RACE_JOINING', joining: true });
+    try {
+      const txKey = `${RACE_TX_KEY}:${wallet.address.toLowerCase()}`;
+      let passTx: string | null = null;
+      try {
+        passTx = localStorage.getItem(txKey);
+      } catch {
+        /* storage unavailable */
+      }
+      const held = await racePassTokenId(wallet).catch(() => null);
+      if (held === null || held === 0n) {
+        // No Pass yet → mint one (free, soulbound). Persist the tx for reproof.
+        passTx = await mintRacePass(wallet);
+        try {
+          localStorage.setItem(txKey, passTx);
+        } catch {
+          /* storage unavailable — claim still proceeds this session */
+        }
+      } else if (!passTx) {
+        // Already hold a Pass but lost the mint tx (cleared storage). The grant is
+        // one-time per wallet server-side, so if it was already funded the card
+        // already shows it; otherwise there's nothing we can reprove here.
+        dispatch({ type: 'TOAST', message: t('raceClaimFailed') });
+        return;
+      }
+      const res = await sendRaceClaim(SERVER_URL, passTx!, wallet.address);
+      if (res) {
+        dispatch({ type: 'RACE_FUNDED' });
+        dispatch({
+          type: 'TOAST',
+          message: res.alreadyFunded ? t('raceAlreadyFunded') : `🏁 ${t('raceFundedToast')} +${fmtUsd(res.fundedCents)}`,
+        });
+        syncLobbyNow(); // pull fresh race state (funded + poolLeft) + balances
+        void refreshBalance(wallet);
+      } else {
+        dispatch({ type: 'TOAST', message: t('raceClaimFailed') });
+      }
+    } catch {
+      dispatch({ type: 'TOAST', message: t('raceClaimFailed') });
+    } finally {
+      dispatch({ type: 'RACE_JOINING', joining: false });
+    }
+  }, [dispatch, connectWalletCta, refreshBalance, syncLobbyNow]);
+
+  /** Open the Race Week leaderboard sheet and (re)fetch the standings. */
+  const openRaceBoard = useCallback(async () => {
+    dispatch({ type: 'RACE_MODAL', open: true });
+    const board = await fetchRaceLeaderboard(SERVER_URL, walletRef.current?.address);
+    dispatch({ type: 'RACE_BOARD', board });
+  }, [dispatch]);
+
+  /** Launch a subsidised event 1v1 at the Race Week micro-stake (gated like any
+   *  staked entry: 18+/ToS consent + wallet + balance). Wins/plays score on the
+   *  event leaderboard server-side. */
+  const playRaceGame = useCallback(
+    () => gateStaked(RACE_STAKE_CENTS as StakeCents, () => void startMatch(RACE_STAKE_CENTS as StakeCents)),
+    [gateStaked, startMatch],
+  );
+
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} onJoinRace={joinRaceWeek} onOpenRaceBoard={openRaceBoard} onPlayRace={playRaceGame} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
@@ -1158,6 +1233,7 @@ export default function App() {
       <ComebackModal />
       <ProgressionSheet onViewProfile={onViewProfile} onBuyFreeze={buyFreeze} />
       <SeasonSheet onClaim={claimSeason} onBuyPremium={purchasePremium} />
+      <RaceSheet />
       <DocModal />
       <Toast />
     </>

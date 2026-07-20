@@ -38,11 +38,19 @@ import {
   type LimitsState,
   type Comeback,
   type PublicProfile,
+  type RaceState,
   type SeasonState,
   type ServerMsg,
   type StakeCents,
   type StreakState,
 } from '@ludo/shared';
+
+/** Race Week leaderboard, as the client consumes it (race.board reply). */
+export interface RaceBoard {
+  top: Array<{ name: string; points: number; rank: number }>;
+  myRank: number;
+  myPoints: number;
+}
 
 /** Auth material the client attaches to a staked session: 18+/ToS consent to send
  *  in hello, and a wallet signer to answer the server's ownership-proof nonce. */
@@ -150,6 +158,9 @@ export interface SessionEvents {
   onResumed(match: MatchInfo, state: GameState): void;
   /** The in-progress game could not be resumed (gave up / session expired). */
   onGone(): void;
+  /** Race Week event state (hello.ok), when the event is armed — drives the
+   *  lobby event card (countdown, mint/claim CTA, funded state). */
+  onRace?(race: RaceState): void;
   /** Friends, incoming requests and SENT (outgoing) invitations —
    *  hello.ok snapshot or a live friends.update push. */
   onFriends?(friends: FriendInfo[], requests: FriendInfo[], outgoing?: FriendInfo[]): void;
@@ -387,6 +398,7 @@ export function syncLobby(
     streak(streak: StreakState): void;
     limits(limits: LimitsState): void;
     season?(season: SeasonState): void;
+    race?(race: RaceState): void;
     friends?(friends: FriendInfo[], requests: FriendInfo[], outgoing?: FriendInfo[]): void;
   },
 ): void {
@@ -438,6 +450,7 @@ export function syncLobby(
           if (msg.streak) on.streak(msg.streak);
           if (msg.limits) on.limits(msg.limits);
           if (msg.season) on.season?.(msg.season);
+          if (msg.race) on.race?.(msg.race);
           if (msg.friends || msg.friendRequests || msg.friendsOutgoing) on.friends?.(msg.friends ?? [], msg.friendRequests ?? [], msg.friendsOutgoing ?? []);
           ws.close();
         };
@@ -1139,6 +1152,132 @@ export function buyStreakFreeze(serverUrl: string, walletAddress?: string): Prom
     };
   }));
 }
+/**
+ * One-shot Race Week claim: hand the server the RacePass mint tx hash. The server
+ * verifies the Minted(myWallet) event on-chain (anti-sybil proof), then funds the
+ * one-time stake quota to my wallet. Resolves with the ack — `fundedCents` sent (0
+ * if already funded), `alreadyFunded`, and the funding tx — or null on failure.
+ * The chain read + funding transfer are slow, so the timeout is generous.
+ */
+export function sendRaceClaim(
+  serverUrl: string,
+  passTxHash: string,
+  walletAddress?: string,
+): Promise<{ fundedCents: number; alreadyFunded: boolean; txHash?: string } | null> {
+  return queueOneShot(() => new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: { fundedCents: number; alreadyFunded: boolean; txHash?: string } | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 30000); // chain verify + transfer
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'race.claim', passTxHash }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'race.claimed') {
+        clearTimeout(timer);
+        done({ fundedCents: msg.fundedCents, alreadyFunded: msg.alreadyFunded, txHash: msg.txHash });
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  }));
+}
+
+/**
+ * One-shot Race Week leaderboard fetch (race.leaderboard → race.board). Resumes
+ * the session so the server can resolve MY rank, and resolves with the top board +
+ * my standing — or null on failure/timeout.
+ */
+export function fetchRaceLeaderboard(serverUrl: string, walletAddress?: string): Promise<RaceBoard | null> {
+  return queueOneShot(() => new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    const done = (v: RaceBoard | null): void => {
+      resolve(v);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 8000);
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+      ws.send(JSON.stringify({ t: 'race.leaderboard' }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'race.board') {
+        clearTimeout(timer);
+        done({ top: msg.top, myRank: msg.myRank, myPoints: msg.myPoints });
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done(null);
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  }));
+}
+
 /** ~500 ms → 4 s backoff; 12 attempts ≈ 45 s of retrying (covers a 20 s cut). */
 const MAX_RECONNECT_ATTEMPTS = 12;
 /** The INITIAL connection is retried this many times before we declare the server
@@ -1340,6 +1479,7 @@ export class RemoteSession implements GameSession {
         if (msg.ownedSkins) this.ev.onSkins(msg.ownedSkins);
         if (msg.claimedSets) this.ev.onClaimedSets?.(msg.claimedSets);
         if (msg.season) this.ev.onSeasonState(msg.season);
+        if (msg.race) this.ev.onRace?.(msg.race);
         if (msg.friends || msg.friendRequests || msg.friendsOutgoing) this.ev.onFriends?.(msg.friends ?? [], msg.friendRequests ?? [], msg.friendsOutgoing ?? []);
         if (msg.comeback) this.ev.onComeback(msg.comeback);
         // Guests: pin the FIRST server-assigned identity (no-op once any name is

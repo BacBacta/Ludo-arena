@@ -43,6 +43,18 @@ export interface RaceConfig {
   quotaCents: number;
   /** Total cents the event will ever fund (the provisioned pool). */
   poolCents: number;
+  /** ISO end time for the client countdown (optional, display-only). */
+  endsAt?: string;
+}
+
+/** Client-facing Race Week state (in hello.ok): whether the event is on, the
+ *  funding quota, the end time, and whether THIS wallet already claimed. */
+export interface RaceState {
+  active: boolean;
+  quotaCents: number;
+  endsAt?: string;
+  funded: boolean; // this wallet already received its one-time grant
+  poolLeftCents: number;
 }
 
 export class RaceFaucet {
@@ -51,6 +63,7 @@ export class RaceFaucet {
   readonly stablecoin: Address;
   readonly quotaCents: number;
   readonly poolCents: number;
+  readonly endsAt?: string;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
@@ -64,6 +77,7 @@ export class RaceFaucet {
     this.stablecoin = getAddress(stablecoin);
     this.quotaCents = cfg.quotaCents;
     this.poolCents = cfg.poolCents;
+    this.endsAt = cfg.endsAt;
     this.account = privateKeyToAccount(faucetKey);
     const transport = http(rpc);
     this.publicClient = createPublicClient({ chain, transport });
@@ -170,7 +184,8 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
 
   const quotaCents = Number(env.RACE_QUOTA_CENTS ?? '20'); // 20¢ ≈ 20 games at 1¢
   const poolCents = Number(env.RACE_POOL_CENTS ?? '5000'); // $50 provisioned
+  const endsAt = env.RACE_ENDS_AT?.trim() || undefined;
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
-  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents }, rpc);
+  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt }, rpc);
 }
