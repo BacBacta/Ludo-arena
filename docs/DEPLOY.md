@@ -160,3 +160,72 @@ flyctl deploy
 ```
 
 Only after this, and the other launch-gate items above, flip `STAKING_ENABLED="true"`.
+
+## 4. Race Week event (onboarding faucet)
+
+The server has an optional **Race Week** mode: a player mints a soulbound
+`RacePass` (anti-sybil, 1/wallet → 1/phone), the server verifies that mint, then
+funds a micro-stake budget to their wallet so they can play the 1¢ event games
+and climb a leaderboard. It's fully **dormant** unless `RACE_WEEK_ACTIVE="true"`
++ a funded faucet key + a deployed RacePass on the active chain. See
+[`race.ts`](../apps/server/src/race.ts) and PROTOCOL.md (`race.claim`).
+
+### Funding modes
+
+| | **Lump-sum** (default) | **JIT** (`RACE_JIT_FUNDING="true"`) |
+|---|---|---|
+| At claim | grants the whole quota (`RACE_QUOTA_CENTS`) | grants ONE stake + gas buffer (`RACE_PER_GAME_CENTS`, default 2¢) |
+| Per finished game | — | tops up the next stake, up to the quota, pool-capped |
+| Claim-and-run loss | the whole quota | bounded to that first `RACE_PER_GAME_CENTS` |
+
+Lump-sum is fine on **testnet** (fake USDT — a runaway claim is free). Use **JIT
+on mainnet** so a wallet that mints, claims, and vanishes without playing keeps
+only ~1¢ instead of its whole quota. The pool never funds past `RACE_POOL_CENTS`.
+
+### Testnet arming (current live event, Celo Sepolia)
+
+```bash
+# The faucet wallet must hold MockUSDT (for grants) + a little CELO (for gas).
+flyctl secrets set -a ludo-arena \
+  RACE_WEEK_ACTIVE="true" \
+  RACE_FAUCET_PRIVATE_KEY="0x<testnet-faucet-key>" \
+  RACE_QUOTA_CENTS="10" \
+  RACE_POOL_CENTS="3000" \
+  RACE_ENDS_AT="2026-07-27T18:00:00Z"
+# CHAIN stays celo-sepolia; RacePass + stablecoin resolve from deployments.json.
+```
+
+### Mainnet arming (real cUSD — JIT ON)
+
+```bash
+# Prereqs: a DEDICATED faucet wallet holding the $30 race pool in cUSD + a little
+# CELO for gas (NOT the deployer / real-funds key). RacePass deployed on Celo
+# mainnet and present in deployments.json (or pass RACE_PASS_ADDRESS explicitly).
+flyctl secrets set -a ludo-arena \
+  CHAIN="celo" \
+  RACE_WEEK_ACTIVE="true" \
+  RACE_JIT_FUNDING="true" \
+  RACE_FAUCET_PRIVATE_KEY="0x<mainnet-faucet-key>" \
+  RACE_STABLECOIN_ADDRESS="0x765DE816845861e75A25fCA122bb6898B8B1282a" \
+  RACE_QUOTA_CENTS="10" \
+  RACE_PER_GAME_CENTS="2" \
+  RACE_POOL_CENTS="3000" \
+  RACE_ENDS_AT="<ISO end time>"
+```
+
+- `RACE_QUOTA_CENTS` = max a single wallet can ever draw (10 = ten 1¢ games).
+- `RACE_POOL_CENTS` = total budget ($30 = 3000). Grants stop when the pool is dry.
+- `RACE_PER_GAME_CENTS` = drip size (1¢ stake + 1¢ gas buffer). Never exceeds the
+  quota remainder or the pool remainder.
+- The **prize pool** (the separate $30 paid out to the leaderboard top 10) is
+  manual/off-chain — it is NOT this faucet. Keep it in its own wallet.
+
+### Disarming
+
+```bash
+flyctl secrets unset RACE_WEEK_ACTIVE -a ludo-arena   # restarts; race.claim goes dormant
+```
+
+The KV counters (`race:pool:spent`, `race:funded:<wallet>`, `race:grant:<wallet>`,
+the board) persist in Redis — re-arming resumes from where it left off. To run a
+FRESH event, clear those keys first (or use a new pool cap).

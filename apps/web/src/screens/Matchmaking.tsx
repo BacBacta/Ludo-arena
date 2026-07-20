@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useAppDispatch, useAppState } from '../state/store';
 import { IconUsers } from '../components/icons';
 import { t } from '../lib/i18n';
@@ -5,6 +6,15 @@ import { t } from '../lib/i18n';
 export function Matchmaking({ onCancel, onPlayBot }: { onCancel(): void; onPlayBot?(): void }) {
   const { match, privateCode, botMode } = useAppState();
   const dispatch = useAppDispatch();
+  // After a while with no pairing (empty/thin queue — common for a niche stake
+  // like the 1¢ Race Week bracket) reassure the player instead of leaving a bare
+  // spinner: they haven't been forgotten, we're just waiting for a body to join.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (match || privateCode || botMode) return;
+    const id = setTimeout(() => setSlow(true), 30000);
+    return () => clearTimeout(id);
+  }, [match, privateCode, botMode]);
 
   const link = privateCode ? `${window.location.origin}${window.location.pathname}#/g/${privateCode}` : '';
   const shareUrl = `https://wa.me/?text=${encodeURIComponent(`${t('shareMsg')} ${link}`)}`;
@@ -49,6 +59,7 @@ export function Matchmaking({ onCancel, onPlayBot }: { onCancel(): void; onPlayB
           </div>
         ) : null}
         {!privateCode && <div>{match ? t('found') : botMode ? t('preparingPractice') : t('searching')}</div>}
+        {!privateCode && !match && !botMode && slow && <div className="muted mm-slow">{t('searchingSlow')}</div>}
         {match && (
           <>
             <div className="vs">
