@@ -9,7 +9,7 @@ import { CHAINS } from '../src/settlement.js';
 const KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'; // hardhat #0
 const RACEPASS = ('0x' + '1'.repeat(40)) as `0x${string}`;
 const STABLE = ('0x' + '2'.repeat(40)) as `0x${string}`;
-const base = { quotaCents: 10, poolCents: 3000, jit: true, perGameCents: 2 };
+const base = { quotaCents: 10, poolCents: 3000, jit: true, perGameCents: 2, seedCents: 1 };
 
 describe('RaceFaucet fee abstraction (B1)', () => {
   it('carries feeInStable=true (pay gas in cUSD, no CELO needed)', () => {

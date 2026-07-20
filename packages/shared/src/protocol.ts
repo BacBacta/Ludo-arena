@@ -645,6 +645,11 @@ export type ClientMsg =
   // verifies it emitted Minted(myWallet) from the RacePass, then funds my event
   // stake budget (once per wallet, pool-capped). `passTxHash` is the 0x mint tx.
   | { t: 'race.claim'; passTxHash: string }
+  // Race Week (B1, burner onboarding): I have a proven wallet but no gas — send a
+  // tiny cUSD "gas seed" so I can pay the mint + join fees (Celo feeCurrency). Sent
+  // BEFORE the Pass mint; fingerprint-gated + pool-capped server-side. No args (the
+  // server funds my proven session wallet).
+  | { t: 'race.seed' }
   // Race Week: fetch the current leaderboard (top N + my rank). No args.
   | { t: 'race.leaderboard' }
   | { t: 'ping' };
@@ -820,6 +825,9 @@ export type ServerMsg =
   // idempotent re-claim — already funded), `alreadyFunded` distinguishes the two,
   // `txHash` = the funding transfer (absent when already funded / no transfer).
   | { t: 'race.claimed'; fundedCents: number; alreadyFunded: boolean; txHash?: string }
+  // Race Week gas-seed ack (B1): `seedCents` of cUSD was just sent to cover the
+  // player's mint/join gas (0 + `alreadySeeded` on a repeat — already seeded).
+  | { t: 'race.seeded'; seedCents: number; alreadySeeded: boolean; txHash?: string }
   // Race Week leaderboard: `top` = highest-scoring players (name + points +
   // 1-indexed rank), `myRank`/`myPoints` locate the caller (rank 0 = unranked).
   | { t: 'race.board'; top: Array<{ name: string; points: number; rank: number }>; myRank: number; myPoints: number }
@@ -1045,6 +1053,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'race.claim':
       // 0x + 64 hex chars — a tx hash. Ownership/emit is verified on-chain server-side.
       return typeof m.passTxHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.passTxHash) ? m : null;
+    case 'race.seed':
+      return m; // no args (server seeds the proven session wallet)
     case 'race.leaderboard':
       return m; // no args
     case 'queue.join':

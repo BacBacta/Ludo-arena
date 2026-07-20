@@ -76,6 +76,10 @@ export interface RaceConfig {
    *  wallet hold ONLY cUSD — no CELO to top up. Celo-only (CIP-64); leave false on
    *  chains without fee abstraction. */
   feeInStable: boolean;
+  /** B1 gas-seed: cents of cUSD sent to a burner BEFORE its Pass mint so it can
+   *  pay the mint + join gas (in cUSD). 0 disables the seed endpoint. Tiny — it
+   *  only has to cover a few cents of Celo gas. */
+  seedCents: number;
 }
 
 /** Client-facing Race Week state (in hello.ok): whether the event is on, the
@@ -99,6 +103,7 @@ export class RaceFaucet {
   readonly jit: boolean;
   readonly perGameCents: number;
   readonly feeInStable: boolean;
+  readonly seedCents: number;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
@@ -116,6 +121,7 @@ export class RaceFaucet {
     this.jit = cfg.jit;
     this.perGameCents = cfg.perGameCents;
     this.feeInStable = cfg.feeInStable;
+    this.seedCents = cfg.seedCents;
     this.account = privateKeyToAccount(faucetKey);
     const transport = http(rpc);
     this.publicClient = createPublicClient({ chain, transport });
@@ -236,7 +242,11 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   // B1 (non-MiniPay launch): pay faucet gas in cUSD so the faucet wallet needs no
   // native CELO. Opt-in (Celo fee abstraction only), default off → unchanged.
   const feeInStable = (env.RACE_FEE_IN_STABLE ?? '').trim() === 'true';
+  // B1 gas-seed: cents sent pre-mint so a burner can pay its own gas in cUSD.
+  // Default 0 (off) → the seed endpoint is dormant unless a non-MiniPay launch
+  // explicitly provisions it. Only meaningful with feeInStable on Celo.
+  const seedCents = Math.max(0, Number(env.RACE_SEED_CENTS ?? '0'));
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
-  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable }, rpc);
+  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable, seedCents }, rpc);
 }

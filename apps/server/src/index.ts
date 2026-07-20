@@ -1979,6 +1979,63 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'race.seed': {
+        // B1 gas-seed: a burner has a PROVEN wallet but no gas. Send a tiny cUSD
+        // amount so it can pay its own mint + join fees (in cUSD via feeCurrency),
+        // BEFORE it mints the Pass. Kept small (a few cents of gas) and gated:
+        // proven wallet, one seed per WALLET + per DEVICE, pool-capped. Dormant
+        // unless seedCents > 0 (only a non-MiniPay burner launch provisions it).
+        if (!raceFaucet || raceFaucet.seedCents <= 0) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Race Week gas seed is not available.' });
+          break;
+        }
+        if (!session.walletProven || !session.wallet) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect your wallet to join Race Week.' });
+          break;
+        }
+        const sNow = Date.now();
+        if (sNow - (session.lastRaceAt ?? 0) < 3000) break; // it sends a tx
+        session.lastRaceAt = sNow;
+        const sWallet = session.wallet;
+        const seedKey = `race:seed:${sWallet.toLowerCase()}`;
+        const seedFpKey = session.fingerprint ? `race:seedfp:${session.fingerprint}` : null;
+        // Idempotent per wallet: already seeded → restate, never re-transfer.
+        if (await store.getMeta(seedKey)) {
+          session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: true });
+          break;
+        }
+        // One seed per device (fingerprints are spoofable — a cheap gate; the
+        // amount is trivial and the pool cap is the real backstop). Burners make
+        // the soulbound Pass a weak sybil gate, so the fingerprint carries more
+        // weight here than in claim.
+        if (seedFpKey && (await store.getMeta(seedFpKey))) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'This device already received its gas seed.' });
+          break;
+        }
+        const seedSpent = Number((await store.getMeta('race:pool:spent')) || '0');
+        if (seedSpent + raceFaucet.seedCents > raceFaucet.poolCents) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Race Week funding pool is exhausted.' });
+          break;
+        }
+        // Reserve BEFORE the transfer (same crash-safety as claim): under-fund on
+        // a crash, never double-fund. Roll back on a failed transfer.
+        await store.setMeta(seedKey, JSON.stringify({ cents: raceFaucet.seedCents, at: sNow, fp: session.fingerprint ?? null }));
+        if (seedFpKey) await store.setMeta(seedFpKey, sWallet.toLowerCase());
+        await store.setMeta('race:pool:spent', String(seedSpent + raceFaucet.seedCents));
+        try {
+          const txHash = await raceFaucet.fund(sWallet as Address, raceFaucet.seedCents);
+          session.send({ t: 'race.seeded', seedCents: raceFaucet.seedCents, alreadySeeded: false, txHash });
+          telemetry('race.seed', { pid: tpid(playerId(sWallet, session.id)), cents: raceFaucet.seedCents, poolSpent: seedSpent + raceFaucet.seedCents });
+        } catch (e) {
+          await store.setMeta(seedKey, '');
+          if (seedFpKey) await store.setMeta(seedFpKey, '');
+          await store.setMeta('race:pool:spent', String(seedSpent));
+          console.error('[race] gas-seed transfer failed', e);
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Gas seed failed — try again in a moment.' });
+        }
+        break;
+      }
+
       case 'race.claim': {
         // Race Week onboarding faucet. Fund a tiny event stake budget to a player
         // who really minted their (soulbound) RacePass. Anti-sybil is layered:

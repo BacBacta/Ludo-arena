@@ -1259,6 +1259,95 @@ export function sendRaceClaim(
   }));
 }
 
+export type RaceSeedResult = { seedCents: number; alreadySeeded: boolean; txHash?: string } | { error: string };
+
+/**
+ * One-shot Race Week GAS SEED (B1, burner onboarding): before minting the Pass, a
+ * burner has a proven wallet but no gas. Ask the server for a tiny cUSD seed so the
+ * mint + join fees (paid in cUSD via feeCurrency) are covered. Same proven-wallet
+ * gate + SIWE-prove machinery as sendRaceClaim (the burner signs locally, so the
+ * signMessage never pops a dialog). Resolves with the ack, `{ error }`, or null.
+ */
+export function sendRaceSeed(
+  serverUrl: string,
+  walletAddress?: string,
+  signMessage?: (message: string) => Promise<string>,
+): Promise<RaceSeedResult | null> {
+  return queueOneShot(() => new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve(null);
+      return;
+    }
+    let seedSent = false;
+    let proveFallback: ReturnType<typeof setTimeout> | null = null;
+    const done = (v: RaceSeedResult | null): void => {
+      resolve(v);
+      if (proveFallback) clearTimeout(proveFallback);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done(null), 30000); // transfer + receipt
+    const sendSeed = (): void => {
+      if (seedSent) return;
+      seedSent = true;
+      if (proveFallback) clearTimeout(proveFallback);
+      ws.send(JSON.stringify({ t: 'race.seed' }));
+    };
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'hello.ok') {
+        if (msg.walletNonce && signMessage && !isMiniPay()) {
+          signMessage(walletProofMessage(msg.walletNonce))
+            .then((signature) => {
+              ws.send(JSON.stringify({ t: 'wallet.prove', signature }));
+              proveFallback = setTimeout(sendSeed, 4000);
+            })
+            .catch(() => done({ error: 'signature-declined' }));
+        } else {
+          sendSeed();
+        }
+      } else if (msg.t === 'friends.update') {
+        sendSeed();
+      } else if (msg.t === 'race.seeded') {
+        clearTimeout(timer);
+        done({ seedCents: msg.seedCents, alreadySeeded: msg.alreadySeeded, txHash: msg.txHash });
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done({ error: msg.message });
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  }));
+}
+
 /**
  * One-shot Race Week leaderboard fetch (race.leaderboard → race.board). Resumes
  * the session so the server can resolve MY rank, and resolves with the top board +

@@ -21,7 +21,8 @@ import { ChallengeOfferModal, CollectionSheet, ComebackModal, DiceModal, DocModa
 import { SeasonSheet } from './components/SeasonSheet';
 import { RaceSheet } from './components/RaceSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
-import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, fetchRaceLeaderboard } from './lib/session';
+import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
+import { getBurnerWallet } from './lib/burner';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable } from './lib/walletconnect';
@@ -1105,9 +1106,22 @@ export default function App() {
    *  Pass + its stored mint tx instead of re-minting, and the server no-ops a
    *  second grant (alreadyFunded). */
   const joinRaceWeek = useCallback(async () => {
-    if (!(await connectWalletCta())) return;
-    const wallet = walletRef.current;
+    // Wallet for the event. Inside MiniPay: the ambient wallet (gas in cUSD). Outside
+    // MiniPay (B1, non-MiniPay launch): the app-minted BURNER — the player brings no
+    // wallet and needs no CELO; its gas is paid in cUSD (feeCurrency), seeded below.
+    let wallet: Wallet | null;
+    if (isMiniPay()) {
+      if (!(await connectWalletCta())) return;
+      wallet = walletRef.current;
+    } else {
+      wallet = getBurnerWallet();
+      walletRef.current = wallet;
+      dispatch({ type: 'SET_WALLET_ADDRESS', address: wallet.address });
+    }
     if (!wallet) return;
+    const signer = isMiniPay()
+      ? undefined
+      : (message: string) => wallet!.walletClient.signMessage({ account: wallet!.address, message });
     dispatch({ type: 'RACE_JOINING', joining: true });
     try {
       const txKey = `${RACE_TX_KEY}:${wallet.address.toLowerCase()}`;
@@ -1119,6 +1133,14 @@ export default function App() {
       }
       const held = await racePassTokenId(wallet).catch(() => null);
       if (held === null || held === 0n) {
+        // About to mint — but a fresh burner has NO gas. Ask the server for a tiny
+        // cUSD gas seed FIRST (idempotent, pool-capped); it resolves once the cUSD
+        // is mined, so the mint can then pay its fee in cUSD. MiniPay already has
+        // gas, so it skips this. Seed errors are non-fatal: the mint's own catch
+        // surfaces "need gas" if the seed truly didn't land.
+        if (!isMiniPay()) {
+          await sendRaceSeed(SERVER_URL, wallet.address, signer).catch(() => null);
+        }
         // No Pass yet → mint one (free, soulbound). Persist the tx for reproof.
         passTx = await mintRacePass(wallet);
         try {
@@ -1133,11 +1155,8 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('raceClaimFailed') });
         return;
       }
-      // A non-MiniPay wallet must SIGN the server's SIWE nonce to prove ownership
-      // before the gated race.claim (MiniPay auto-proves, so no signer there).
-      const signer = isMiniPay()
-        ? undefined
-        : (message: string) => wallet.walletClient.signMessage({ account: wallet.address, message });
+      // `signer` (computed above) proves the wallet via SIWE before the gated
+      // race.claim — the burner signs locally (no popup); MiniPay auto-proves.
       const res = await sendRaceClaim(SERVER_URL, passTx!, wallet.address, signer);
       if (res && 'fundedCents' in res) {
         dispatch({ type: 'RACE_FUNDED' });
