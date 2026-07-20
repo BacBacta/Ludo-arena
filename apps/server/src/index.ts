@@ -68,7 +68,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { createRaceFaucet } from './race.js';
+import { createRaceFaucet, jitClaimCents, jitTopUpCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -425,6 +425,44 @@ async function raceStateFor(wallet: string | undefined): Promise<RaceState | und
     poolLeftCents: Math.max(0, raceFaucet.poolCents - spent),
     poolCents: raceFaucet.poolCents,
   };
+}
+
+// Serialise JIT top-ups so concurrent game finishes can't read-modify-write the
+// pool counter or a wallet's funded total out from under each other (single Fly
+// process → an async chain is enough, same posture as raceScore's board mutex).
+let raceFundChain: Promise<unknown> = Promise.resolve();
+/** JIT top-up: after a player COMPLETES an event game, drip the next stake to
+ *  their wallet — bounded by their per-wallet quota AND the total pool. No-op
+ *  unless the faucet is in JIT mode. Idempotency isn't required (a top-up per
+ *  finished game is intended), but it never funds past `quotaCents`/`poolCents`.
+ *  Fire-and-forget from onResult; failures are logged, never thrown. */
+async function topUpRaceFunding(store: Awaited<ReturnType<typeof createStore>>, faucet: RaceFaucet, wallet: string): Promise<void> {
+  if (!faucet.jit) return;
+  const w = wallet.toLowerCase();
+  const fundedKey = `race:funded:${w}`;
+  // Only participants (claimed their Pass-gated grant) top up; skip demo wallets.
+  if (!(await store.getMeta(`race:grant:${w}`))) return;
+  const run = async () => {
+    const funded = Number((await store.getMeta(fundedKey)) || '0');
+    const spent = Number((await store.getMeta('race:pool:spent')) || '0');
+    const cents = jitTopUpCents(faucet.perGameCents, funded, faucet.quotaCents, spent, faucet.poolCents);
+    if (cents <= 0) return; // quota drawn or pool dry — leaderboard still scores
+    // Reserve BEFORE the transfer (same crash-safety as claim): a crash mid-send
+    // can only UNDER-fund, never double-fund. Roll back both counters on revert.
+    await store.setMeta(fundedKey, String(funded + cents));
+    await store.setMeta('race:pool:spent', String(spent + cents));
+    try {
+      await faucet.fund(wallet as Address, cents);
+      telemetry('race.topup', { pid: tpid(w), cents, poolSpent: spent + cents });
+    } catch (e) {
+      await store.setMeta(fundedKey, String(funded));
+      await store.setMeta('race:pool:spent', String(spent));
+      console.error('[race] top-up transfer failed', e);
+    }
+  };
+  const next = raceFundChain.then(run, run);
+  raceFundChain = next.catch(() => undefined);
+  return next;
 }
 // N-player settlement for staked 4-player games (LudoEscrowN). null unless staking
 // is armed AND the N-player escrow is deployed + configured.
@@ -808,6 +846,15 @@ function wireRoom(room: Room): void {
       void scoreEventGame(store, { winnerWallet: winW, winnerName: winN, loserWallet: loseW, loserName: loseN, day: utcToday() }).catch((e) =>
         console.error('[race] score', e),
       );
+      // JIT top-up (mainnet anti-fund-and-run): a player is funded ONE stake at a
+      // time. Having just COMPLETED a staked event game, each participant earns the
+      // next stake — dripped up to their quota, pool-capped. A wallet that claims
+      // and never plays never reaches this hook, so it can't drain past the first
+      // grant. Off unless RACE_JIT_FUNDING=true (the lump-sum event is unaffected).
+      if (raceFaucet.jit) {
+        void topUpRaceFunding(store, raceFaucet, winW);
+        void topUpRaceFunding(store, raceFaucet, loseW);
+      }
     }
 
     // Participation (beta model: freeroll uptake, stake mix). Opaque pids only.
@@ -1952,26 +1999,35 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Could not verify your Race Pass mint.' });
           break;
         }
+        // How much to fund NOW. Lump-sum mode grants the whole quota at once.
+        // JIT mode (mainnet anti-fund-and-run) grants only one stake + gas buffer;
+        // the rest is topped up after each COMPLETED event game (see onResult), so
+        // a wallet that claims and vanishes keeps just `perGameCents`, not the quota.
+        const grantCents = raceFaucet.jit ? jitClaimCents(raceFaucet.perGameCents, raceFaucet.quotaCents) : raceFaucet.quotaCents;
         // Hard pool cap: never fund past the provisioned budget.
         const spent = Number((await store.getMeta('race:pool:spent')) || '0');
-        if (spent + raceFaucet.quotaCents > raceFaucet.poolCents) {
+        if (spent + grantCents > raceFaucet.poolCents) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Race Week funding pool is exhausted.' });
           break;
         }
         // Reserve BEFORE the transfer (record grant + debit pool), so a crash
         // mid-transfer can only UNDER-fund (support-fixable), never double-fund.
-        await store.setMeta(walletKey, JSON.stringify({ cents: raceFaucet.quotaCents, at: rNow, fp: session.fingerprint ?? null }));
+        await store.setMeta(walletKey, JSON.stringify({ cents: grantCents, at: rNow, fp: session.fingerprint ?? null }));
         if (fpKey) await store.setMeta(fpKey, rWallet.toLowerCase());
-        await store.setMeta('race:pool:spent', String(spent + raceFaucet.quotaCents));
+        await store.setMeta('race:pool:spent', String(spent + grantCents));
+        // JIT: track the running total already funded to THIS wallet so the
+        // top-up hook knows how much quota is left to drip out over its games.
+        if (raceFaucet.jit) await store.setMeta(`race:funded:${rWallet.toLowerCase()}`, String(grantCents));
         try {
-          const txHash = await raceFaucet.fund(rWallet as Address, raceFaucet.quotaCents);
-          session.send({ t: 'race.claimed', fundedCents: raceFaucet.quotaCents, alreadyFunded: false, txHash });
-          telemetry('race.claim', { pid: tpid(playerId(rWallet, session.id)), cents: raceFaucet.quotaCents, poolSpent: spent + raceFaucet.quotaCents });
+          const txHash = await raceFaucet.fund(rWallet as Address, grantCents);
+          session.send({ t: 'race.claimed', fundedCents: grantCents, alreadyFunded: false, txHash });
+          telemetry('race.claim', { pid: tpid(playerId(rWallet, session.id)), cents: grantCents, poolSpent: spent + grantCents });
         } catch (e) {
           // Transfer failed after reserving → roll back so the player can retry.
           await store.setMeta(walletKey, '');
           if (fpKey) await store.setMeta(fpKey, '');
           await store.setMeta('race:pool:spent', String(spent));
+          if (raceFaucet.jit) await store.setMeta(`race:funded:${rWallet.toLowerCase()}`, '');
           console.error('[race] funding transfer failed', e);
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Funding failed — try again in a moment.' });
         }

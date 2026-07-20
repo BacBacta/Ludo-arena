@@ -38,6 +38,24 @@ const ERC20_TRANSFER_ABI = [
   { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] },
 ] as const;
 
+/** JIT initial grant at claim time: one stake (perGameCents), but never more
+ *  than the wallet's whole quota. Pure so the accounting is unit-testable. */
+export function jitClaimCents(perGameCents: number, quotaCents: number): number {
+  return Math.max(0, Math.min(perGameCents, quotaCents));
+}
+
+/** JIT top-up after a COMPLETED event game: the next stake, bounded by (a) the
+ *  wallet's remaining quota (quotaCents − already funded) and (b) the pool's
+ *  remaining budget (poolCents − already spent). Returns 0 when the wallet has
+ *  drawn its full quota or the pool is dry — the game still scores, it just isn't
+ *  re-funded. Pure so the drip accounting is unit-testable without a chain. */
+export function jitTopUpCents(perGameCents: number, funded: number, quotaCents: number, spent: number, poolCents: number): number {
+  const remainingQuota = quotaCents - funded;
+  const poolLeft = poolCents - spent;
+  if (remainingQuota <= 0 || poolLeft <= 0) return 0;
+  return Math.max(0, Math.min(perGameCents, remainingQuota, poolLeft));
+}
+
 export interface RaceConfig {
   /** Cents funded to each eligible player (their whole quota for the event). */
   quotaCents: number;
@@ -45,6 +63,14 @@ export interface RaceConfig {
   poolCents: number;
   /** ISO end time for the client countdown (optional, display-only). */
   endsAt?: string;
+  /** Anti-"claim-and-run" (mainnet): fund the quota ONE stake at a time instead of
+   *  as a lump sum. The player gets `perGameCents` at entry, then a top-up after
+   *  each COMPLETED event game (up to `quotaCents`). A player who claims and never
+   *  plays keeps only that first `perGameCents` — the fund-and-run loss is bounded
+   *  to one stake instead of the whole quota. Off (false) = legacy lump-sum grant. */
+  jit: boolean;
+  /** In JIT mode: cents granted per game (one stake + a small gas buffer). */
+  perGameCents: number;
 }
 
 /** Client-facing Race Week state (in hello.ok): whether the event is on, the
@@ -65,6 +91,8 @@ export class RaceFaucet {
   readonly quotaCents: number;
   readonly poolCents: number;
   readonly endsAt?: string;
+  readonly jit: boolean;
+  readonly perGameCents: number;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
@@ -79,6 +107,8 @@ export class RaceFaucet {
     this.quotaCents = cfg.quotaCents;
     this.poolCents = cfg.poolCents;
     this.endsAt = cfg.endsAt;
+    this.jit = cfg.jit;
+    this.perGameCents = cfg.perGameCents;
     this.account = privateKeyToAccount(faucetKey);
     const transport = http(rpc);
     this.publicClient = createPublicClient({ chain, transport });
@@ -183,10 +213,14 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   const stablecoin = (env.RACE_STABLECOIN_ADDRESS?.trim() as Address | undefined) ?? dep?.stablecoin;
   if (!racePass || !stablecoin) return null; // RacePass not deployed here yet
 
-  const quotaCents = Number(env.RACE_QUOTA_CENTS ?? '20'); // 20¢ ≈ 20 games at 1¢
+  const quotaCents = Number(env.RACE_QUOTA_CENTS ?? '20'); // total per wallet
   const poolCents = Number(env.RACE_POOL_CENTS ?? '5000'); // $50 provisioned
   const endsAt = env.RACE_ENDS_AT?.trim() || undefined;
+  // Anti-fund-and-run (mainnet): drip the quota one stake at a time instead of a
+  // lump sum. Default OFF → the current lump-sum event is unaffected until armed.
+  const jit = (env.RACE_JIT_FUNDING ?? '').trim() === 'true';
+  const perGameCents = Math.max(1, Number(env.RACE_PER_GAME_CENTS ?? '2')); // 1¢ stake + gas buffer
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
-  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt }, rpc);
+  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents }, rpc);
 }
