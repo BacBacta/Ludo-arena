@@ -203,7 +203,8 @@ legal-reviewed `STAKING_ALLOWED_COUNTRIES` allowlist, geo edge) apply here too,
 not just to the normal stake tiers. Do NOT arm this until that sign-off is done.
 
 Prereqs:
-- Contracts deployed on Celo mainnet: `NETWORK=celo DEPLOYER_PRIVATE_KEY=0x… npm run deploy -w packages/contracts`, then commit the regenerated `deployments.json` (both copies). By default the deploy sets **arbiter = treasury = deployer**, so the deployer key is also the settlement (`ARBITER_PRIVATE_KEY`) key.
+- Contracts deployed on Celo mainnet: `NETWORK=celo DEPLOYER_PRIVATE_KEY=0x… npm run deploy -w packages/contracts`, then commit the regenerated `deployments.json` (both copies). By default arbiter = treasury = deployer; override with `ARBITER_ADDRESS=0x… TREASURY_ADDRESS=0x…` to split the roles (recommended — treasury → multisig).
+- **If treasury ≠ deployer**, the escrow's `owner` is the treasury (constructor sets `owner = treasury`), so the deploy CANNOT allowlist the stablecoin itself — it skips `setTokenAllowed` / `setTierRakeBps` with a loud warning printing the exact calls. The **treasury** must then call `setTokenAllowed(cUSD, true)` on BOTH LudoEscrow and LudoEscrowN (fund it with CELO for gas). Until it does, every staked `join()` reverts `TokenNotAllowed` — no staked game can start. The RacePass owner stays the deployer, so `setMintOpen(true)` is a deployer call.
 - The deploy records `racePass` **and** the real cUSD `stablecoin` in `deployments.json`, so neither `RACE_PASS_ADDRESS` nor `RACE_STABLECOIN_ADDRESS` is needed as a secret — the server resolves both from the baked file.
 - A DEDICATED faucet wallet (NOT the deployer) holding the $30 race pool in cUSD **+ CELO for gas** (it pays its own transfer gas). Arm the Pass mint after deploy: owner calls `setMintOpen(true)` on the RacePass.
 - The deployer/arbiter wallet also needs ongoing CELO (it signs every settlement).
