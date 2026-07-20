@@ -1117,6 +1117,14 @@ wss.on('connection', (ws, req) => {
         session = resumedSession;
         resumedSession.qa = qaConn || undefined;
         if (msg.fingerprint) resumedSession.fingerprint = msg.fingerprint;
+        // Anti-grinding commit: the game connection nearly ALWAYS resumes (the
+        // lobby's one-shot sync minted the token first), so without this the
+        // commit sent in the game hello was dropped and startGame refused every
+        // staked pairing ("fair-dice handshake required") — both players were
+        // silently bounced from the queue and the search spun forever. Guarded:
+        // a commit-less one-shot resume must not CLEAR a live game's commit
+        // (rooms snapshot seatCommits at start, but the reveal check reads this).
+        if (msg.entropyCommit) resumedSession.entropyCommit = msg.entropyCommit;
         resumedSession.country = country;
         resumedSession.ip = ip;
         resumedSession.miniPay = msg.miniPay === true;
