@@ -220,7 +220,15 @@ export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | n
   if (!raw) return null;
   const chainName = env.CHAIN?.trim() || 'celo-sepolia';
   const chain = CHAINS[chainName];
-  if (!chain) throw new Error(`Unknown CHAIN '${chainName}' for settlement`);
+  // Fail SOFT on a misconfig (unknown CHAIN, or no escrow deployed for it), the
+  // same as createArbiterN: return null → staked play is refused (R-COMP-2), but
+  // the server still BOOTS. Throwing here ran at module load, so one bad secret
+  // (e.g. CHAIN=celo with no mainnet escrow) crash-looped the whole box and took
+  // FREE play down with it. Logged loudly so ops still sees the misconfiguration.
+  if (!chain) {
+    console.error(`[settlement] unknown CHAIN '${chainName}' — staked 1v1 DISABLED (server stays up). Fix CHAIN and redeploy.`);
+    return null;
+  }
 
   // ESCROW_ADDRESS wins; only fall back to deployments.json when it exists
   // (it is not shipped in the server image — the web vendors its own copy).
@@ -234,7 +242,10 @@ export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | n
       /* no deployments file bundled */
     }
   }
-  if (!escrow) throw new Error(`No escrow address for chain ${chain.id}; set ESCROW_ADDRESS or deploy first`);
+  if (!escrow) {
+    console.error(`[settlement] no escrow address for chain ${chain.id} (set ESCROW_ADDRESS or deploy first) — staked 1v1 DISABLED (server stays up).`);
+    return null;
+  }
 
   const pk = (raw.startsWith('0x') ? raw : `0x${raw}`) as Hex;
   return new Arbiter(pk, chain, escrow, env.SETTLEMENT_RPC?.trim() || undefined);

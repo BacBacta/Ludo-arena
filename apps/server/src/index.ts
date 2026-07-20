@@ -402,14 +402,32 @@ const stakingEnabled = (process.env.STAKING_ENABLED ?? '').trim() === 'true';
 if (!stakingEnabled && (process.env.ARBITER_PRIVATE_KEY ?? '').trim()) {
   console.warn('[ludo-server] ARBITER_PRIVATE_KEY is set but STAKING_ENABLED != true — staked play is DISABLED (explicit launch gate, R-COMP-2). Set STAKING_ENABLED=true to arm settlement.');
 }
+// Boot a subsystem factory WITHOUT letting a misconfigured secret crash-loop the
+// whole process. A bad CHAIN, a missing escrow for the chain, or a malformed key
+// used to THROW at module load (e.g. createArbiter's "No escrow address for chain
+// N") → the machine boot-looped and took ALL play down, including FREE games. Now
+// the faulty subsystem is disabled and logged LOUDLY, while the server still comes
+// up. Disabling fails SAFE: no arbiter → staked play refused (R-COMP-2), no faucet
+// → race.claim dormant — money never moves through a half-configured subsystem.
+function bootSubsystem<T>(label: string, factory: () => T | null): T | null {
+  try {
+    return factory();
+  } catch (e) {
+    console.error(
+      `[ludo-server] ${label} failed to initialise — DISABLED. The server stays UP (free play + everything else works); this subsystem is OFF until the config is fixed and redeployed. Cause:`,
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
+}
 // On-chain settlement (E3.3). null unless staking is armed AND a key is configured.
-const arbiter = stakingEnabled ? createArbiter() : null;
+const arbiter = stakingEnabled ? bootSubsystem('settlement arbiter (staked 1v1)', createArbiter) : null;
 // cUSD cosmetic-purchase verifier (rec 6). null until the CosmeticsStore is
 // deployed → cosmetic.claim stays off (ticket unlocks still work regardless).
-const cosmeticsVerifier = createCosmeticsVerifier();
+const cosmeticsVerifier = bootSubsystem('cosmetics verifier', createCosmeticsVerifier);
 // Race Week faucet (event). null unless RACE_WEEK_ACTIVE=true + a funded faucet
 // key + a deployed RacePass → race.claim stays dormant off-event.
-const raceFaucet = createRaceFaucet();
+const raceFaucet = bootSubsystem('Race Week faucet', createRaceFaucet);
 
 /** Client-facing Race Week state for hello.ok: dormant (undefined) off-event,
  *  else whether THIS wallet already claimed its grant + the funding params. */
@@ -466,7 +484,7 @@ async function topUpRaceFunding(store: Awaited<ReturnType<typeof createStore>>, 
 }
 // N-player settlement for staked 4-player games (LudoEscrowN). null unless staking
 // is armed AND the N-player escrow is deployed + configured.
-const arbiterN = stakingEnabled ? createArbiterN() : null;
+const arbiterN = stakingEnabled ? bootSubsystem('settlement arbiter (staked 4p)', createArbiterN) : null;
 // The escrow addresses the server will SETTLE against, advertised to the client in
 // hello.ok so it can refuse to deposit into a mismatched escrow (server resolves
 // from a Fly secret, client from a bundled copy — a redeploy could drift them).
