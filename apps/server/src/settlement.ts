@@ -87,6 +87,7 @@ export function gameIdToBytes32(gameId: string): Hex {
 interface Deployment {
   chainId: number;
   escrow: Address;
+  stablecoin?: Address;
 }
 
 /**
@@ -111,14 +112,19 @@ export class Arbiter {
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
   readonly escrow: Address;
+  /** Celo fee-abstraction token: when set, settlement txs pay their gas in this
+   *  stablecoin (`feeCurrency`) instead of native CELO, so the arbiter wallet
+   *  needs no CELO (B1). Undefined → pay in the native coin (default). */
+  private readonly feeCurrency?: Address;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
   private readonly walletClient: ReturnType<typeof createWalletClient>;
 
-  constructor(privateKey: Hex, chain: Chain, escrow: Address, rpc?: string) {
+  constructor(privateKey: Hex, chain: Chain, escrow: Address, rpc?: string, feeCurrency?: Address) {
     this.account = privateKeyToAccount(privateKey);
     this.chain = chain;
     this.escrow = escrow;
     this.chainId = chain.id;
+    this.feeCurrency = feeCurrency;
     const transport = http(rpc);
     this.publicClient = createPublicClient({ chain, transport });
     this.walletClient = createWalletClient({ account: this.account, chain, transport });
@@ -166,6 +172,7 @@ export class Arbiter {
   private async submit(functionName: 'settle' | 'refundExpired' | 'voidGame', args: readonly unknown[]): Promise<Hex> {
     // Serialize on the arbiter EOA so 2p + 4p submissions never race on the nonce.
     return serializeByKey(this.account.address, async () => {
+      const feeExtra = this.feeCurrency ? { feeCurrency: this.feeCurrency } : {};
       const hash = await this.walletClient.writeContract({
         account: this.account,
         chain: this.chain,
@@ -173,6 +180,7 @@ export class Arbiter {
         abi: SETTLE_ABI,
         functionName,
         args,
+        ...feeExtra,
       } as never);
       const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== 'success') throw new Error(`${functionName} reverted (tx ${hash})`);
@@ -247,8 +255,26 @@ export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | n
     return null;
   }
 
+  // B1 (non-MiniPay launch): pay settlement gas in the stablecoin (Celo fee
+  // abstraction) so the arbiter wallet needs no native CELO. Opt-in via
+  // FEE_IN_STABLE=true; the fee token is FEE_CURRENCY, else the deployment's
+  // stablecoin for this chain. Off → settle pays in the native coin (unchanged).
+  let feeCurrency: Address | undefined;
+  if ((env.FEE_IN_STABLE ?? '').trim() === 'true') {
+    feeCurrency = (env.FEE_CURRENCY?.trim() as Address | undefined) ?? undefined;
+    if (!feeCurrency) {
+      const deploymentsPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'contracts', 'deployments.json');
+      try {
+        const deployments = JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, Deployment>;
+        feeCurrency = Object.values(deployments).find((d) => d.chainId === chain.id)?.stablecoin;
+      } catch {
+        /* no deployments file bundled */
+      }
+    }
+    if (!feeCurrency) console.warn('[settlement] FEE_IN_STABLE set but no fee token resolved (FEE_CURRENCY / deployments.json) — settling in native coin.');
+  }
   const pk = (raw.startsWith('0x') ? raw : `0x${raw}`) as Hex;
-  return new Arbiter(pk, chain, escrow, env.SETTLEMENT_RPC?.trim() || undefined);
+  return new Arbiter(pk, chain, escrow, env.SETTLEMENT_RPC?.trim() || undefined, feeCurrency);
 }
 
 /** The queue only needs these from an arbiter (stubbable in tests). */
