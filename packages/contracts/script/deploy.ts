@@ -98,6 +98,22 @@ const NETWORKS: Record<string, NetworkPreset> = {
     defaultRpc: 'https://alfajores-forno.celo-testnet.org',
     stablecoin: '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1', // cUSD
   },
+  // Celo MAINNET (real money). `stablecoin` is pinned to the canonical cUSD so a
+  // mainnet deploy NEVER falls back to deploying a MockUSDT — it settles in real
+  // cUSD. Deploying here needs a funded DEPLOYER_PRIVATE_KEY (CELO for gas) and,
+  // for staked play, the real-money launch gates in docs/DEPLOY.md (R-COMP-2).
+  celo: {
+    chain: defineChain({
+      id: 42_220,
+      name: 'Celo',
+      nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+      rpcUrls: { default: { http: ['https://forno.celo.org'] } },
+      blockExplorers: { default: { name: 'Celoscan', url: 'https://celoscan.io' } },
+    }),
+    rpcEnv: 'CELO_RPC',
+    defaultRpc: 'https://forno.celo.org',
+    stablecoin: '0x765DE816845861e75A25fCA122bb6898B8B1282a', // cUSD (18 decimals)
+  },
 };
 
 const networkName = env('NETWORK') ?? 'localhost';
