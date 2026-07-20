@@ -629,6 +629,8 @@ export type ClientMsg =
   // verifies it emitted Minted(myWallet) from the RacePass, then funds my event
   // stake budget (once per wallet, pool-capped). `passTxHash` is the 0x mint tx.
   | { t: 'race.claim'; passTxHash: string }
+  // Race Week: fetch the current leaderboard (top N + my rank). No args.
+  | { t: 'race.leaderboard' }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -788,6 +790,9 @@ export type ServerMsg =
   // idempotent re-claim — already funded), `alreadyFunded` distinguishes the two,
   // `txHash` = the funding transfer (absent when already funded / no transfer).
   | { t: 'race.claimed'; fundedCents: number; alreadyFunded: boolean; txHash?: string }
+  // Race Week leaderboard: `top` = highest-scoring players (name + points +
+  // 1-indexed rank), `myRank`/`myPoints` locate the caller (rank 0 = unranked).
+  | { t: 'race.board'; top: Array<{ name: string; points: number; rank: number }>; myRank: number; myPoints: number }
   // Your last opponent clicked Rematch and is waiting; `name` is their display
   // label. The end screen surfaces an Accept/Decline offer instead of the game
   // silently depending on both sides happening to click.
@@ -1010,6 +1015,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'race.claim':
       // 0x + 64 hex chars — a tx hash. Ownership/emit is verified on-chain server-side.
       return typeof m.passTxHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.passTxHash) ? m : null;
+    case 'race.leaderboard':
+      return m; // no args
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;

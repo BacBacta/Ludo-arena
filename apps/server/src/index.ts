@@ -68,6 +68,7 @@ import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
 import { createRaceFaucet } from './race.js';
+import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
 import { telemetry, tpid } from './telemetry.js';
@@ -778,6 +779,19 @@ function wireRoom(room: Room): void {
     // gets the win bonus. Pushed live so the track fills on the end screen.
     awardSeasonCrowns(winnerId, winnerSession, true);
     awardSeasonCrowns(loserId, loserSession, false);
+
+    // Race Week leaderboard: a STAKED game between two event participants scores
+    // (win + participation), anti-wash-traded inside scoreEventGame. Only while
+    // the event is armed (raceFaucet != null). Fire-and-forget.
+    if (raceFaucet && result.stakeCents > 0 && pa.wallet && pb.wallet) {
+      const winW = result.winner === 0 ? pa.wallet : pb.wallet;
+      const winN = result.winner === 0 ? pa.name : pb.name;
+      const loseW = result.winner === 0 ? pb.wallet : pa.wallet;
+      const loseN = result.winner === 0 ? pb.name : pa.name;
+      void scoreEventGame(store, { winnerWallet: winW, winnerName: winN, loserWallet: loseW, loserName: loseN, day: utcToday() }).catch((e) =>
+        console.error('[race] score', e),
+      );
+    }
 
     // Participation (beta model: freeroll uptake, stake mix). Opaque pids only.
     telemetry('game.end', { winner: tpid(winnerId), loser: tpid(loserId), stakeCents: result.stakeCents, freeroll: !!result.freeroll });
@@ -1934,6 +1948,15 @@ wss.on('connection', (ws, req) => {
           console.error('[race] funding transfer failed', e);
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Funding failed — try again in a moment.' });
         }
+        break;
+      }
+
+      case 'race.leaderboard': {
+        // Public read — the board holds only display names + points (no wallets
+        // leave the server). Available whenever the event is armed.
+        if (!raceFaucet) break;
+        const board = await raceLeaderboard(store, session.wallet?.toLowerCase());
+        session.send({ t: 'race.board', top: board.top.map((e) => ({ name: e.name, points: e.points, rank: e.rank })), myRank: board.myRank, myPoints: board.myPoints });
         break;
       }
 
