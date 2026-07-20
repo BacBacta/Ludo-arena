@@ -706,6 +706,8 @@ export interface RaceState {
   endsAt?: string;
   funded: boolean;
   poolLeftCents: number;
+  /** Total provisioned pool (for the client's pool gauge); absent on old servers. */
+  poolCents?: number;
 }
 
 /** Caps on the social graph: enough for a real circle, bounded for the hello

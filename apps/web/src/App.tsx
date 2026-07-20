@@ -1180,6 +1180,18 @@ export default function App() {
     }
   }, [dispatch, connectWalletCta, refreshBalance, syncLobbyNow]);
 
+  // Podium preview data for the lobby event card: fetch the board once when an
+  // active event is on screen (kept in the store afterwards; openRaceBoard
+  // refreshes it whenever the sheet is opened).
+  const raceBoardFetched = useRef(false);
+  useEffect(() => {
+    if (state.screen !== 'lobby' || !state.race?.active || state.raceBoard || raceBoardFetched.current) return;
+    raceBoardFetched.current = true;
+    void fetchRaceLeaderboard(SERVER_URL, walletRef.current?.address).then((board) => {
+      if (board) dispatch({ type: 'RACE_BOARD', board });
+    });
+  }, [state.screen, state.race, state.raceBoard, dispatch]);
+
   /** Open the Race Week leaderboard sheet and (re)fetch the standings. */
   const openRaceBoard = useCallback(async () => {
     dispatch({ type: 'RACE_MODAL', open: true });
@@ -1270,7 +1282,7 @@ export default function App() {
       <ComebackModal />
       <ProgressionSheet onViewProfile={onViewProfile} onBuyFreeze={buyFreeze} />
       <SeasonSheet onClaim={claimSeason} onBuyPremium={purchasePremium} />
-      <RaceSheet />
+      <RaceSheet onPlay={playRaceGame} />
       <DocModal />
       <Toast />
     </>

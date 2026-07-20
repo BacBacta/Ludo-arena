@@ -55,6 +55,7 @@ export interface RaceState {
   endsAt?: string;
   funded: boolean; // this wallet already received its one-time grant
   poolLeftCents: number;
+  poolCents: number; // total provisioned pool (drives the client's gauge)
 }
 
 export class RaceFaucet {
