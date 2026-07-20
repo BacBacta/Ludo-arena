@@ -24,6 +24,7 @@ import { ProgressionSheet } from './components/ProgressionSheet';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, fetchRaceLeaderboard } from './lib/session';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
+import { connectViaWalletConnect, walletConnectAvailable } from './lib/walletconnect';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
@@ -169,13 +170,21 @@ export default function App() {
         void refreshBalance(walletRef.current);
         return true;
       }
-      const wallet = await connectWallet().catch(() => null);
+      let wallet = await connectWallet().catch(() => null);
+      // No injected provider (plain mobile browser, outside MiniPay): if
+      // WalletConnect is configured, open its modal so the user can pair Valora /
+      // MetaMask mobile / any WC wallet. Never on the silent launch probe — a QR
+      // modal must only ever open from an explicit connect tap.
+      if (!wallet && !hasInjectedWallet() && !silent && walletConnectAvailable()) {
+        wallet = await connectViaWalletConnect().catch(() => null);
+      }
       if (!wallet) {
-        // No provider at all (Chrome mobile…): a toast is a dead end — open the
-        // actionable MiniPay sheet instead. A present-but-refusing provider
-        // (user rejected the prompt) keeps the simple toast.
+        // Still nothing: a toast is a dead end when there's no provider AND no
+        // WalletConnect — open the actionable MiniPay sheet instead. A
+        // present-but-refusing injected provider (rejected prompt), or a
+        // dismissed WalletConnect modal, keeps the simple toast.
         if (!silent) {
-          if (!hasInjectedWallet()) dispatch({ type: 'NOWALLET', open: true });
+          if (!hasInjectedWallet() && !walletConnectAvailable()) dispatch({ type: 'NOWALLET', open: true });
           else dispatch({ type: 'TOAST', message: t('noWallet') });
         }
         return false;

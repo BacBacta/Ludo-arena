@@ -3,6 +3,9 @@
 interface ImportMetaEnv {
   readonly VITE_SERVER_URL?: string;
   readonly VITE_CHAIN?: string;
+  /** WalletConnect (Reown) project id — enables browser-wallet connect outside
+   *  MiniPay. Absent → the WalletConnect option stays hidden (MiniPay-only). */
+  readonly VITE_WC_PROJECT_ID?: string;
 }
 
 interface ImportMeta {
