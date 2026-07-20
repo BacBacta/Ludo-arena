@@ -71,6 +71,15 @@ export interface RaceConfig {
   jit: boolean;
   /** In JIT mode: cents granted per game (one stake + a small gas buffer). */
   perGameCents: number;
+  /** Celo fee abstraction (B1, non-MiniPay launch): pay the faucet's own transfer
+   *  gas in the STABLECOIN (`feeCurrency`) instead of native CELO. Lets the faucet
+   *  wallet hold ONLY cUSD — no CELO to top up. Celo-only (CIP-64); leave false on
+   *  chains without fee abstraction. */
+  feeInStable: boolean;
+  /** B1 gas-seed: cents of cUSD sent to a burner BEFORE its Pass mint so it can
+   *  pay the mint + join gas (in cUSD). 0 disables the seed endpoint. Tiny — it
+   *  only has to cover a few cents of Celo gas. */
+  seedCents: number;
 }
 
 /** Client-facing Race Week state (in hello.ok): whether the event is on, the
@@ -93,6 +102,8 @@ export class RaceFaucet {
   readonly endsAt?: string;
   readonly jit: boolean;
   readonly perGameCents: number;
+  readonly feeInStable: boolean;
+  readonly seedCents: number;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
@@ -109,6 +120,8 @@ export class RaceFaucet {
     this.endsAt = cfg.endsAt;
     this.jit = cfg.jit;
     this.perGameCents = cfg.perGameCents;
+    this.feeInStable = cfg.feeInStable;
+    this.seedCents = cfg.seedCents;
     this.account = privateKeyToAccount(faucetKey);
     const transport = http(rpc);
     this.publicClient = createPublicClient({ chain, transport });
@@ -167,6 +180,11 @@ export class RaceFaucet {
    *  only records the grant once it's actually mined. Throws on revert. */
   async fund(to: Address, cents: number): Promise<Hex> {
     const amount = await this.toUnits(cents);
+    // Celo fee abstraction: pay this transfer's gas in the stablecoin itself, so
+    // the faucet wallet never needs native CELO (B1). `feeCurrency` is a Celo
+    // (CIP-64) field — only set when configured, and viem carries it through on a
+    // Celo chain. The cast keeps the generic Chain type quiet, same as settlement.
+    const feeExtra = this.feeInStable ? { feeCurrency: this.stablecoin } : {};
     const hash = await this.walletClient.writeContract({
       account: this.account,
       chain: this.chain,
@@ -174,7 +192,8 @@ export class RaceFaucet {
       abi: ERC20_TRANSFER_ABI,
       functionName: 'transfer',
       args: [getAddress(to), amount],
-    });
+      ...feeExtra,
+    } as Parameters<typeof this.walletClient.writeContract>[0]);
     const r = await this.publicClient.waitForTransactionReceipt({ hash });
     if (r.status !== 'success') throw new Error('faucet transfer reverted');
     return hash;
@@ -220,7 +239,14 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   // lump sum. Default OFF → the current lump-sum event is unaffected until armed.
   const jit = (env.RACE_JIT_FUNDING ?? '').trim() === 'true';
   const perGameCents = Math.max(1, Number(env.RACE_PER_GAME_CENTS ?? '2')); // 1¢ stake + gas buffer
+  // B1 (non-MiniPay launch): pay faucet gas in cUSD so the faucet wallet needs no
+  // native CELO. Opt-in (Celo fee abstraction only), default off → unchanged.
+  const feeInStable = (env.RACE_FEE_IN_STABLE ?? '').trim() === 'true';
+  // B1 gas-seed: cents sent pre-mint so a burner can pay its own gas in cUSD.
+  // Default 0 (off) → the seed endpoint is dormant unless a non-MiniPay launch
+  // explicitly provisions it. Only meaningful with feeInStable on Celo.
+  const seedCents = Math.max(0, Number(env.RACE_SEED_CENTS ?? '0'));
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
-  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents }, rpc);
+  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable, seedCents }, rpc);
 }

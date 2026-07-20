@@ -16,6 +16,7 @@ const RPCS: Record<string, { id: number; rpc: string }> = {
   sepolia: { id: 11_155_111, rpc: process.env.SEPOLIA_RPC || 'https://ethereum-sepolia-rpc.publicnode.com' },
   'celo-sepolia': { id: 11_142_220, rpc: process.env.CELO_SEPOLIA_RPC || 'https://forno.celo-sepolia.celo-testnet.org' },
   alfajores: { id: 44_787, rpc: process.env.ALFAJORES_RPC || 'https://alfajores-forno.celo-testnet.org' },
+  celo: { id: 42_220, rpc: process.env.CELO_RPC || 'https://forno.celo.org' }, // mainnet (real money)
 };
 
 const network = process.env.NETWORK ?? 'celo-sepolia';

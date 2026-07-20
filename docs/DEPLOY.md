@@ -197,21 +197,36 @@ flyctl secrets set -a ludo-arena \
 
 ### Mainnet arming (real cUSD — JIT ON)
 
+Race Week games are STAKED, so this is real-money staking — the escrow settles in
+real cUSD. That means the R-COMP-2 launch gates above (`STAKING_ENABLED`, the
+legal-reviewed `STAKING_ALLOWED_COUNTRIES` allowlist, geo edge) apply here too,
+not just to the normal stake tiers. Do NOT arm this until that sign-off is done.
+
+Prereqs:
+- Contracts deployed on Celo mainnet: `NETWORK=celo DEPLOYER_PRIVATE_KEY=0x… npm run deploy -w packages/contracts`, then commit the regenerated `deployments.json` (both copies). By default arbiter = treasury = deployer; override with `ARBITER_ADDRESS=0x… TREASURY_ADDRESS=0x…` to split the roles (recommended — treasury → multisig).
+- **If treasury ≠ deployer**, the escrow's `owner` is the treasury (constructor sets `owner = treasury`), so the deploy CANNOT allowlist the stablecoin itself — it skips `setTokenAllowed` / `setTierRakeBps` with a loud warning printing the exact calls. The **treasury** must then call `setTokenAllowed(cUSD, true)` on BOTH LudoEscrow and LudoEscrowN (fund it with CELO for gas). Until it does, every staked `join()` reverts `TokenNotAllowed` — no staked game can start. The RacePass owner stays the deployer, so `setMintOpen(true)` is a deployer call.
+- The deploy records `racePass` **and** the real cUSD `stablecoin` in `deployments.json`, so neither `RACE_PASS_ADDRESS` nor `RACE_STABLECOIN_ADDRESS` is needed as a secret — the server resolves both from the baked file.
+- A DEDICATED faucet wallet (NOT the deployer) holding the $30 race pool in cUSD **+ CELO for gas** (it pays its own transfer gas). Arm the Pass mint after deploy: owner calls `setMintOpen(true)` on the RacePass.
+- The deployer/arbiter wallet also needs ongoing CELO (it signs every settlement).
+
 ```bash
-# Prereqs: a DEDICATED faucet wallet holding the $30 race pool in cUSD + a little
-# CELO for gas (NOT the deployer / real-funds key). RacePass deployed on Celo
-# mainnet and present in deployments.json (or pass RACE_PASS_ADDRESS explicitly).
 flyctl secrets set -a ludo-arena \
   CHAIN="celo" \
+  STAKING_ENABLED="true" \                       # only after R-COMP-2 sign-off
+  ARBITER_PRIVATE_KEY="0x<deployer/arbiter key>" \
   RACE_WEEK_ACTIVE="true" \
   RACE_JIT_FUNDING="true" \
-  RACE_FAUCET_PRIVATE_KEY="0x<mainnet-faucet-key>" \
-  RACE_STABLECOIN_ADDRESS="0x765DE816845861e75A25fCA122bb6898B8B1282a" \
+  RACE_FAUCET_PRIVATE_KEY="0x<dedicated faucet key>" \
   RACE_QUOTA_CENTS="10" \
   RACE_PER_GAME_CENTS="2" \
   RACE_POOL_CENTS="3000" \
   RACE_ENDS_AT="<ISO end time>"
+# Escrow addresses resolve from the baked deployments.json — make sure no stale
+# ESCROW_ADDRESS / ESCROW_N_ADDRESS override secret shadows the mainnet ones.
 ```
+
+> One Fly app = one `CHAIN`. Switching to `celo` ENDS the testnet event and starts
+> the mainnet one on the same server — they can't run simultaneously.
 
 - `RACE_QUOTA_CENTS` = max a single wallet can ever draw (10 = ten 1¢ games).
 - `RACE_POOL_CENTS` = total budget ($30 = 3000). Grants stop when the pool is dry.
