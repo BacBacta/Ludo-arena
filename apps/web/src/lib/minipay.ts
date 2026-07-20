@@ -13,7 +13,7 @@ import {
   type WalletClient,
 } from 'viem';
 import { activeChain } from './chains';
-import { deploymentForChain } from './deployments';
+import { deploymentForChain, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
 import { buyCosmeticCusd, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
 import type { Hex } from 'viem';
@@ -158,6 +158,53 @@ export async function buyCosmetic(
     feeCurrency: isMiniPay() ? dep.stablecoin : undefined,
     onStatus,
   });
+}
+
+/** RacePass (soulbound event entry NFT) — mint() is free + once per address;
+ *  passOf reads the holder's tokenId (0 = none) so we never re-send a mint that
+ *  would revert AlreadyMinted. */
+const RACE_PASS_ABI = [
+  { type: 'function', name: 'mint', stateMutability: 'nonpayable', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'passOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] },
+] as const;
+
+/**
+ * Mint the caller's Race Week Pass (the anti-sybil event entry): a free, soulbound
+ * ERC-721, one per wallet. Returns the mint tx hash to hand to the server, which
+ * verifies the Minted event before funding the stake quota. Throws if the RacePass
+ * isn't deployed on the connected chain (the caller only calls this when the server
+ * reports the event armed). Under MiniPay, gas is paid in the stake token (legacy tx).
+ */
+export async function mintRacePass(wallet: Wallet): Promise<Hex> {
+  const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
+  const racePass = racePassFor(chainId);
+  if (!racePass) throw new Error(`No RacePass deployment for chain ${chainId}`);
+  const dep = deploymentForChain(chainId);
+  const chain = wallet.walletClient.chain ?? null;
+  const signer = wallet.walletClient.account ?? wallet.address;
+  // MiniPay legacy-tx gas is paid in the stake token; browsers pay the native coin.
+  const extra = isMiniPay() && dep ? { feeCurrency: dep.stablecoin } : {};
+  const hash = await wallet.walletClient.writeContract({
+    account: signer,
+    chain,
+    address: racePass,
+    abi: RACE_PASS_ABI,
+    functionName: 'mint',
+    ...extra,
+  });
+  const r = await wallet.publicClient.waitForTransactionReceipt({ hash });
+  if (r.status !== 'success') throw new Error('race pass mint reverted');
+  return hash;
+}
+
+/** The caller's RacePass tokenId on the connected chain (0 = not minted yet), or
+ *  null when the RacePass isn't deployed there. Lets the join flow skip a mint that
+ *  would revert (AlreadyMinted) and reuse a prior-session mint tx instead. */
+export async function racePassTokenId(wallet: Wallet): Promise<bigint | null> {
+  const chainId = wallet.walletClient.chain?.id ?? activeChain.id;
+  const racePass = racePassFor(chainId);
+  if (!racePass) return null;
+  return wallet.publicClient.readContract({ address: racePass, abi: RACE_PASS_ABI, functionName: 'passOf', args: [wallet.address] }) as Promise<bigint>;
 }
 
 /** Wallet stake-token balance in USD cents, or null if the chain has no deployment. */

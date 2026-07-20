@@ -10,7 +10,23 @@ import type { Game4, GameState, Seat } from '@ludo/game-engine';
  *  effective rake (gas ate the margin), and fewer rungs = fatter queues per rung,
  *  which matters most for the 4-seat staked table that needs four real stakers. */
 export const ALLOWED_STAKES_CENTS = [0, 25, 100, 500] as const;
-export type StakeCents = (typeof ALLOWED_STAKES_CENTS)[number];
+
+/** Race Week subsidised micro-stake (1¢), used ONLY by the event: the $50 pool
+ *  funds a per-player quota (default 20¢ ≈ 20 games at 1¢), so the stake must be
+ *  a fraction of a normal tile. Deliberately kept OUT of ALLOWED_STAKES_CENTS so
+ *  it never appears in the normal stake picker — only the Race Week lobby card
+ *  launches a game at it. The server still accepts it (isAcceptedStake) and both
+ *  seats must be wallet-backed (faucet-funded), so it settles on-chain like any
+ *  staked game — the whole point being to generate real testnet transactions. */
+export const RACE_STAKE_CENTS = 1;
+export type StakeCents = (typeof ALLOWED_STAKES_CENTS)[number] | typeof RACE_STAKE_CENTS;
+
+/** True for any stake the server accepts to start a game: the visible tiers plus
+ *  the Race Week micro-stake. Use this (not a bare ALLOWED_STAKES_CENTS.includes)
+ *  wherever an incoming stake is validated, so event games aren't rejected. */
+export function isAcceptedStake(n: number): boolean {
+  return (ALLOWED_STAKES_CENTS as readonly number[]).includes(n) || n === RACE_STAKE_CENTS;
+}
 
 /** DEFAULT house share, in basis points (900 = 9%) — the fallback for any stake
  *  without a per-tier entry, and what the escrows snapshot when no tier rake is
@@ -1018,7 +1034,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       // same opaque-pid rule as profile.get
       return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) ? m : null;
     case 'friend.challenge':
-      return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) && (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
+      return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) && isAcceptedStake(m.stake) ? m : null;
     case 'friend.gift':
       // pid rule as above; the gift must be a real ticket-priced catalog item.
       return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) && typeof m.id === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.id) ? m : null;
@@ -1031,9 +1047,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return m; // no args
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
-      return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
+      return isAcceptedStake(m.stake) ? m : null;
     case 'table.create':
-      return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
+      return isAcceptedStake(m.stake) ? m : null;
     case 'table.join':
       return typeof m.code === 'string' && isTableCode(m.code) ? m : null;
     case 'limits.set': {

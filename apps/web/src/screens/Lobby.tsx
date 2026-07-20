@@ -29,6 +29,9 @@ export function Lobby({
   onAcceptFriend,
   onRemoveFriendEdge,
   onViewProfile,
+  onJoinRace,
+  onOpenRaceBoard,
+  onPlayRace,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
@@ -47,8 +50,14 @@ export function Lobby({
   onRemoveFriendEdge(pid: string): void;
   /** Open a player's public profile sheet (ELO, W/L, head-to-head vs me). */
   onViewProfile(pid: string): void;
+  /** Race Week: mint the RacePass + claim the subsidised stake quota. */
+  onJoinRace(): void;
+  /** Race Week: open the event leaderboard sheet. */
+  onOpenRaceBoard(): void;
+  /** Race Week: launch a subsidised event 1v1 at the micro-stake. */
+  onPlayRace(): void;
 }) {
-  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, friends, friendRequests, sentRequests } = useAppState();
+  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceJoining, friends, friendRequests, sentRequests } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Recent opponents I can still invite: wallet-linked (have a pid) and not
@@ -256,6 +265,63 @@ export function Lobby({
         <span><i>2</i>{t('howStep2')}</span>
         <span><i>3</i>{t('howStep3')}</span>
       </div>
+
+      {/* RACE WEEK — the live event surface (only while the server reports it
+          armed). A time-limited leaderboard with a subsidised micro-stake: the
+          player mints a soulbound RacePass (anti-sybil entry) and the pool funds
+          their stake quota, then event 1v1s score on the board. Placed high —
+          an event is the most time-sensitive thing on the page. */}
+      {race?.active && (() => {
+        // No endsAt configured = open-ended armed event: never read as "ended",
+        // no countdown chip. With an endsAt, show a live countdown and disable
+        // the join once it's elapsed.
+        const remaining = race.endsAt ? new Date(race.endsAt).getTime() - Date.now() : Infinity;
+        const ended = remaining <= 0;
+        const endsLabel =
+          remaining === Infinity
+            ? null
+            : ended
+              ? t('raceEnded')
+              : remaining < 86_400_000
+                ? t('raceEndsIn').replace('{t}', `${Math.max(1, Math.round(remaining / 3_600_000))} h`)
+                : t('raceEndsIn').replace('{t}', `${Math.ceil(remaining / 86_400_000)} ${t('days')}`);
+        return (
+          <>
+            <div className="seclabel">🏁 {t('raceTitle')}</div>
+            <div className="card racecard">
+              <div className="racecard__top">
+                <span className="racecard__flag" aria-hidden="true">🏁</span>
+                <div className="racecard__id">
+                  <b>{t('raceCardTitle')}</b>
+                  <small>{race.funded ? `✅ ${t('raceFundedLabel')} · ${fmtUsd(race.quotaCents)} ${t('raceQuota')}` : t('raceCardSub')}</small>
+                </div>
+                {endsLabel && <span className="racecard__timer">⏳ {endsLabel}</span>}
+              </div>
+              <div className="racecard__actions">
+                {race.funded ? (
+                  <button className="btn btn--race" onClick={() => { playTap('select'); onPlayRace(); }}>
+                    🎲 {t('racePlayCta')} <small>{fmtUsd(1)} · {t('racePlaySub')}</small>
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn--race"
+                    disabled={raceJoining || ended}
+                    onClick={() => { playTap('select'); onJoinRace(); }}
+                  >
+                    {raceJoining ? `⏳ ${t('raceJoining')}` : <>🎟️ {t('raceMintCta')} <small>{t('raceMintSub')}</small></>}
+                  </button>
+                )}
+                <button className="frbtn frbtn--ghost racecard__board" onClick={() => { playTap(); onOpenRaceBoard(); }}>
+                  🏆 {t('raceBoardCta')}
+                </button>
+              </div>
+              {race.poolLeftCents > 0 && !race.funded && (
+                <small className="racecard__pool">{t('racePoolLeft').replace('{a}', fmtUsd(race.poolLeftCents))}</small>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       {/* PENDING FRIEND REQUESTS — promoted near the top: a request is the most
           actionable social moment on the page, and it persists server-side until
