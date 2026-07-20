@@ -195,6 +195,24 @@ flyctl secrets set -a ludo-arena \
 # CHAIN stays celo-sepolia; RacePass + stablecoin resolve from deployments.json.
 ```
 
+### Pre-mainnet: fee-abstraction dry run (B1, non-MiniPay launch)
+
+The non-MiniPay onboarding (burner wallet, `RACE_SEED_CENTS`, `RACE_FEE_IN_STABLE`
+/ `FEE_IN_STABLE`) rests on one Celo-only fact: a wallet with ZERO native CELO can
+transact by paying gas in a registered fee currency (cUSD/USDm/USDC/USDT) via a
+CIP-64 tx. That's the one bit only a real Celo node can prove. Validate it FIRST:
+
+```bash
+# 1. print a fresh burner to fund
+npx tsx packages/contracts/script/feeCurrencyDryRun.ts
+# 2. fund that address with the fee TOKEN only (no CELO), then:
+BURNER_KEY=0x… npx tsx packages/contracts/script/feeCurrencyDryRun.ts
+```
+
+It sends a real tx with `feeCurrency` set and asserts native CELO is unchanged
+(gas came from the token). Defaults to Celo Sepolia + USDm; override `RPC` /
+`CHAIN_ID` / `FEE_CURRENCY` for mainnet cUSD. Green here = B1 is viable.
+
 ### Mainnet arming (real cUSD — JIT ON)
 
 Race Week games are STAKED, so this is real-money staking — the escrow settles in
