@@ -1165,11 +1165,16 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('raceClaimFailed') }); // null = timeout / no socket
       }
     } catch (e) {
-      // Mint (or connect) threw — most often the wallet is on the wrong network
-      // or has no gas. Point at that instead of a generic failure.
+      // Mint (or connect) threw. Distinguish the two actionable cases: on the
+      // wrong network (→ add/switch Celo Sepolia) vs out of gas (→ testnet CELO).
       const m = String((e as Error)?.message ?? e).toLowerCase();
-      const wrongChain = m.includes('deployment') || m.includes('chain') || m.includes('network') || m.includes('unsupported') || m.includes('gas') || m.includes('funds');
-      dispatch({ type: 'TOAST', message: wrongChain ? t('raceWrongNetwork') : t('raceClaimFailed') });
+      const msg =
+        m.includes('wrong_chain') || m.includes('chain') || m.includes('network') || m.includes('deployment') || m.includes('unsupported')
+          ? t('raceWrongNetwork')
+          : m.includes('insufficient') || m.includes('funds') || m.includes('gas')
+            ? t('raceNeedGas')
+            : t('raceClaimFailed');
+      dispatch({ type: 'TOAST', message: msg });
     } finally {
       dispatch({ type: 'RACE_JOINING', joining: false });
     }
