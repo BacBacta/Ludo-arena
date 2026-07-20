@@ -23,14 +23,15 @@ export interface RaceScoreConfig {
   maxScoredPerDay: number;
 }
 
-/** Defaults from env. Anti wash-trading caps default to 0 = UNLIMITED (the
- *  event optimises for raw on-chain volume — every game scores). Set
- *  RACE_MAX_VS_SAME_PER_DAY / RACE_MAX_SCORED_PER_DAY > 0 to re-arm the guard
- *  (e.g. if a rewards program discounts wash-traded activity) — no code change. */
+/** Defaults from env. A light anti wash-trading guard: only the first 5 wins vs
+ *  the SAME opponent per day score (so a single accomplice can't be farmed
+ *  endlessly), while the total scored games per player stays UNLIMITED (0) — the
+ *  event still optimises for raw on-chain volume. Both are env-tunable (0 = no
+ *  cap) so the guard can be loosened or tightened with no code change. */
 export const DEFAULT_RACE_SCORE: RaceScoreConfig = {
   winPoints: Number(process.env.RACE_WIN_POINTS ?? '3'),
   playPoints: Number(process.env.RACE_PLAY_POINTS ?? '1'),
-  maxVsSamePerDay: Number(process.env.RACE_MAX_VS_SAME_PER_DAY ?? '0'),
+  maxVsSamePerDay: Number(process.env.RACE_MAX_VS_SAME_PER_DAY ?? '5'),
   maxScoredPerDay: Number(process.env.RACE_MAX_SCORED_PER_DAY ?? '0'),
 };
 
