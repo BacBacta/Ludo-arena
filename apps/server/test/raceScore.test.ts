@@ -33,33 +33,35 @@ describe('Race Week scoring', () => {
     expect((await raceLeaderboard(s, A)).top).toHaveLength(0);
   });
 
-  it('caps repeat wins vs the SAME opponent (anti wash-trading)', async () => {
+  it('by DEFAULT is UNLIMITED — every repeat win vs the same opponent scores', async () => {
     const s = new MemoryStore();
     await participant(s, A);
     await participant(s, B);
-    const cap = DEFAULT_RACE_SCORE.maxVsSamePerDay; // 3
-    for (let i = 0; i < cap; i++) {
+    for (let i = 0; i < 10; i++) {
       const r = await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: B, loserName: 'Bo', day: DAY });
-      expect(r.winnerGained).toBe(3);
+      expect(r.winnerGained).toBe(3); // no cap by default
     }
-    // The (cap+1)-th win vs B no longer scores for A.
-    const over = await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: B, loserName: 'Bo', day: DAY });
-    expect(over.winnerGained).toBe(0);
-    // But A CAN still score against a DIFFERENT opponent.
-    await participant(s, C);
-    const vsC = await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: C, loserName: 'Cy', day: DAY });
-    expect(vsC.winnerGained).toBe(3);
-    expect((await raceLeaderboard(s, A)).myPoints).toBe(cap * 3 + 3);
+    expect((await raceLeaderboard(s, A)).myPoints).toBe(30);
   });
 
-  it('resets the per-opponent cap on a new day', async () => {
+  it('re-arms the per-opponent cap when configured (env opt-in)', async () => {
     const s = new MemoryStore();
     await participant(s, A);
     await participant(s, B);
-    for (let i = 0; i < DEFAULT_RACE_SCORE.maxVsSamePerDay; i++) {
-      await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: B, loserName: 'Bo', day: DAY });
+    const cfg = { ...DEFAULT_RACE_SCORE, maxVsSamePerDay: 3 };
+    for (let i = 0; i < 3; i++) {
+      const r = await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: B, loserName: 'Bo', day: DAY }, cfg);
+      expect(r.winnerGained).toBe(3);
     }
-    const nextDay = await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: B, loserName: 'Bo', day: '2026-07-21' });
+    // The 4th win vs B no longer scores for A.
+    const over = await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: B, loserName: 'Bo', day: DAY }, cfg);
+    expect(over.winnerGained).toBe(0);
+    // A CAN still score against a DIFFERENT opponent.
+    await participant(s, C);
+    const vsC = await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: C, loserName: 'Cy', day: DAY }, cfg);
+    expect(vsC.winnerGained).toBe(3);
+    // …and the cap resets on a new day.
+    const nextDay = await scoreEventGame(s, { winnerWallet: A, winnerName: 'Ada', loserWallet: B, loserName: 'Bo', day: '2026-07-21' }, cfg);
     expect(nextDay.winnerGained).toBe(3);
   });
 

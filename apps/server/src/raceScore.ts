@@ -17,16 +17,27 @@ import type { Store } from './store/types.js';
 export interface RaceScoreConfig {
   winPoints: number; // points for winning an event game
   playPoints: number; // participation points for the loser
-  maxVsSamePerDay: number; // games vs the SAME opponent that still score
-  maxScoredPerDay: number; // total scored games per player per day
+  /** Games vs the SAME opponent that still score in a day. 0 = UNLIMITED. */
+  maxVsSamePerDay: number;
+  /** Total scored games per player per day. 0 = UNLIMITED. */
+  maxScoredPerDay: number;
 }
 
+/** Defaults from env. Anti wash-trading caps default to 0 = UNLIMITED (the
+ *  event optimises for raw on-chain volume — every game scores). Set
+ *  RACE_MAX_VS_SAME_PER_DAY / RACE_MAX_SCORED_PER_DAY > 0 to re-arm the guard
+ *  (e.g. if a rewards program discounts wash-traded activity) — no code change. */
 export const DEFAULT_RACE_SCORE: RaceScoreConfig = {
-  winPoints: 3,
-  playPoints: 1,
-  maxVsSamePerDay: 3,
-  maxScoredPerDay: 40,
+  winPoints: Number(process.env.RACE_WIN_POINTS ?? '3'),
+  playPoints: Number(process.env.RACE_PLAY_POINTS ?? '1'),
+  maxVsSamePerDay: Number(process.env.RACE_MAX_VS_SAME_PER_DAY ?? '0'),
+  maxScoredPerDay: Number(process.env.RACE_MAX_SCORED_PER_DAY ?? '0'),
 };
+
+/** A cap of 0 (or less) means "no cap". */
+function underCap(count: number, cap: number): boolean {
+  return cap <= 0 || count < cap;
+}
 
 export interface BoardEntry {
   wallet: string;
@@ -98,8 +109,8 @@ export async function scoreEventGame(store: Store, input: ScoreInput, cfg: RaceS
     const wVs = await readCounter(store, `race:vs:${w}:${l}:${input.day}`);
     const lDaily = await readCounter(store, `race:daily:${l}:${input.day}`);
 
-    const winnerScores = wVs < cfg.maxVsSamePerDay && wDaily < cfg.maxScoredPerDay;
-    const loserScores = lDaily < cfg.maxScoredPerDay;
+    const winnerScores = underCap(wVs, cfg.maxVsSamePerDay) && underCap(wDaily, cfg.maxScoredPerDay);
+    const loserScores = underCap(lDaily, cfg.maxScoredPerDay);
     const winnerGained = winnerScores ? cfg.winPoints : 0;
     const loserGained = loserScores ? cfg.playPoints : 0;
     if (winnerGained === 0 && loserGained === 0) return { winnerGained: 0, loserGained: 0 };
