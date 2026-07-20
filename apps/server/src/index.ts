@@ -67,6 +67,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
+import { createRaceFaucet } from './race.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
 import { telemetry, tpid } from './telemetry.js';
@@ -103,6 +104,8 @@ interface Session extends Client {
   lastProfileGetAt?: number;
   /** friend.* throttle: same anti-spam posture as profile.get (DB-bound). */
   lastFriendMsgAt?: number;
+  /** race.claim throttle: it verifies a receipt + sends a funding tx. */
+  lastRaceAt?: number;
   /** QA test session (see QA_KEY): isolated matchmaking, no ladder writes. */
   qa?: boolean;
   /** Equipped avatar frame (cosmetic, client-authoritative like dice skins). */
@@ -402,6 +405,9 @@ const arbiter = stakingEnabled ? createArbiter() : null;
 // cUSD cosmetic-purchase verifier (rec 6). null until the CosmeticsStore is
 // deployed → cosmetic.claim stays off (ticket unlocks still work regardless).
 const cosmeticsVerifier = createCosmeticsVerifier();
+// Race Week faucet (event). null unless RACE_WEEK_ACTIVE=true + a funded faucet
+// key + a deployed RacePass → race.claim stays dormant off-event.
+const raceFaucet = createRaceFaucet();
 // N-player settlement for staked 4-player games (LudoEscrowN). null unless staking
 // is armed AND the N-player escrow is deployed + configured.
 const arbiterN = stakingEnabled ? createArbiterN() : null;
@@ -476,6 +482,7 @@ const settlementQueue4 = arbiterN
 if (arbiter) console.log(`[ludo-server] settlement enabled — arbiter ${arbiter.address} on chain ${arbiter.chainId}`);
 if (arbiterN) console.log(`[ludo-server] staked 4-player enabled — LudoEscrowN arbiter ${arbiterN.address} on chain ${arbiterN.chainId}`);
 if (cosmeticsVerifier) console.log(`[ludo-server] cUSD cosmetics enabled — CosmeticsStore ${cosmeticsVerifier.address} on chain ${cosmeticsVerifier.chainId}`);
+if (raceFaucet) console.log(`[ludo-server] Race Week ACTIVE — faucet ${raceFaucet.address}, quota ${raceFaucet.quotaCents}¢/player, pool ${raceFaucet.poolCents}¢, RacePass ${raceFaucet.racePass}`);
 // Compliance nudge: real settlement is on but the staking allowlist is unset and
 // the country header is only trustworthy behind a trusted edge (Cloudflare/Vercel).
 // (Also fixes a mis-chained else: the full prod config used to log "settlement
@@ -1863,6 +1870,70 @@ wss.on('connection', (ws, req) => {
         const newBal = await store.grantTickets(setPid, grantTotal);
         session.send({ t: 'collection.claimed', setId: set.id, tickets: newBal, claimedSets: claimedNow, granted: grantTotal });
         telemetry('collection.claim', { pid: tpid(setPid), setId: set.id, tickets: grantTotal, featured });
+        break;
+      }
+
+      case 'race.claim': {
+        // Race Week onboarding faucet. Fund a tiny event stake budget to a player
+        // who really minted their (soulbound) RacePass. Anti-sybil is layered:
+        // proven wallet, one grant per WALLET (the Pass is 1/wallet → 1/phone),
+        // one per DEVICE fingerprint, and a hard total pool cap. Amounts are
+        // trivial (cents), so "claim & never play" is economically negligible.
+        if (!raceFaucet) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Race Week is not active.' });
+          break;
+        }
+        if (!session.walletProven || !session.wallet) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect your wallet to join Race Week.' });
+          break;
+        }
+        const rNow = Date.now();
+        if (rNow - (session.lastRaceAt ?? 0) < 3000) break; // it sends a tx
+        session.lastRaceAt = rNow;
+        const rWallet = session.wallet;
+        const walletKey = `race:grant:${rWallet.toLowerCase()}`;
+        const fpKey = session.fingerprint ? `race:fp:${session.fingerprint}` : null;
+        // Idempotent per wallet: already funded → restate, never re-transfer.
+        if (await store.getMeta(walletKey)) {
+          session.send({ t: 'race.claimed', fundedCents: 0, alreadyFunded: true });
+          break;
+        }
+        // One grant per device: a farmer can't drain the pool across N wallets
+        // on one phone (fingerprints are spoofable — a cheap extra gate, not the
+        // whole defence; the soulbound Pass + proven wallet carry the weight).
+        if (fpKey && (await store.getMeta(fpKey))) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'This device already claimed its Race Week bonus.' });
+          break;
+        }
+        // Verify the mint tx really emitted Minted(thisWallet) from the RacePass.
+        const passOk = await raceFaucet.verifyPassMint(msg.passTxHash as Hex, rWallet as Address).catch(() => false);
+        if (!passOk) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Could not verify your Race Pass mint.' });
+          break;
+        }
+        // Hard pool cap: never fund past the provisioned budget.
+        const spent = Number((await store.getMeta('race:pool:spent')) || '0');
+        if (spent + raceFaucet.quotaCents > raceFaucet.poolCents) {
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Race Week funding pool is exhausted.' });
+          break;
+        }
+        // Reserve BEFORE the transfer (record grant + debit pool), so a crash
+        // mid-transfer can only UNDER-fund (support-fixable), never double-fund.
+        await store.setMeta(walletKey, JSON.stringify({ cents: raceFaucet.quotaCents, at: rNow, fp: session.fingerprint ?? null }));
+        if (fpKey) await store.setMeta(fpKey, rWallet.toLowerCase());
+        await store.setMeta('race:pool:spent', String(spent + raceFaucet.quotaCents));
+        try {
+          const txHash = await raceFaucet.fund(rWallet as Address, raceFaucet.quotaCents);
+          session.send({ t: 'race.claimed', fundedCents: raceFaucet.quotaCents, alreadyFunded: false, txHash });
+          telemetry('race.claim', { pid: tpid(playerId(rWallet, session.id)), cents: raceFaucet.quotaCents, poolSpent: spent + raceFaucet.quotaCents });
+        } catch (e) {
+          // Transfer failed after reserving → roll back so the player can retry.
+          await store.setMeta(walletKey, '');
+          if (fpKey) await store.setMeta(fpKey, '');
+          await store.setMeta('race:pool:spent', String(spent));
+          console.error('[race] funding transfer failed', e);
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Funding failed — try again in a moment.' });
+        }
         break;
       }
 

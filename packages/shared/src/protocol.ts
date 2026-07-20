@@ -625,6 +625,10 @@ export type ClientMsg =
   // Claim the one-time ticket bonus for a COMPLETED cosmetic set (phase 3).
   // Server verifies every item of the set is owned; idempotent per player.
   | { t: 'collection.claim'; setId: string }
+  // Race Week: I minted my RacePass on-chain — here's the mint tx. The server
+  // verifies it emitted Minted(myWallet) from the RacePass, then funds my event
+  // stake budget (once per wallet, pool-capped). `passTxHash` is the 0x mint tx.
+  | { t: 'race.claim'; passTxHash: string }
   | { t: 'ping' };
 
 /** Private-table code: unambiguous charset, fixed length. */
@@ -780,6 +784,10 @@ export type ServerMsg =
   // `granted` = tickets THIS claim paid (base ×2 when the set was the season's
   // featured one; 0 on an idempotent re-claim).
   | { t: 'collection.claimed'; setId: string; tickets: number; claimedSets: string[]; granted: number }
+  // Race Week faucet ack: `fundedCents` was just sent to my wallet (0 on an
+  // idempotent re-claim — already funded), `alreadyFunded` distinguishes the two,
+  // `txHash` = the funding transfer (absent when already funded / no transfer).
+  | { t: 'race.claimed'; fundedCents: number; alreadyFunded: boolean; txHash?: string }
   // Your last opponent clicked Rematch and is waiting; `name` is their display
   // label. The end screen surfaces an Accept/Decline offer instead of the game
   // silently depending on both sides happening to click.
@@ -999,6 +1007,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof m.pid === 'string' && /^[0-9a-f]{8,32}$/.test(m.pid) && typeof m.id === 'string' && Object.prototype.hasOwnProperty.call(PREMIUM_SKINS, m.id) ? m : null;
     case 'collection.claim':
       return typeof m.setId === 'string' && cosmeticSetById(m.setId) !== undefined ? m : null;
+    case 'race.claim':
+      // 0x + 64 hex chars — a tx hash. Ownership/emit is verified on-chain server-side.
+      return typeof m.passTxHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.passTxHash) ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return (ALLOWED_STAKES_CENTS as readonly number[]).includes(m.stake) ? m : null;
