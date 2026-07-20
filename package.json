@@ -29,6 +29,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "axios": "^1.18.1"
+  },
   "devDependencies": {
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
