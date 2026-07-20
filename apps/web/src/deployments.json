@@ -24,6 +24,8 @@
     "arbiter": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
     "treasury": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
     "rakeBps": 900,
-    "deployedAt": "2026-07-18T22:40:23.158Z"
+    "deployedAt": "2026-07-18T22:40:23.158Z",
+    "racePass": "0x27f1b93efe2c9214e01a5265c1b484c9374a70ab",
+    "racePassTx": "0x0ef2d2cd0cc21daffea13fda8cb580e3f7adcde7bf8e08d3729dae9f2c87a1c9"
   }
 }

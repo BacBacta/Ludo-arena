@@ -10,7 +10,8 @@
     "list-cosmetics": "tsx script/listCosmetics.ts",
     "smoke": "tsx script/smoke.ts",
     "node": "hardhat node",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy-racepass": "tsx script/deployRacePass.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
