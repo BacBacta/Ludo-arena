@@ -126,7 +126,7 @@ const rakeBps = BigInt(env('RAKE_BPS') ?? '900');
 console.log(`[deploy] network=${networkName} chainId=${preset.chain.id} rpc=${rpc}`);
 console.log(`[deploy] deployer=${account.address} arbiter=${arbiter} treasury=${treasury} rakeBps=${rakeBps}`);
 
-const { LudoEscrow, LudoEscrowN, CosmeticsStore, MockUSDT } = compileAll();
+const { LudoEscrow, LudoEscrowN, CosmeticsStore, MockUSDT, RacePass } = compileAll();
 
 async function deployContract(label: string, abi: Abi, bytecode: Hex, args: unknown[]): Promise<{ address: Address; txHash: Hex }> {
   const txHash = await walletClient.deployContract({ abi, bytecode, args });
@@ -315,6 +315,14 @@ if (
 }
 console.log('[deploy] on-chain config verified (arbiter, treasury, rakeBps)');
 
+// Race Pass (Race Week): free soulbound entry NFT. Deployed with the mint
+// window CLOSED — the owner (deployer) arms it for the event with a
+// setMintOpen(true) call (cast/etherscan; ops script lands with the event).
+// RACE_PASS_URI = the shared metadata JSON for the pass artwork.
+const racePass = await deployContract('RacePass', RacePass.abi, RacePass.bytecode, [
+  env('RACE_PASS_URI') ?? 'https://www.ludoarena.xyz/race-pass.json',
+]);
+
 // merge into deployments.json keyed by network name
 const deploymentsPath = join(ROOT, 'deployments.json');
 const deployments: Record<string, unknown> = existsSync(deploymentsPath)
@@ -328,6 +336,8 @@ deployments[networkName] = {
   escrowNTx: escrowN.txHash,
   cosmeticsStore: cosmetics.address,
   cosmeticsStoreTx: cosmetics.txHash,
+  racePass: racePass.address,
+  racePassTx: racePass.txHash,
   stablecoin,
   stablecoinDecimals,
   ...(stablecoinTx ? { stablecoinIsTestUSD: true, stablecoinTx } : {}),
