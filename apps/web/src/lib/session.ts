@@ -1356,6 +1356,10 @@ export class RemoteSession implements GameSession {
   private entropy = ''; // fresh 256-bit value per game (regenerated on rematch)
   private entropyCommit = ''; // sha256(entropy); sent in hello / rematch (anti-grinding)
   private revealedGameId = ''; // gameId we last revealed entropy for (once per game)
+  /** A staked initial intent held back until the wallet is SIWE-proven (browser
+   *  wallets only) — fired on the friends.update the server pushes after prove. */
+  private deferredIntent: (() => void) | null = null;
+  private deferredTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly ev: SessionEvents,
@@ -1422,11 +1426,28 @@ export class RemoteSession implements GameSession {
         ...loadCustomIdentity(), // edited display name / country flag
       });
       if (initial) {
-        if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });
-        else if (this.intent.kind === 'join') this.send({ t: 'table.join', code: this.intent.code });
-        else if (this.intent.kind === 'challenge') this.send({ t: 'friend.challenge', pid: this.intent.pid, stake: this.stakeCents });
-        else if (this.intent.kind === 'freeroll') this.send({ t: 'queue.join', stake: 0, freeroll: true });
-        else this.send({ t: 'queue.join', stake: this.stakeCents });
+        const sendIntent = (): void => {
+          if (this.intent.kind === 'create') this.send({ t: 'table.create', stake: this.stakeCents });
+          else if (this.intent.kind === 'join') this.send({ t: 'table.join', code: this.intent.code });
+          else if (this.intent.kind === 'challenge') this.send({ t: 'friend.challenge', pid: this.intent.pid, stake: this.stakeCents });
+          else if (this.intent.kind === 'freeroll') this.send({ t: 'queue.join', stake: 0, freeroll: true });
+          else this.send({ t: 'queue.join', stake: this.stakeCents });
+        };
+        // A STAKED intent needs a PROVEN wallet server-side. MiniPay auto-proves
+        // at hello, but a browser wallet (WalletConnect / injected) must first
+        // answer the SIWE nonce — so DEFER the join until wallet.prove lands.
+        // Sending it in this same batch races the proof and gets rejected
+        // ("Verify your wallet ownership"), so the player silently never queues
+        // and no match is ever made. Free/practice (stake 0) needs no proof.
+        const needsProof = (this.stakeCents > 0 || this.intent.kind === 'join') && !isMiniPay() && !!this.auth?.signMessage;
+        if (needsProof) {
+          // Held back until the wallet is proven — released on the friends.update
+          // the server pushes after wallet.prove (fired from the hello.ok SIWE
+          // handler), with a fallback timer armed once the signature is sent.
+          this.deferredIntent = sendIntent;
+        } else {
+          sendIntent();
+        }
       }
     };
     ws.onclose = () => {
@@ -1480,6 +1501,17 @@ export class RemoteSession implements GameSession {
     }, delay);
   }
 
+  /** Send a staked join that was held back until the wallet was proven (once). */
+  private fireDeferredIntent(): void {
+    if (this.deferredTimer) {
+      clearTimeout(this.deferredTimer);
+      this.deferredTimer = null;
+    }
+    const intent = this.deferredIntent;
+    this.deferredIntent = null;
+    intent?.();
+  }
+
   private token(): string | null {
     try {
       return localStorage.getItem(TOKEN_KEY);
@@ -1505,9 +1537,22 @@ export class RemoteSession implements GameSession {
         if (msg.walletNonce && stakedIntent && this.auth?.signMessage) {
           void this.auth
             .signMessage(walletProofMessage(msg.walletNonce))
-            .then((signature) => this.send({ t: 'wallet.prove', signature }))
+            .then((signature) => {
+              this.send({ t: 'wallet.prove', signature });
+              // Now that the proof is on its way, arm the fallback that releases a
+              // deferred staked join if the proven-ack (friends.update) is missed.
+              // Armed HERE, not at hello — signMessage waits on a human tapping
+              // "approve" in the wallet, which can be slow; the fallback should
+              // only cover the fast prove→ack hop, not that approval time.
+              if (this.deferredIntent && !this.deferredTimer) {
+                this.deferredTimer = setTimeout(() => this.fireDeferredIntent(), 6000);
+              }
+            })
             .catch(() => {
-              /* user declined the signature; server keeps staking gated */
+              // User declined the signature → staking stays gated. Fire the held
+              // join so the server answers with a clear error instead of a
+              // silent forever-"searching".
+              if (this.deferredIntent) this.fireDeferredIntent();
             });
         }
         const wasReconnecting = this.attempts > 0;
@@ -1622,6 +1667,9 @@ export class RemoteSession implements GameSession {
         this.ev.onStreak(msg.streak);
         break;
       case 'friends.update':
+        // The server pushes this right after a successful wallet.prove → the
+        // wallet is now proven, so release any staked join we held back.
+        if (this.deferredIntent) this.fireDeferredIntent();
         this.ev.onFriends?.(msg.friends, msg.requests, msg.outgoing);
         break;
       case 'friend.challenge.offer':
@@ -1692,6 +1740,7 @@ export class RemoteSession implements GameSession {
   dispose(): void {
     this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.deferredTimer) clearTimeout(this.deferredTimer);
     if (this.heartbeat) clearInterval(this.heartbeat);
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
     this.ws?.close();
