@@ -18,6 +18,7 @@ import {
   defineChain,
   http,
   keccak256,
+  nonceManager,
   toBytes,
   type Abi,
   type Address,
@@ -130,7 +131,11 @@ if (!rawPk) {
 }
 const pk = (rawPk.startsWith('0x') ? rawPk : `0x${rawPk}`) as Hex;
 
-const account = privateKeyToAccount(pk);
+// nonceManager tracks the nonce locally (increment on send) instead of re-fetching
+// it before every tx — a load-balanced L2 RPC (Celo forno) can otherwise route a
+// getTransactionCount to a lagging node and return a stale nonce, aborting the
+// deploy mid-way with "nonce too low" (seen on the first Celo mainnet attempt).
+const account = privateKeyToAccount(pk, { nonceManager });
 const rpc = env(preset.rpcEnv) ?? preset.defaultRpc;
 const publicClient = createPublicClient({ chain: preset.chain, transport: http(rpc) });
 const walletClient = createWalletClient({ account, chain: preset.chain, transport: http(rpc) });

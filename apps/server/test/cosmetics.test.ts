@@ -14,8 +14,10 @@ describe('cosmetics verifier (rec 6)', () => {
   });
 
   it('is dormant on a chain with no CosmeticsStore deployed', () => {
-    // celo mainnet is never deployed in tests → the store address is absent
-    expect(createCosmeticsVerifier({ CHAIN: 'celo' })).toBeNull();
+    // localhost's deployment carries an escrow + stablecoin but no CosmeticsStore,
+    // so the verifier stays off. (celo mainnet used to be the sentinel here, but it
+    // now has a full deployment — see deployments.json.)
+    expect(createCosmeticsVerifier({ CHAIN: 'localhost' })).toBeNull();
   });
 
   it('builds a verifier when a store address is explicitly configured', () => {

@@ -28,10 +28,13 @@ describe('createArbiter boot safety (never crash-loops on a bad secret)', () => 
     expect(errSpy).toHaveBeenCalled();
   });
 
-  it('returns null (not a throw) when the chain has no escrow deployed — the exact crash that took the box down', () => {
-    // CHAIN=celo (mainnet, chainId 42220) has no escrow in deployments.json.
+  it('resolves the now-deployed celo mainnet chain to a valid arbiter without throwing', () => {
+    // The original crash was CHAIN=celo (chainId 42220) with NO escrow → createArbiter
+    // THREW at module load. celo mainnet is now deployed (deployments.json), so this
+    // must resolve to a real Arbiter and never throw. The fail-SOFT-on-misconfig
+    // guarantee (return null, no throw) is covered by the unknown-CHAIN case above.
     const arb = createArbiter({ ARBITER_PRIVATE_KEY: '0x' + '1'.repeat(64), CHAIN: 'celo' });
-    expect(arb).toBeNull();
-    expect(errSpy).toHaveBeenCalled();
+    expect(arb).not.toBeNull();
+    expect(arb?.chainId).toBe(42220);
   });
 });

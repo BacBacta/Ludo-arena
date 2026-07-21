@@ -27,5 +27,22 @@
     "deployedAt": "2026-07-18T22:40:23.158Z",
     "racePass": "0x27f1b93efe2c9214e01a5265c1b484c9374a70ab",
     "racePassTx": "0x0ef2d2cd0cc21daffea13fda8cb580e3f7adcde7bf8e08d3729dae9f2c87a1c9"
+  },
+  "celo": {
+    "chainId": 42220,
+    "escrow": "0xabdfea03be58d3276b13b40885311d84259d7f4d",
+    "escrowTx": "0x0970ffd33d3cdf1f99429756fc49c228fbbc3591bed2654e4b17dff09482b9e2",
+    "escrowN": "0x0142dd7125e339dcbccbb4e2fc7b28c09d21fc6e",
+    "escrowNTx": "0xf9327b83a215c9b09b315d2b0602cf963cf2d05222a6af4ea32503f99039255c",
+    "cosmeticsStore": "0x423442b6b78423ca8970ee1b92f85236d9194c6f",
+    "cosmeticsStoreTx": "0x3d59efe140bfcb5344294631c0696a82626e61f5145e3d9a91d4bc82e44c0f3b",
+    "racePass": "0x3ca68b8a7e2c429dec33a34e0589173dfb305be4",
+    "racePassTx": "0x203fe8f13780eb227a744e95e9f9f7c8cf0c8f8b1360538c6defbb58875c13d0",
+    "stablecoin": "0x765DE816845861e75A25fCA122bb6898B8B1282a",
+    "stablecoinDecimals": 18,
+    "arbiter": "0x7bD1F6ed68adBC39cf7902151A53811A4f92Be78",
+    "treasury": "0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B",
+    "rakeBps": 900,
+    "deployedAt": "2026-07-20T23:50:34.231Z"
   }
 }
