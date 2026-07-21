@@ -23,6 +23,7 @@ import { RaceSheet } from './components/RaceSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
 import { getBurnerWallet, restoreBurnerWallet } from './lib/burner';
+import { describeTxError } from './lib/txError';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable } from './lib/walletconnect';
@@ -283,7 +284,10 @@ export default function App() {
         await refreshBalance(wallet);
       } catch (e) {
         dispatch({ type: 'STAKING', status: 'failed' });
-        dispatch({ type: 'TOAST', message: t('stakeFailed') });
+        // Carry the CAUSE in the toast: the console line below is wiped by the
+        // SW auto-reload on each deploy, so cause-less "stake not locked" reports
+        // were undebuggable. viem's shortMessage names the exact failure.
+        dispatch({ type: 'TOAST', message: `${t('stakeFailed')} — ${describeTxError(e)}` });
         sessionRef.current?.dispose();
         sessionRef.current = null;
         dispatch({ type: 'GO_LOBBY' });
