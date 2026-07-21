@@ -974,7 +974,21 @@ export type ErrorCode =
   | 'LIMIT_REACHED'
   | 'INSUFFICIENT_ESCROW'
   | 'TABLE_NOT_FOUND'
+  // A pending match was torn down BEFORE its game screen exists (opponent left,
+  // stakes not locked in time, depositor mismatch, RPC exhaustion). Distinct
+  // from INTERNAL so the client knows to leave the "opponent found"/staking
+  // screen and return to the lobby — an INTERNAL only toasted, stranding the
+  // waiting player on a dead screen. Any locked stake is auto-refunded server-side.
+  | 'MATCH_ABORTED'
   | 'INTERNAL';
+
+/** True for the error that tears down a pending match before its game screen
+ *  exists. The SINGLE source of truth shared by the server (which emits it) and
+ *  the client (which routes back to the lobby on it), so the two can never drift
+ *  on the exact code string. */
+export function isMatchAborted(code: ErrorCode | undefined): boolean {
+  return code === 'MATCH_ABORTED';
+}
 
 // ---------- Helpers ----------
 

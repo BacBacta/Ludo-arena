@@ -61,7 +61,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `challenge.update` | `{ challenge: { progress, target, completed, tickets } }` | Daily-challenge progress after a capture (E4.1); on completion `completed` flips and `tickets` increments. |
 | `league.update` | `{ league: { division, points, rank, size, top[] } }` | Weekly-league standings after a win (E4.3), sent to the winner. |
 | `tickets.grant` | `{ granted, total, reason }` | Freeroll tickets granted. `reason` ∈ `anti-tilt` (3 consecutive staked losses, E4.5) \| `freeroll-win` (freeroll prize). Also sent with `granted: 0` to sync the total after a freeroll entry is spent. |
-| `error` | `{ code, message }` | Codes: `BAD_STATE`, `NOT_YOUR_TURN`, `ILLEGAL_MOVE`, `LIMIT_REACHED`, `INSUFFICIENT_ESCROW`… |
+| `error` | `{ code, message }` | Codes: `BAD_STATE`, `NOT_YOUR_TURN`, `ILLEGAL_MOVE`, `LIMIT_REACHED`, `INSUFFICIENT_ESCROW`, `MATCH_ABORTED`, `INTERNAL`. `MATCH_ABORTED` = a pending match was torn down before its game screen exists (opponent left before staking, stakes not locked in time, depositor mismatch, RPC exhaustion); the client returns to the lobby (any locked stake is auto-refunded). Test with `isMatchAborted(code)`. |
 | `pong` | `{}` | Keepalive reply. |
 
 ## Typical sequence (staked game)

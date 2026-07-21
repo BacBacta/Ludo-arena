@@ -2425,7 +2425,9 @@ wss.on('connection', (ws, req) => {
         // Staked game abandoned pre-Room: auto-refund any on-chain deposit either
         // side already locked (R-SETTLE-1) — the queue voids/refunds by status.
         scheduleRefund1v1(p);
-        opp.send({ t: 'error', code: 'INTERNAL', message: 'Opponent left before the game started.' });
+        // MATCH_ABORTED so the waiting opponent leaves the staking screen for the
+        // lobby (see abortPendingStaked) instead of being stranded on a toast.
+        opp.send({ t: 'error', code: 'MATCH_ABORTED', message: 'Opponent left before the game started. Any locked stake is refunded shortly.' });
       }
     }
     // The room keeps running: clock + auto-move handle absence (disconnection != forfeit).
@@ -2906,7 +2908,10 @@ function abortPendingStaked(p: PendingReveal, message: string, alert?: string): 
   pendingReveals.delete(p.gameId);
   p.a.pendingGameId = undefined;
   p.b.pendingGameId = undefined;
-  const err: ServerMsg = { t: 'error', code: 'INTERNAL', message };
+  // MATCH_ABORTED (not INTERNAL): tells the client this pending match is dead so
+  // it leaves the "opponent found"/staking screen and returns to the lobby — an
+  // INTERNAL only toasted, stranding the waiting player on a frozen screen.
+  const err: ServerMsg = { t: 'error', code: 'MATCH_ABORTED', message };
   p.a.send(err);
   p.b.send(err);
   scheduleRefund1v1(p);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { applyMove } from '@ludo/game-engine';
 import type { GameState } from '@ludo/game-engine';
-import { TOS_VERSION, cosmeticById, cosmeticCents, SEASON_PREMIUM, RACE_STAKE_CENTS, type StakeCents } from '@ludo/shared';
+import { TOS_VERSION, cosmeticById, cosmeticCents, SEASON_PREMIUM, RACE_STAKE_CENTS, isMatchAborted, type StakeCents } from '@ludo/shared';
 import { syncLobby,
   LocalBotSession,
   RemoteSession,
@@ -414,6 +414,18 @@ export default function App() {
         // instead of being stuck behind a dead pending action.
         clearPendingTimer();
         dispatch({ type: 'PENDING', action: null });
+        // A pending match was torn down before its game screen exists (opponent
+        // left before staking, stakes not locked in time, …). The player is
+        // stranded on the "opponent found"/staking screen — tear the dead socket
+        // down and return to the lobby with the reason, instead of a toast that
+        // leaves them frozen. Any locked stake is auto-refunded server-side.
+        if (isMatchAborted(code)) {
+          sessionRef.current?.dispose();
+          sessionRef.current = null;
+          dispatch({ type: 'GO_LOBBY' });
+          dispatch({ type: 'TOAST', message });
+          return;
+        }
         // Fix 4 — swallow the toast for benign gameplay races: a duplicate or stale
         // roll/move that the server's authoritative state already superseded (the
         // common case when the client lock is bypassed by the failsafe or a
