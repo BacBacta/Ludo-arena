@@ -5,6 +5,12 @@
   "buildCommand": "npm run build -w apps/web",
   "outputDirectory": "apps/web/dist",
   "rewrites": [{ "source": "/((?!assets/|.*\\.).*)", "destination": "/index.html" }],
+  "headers": [
+    {
+      "source": "/(sw.js|version.json)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+    }
+  ],
   "build": {
     "env": {
       "VITE_SERVER_URL": "wss://ludo-arena.fly.dev",
