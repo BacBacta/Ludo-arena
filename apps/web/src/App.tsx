@@ -26,6 +26,7 @@ import { getBurnerWallet } from './lib/burner';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable } from './lib/walletconnect';
+import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
@@ -1185,13 +1186,15 @@ export default function App() {
       }
     } catch (e) {
       // Mint (or connect) threw. Distinguish the two actionable cases: on the
-      // wrong network (→ add/switch Celo Sepolia) vs out of gas (→ testnet CELO).
+      // wrong network (→ add/switch the active chain) vs out of gas (→ CELO).
+      // {chain} is filled from activeChain.name so the message names the real
+      // target (Celo on mainnet, Celo Sepolia on testnet) — never a stale label.
       const m = String((e as Error)?.message ?? e).toLowerCase();
       const msg =
         m.includes('wrong_chain') || m.includes('chain') || m.includes('network') || m.includes('deployment') || m.includes('unsupported')
-          ? t('raceWrongNetwork')
+          ? t('raceWrongNetwork').replace('{chain}', activeChain.name)
           : m.includes('insufficient') || m.includes('funds') || m.includes('gas')
-            ? t('raceNeedGas')
+            ? t('raceNeedGas').replace('{chain}', activeChain.name)
             : t('raceClaimFailed');
       dispatch({ type: 'TOAST', message: msg });
     } finally {
