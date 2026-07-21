@@ -24,6 +24,7 @@ import { ProgressionSheet } from './components/ProgressionSheet';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
 import { getBurnerWallet, restoreBurnerWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
+import { needsPreLockSeed } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable } from './lib/walletconnect';
@@ -280,6 +281,22 @@ export default function App() {
       }
       dispatch({ type: 'STAKING', status: 'approving' });
       try {
+        // Balance-erosion safety net (race event, burner wallets): every failed
+        // lock attempt burns real cUSD gas, and NOTHING refills the wallet
+        // between the claim and the post-game drip — a failure streak
+        // death-spirals it below approve+join affordability ("total cost
+        // exceeds the balance"). Below the seed target, ask the server for its
+        // balance-based top-up BEFORE locking (idempotent, wallet/device/pool
+        // capped server-side). Best-effort: a refused/failed seed never blocks
+        // the lock — the ladder + toast still name the real outcome.
+        if (wallet.payGasInStable && stakeCents === RACE_STAKE_CENTS && !isMiniPay()) {
+          const balCents = await walletBalanceCents(wallet).catch(() => null);
+          if (needsPreLockSeed(balCents)) {
+            const signer = (message: string) => wallet.walletClient.signMessage({ account: wallet.walletClient.account ?? wallet.address, message });
+            const seeded = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch(() => null);
+            console.log('[stake] pre-lock seed (balance %s c):', balCents, JSON.stringify(seeded));
+          }
+        }
         await lockStake(wallet, gameId, stakeCents, fairnessCommit, (status) => dispatch({ type: 'STAKING', status }));
         await refreshBalance(wallet);
       } catch (e) {
