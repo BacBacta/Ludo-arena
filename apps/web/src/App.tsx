@@ -1132,7 +1132,8 @@ export default function App() {
       } catch {
         /* storage unavailable */
       }
-      const held = await racePassTokenId(wallet).catch(() => null);
+      const held = await racePassTokenId(wallet).catch((e) => { console.error('[race] passOf read failed:', e); return null; });
+      console.log('[race] wallet=%s miniPay=%s heldPass=%s', wallet.address, isMiniPay(), held?.toString() ?? 'null');
       if (held === null || held === 0n) {
         // About to mint — but a fresh burner has NO gas. Ask the server for a tiny
         // cUSD gas seed FIRST (idempotent, pool-capped); it resolves once the cUSD
@@ -1140,10 +1141,22 @@ export default function App() {
         // gas, so it skips this. Seed errors are non-fatal: the mint's own catch
         // surfaces "need gas" if the seed truly didn't land.
         if (!isMiniPay()) {
-          await sendRaceSeed(SERVER_URL, wallet.address, signer).catch(() => null);
+          const seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch((e) => { console.error('[race] seed threw:', e); return null; });
+          console.log('[race] seed result:', JSON.stringify(seedRes));
+          // Log the burner's on-chain cUSD balance right before minting — the
+          // single most diagnostic number ("need gas" == this is below the mint's
+          // gas reservation). Re-read a few times for load-balanced RPC lag.
+          let balCents = await walletBalanceCents(wallet).catch(() => null);
+          for (let i = 0; i < 5 && (balCents ?? 0) < 4; i++) {
+            await new Promise((r) => setTimeout(r, 1500));
+            balCents = await walletBalanceCents(wallet).catch(() => null);
+          }
+          console.log('[race] burner cUSD balance before mint: %s cents', balCents);
         }
         // No Pass yet → mint one (free, soulbound). Persist the tx for reproof.
+        console.log('[race] minting RacePass…');
         passTx = await mintRacePass(wallet);
+        console.log('[race] mint OK, tx=%s', passTx);
         try {
           localStorage.setItem(txKey, passTx);
         } catch {
@@ -1159,6 +1172,7 @@ export default function App() {
       // `signer` (computed above) proves the wallet via SIWE before the gated
       // race.claim — the burner signs locally (no popup); MiniPay auto-proves.
       const res = await sendRaceClaim(SERVER_URL, passTx!, wallet.address, signer);
+      console.log('[race] claim result:', JSON.stringify(res));
       if (res && 'fundedCents' in res) {
         dispatch({ type: 'RACE_FUNDED' });
         dispatch({
@@ -1188,7 +1202,9 @@ export default function App() {
       // Mint (or connect) threw. Surface the RAW cause — the toast is lossy and the
       // classification below is heuristic, so the console line is what we debug from.
       const raw = String((e as Error)?.message ?? e);
-      console.error('[joinRaceWeek] failed:', raw);
+      // Log BOTH the message and the full error object — viem attaches .shortMessage
+      // / .details / .metaMessages that name the exact revert / RPC cause.
+      console.error('[joinRaceWeek] failed:', raw, e);
       const m = raw.toLowerCase();
       // A GENUINE wrong-network error carries the WRONG_CHAIN sentinel (an injected
       // wallet that declined the switch) or viem's explicit mismatch phrase. Do NOT
