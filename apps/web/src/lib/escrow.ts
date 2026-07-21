@@ -101,27 +101,53 @@ export interface StakeReceipt {
   joinTx: Hex;
 }
 
+/** An explicit `maxFeePerGas` for a feeCurrency tx: baseFee×multiplier + priority.
+ *  Derived from the NATIVE base fee (getBlock().baseFeePerGas), so it is ALWAYS
+ *  >= the base fee the node validates against — which is the whole point. Pure so
+ *  the margin math is unit-testable without a chain. */
+export function feeCapWei(baseFeePerGas: bigint, multiplier: bigint, priorityWei: bigint): bigint {
+  return baseFeePerGas * multiplier + priorityWei;
+}
+
+/** Base-fee margin + priority floor for the explicit cap. 3× absorbs a sharp
+ *  Celo base-fee spike between estimate and mine; EIP-1559 still charges only
+ *  (base + priority) and refunds the rest of the cap, so a wide cap never
+ *  overpays — it only stops the under-cap rejection. */
+const FEE_MULTIPLIER = 3n;
+const PRIORITY_FEE_WEI = 2_000_000_000n; // 2 gwei
+
 /**
- * The tx overrides for a `feeCurrency` (gas-in-cUSD) transaction: `{ feeCurrency }`
- * when set, else `{}` (pay in the native coin).
+ * The tx overrides for a `feeCurrency` (gas-in-cUSD) transaction: `{}` when no
+ * feeCurrency (pay in the native coin), else `{ feeCurrency, maxFeePerGas,
+ * maxPriorityFeePerGas }` with an EXPLICIT cap.
  *
- * We deliberately do NOT set explicit 1559 caps. Celo's node validates
- * `maxFeePerGas` against the NATIVE base fee (CELO), which moves independently of
- * — and can be an order of magnitude above — the cUSD gas price. A cap derived
- * from `eth_gasPrice(token)` (e.g. gp×2) therefore lands far below the native base
- * fee whenever it spikes, and the node rejects the tx ("max fee per gas less than
- * block base fee"). viem's own estimate for a feeCurrency tx sets the caps
- * correctly against the native base fee — let it. Verified on Celo mainnet: with
- * feeCurrency only, a funded burner's mint clears the gas check (fails just on
- * balance when unfunded); an explicit gp×N cap is rejected once the base fee rises.
- * (walletClient/publicClient kept in the signature for call-site symmetry.)
+ * Why explicit (this reverses an earlier "let viem estimate" stance): under a
+ * Celo base-fee spike viem's estimate for a feeCurrency (CIP-64) tx landed BELOW
+ * the block base fee and the node rejected it ("the fee cap (maxFeePerGas gwei)
+ * cannot be lower than the block base fee"). The earlier failed attempt derived a
+ * cap from `eth_gasPrice(token)` — token-denominated, far below the native base
+ * fee. We instead read the fresh NATIVE base fee (getBlock().baseFeePerGas) and
+ * set baseFee×3 + priority, which is >= the base fee BY CONSTRUCTION, so it always
+ * clears the check regardless of viem's estimator. Falls back to `{ feeCurrency }`
+ * (viem estimate) only if the block read fails.
  */
 export async function feeCurrencyExtra(
   _walletClient: WalletClient,
-  _publicClient: PublicClient,
+  publicClient: PublicClient,
   feeCurrency?: Address,
 ): Promise<Record<string, unknown>> {
-  return feeCurrency ? { feeCurrency } : {};
+  if (!feeCurrency) return {};
+  try {
+    const block = await publicClient.getBlock({ blockTag: 'latest' });
+    const baseFee = block.baseFeePerGas ?? 0n;
+    return {
+      feeCurrency,
+      maxFeePerGas: feeCapWei(baseFee, FEE_MULTIPLIER, PRIORITY_FEE_WEI),
+      maxPriorityFeePerGas: PRIORITY_FEE_WEI,
+    };
+  } catch {
+    return { feeCurrency }; // block read failed → let viem estimate (best effort)
+  }
 }
 
 /**
