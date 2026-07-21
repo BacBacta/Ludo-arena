@@ -15,7 +15,7 @@ import {
 import { activeChain } from './chains';
 import { deploymentForChain, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
-import { buyCosmeticCusd, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
+import { buyCosmeticCusd, feeCurrencyExtra, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
 import type { Hex } from 'viem';
 
 declare global {
@@ -235,8 +235,9 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
   const chain = wallet.walletClient.chain ?? null;
   const signer = wallet.walletClient.account ?? wallet.address;
   // Gas in cUSD when we control tx construction (MiniPay or the burner); a plain
-  // external wallet builds its own tx and pays the native coin.
-  const extra = wallet.payGasInStable && dep ? { feeCurrency: dep.stablecoin } : {};
+  // external wallet builds its own tx and pays the native coin. feeCurrencyExtra
+  // also sets the 1559 caps for the burner (viem mis-estimates feeCurrency gas).
+  const extra = await feeCurrencyExtra(wallet.walletClient, wallet.publicClient, wallet.payGasInStable && dep ? dep.stablecoin : undefined);
   const hash = await wallet.walletClient.writeContract({
     account: signer,
     chain,

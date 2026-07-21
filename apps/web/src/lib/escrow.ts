@@ -102,6 +102,31 @@ export interface StakeReceipt {
 }
 
 /**
+ * The tx overrides for a `feeCurrency` (gas-in-cUSD) transaction. Returns `{}`
+ * when no fee currency is set (pay in the native coin).
+ *
+ * The gas-price subtlety (B1): a CIP-64 tx's base fee is denominated in the FEE
+ * TOKEN, not CELO. viem estimates the 1559 caps against the native base fee, so
+ * for a LOCAL signer (the app-minted burner, whose walletClient carries a bound
+ * account) the estimate lands BELOW the token base fee and the node rejects it
+ * ("max fee per gas less than block base fee"). Celo's `eth_gasPrice(token)`
+ * returns the token-denominated price — set the caps from it explicitly. Injected
+ * wallets (MiniPay) build + price their own tx, so we only override for a local
+ * signer. Verified on Celo mainnet (feeCurrencyDryRun): a 0-CELO burner's tx mines
+ * and the gas is charged in cUSD.
+ */
+export async function feeCurrencyExtra(
+  walletClient: WalletClient,
+  publicClient: PublicClient,
+  feeCurrency?: Address,
+): Promise<Record<string, unknown>> {
+  if (!feeCurrency) return {};
+  if (!walletClient.account) return { feeCurrency }; // injected wallet prices its own gas
+  const gp = BigInt((await publicClient.request({ method: 'eth_gasPrice', params: [feeCurrency] } as never)) as string);
+  return { feeCurrency, maxFeePerGas: gp * 2n, maxPriorityFeePerGas: gp };
+}
+
+/**
  * Locks the caller's stake: approve (only if the allowance is short) then
  * join(gameId, token, stake). Idempotent-ish: if this address already joined
  * the game, returns without a second join.
@@ -124,7 +149,7 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
     return { gameId32, stake, joinTx: '0x' as Hex };
   }
 
-  const extra = feeCurrency ? { feeCurrency } : {};
+  const extra = await feeCurrencyExtra(walletClient, publicClient, feeCurrency);
   // A client with a bound account (local key) signs locally; otherwise the
   // injected wallet (MiniPay) signs the tx for the address.
   const signer = walletClient.account ?? account;
@@ -168,7 +193,7 @@ export async function stakeInEscrowN(params: StakeParams & { seatCount: number }
     return { gameId32, stake, joinTx: '0x' as Hex };
   }
 
-  const extra = feeCurrency ? { feeCurrency } : {};
+  const extra = await feeCurrencyExtra(walletClient, publicClient, feeCurrency);
   const signer = walletClient.account ?? account;
 
   const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
@@ -210,7 +235,7 @@ export async function buyCosmeticCusd(params: BuyCosmeticParams): Promise<{ buyT
   const { walletClient, publicClient, account, store, token, id, priceCents, feeCurrency, onStatus } = params;
   const chain = walletClient.chain ?? null;
   const signer = walletClient.account ?? account;
-  const extra = feeCurrency ? { feeCurrency } : {};
+  const extra = await feeCurrencyExtra(walletClient, publicClient, feeCurrency);
 
   const decimals = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
   const price = stakeUnits(priceCents, decimals);
