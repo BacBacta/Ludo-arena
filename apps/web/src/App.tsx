@@ -1124,6 +1124,10 @@ export default function App() {
       ? undefined
       : (message: string) => wallet!.walletClient.signMessage({ account: wallet!.address, message });
     dispatch({ type: 'RACE_JOINING', joining: true });
+    // If the server REFUSES the gas seed (device allowance, pool dry…), the mint
+    // then dies on funds and the generic "need CELO" toast hides the real cause.
+    // Keep the refusal so the catch can surface the server's own words instead.
+    let seedError: string | null = null;
     try {
       const txKey = `${RACE_TX_KEY}:${wallet.address.toLowerCase()}`;
       let passTx: string | null = null;
@@ -1143,6 +1147,7 @@ export default function App() {
         if (!isMiniPay()) {
           const seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch((e) => { console.error('[race] seed threw:', e); return null; });
           console.log('[race] seed result:', JSON.stringify(seedRes));
+          if (seedRes && 'error' in seedRes) seedError = seedRes.error;
           // Log the burner's on-chain cUSD balance right before minting — the
           // single most diagnostic number ("need gas" == this is below the mint's
           // gas reservation). Re-read a few times for load-balanced RPC lag.
@@ -1220,7 +1225,9 @@ export default function App() {
       const msg = wrongNet
         ? t('raceWrongNetwork').replace('{chain}', activeChain.name)
         : needGas
-          ? t('raceNeedGas').replace('{chain}', activeChain.name)
+          ? // A gas shortfall right after a REFUSED seed is the seed refusal
+            // (device allowance, pool dry…) — the server's words name it.
+            (seedError ?? t('raceNeedGas').replace('{chain}', activeChain.name))
           : t('raceClaimFailed');
       dispatch({ type: 'TOAST', message: msg });
     } finally {

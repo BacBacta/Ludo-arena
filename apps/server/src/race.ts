@@ -84,6 +84,20 @@ export function seedGrantCents(deficit: number, granted: number, lifetimeCapCent
   return Math.max(0, Math.min(deficit, capLeft, poolLeft));
 }
 
+/** The cents a DEVICE has already drawn from the gas seed, parsed from its
+ *  `race:seedfp:` meta row. Legacy rows stored the seeded wallet's address
+ *  (the old one-shot gate) — parsed as one full draw of `targetCents`. Empty /
+ *  missing rows (never seeded, or a rolled-back grant) are 0. */
+export function seedFpDrawCents(raw: string | null, targetCents: number): number {
+  if (!raw) return 0;
+  try {
+    const cents = (JSON.parse(raw) as { cents?: number }).cents;
+    return typeof cents === 'number' && cents >= 0 ? cents : targetCents;
+  } catch {
+    return targetCents; // legacy row: the bare wallet address = one full draw
+  }
+}
+
 export interface RaceConfig {
   /** Cents funded to each eligible player (their whole quota for the event). */
   quotaCents: number;

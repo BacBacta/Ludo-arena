@@ -68,7 +68,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { createRaceFaucet, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { createRaceFaucet, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -2021,28 +2021,35 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: true });
           break;
         }
-        // One seed per device (fingerprints are spoofable — a cheap gate; the pool
-        // cap is the real backstop). Only gate a FRESH wallet (priorCents === 0); a
-        // top-up for the SAME already-seeded wallet must pass — it's not a new device
-        // grabbing a second grant.
-        if (priorCents === 0 && seedFpKey && (await store.getMeta(seedFpKey))) {
-          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'This device already received its gas seed.' });
-          break;
-        }
+        // Per-DEVICE allowance, cumulative — NOT a one-shot gate. "Clear site
+        // data" (e.g. the service-worker recovery steps) wipes the burner KEY but
+        // not the device fingerprint, so a returning player shows up with a FRESH
+        // 0-balance burner on a device that already drew its seed; the one-shot
+        // gate then refused it forever ("This device already received its gas
+        // seed") and every mint died on funds. Bounding the device to the same
+        // seedCents × SEED_LIFETIME_MULT budget as a wallet re-seeds the
+        // replacement burner while capping what any one device can ever draw
+        // (fingerprints are spoofable — the pool cap is the real backstop).
+        const fpPriorRaw = seedFpKey ? await store.getMeta(seedFpKey) : null;
+        const fpDrawn = seedFpDrawCents(fpPriorRaw, raceFaucet.seedCents);
+        const seedCap = raceFaucet.seedCents * SEED_LIFETIME_MULT;
         const seedSpent = Number((await store.getMeta('race:pool:spent')) || '0');
-        const topUpCents = seedGrantCents(seedDeficit, priorCents, raceFaucet.seedCents * SEED_LIFETIME_MULT, seedSpent, raceFaucet.poolCents);
+        const topUpCents = Math.min(
+          seedGrantCents(seedDeficit, priorCents, seedCap, seedSpent, raceFaucet.poolCents),
+          Math.max(0, seedCap - fpDrawn),
+        );
         if (topUpCents <= 0) {
-          // Deficit is real but nothing can be granted: wallet at its lifetime cap
-          // or the pool is dry.
-          const capped = priorCents >= raceFaucet.seedCents * SEED_LIFETIME_MULT;
-          session.send({ t: 'error', code: 'LIMIT_REACHED', message: capped ? 'This wallet already used its gas-seed allowance.' : 'Race Week funding pool is exhausted.' });
+          // Deficit is real but nothing can be granted: wallet or device at its
+          // lifetime cap, or the pool is dry.
+          const capped = priorCents >= seedCap || fpDrawn >= seedCap;
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: capped ? 'This device already used its gas-seed allowance.' : 'Race Week funding pool is exhausted.' });
           break;
         }
         // Reserve BEFORE the transfer (same crash-safety as claim): record the new
-        // cumulative draw, count only the delta against the pool. Roll back to the
-        // prior state on a failed transfer.
+        // cumulative draws (wallet + device), count only the delta against the
+        // pool. Roll back to the prior state on a failed transfer.
         await store.setMeta(seedKey, JSON.stringify({ cents: priorCents + topUpCents, at: sNow, fp: session.fingerprint ?? null }));
-        if (seedFpKey) await store.setMeta(seedFpKey, sWallet.toLowerCase());
+        if (seedFpKey) await store.setMeta(seedFpKey, JSON.stringify({ cents: fpDrawn + topUpCents, wallet: sWallet.toLowerCase() }));
         await store.setMeta('race:pool:spent', String(seedSpent + topUpCents));
         try {
           const txHash = await raceFaucet.fund(sWallet as Address, topUpCents);
@@ -2050,7 +2057,7 @@ wss.on('connection', (ws, req) => {
           telemetry('race.seed', { pid: tpid(playerId(sWallet, session.id)), cents: topUpCents, poolSpent: seedSpent + topUpCents });
         } catch (e) {
           await store.setMeta(seedKey, priorRaw ?? '');
-          if (seedFpKey && priorCents === 0) await store.setMeta(seedFpKey, '');
+          if (seedFpKey) await store.setMeta(seedFpKey, fpPriorRaw ?? '');
           await store.setMeta('race:pool:spent', String(seedSpent));
           console.error('[race] gas-seed transfer failed', e);
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Gas seed failed — try again in a moment.' });
