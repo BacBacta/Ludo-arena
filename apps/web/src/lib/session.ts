@@ -190,6 +190,9 @@ export interface GameSession {
   /** Decline the opponent's rematch offer / leave the end screen, so a waiting
    *  opponent is told instead of hanging on "searching…". */
   declineRematch(): void;
+  /** Ask the server whether the last opponent already wants a rematch (pull), so
+   *  a missed `rematch.offer` push is recovered. No-op for the local bot. */
+  pollRematch(): void;
   dispose(): void;
 }
 
@@ -256,6 +259,10 @@ export class LocalBotSession implements GameSession {
 
   declineRematch(): void {
     /* local bot: no opponent waiting on us */
+  }
+
+  pollRematch(): void {
+    /* local bot: no server to poll */
   }
 
   dispose(): void {
@@ -1836,6 +1843,13 @@ export class RemoteSession implements GameSession {
 
   declineRematch(): void {
     this.send({ t: 'rematch.decline' });
+  }
+
+  /** Ask the server whether the last opponent already wants a rematch — call on
+   *  end-screen mount so a missed `rematch.offer` push is recovered (pull). A
+   *  no-op if the socket dropped (a fresh session then handles pairing). */
+  pollRematch(): void {
+    this.send({ t: 'rematch.poll' });
   }
 
   dispose(): void {

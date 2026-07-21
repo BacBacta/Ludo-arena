@@ -25,6 +25,7 @@ Source of truth for types: `packages/shared/src/protocol.ts`. All messages are J
 | `game.move` | `{ token }` | Plays token `token` (0 or 1). |
 | `game.resign` | `{}` | Deliberately forfeits the current match — the opponent wins and the normal `game.over`/settlement path runs. |
 | `game.rematch` | `{}` | Rematch at the same stake. If the LAST opponent is still connected, idle, and also sent `game.rematch` (and the anti-collusion cap `MAX_DAILY_GAMES_VS_SAME` still allows another game between them), the two are paired directly; otherwise the requester is re-queued for any opponent. Sent on the still-open session (no re-`hello`). |
+| `rematch.poll` | `{}` | End-screen mount asks whether the last opponent ALREADY requested a rematch; the server replies `rematch.offer` iff so (and both idle). Makes the offer reliable — the `rematch.offer` push is fire-and-forget and can be missed. |
 | `ping` | `{}` | Keepalive (every 20 s). |
 
 ## Server → Client

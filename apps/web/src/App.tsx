@@ -67,6 +67,9 @@ const REALITY_CHECK_MS = 20 * 60_000;
  *  fallback pulled everyone out before they could pair (→ "always the bot"). An
  *  impatient player has an explicit "play a bot" button instead. */
 const FREE_MATCH_TIMEOUT_MS = 60_000;
+/** How long a staked rematch waits for the opponent to re-queue before giving
+ *  up to the lobby (no bot fallback exists for staked play). */
+const REMATCH_WAIT_MS = 30_000;
 
 export default function App() {
   const state = useAppState();
@@ -77,6 +80,13 @@ export default function App() {
   const freeFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearFreeFallback = useCallback(() => {
     if (freeFallback.current) { clearTimeout(freeFallback.current); freeFallback.current = null; }
+  }, []);
+  // Staked rematch has no bot fallback: if the opponent never re-queues, the
+  // requester would spin on "searching…" forever. This bounds that wait and
+  // returns to the lobby with a clear message. Cleared on match / cancel.
+  const rematchWait = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearRematchWait = useCallback(() => {
+    if (rematchWait.current) { clearTimeout(rematchWait.current); rematchWait.current = null; }
   }, []);
   // Whether the CURRENT search is a free 1v1 (→ offer a manual "play a bot" escape
   // on the searching screen). A ref: set before the matchmaking render.
@@ -251,6 +261,10 @@ export default function App() {
   const prevScreenSync = useRef<string>('lobby');
   useEffect(() => {
     if (state.screen === 'lobby' && prevScreenSync.current !== 'lobby') syncLobbyNow();
+    // Landing on the end screen: pull any rematch the opponent already asked for
+    // (a missed fire-and-forget `rematch.offer` push). The reliable half of the
+    // rematch notification — see session.pollRematch / the server rematch.poll.
+    if (state.screen === 'end' && prevScreenSync.current !== 'end') sessionRef.current?.pollRematch();
     prevScreenSync.current = state.screen;
   }, [state.screen, syncLobbyNow]);
 
@@ -318,6 +332,7 @@ export default function App() {
     return {
       onMatchFound: (match) => {
         clearFreeFallback(); // a real opponent paired — cancel the bot fallback
+        clearRematchWait(); // …and the staked-rematch giving-up timer
         matchSeatRef.current = match.seat;
         oppDiceSoundRef.current = skinById(match.opponent.diceSkin ?? 'classic').sound;
         lastDiceRef.current = null;
@@ -507,6 +522,7 @@ export default function App() {
       },
       onGone: () => {
         clearFreeFallback();
+        clearRematchWait();
         clearPendingTimer();
         clearTurnDefer();
         dispatch({ type: 'TOAST', message: t('connectionLost') });
@@ -524,12 +540,13 @@ export default function App() {
       onRematchOffer: (name) => dispatch({ type: 'REMATCH_OFFER', name }),
       // A rematch we were waiting on fell through → tell the player, return home.
       onRematchCancelled: (reason) => {
+        clearRematchWait();
         dispatch({ type: 'REMATCH_CLEAR' });
         dispatch({ type: 'TOAST', message: reason === 'declined' ? t('rematchDeclined') : t('rematchLeft') });
         dispatch({ type: 'GO_LOBBY' });
       },
     };
-  }, [dispatch, stakeForMatch, refreshBalance, clearFreeFallback, clearPendingTimer, clearTurnDefer]);
+  }, [dispatch, stakeForMatch, refreshBalance, clearFreeFallback, clearRematchWait, clearPendingTimer, clearTurnDefer]);
 
   // Consent (18+/ToS) + wallet signer for staked play: consent goes in hello and
   // the signer answers the server's wallet-ownership nonce (SIWE). Both are read
@@ -970,10 +987,18 @@ export default function App() {
     if (sessionRef.current?.rematch()) {
       freeSearchRef.current = false;
       dispatch({ type: 'START_MATCHMAKING', botMode: false });
+      // No bot fallback for a staked rematch — don't let it spin forever if the
+      // opponent doesn't re-queue. Bounded wait → back to the lobby with a note.
+      clearRematchWait();
+      rematchWait.current = setTimeout(() => {
+        if (sessionRef.current) { sessionRef.current.declineRematch(); sessionRef.current.dispose(); sessionRef.current = null; }
+        dispatch({ type: 'GO_LOBBY' });
+        dispatch({ type: 'TOAST', message: t('rematchLeft') });
+      }, REMATCH_WAIT_MS);
     } else {
       void startMatch(state.stakeCents);
     }
-  }, [dispatch, startMatch, state.stakeCents]);
+  }, [dispatch, startMatch, state.stakeCents, clearRematchWait]);
 
   // Decline the opponent's offer, or just leave the end screen: tell a waiting
   // opponent (via the live session) instead of leaving them on "searching…".
@@ -1330,6 +1355,7 @@ export default function App() {
         <Matchmaking
           onCancel={() => {
             clearFreeFallback();
+            clearRematchWait();
             sessionRef.current?.dispose();
             sessionRef.current = null;
             dispatch({ type: 'GO_LOBBY' });

@@ -2387,6 +2387,25 @@ wss.on('connection', (ws, req) => {
         session.rematchWanted = false; // we're not seeking one either
         break;
       }
+      case 'rematch.poll': {
+        // The end screen just mounted and asks: did my last opponent already
+        // request a rematch (a push I may have missed)? If so — and they're
+        // still idle and waiting on ME — deliver the offer now. Pull-based, so a
+        // dropped `rematch.offer` push no longer strands the pairing.
+        if (session.room || session.pendingGameId || session.rematchWanted) break;
+        const rematcher = session.lastOpponentId ? sessions.get(session.lastOpponentId) : undefined;
+        if (
+          rematcher &&
+          rematcher.alive &&
+          rematcher.rematchWanted &&
+          rematcher.lastOpponentId === session.id &&
+          !rematcher.room &&
+          !rematcher.pendingGameId
+        ) {
+          session.send({ t: 'rematch.offer', name: label(rematcher) });
+        }
+        break;
+      }
     }
   }
 

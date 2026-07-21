@@ -92,3 +92,26 @@ describe('deferred staked queue.join release', () => {
     session.dispose();
   });
 });
+
+describe('pollRematch (reliable rematch offer — pull recovers a missed push)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('sends rematch.poll on the open socket, and surfaces the offer the server returns', async () => {
+    FakeWS.instances.length = 0;
+    let offered: string | null = null;
+    const ev = new Proxy({}, { get: (_t, k) => (k === 'onRematchOffer' ? (name: string) => { offered = name; } : () => undefined) }) as never;
+    const session = new RemoteSession(ev, 1, 'ws://test', () => undefined, '0x00000000000000000000000000000000000000aa', { kind: 'queue' }, { consent: { tosVersion: 'v', age18: true } } as never);
+    await vi.waitFor(() => { if (FakeWS.instances.length === 0) throw new Error('no ws'); });
+    const ws = FakeWS.instances[0]!;
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+
+    session.pollRematch();
+    expect(sentTypes(ws)).toContain('rematch.poll');
+
+    // The server answers the poll with the opponent's pending offer.
+    ws.onmessage?.({ data: JSON.stringify({ t: 'rematch.offer', name: 'Rival' }) });
+    expect(offered).toBe('Rival');
+    session.dispose();
+  });
+});
