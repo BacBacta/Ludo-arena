@@ -92,6 +92,17 @@ export interface StakeParams {
   /** cUSD address for MiniPay legacy-tx gas; omit to pay in the native coin. */
   feeCurrency?: Address;
   onStatus?: (status: StakeStatus) => void;
+  /** Wait before the single retry of a failed lock attempt (tests pass 0). */
+  retryDelayMs?: number;
+}
+
+/** A wallet-prompt refusal (EIP-1193 4001 / "user rejected") — the ONE failure
+ *  a lock retry must never repeat: retrying re-pops the wallet prompt at a user
+ *  who just said no. Everything else (stale-node estimation revert, a mined
+ *  revert, a lost receipt) is transient and money-safe to retry — a revert moves
+ *  no funds, and each attempt re-checks the escrow before sending. */
+function isUserRejection(e: unknown): boolean {
+  return (e as { code?: number })?.code === 4001 || /user (rejected|denied)/i.test(String((e as Error)?.message ?? ''));
 }
 
 export interface StakeReceipt {
@@ -152,90 +163,120 @@ export async function feeCurrencyExtra(
 
 /**
  * Locks the caller's stake: approve (only if the allowance is short) then
- * join(gameId, token, stake). Idempotent-ish: if this address already joined
- * the game, returns without a second join.
+ * join(gameId, token, stake). Idempotent: every attempt re-checks the escrow
+ * first, so an address that already joined never locks a second time.
+ *
+ * ONE retry on any non-user-rejection failure (the 'Stake not locked —
+ * reverted' incident): on a load-balanced RPC a lagging node can estimate the
+ * join against a state where the approve isn't visible yet ('execution
+ * reverted' before broadcast), and a spike-window tx can mine AS a revert.
+ * Both are transient and both move NO funds, so a retry — with a fresh
+ * escrow re-check and a fresh fee estimate — is money-safe by construction.
  */
 export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> {
-  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, fairnessCommit, feeCurrency, onStatus } = params;
+  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, fairnessCommit, feeCurrency, onStatus, retryDelayMs = 3000 } = params;
   const gameId32 = gameIdToBytes32(gameId);
   const commit32 = commitToBytes32(fairnessCommit);
   const chain = walletClient.chain ?? null;
 
   const decimals = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
   const stake = stakeUnits(stakeCents, decimals);
-
-  // already joined this game (e.g. a resumed session)? don't double-lock.
-  const game = await publicClient.readContract({ address: escrow, abi: ESCROW_ABI, functionName: 'games', args: [gameId32] });
-  const [, , playerA, playerB] = game;
-  const already = [playerA, playerB].some((p) => p.toLowerCase() === account.toLowerCase());
-  if (already) {
-    onStatus?.('locked');
-    return { gameId32, stake, joinTx: '0x' as Hex };
-  }
-
-  const extra = await feeCurrencyExtra(walletClient, publicClient, feeCurrency);
   // A client with a bound account (local key) signs locally; otherwise the
   // injected wallet (MiniPay) signs the tx for the address.
   const signer = walletClient.account ?? account;
 
-  const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
   let approveTx: Hex | undefined;
-  if (allowance < stake) {
-    onStatus?.('approving');
-    approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra });
-    const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
-    if (r.status !== 'success') throw new Error('approve reverted');
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    try {
+      // Already joined this game (a resumed session, or the PREVIOUS attempt's
+      // join landed but its receipt was lost)? Don't double-lock — this check
+      // running at the top of EVERY attempt is what makes the retry safe.
+      const game = await publicClient.readContract({ address: escrow, abi: ESCROW_ABI, functionName: 'games', args: [gameId32] });
+      const [, , playerA, playerB] = game;
+      if ([playerA, playerB].some((p) => p.toLowerCase() === account.toLowerCase())) {
+        onStatus?.('locked');
+        return { gameId32, stake, approveTx, joinTx: '0x' as Hex };
+      }
+
+      // Fresh fee estimate per attempt (the base fee may have moved).
+      const extra = await feeCurrencyExtra(walletClient, publicClient, feeCurrency);
+
+      const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
+      if (allowance < stake) {
+        onStatus?.('approving');
+        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra });
+        const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        if (r.status !== 'success') throw new Error('approve reverted');
+      }
+
+      onStatus?.('joining');
+      const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], ...extra });
+      const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
+      if (r.status !== 'success') throw new Error('join reverted');
+
+      onStatus?.('locked');
+      return { gameId32, stake, approveTx, joinTx };
+    } catch (e) {
+      if (isUserRejection(e)) throw e; // never re-pop a prompt the user refused
+      lastError = e;
+    }
   }
-
-  onStatus?.('joining');
-  const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], ...extra });
-  const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
-  if (r.status !== 'success') throw new Error('join reverted');
-
-  onStatus?.('locked');
-  return { gameId32, stake, approveTx, joinTx };
+  throw lastError;
 }
 
 /**
  * Locks the caller's stake in the N-player escrow (LudoEscrowN): approve (if the
- * allowance is short) then join(gameId, token, stake, seatCount). Idempotent-ish:
- * if this address already deposited, returns without a second join.
+ * allowance is short) then join(gameId, token, stake, seatCount). Same
+ * retry-with-recheck shape as stakeInEscrow — every attempt re-checks seatsOf
+ * first (never double-locks), one retry on any non-user-rejection failure.
  */
 export async function stakeInEscrowN(params: StakeParams & { seatCount: number }): Promise<StakeReceipt> {
-  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, fairnessCommit, feeCurrency, onStatus, seatCount } = params;
+  const { walletClient, publicClient, account, escrow, token, gameId, stakeCents, fairnessCommit, feeCurrency, onStatus, seatCount, retryDelayMs = 3000 } = params;
   const gameId32 = gameIdToBytes32(gameId);
   const commit32 = commitToBytes32(fairnessCommit);
   const chain = walletClient.chain ?? null;
 
   const decimals = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
   const stake = stakeUnits(stakeCents, decimals);
-
-  // already deposited (e.g. a resumed session)? don't double-lock.
-  const seats = (await publicClient.readContract({ address: escrow, abi: ESCROW_N_ABI, functionName: 'seatsOf', args: [gameId32] })) as readonly Address[];
-  if (seats.some((p) => p.toLowerCase() === account.toLowerCase())) {
-    onStatus?.('locked');
-    return { gameId32, stake, joinTx: '0x' as Hex };
-  }
-
-  const extra = await feeCurrencyExtra(walletClient, publicClient, feeCurrency);
   const signer = walletClient.account ?? account;
 
-  const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
   let approveTx: Hex | undefined;
-  if (allowance < stake) {
-    onStatus?.('approving');
-    approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra });
-    const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
-    if (r.status !== 'success') throw new Error('approve reverted');
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    try {
+      // Already deposited (resumed session, or a lost-receipt success)? Stop.
+      const seats = (await publicClient.readContract({ address: escrow, abi: ESCROW_N_ABI, functionName: 'seatsOf', args: [gameId32] })) as readonly Address[];
+      if (seats.some((p) => p.toLowerCase() === account.toLowerCase())) {
+        onStatus?.('locked');
+        return { gameId32, stake, approveTx, joinTx: '0x' as Hex };
+      }
+
+      const extra = await feeCurrencyExtra(walletClient, publicClient, feeCurrency);
+
+      const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
+      if (allowance < stake) {
+        onStatus?.('approving');
+        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra });
+        const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        if (r.status !== 'success') throw new Error('approve reverted');
+      }
+
+      onStatus?.('joining');
+      const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], ...extra });
+      const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
+      if (r.status !== 'success') throw new Error('join reverted');
+
+      onStatus?.('locked');
+      return { gameId32, stake, approveTx, joinTx };
+    } catch (e) {
+      if (isUserRejection(e)) throw e;
+      lastError = e;
+    }
   }
-
-  onStatus?.('joining');
-  const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], ...extra });
-  const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
-  if (r.status !== 'success') throw new Error('join reverted');
-
-  onStatus?.('locked');
-  return { gameId32, stake, approveTx, joinTx };
+  throw lastError;
 }
 
 export interface BuyCosmeticParams {

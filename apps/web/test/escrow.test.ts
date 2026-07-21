@@ -19,28 +19,64 @@ interface Over {
   decimals?: number;
   allowance?: bigint;
   games?: readonly unknown[];
+  /** Sequenced `games` reads (one per call, last repeats) — models a retry that
+   *  re-checks the escrow and finds the previous attempt's deposit landed. */
+  gamesSeq?: Array<readonly unknown[]>;
   seats?: readonly Address[];
   receiptStatus?: 'success' | 'reverted';
+  /** Sequenced receipt statuses (one per wait, last repeats) — models a tx that
+   *  reverts once then succeeds on the retry. */
+  receiptStatuses?: Array<'success' | 'reverted'>;
+  /** Throw on the FIRST waitForTransactionReceipt only (lost receipt). */
+  receiptThrowOnce?: unknown;
   rejectWrite?: unknown;
+  /** Throw on the FIRST writeContract only (transient broadcast failure). */
+  rejectWriteOnce?: unknown;
 }
 
 function fakeClients(over: Over = {}) {
   const writes: Array<{ functionName: string; args: readonly unknown[]; feeCurrency?: unknown }> = [];
+  let gamesCalls = 0;
+  let receiptCalls = 0;
+  let writeOnceArmed = over.rejectWriteOnce !== undefined;
+  let receiptThrowArmed = over.receiptThrowOnce !== undefined;
   const publicClient = {
     readContract: async ({ functionName }: { functionName: string }) => {
       if (functionName === 'decimals') return over.decimals ?? 6;
-      if (functionName === 'games') return over.games ?? [TOKEN, 0n, ZERO, ZERO, 0, 0, 0];
+      if (functionName === 'games') {
+        if (over.gamesSeq) {
+          const g = over.gamesSeq[Math.min(gamesCalls, over.gamesSeq.length - 1)]!;
+          gamesCalls++;
+          return g;
+        }
+        return over.games ?? [TOKEN, 0n, ZERO, ZERO, 0, 0, 0];
+      }
       if (functionName === 'allowance') return over.allowance ?? 0n;
       if (functionName === 'seatsOf') return over.seats ?? [];
       throw new Error(`unexpected read ${functionName}`);
     },
-    waitForTransactionReceipt: async () => ({ status: over.receiptStatus ?? 'success' }),
+    waitForTransactionReceipt: async () => {
+      if (receiptThrowArmed) {
+        receiptThrowArmed = false;
+        throw over.receiptThrowOnce;
+      }
+      if (over.receiptStatuses) {
+        const s = over.receiptStatuses[Math.min(receiptCalls, over.receiptStatuses.length - 1)]!;
+        receiptCalls++;
+        return { status: s };
+      }
+      return { status: over.receiptStatus ?? 'success' };
+    },
   };
   const walletClient = {
     chain: { id: 11_142_220 },
     account: undefined, // injected wallet (MiniPay) → signer is the passed account
     writeContract: async (a: { functionName: string; args: readonly unknown[]; feeCurrency?: unknown }) => {
       writes.push(a);
+      if (writeOnceArmed) {
+        writeOnceArmed = false;
+        throw over.rejectWriteOnce;
+      }
       if (over.rejectWrite) throw over.rejectWrite;
       return `0x${writes.length.toString(16).padStart(64, '0')}` as Hex;
     },
@@ -112,11 +148,54 @@ describe('stakeInEscrow (1v1)', () => {
     ).rejects.toThrow(/User rejected/);
   });
 
-  it('throws when the join tx reverts on-chain', async () => {
+  it('throws when the join tx PERSISTENTLY reverts on-chain (retry exhausted)', async () => {
     const { publicClient, walletClient } = fakeClients({ allowance: 10n ** 18n, receiptStatus: 'reverted' });
     await expect(
-      stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT }),
+      stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, retryDelayMs: 0 }),
     ).rejects.toThrow(/join reverted/);
+  });
+
+  // The 'Stake not locked — reverted' incident: one player's lock failed
+  // intermittently on the load-balanced RPC (a lagging node estimated the join
+  // against a state where the approve wasn't visible yet, or a spike-window tx
+  // mined as a revert). A revert moves NO funds, so one retry is money-safe —
+  // and each attempt re-checks the escrow first so a lost-receipt success can
+  // never double-lock.
+
+  it('retries once when the join broadcast fails transiently, then locks', async () => {
+    const boom = new Error('Execution reverted for an unknown reason.');
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, rejectWriteOnce: boom });
+    const r = await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, retryDelayMs: 0 });
+    expect(writes.map((w) => w.functionName)).toEqual(['join', 'join']); // failed + retried
+    expect(r.joinTx).not.toBe('0x');
+  });
+
+  it('retries once when the join MINES as a revert (no funds moved), then locks', async () => {
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, receiptStatuses: ['reverted', 'success'] });
+    const r = await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, retryDelayMs: 0 });
+    expect(writes.map((w) => w.functionName)).toEqual(['join', 'join']);
+    expect(r.joinTx).not.toBe('0x');
+  });
+
+  it('NEVER double-locks: a lost receipt whose join actually landed is detected on retry', async () => {
+    const { publicClient, walletClient, writes } = fakeClients({
+      allowance: 10n ** 18n,
+      receiptThrowOnce: new Error('Timed out while waiting for transaction receipt'),
+      // 1st games read: empty (pre-join). 2nd (the retry's re-check): WE are deposited.
+      gamesSeq: [[TOKEN, 0n, ZERO, ZERO, 0, 0, 0], [TOKEN, 250_000n, ME, ZERO, 0, 1, 900]],
+    });
+    const r = await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, retryDelayMs: 0 });
+    expect(writes.map((w) => w.functionName)).toEqual(['join']); // ONE join only — no double lock
+    expect(r.joinTx).toBe('0x'); // resolved via the already-deposited path
+  });
+
+  it('does NOT retry a user signature refusal (no second wallet prompt)', async () => {
+    const rejection = Object.assign(new Error('User rejected the request'), { code: 4001 });
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 0n, rejectWrite: rejection });
+    await expect(
+      stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, retryDelayMs: 0 }),
+    ).rejects.toThrow(/User rejected/);
+    expect(writes.length).toBe(1); // one prompt, one refusal — never nag again
   });
 });
 
