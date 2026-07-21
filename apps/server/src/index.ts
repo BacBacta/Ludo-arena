@@ -1414,6 +1414,22 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'queue.join': {
+        // A live Room = a real game in progress → refuse. But a PENDING staked
+        // match (both stakes not locked yet) whose player is back here ASKING TO
+        // QUEUE has plainly been abandoned client-side (their opponent's lock
+        // failed and their own client returned to the lobby). Refusing with
+        // 'Already in a game.' wedged that player for the rest of the ~2-min
+        // stake-lock window; treat the re-queue as an explicit abandon instead —
+        // abortPendingStaked refunds any stake already locked (R-SETTLE-1) and
+        // frees both seats, then this queue.join proceeds normally.
+        if (session.pendingGameId && !session.room) {
+          const stale = pendingReveals.get(session.pendingGameId);
+          if (stale) {
+            abortPendingStaked(stale, 'Match abandoned — back to the lobby. Any locked stake is refunded shortly.', undefined, session);
+          } else {
+            session.pendingGameId = undefined; // dangling id (already torn down)
+          }
+        }
         if (session.room || session.pendingGameId) {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
           break;
@@ -2903,7 +2919,7 @@ function scheduleRefund1v1(p: PendingReveal): void {
  *  entry, free both players to queue again, tell them, and auto-refund any locked
  *  stake. Centralised so every abort path (timeout, RPC exhaustion, depositor
  *  mismatch, disconnect) recovers funds identically (R-SETTLE-1/3/4). */
-function abortPendingStaked(p: PendingReveal, message: string, alert?: string): void {
+function abortPendingStaked(p: PendingReveal, message: string, alert?: string, skipNotify?: Session): void {
   if (pendingReveals.get(p.gameId) !== p) return; // already torn down
   pendingReveals.delete(p.gameId);
   p.a.pendingGameId = undefined;
@@ -2911,9 +2927,11 @@ function abortPendingStaked(p: PendingReveal, message: string, alert?: string): 
   // MATCH_ABORTED (not INTERNAL): tells the client this pending match is dead so
   // it leaves the "opponent found"/staking screen and returns to the lobby — an
   // INTERNAL only toasted, stranding the waiting player on a frozen screen.
+  // `skipNotify` = the player who ABANDONED by re-queuing: sending them the
+  // abort would bounce their own fresh queue attempt back to the lobby.
   const err: ServerMsg = { t: 'error', code: 'MATCH_ABORTED', message };
-  p.a.send(err);
-  p.b.send(err);
+  if (p.a !== skipNotify) p.a.send(err);
+  if (p.b !== skipNotify) p.b.send(err);
   scheduleRefund1v1(p);
   if (alert) {
     console.error(alert);
