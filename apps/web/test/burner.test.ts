@@ -51,4 +51,19 @@ describe('burner wallet (B1)', () => {
     clearBurner();
     expect(hasBurner()).toBe(false);
   });
+
+  it('signs a message with its LOCAL key — no RPC (the SIWE prove path)', async () => {
+    // Regression: the app's signer must pass the client's BOUND account, not the
+    // bare address — an address makes viem send personal_sign to the transport
+    // (plain http() to the node), which rejects it → 'signature-declined' and the
+    // wallet can never prove itself. Local signing needs no network at all: this
+    // test has no chain behind it, so any RPC attempt would reject.
+    const wallet = getBurnerWallet();
+    expect(wallet.walletClient.account).toBeDefined(); // the bound local account
+    const signature = await wallet.walletClient.signMessage({
+      account: wallet.walletClient.account ?? wallet.address, // the app's signer expression
+      message: 'ludo-arena wallet proof',
+    });
+    expect(signature).toMatch(/^0x[0-9a-f]{130}$/);
+  });
 });

@@ -493,9 +493,15 @@ export default function App() {
       consent: consentRef.current ? { tosVersion: TOS_VERSION, age18: true } : undefined,
       // MiniPay does not support personal_sign — never offer a signer there (the
       // server trusts the auto-connected address without SIWE). Browsers still sign.
+      // Sign with the client's BOUND account when it has one (the burner's local
+      // key — signs in-page, no RPC): passing the bare address makes viem treat it
+      // as a json-rpc account and send personal_sign to the transport, which for
+      // the burner is plain http() to the node → rejected → 'signature-declined'.
+      // Injected/WalletConnect clients have no bound account → address → the
+      // wallet's own personal_sign prompt, as before.
       signMessage:
         wallet && !isMiniPay()
-          ? (message: string) => wallet.walletClient.signMessage({ account: wallet.address, message })
+          ? (message: string) => wallet.walletClient.signMessage({ account: wallet.walletClient.account ?? wallet.address, message })
           : undefined,
     };
   }, []);
@@ -1120,9 +1126,11 @@ export default function App() {
       dispatch({ type: 'SET_WALLET_ADDRESS', address: wallet.address });
     }
     if (!wallet) return;
+    // Same bound-account rule as makeAuth: the burner signs with its LOCAL key
+    // (in-page, no popup); only an injected wallet goes through personal_sign.
     const signer = isMiniPay()
       ? undefined
-      : (message: string) => wallet!.walletClient.signMessage({ account: wallet!.address, message });
+      : (message: string) => wallet!.walletClient.signMessage({ account: wallet!.walletClient.account ?? wallet!.address, message });
     dispatch({ type: 'RACE_JOINING', joining: true });
     // If the server REFUSES the gas seed (device allowance, pool dry…), the mint
     // then dies on funds and the generic "need CELO" toast hides the real cause.
