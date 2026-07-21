@@ -125,6 +125,7 @@ export function GameScreen({
     useAppState();
   const dispatch = useAppDispatch();
   const skin = skinById(diceSkin);
+  const [confirmLeave, setConfirmLeave] = useState(false);
 
   const mySeat = match?.seat ?? 0;
   const oppSeat = (1 - mySeat) as Seat;
@@ -358,12 +359,62 @@ export function GameScreen({
             className="gamebar__btn gamebar__btn--leave"
             aria-label={t('leaveGame')}
             onClick={() => {
-              // leaving a live match forfeits it (opponent wins); confirm when a real stake is at risk
-              const staked = (match?.stakeCents ?? 0) > 0;
-              if (!staked || window.confirm(t('forfeitConfirm'))) onLeave();
+              // Leaving a live match forfeits it (opponent wins). A premium
+              // in-app confirm (not window.confirm) whenever there's anything to
+              // lose — a stake, or the game itself (a free loss still stings).
+              setConfirmLeave(true);
             }}
           >
             ✕
+          </button>
+        </div>
+      </div>
+      {confirmLeave && (
+        <ForfeitModal
+          stakeCents={match?.stakeCents ?? 0}
+          onStay={() => setConfirmLeave(false)}
+          onLeave={() => {
+            setConfirmLeave(false);
+            onLeave();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Premium forfeit confirmation: a glass modal that names the exact stake at
+ *  risk, replacing the browser's flat window.confirm. Escape / backdrop / "keep
+ *  playing" all cancel; only the explicit danger button forfeits. */
+function ForfeitModal({ stakeCents, onStay, onLeave }: { stakeCents: number; onStay(): void; onLeave(): void }) {
+  const staked = stakeCents > 0;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onStay();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onStay]);
+  return (
+    <div className="modal" onClick={onStay} role="dialog" aria-modal="true" aria-label={t('forfeitTitle')}>
+      <div className="modal__card forfeit" onClick={(e) => e.stopPropagation()}>
+        <div className="forfeit__glyph" aria-hidden="true">🏳️</div>
+        <h3 className="forfeit__title">{t('forfeitTitle')}</h3>
+        {staked && (
+          <div className="forfeit__stake">
+            <span className="forfeit__stakeLabel">{t('stakeAtRisk')}</span>
+            <span className="forfeit__stakeAmt">{fmtUsd(stakeCents)}</span>
+          </div>
+        )}
+        <p className="forfeit__body">
+          {(staked ? t('forfeitBodyStaked') : t('forfeitBodyFree')).replace('{stake}', fmtUsd(stakeCents))}
+        </p>
+        <div className="forfeit__actions">
+          <button className="btn forfeit__stay" onClick={onStay} autoFocus>
+            {t('forfeitStay')}
+          </button>
+          <button className="btn forfeit__leave" onClick={onLeave}>
+            {staked ? t('forfeitLeaveStaked') : t('forfeitLeaveFree')}
           </button>
         </div>
       </div>

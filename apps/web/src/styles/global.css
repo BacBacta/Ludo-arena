@@ -1811,6 +1811,40 @@ small.muted { font-size: 12px; }
 .modal__card .seclabel { color: var(--label); text-shadow: none; }
 .modal__card .daily__hint, .modal__card .stagehint { color: var(--muted); }
 
+/* Premium forfeit confirmation — replaces the flat window.confirm. Centred,
+   danger-toned, names the stake at risk. */
+.modal__card.forfeit { text-align: center; max-width: min(320px, 100%); }
+.forfeit__glyph {
+  font-size: 40px; line-height: 1; margin: 2px 0 6px;
+  filter: drop-shadow(0 6px 14px rgba(214, 60, 76, 0.35));
+  animation: forfeitpop 0.32s cubic-bezier(0.2, 0.85, 0.3, 1.3) both;
+}
+@keyframes forfeitpop { from { transform: scale(0.4) rotate(-12deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }
+.forfeit__title { font-size: 18px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.01em; }
+/* The exact amount at risk, framed like a stake chip so the stakes read instantly. */
+.forfeit__stake {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  margin: 8px auto 4px; padding: 7px 16px; border-radius: 999px;
+  background: linear-gradient(180deg, #fff2f3, #ffe3e6);
+  border: 1px solid rgba(214, 60, 76, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 4px 12px -6px rgba(214, 60, 76, 0.5);
+}
+.forfeit__stakeLabel { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #b23842; }
+.forfeit__stakeAmt { font-size: 19px; font-weight: 800; color: #9c2530; }
+.forfeit__body { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 8px 4px 16px; }
+.forfeit__actions { display: grid; gap: 9px; }
+/* Stay = the safe default: full-weight brand button, focus-highlighted. */
+.forfeit__stay { width: 100%; }
+/* Leave = the destructive action: clearly danger-toned, secondary weight. */
+.forfeit__leave {
+  width: 100%;
+  background: linear-gradient(180deg, #fff, #ffeef0);
+  color: #b0202e; font-weight: 700;
+  border: 1px solid rgba(214, 60, 76, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 3px 10px -6px rgba(214, 60, 76, 0.4);
+}
+.forfeit__leave:active { transform: translateY(1px); }
+
 /* 4-player mode chooser: the three flavours named side by side */
 .t4modes { display: grid; gap: 10px; }
 .t4mode {
