@@ -9,6 +9,7 @@ import { DICE_SKINS, loadStats } from '../lib/diceSkins';
 import { FRAMES, frameById, frameClass } from '../lib/avatarFrames';
 import { TOKEN_SKINS, ENTRANCE_FX, VICTORY_FX, tokenSkinById, entranceFxById, victoryFxById } from '../lib/tokenSkins';
 import { BOARD_THEMES, boardThemeById } from '../lib/boardThemes';
+import { toastDurationMs } from '../lib/toast';
 import { TokenPreview, BoardThemePreview } from './Board';
 import { avatarSrc, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
 import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
@@ -329,14 +330,22 @@ export function CollectionSheet({ onClaim }: { onClaim(setId: string): Promise<b
 export function Toast() {
   const { toast } = useAppState();
   const dispatch = useAppDispatch();
+  // Dwell scales with length (see toastDurationMs): a flat 2.4s flashed long
+  // diagnostics away before they could be read. Tap dismisses early — and lets
+  // the reader hold, then close, a message they want to capture.
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => dispatch({ type: 'CLEAR_TOAST' }), 2400);
+    const id = setTimeout(() => dispatch({ type: 'CLEAR_TOAST' }), toastDurationMs(toast));
     return () => clearTimeout(id);
   }, [toast, dispatch]);
   if (!toast) return null;
   return (
-    <div className="toast" role="status" aria-live="polite">
+    <div
+      className="toast"
+      role="status"
+      aria-live="polite"
+      onClick={() => dispatch({ type: 'CLEAR_TOAST' })}
+    >
       {toast}
     </div>
   );
