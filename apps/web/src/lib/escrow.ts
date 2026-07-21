@@ -171,10 +171,19 @@ export async function feeCurrencyExtra(
  * estimate and mine. Returns {} when the estimate itself fails (e.g. a lagging
  * node that can't see a fresh allowance yet) — the send path then estimates,
  * and the lock retry (one attempt later) covers the transient. */
+/** CIP-64 intrinsic headroom: a feeCurrency tx pays its fee via in-tx cUSD
+ *  debit/credit calls charged AGAINST ITS OWN GAS LIMIT (protocol intrinsic
+ *  ≈50k, token-dependent). The fee-less estimate cannot see that cost — without
+ *  this headroom the mined tx ran out of gas mid-execution and REVERTED (the
+ *  'approve reverted' incident). 150k = the intrinsic with a wide margin; unused
+ *  gas is refunded, so headroom costs nothing beyond a slightly larger
+ *  reservation. */
+const FEE_CURRENCY_GAS_HEADROOM = 150_000n;
+
 export async function feeGasExtra(publicClient: PublicClient, request: { address: Address; abi: readonly unknown[]; functionName: string; args: readonly unknown[]; account: unknown }): Promise<Record<string, unknown>> {
   try {
     const estimated = await (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> }).estimateContractGas(request);
-    return { gas: (estimated * 15n) / 10n };
+    return { gas: (estimated * 15n) / 10n + FEE_CURRENCY_GAS_HEADROOM };
   } catch {
     return {};
   }

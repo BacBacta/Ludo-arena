@@ -206,7 +206,11 @@ describe('stakeInEscrow (1v1)', () => {
     const { publicClient, walletClient, writes, estimates } = fakeClients({ allowance: 10n ** 18n });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
     const join = writes.find((w) => w.functionName === 'join')!;
-    expect(join.gas).toBe(375_000n); // 250k estimate × 1.5
+    // 250k estimate × 1.5 + the CIP-64 fee-currency intrinsic headroom. The
+    // fee-less estimate does NOT include the in-tx cUSD fee debit/credit that a
+    // feeCurrency tx must pay out of its OWN gas limit — without the headroom the
+    // mined tx ran out of gas mid-execution ('approve reverted' incident).
+    expect(join.gas).toBe(375_000n + 150_000n);
     expect(join.maxFeePerGas).toBeGreaterThan(25_000_000_000n); // explicit cap > base fee
     expect(estimates.length).toBeGreaterThan(0);
     for (const e of estimates) {
