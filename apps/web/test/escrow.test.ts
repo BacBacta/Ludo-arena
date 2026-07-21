@@ -206,11 +206,11 @@ describe('stakeInEscrow (1v1)', () => {
     const { publicClient, walletClient, writes, estimates } = fakeClients({ allowance: 10n ** 18n });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
     const join = writes.find((w) => w.functionName === 'join')!;
-    // 250k estimate × 1.5 + the CIP-64 fee-currency intrinsic headroom. The
+    // BALANCED plan: 250k estimate × 1.30 + 100k CIP-64 intrinsic headroom. The
     // fee-less estimate does NOT include the in-tx cUSD fee debit/credit that a
     // feeCurrency tx must pay out of its OWN gas limit — without the headroom the
     // mined tx ran out of gas mid-execution ('approve reverted' incident).
-    expect(join.gas).toBe(375_000n + 150_000n);
+    expect(join.gas).toBe(425_000n);
     expect(join.maxFeePerGas).toBeGreaterThan(25_000_000_000n); // explicit cap > base fee
     expect(estimates.length).toBeGreaterThan(0);
     for (const e of estimates) {
@@ -226,6 +226,25 @@ describe('stakeInEscrow (1v1)', () => {
     expect(join.gas).toBeUndefined();
     expect(join.maxFeePerGas).toBeUndefined();
     expect(estimates.length).toBe(0);
+  });
+
+  it('ADAPTS after "total cost exceeds balance": the retry is cheaper (thrifty plan)', async () => {
+    // The C4 incident verbatim. The ladder must answer a reservation overflow
+    // with a SMALLER gas limit and a THINNER cap — not the same oversized tx.
+    const c4 = new Error('the total cost (gas * gas fee + value) of executing this transaction exceeds the balance of the account');
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, rejectWriteOnce: c4 });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
+    const [first, second] = writes;
+    expect(second!.gas!).toBeLessThan(first!.gas!);
+    expect(second!.maxFeePerGas!).toBeLessThan(first!.maxFeePerGas!);
+  });
+
+  it('ADAPTS after a cap-too-low reject: the retry pays a HIGHER cap', async () => {
+    const c1 = new Error('The fee cap (`maxFeePerGas` = 52 gwei) cannot be lower than the block base fee');
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, rejectWriteOnce: c1 });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
+    const [first, second] = writes;
+    expect(second!.maxFeePerGas!).toBeGreaterThan(first!.maxFeePerGas!);
   });
 
   it('does NOT retry a user signature refusal (no second wallet prompt)', async () => {

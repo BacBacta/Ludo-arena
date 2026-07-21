@@ -15,7 +15,8 @@ import {
 import { activeChain } from './chains';
 import { deploymentForChain, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
-import { buyCosmeticCusd, feeCurrencyExtra, feeGasExtra, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
+import { buyCosmeticCusd, planFeeExtras, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
+import { BALANCED } from './feePlan';
 import type { Hex } from 'viem';
 
 declare global {
@@ -235,23 +236,26 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
   const chain = wallet.walletClient.chain ?? null;
   const signer = wallet.walletClient.account ?? wallet.address;
   // Gas in cUSD when we control tx construction (MiniPay or the burner); a plain
-  // external wallet builds its own tx and pays the native coin. Same explicit
-  // fee-cap + fee-less gas estimate as the escrow lock: with fee fields in the
-  // request, eth_estimateGas applies a NATIVE-balance affordability cap — 0 for
-  // a burner ("gas required exceeds allowance (0)") — so the gas limit comes
-  // from a fee-less estimate instead (see feeGasExtra).
+  // external wallet builds its own tx and pays the native coin. Same fee policy
+  // as the escrow lock (see feePlan.ts): explicit cap from the fresh native base
+  // fee + explicit gas from a FEE-LESS estimate — fee fields in the estimation
+  // request made the node apply a NATIVE-balance affordability cap, 0 for a
+  // burner ("gas required exceeds allowance (0)").
   const feeCurrency = wallet.payGasInStable && dep ? dep.stablecoin : undefined;
-  const extra = await feeCurrencyExtra(wallet.walletClient, wallet.publicClient, feeCurrency);
-  const mintReq = { address: racePass, abi: RACE_PASS_ABI, functionName: 'mint', args: [], account: signer } as const;
-  const gasExtra = feeCurrency ? await feeGasExtra(wallet.publicClient, mintReq as never) : {};
+  const extras = await planFeeExtras(wallet.publicClient, feeCurrency, BALANCED, {
+    address: racePass,
+    abi: RACE_PASS_ABI,
+    functionName: 'mint',
+    args: [],
+    account: signer,
+  });
   const hash = await wallet.walletClient.writeContract({
     account: signer,
     chain,
     address: racePass,
     abi: RACE_PASS_ABI,
     functionName: 'mint',
-    ...extra,
-    ...gasExtra,
+    ...extras,
   });
   const r = await wallet.publicClient.waitForTransactionReceipt({ hash });
   if (r.status !== 'success') throw new Error('race pass mint reverted');
