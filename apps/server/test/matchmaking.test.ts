@@ -216,3 +216,29 @@ describe('isQueued — single-slot queue membership (ASVS V11.1.4 regression)', 
     expect(m.isQueued('bob')).toBe(false);
   });
 });
+
+// Regression — the Race Week "matchmaking spins forever" incident. Two funded
+// players queued at the 1¢ race stake but one client had RELOADED and lost its
+// burner wallet binding, so it queued as DEMO (walletBacked=false). The parity
+// rule below is CORRECT (a real stake must never be locked against a simulated
+// one) — the incident fix is client-side (restore the persisted burner at
+// boot); this pins the exact pairing behavior that made the mismatch a silent
+// infinite spinner.
+
+describe('race-stake (1¢) walletBacked parity', () => {
+  it('a wallet-backed player and a demo player NEVER pair at a positive stake', () => {
+    const m = new Matchmaker<string>();
+    expect(m.join(1, entry('funded', 1000, T0, true))).toBeNull();
+    // Identical ELO, same instant — only the parity differs. No pair, ever.
+    expect(m.join(1, entry('reloaded', 1000, T0, false))).toBeNull();
+    expect(m.isQueued('funded')).toBe(true);
+    expect(m.isQueued('reloaded')).toBe(true); // both wait forever (the incident)
+  });
+
+  it('two wallet-backed players pair instantly at the race stake', () => {
+    const m = new Matchmaker<string>();
+    expect(m.join(1, entry('alice', 1000, T0, true))).toBeNull();
+    const pair = m.join(1, entry('bob', 1000, T0, true));
+    expect(pair).not.toBeNull();
+  });
+});
