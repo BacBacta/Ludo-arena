@@ -35,7 +35,8 @@ interface Over {
 }
 
 function fakeClients(over: Over = {}) {
-  const writes: Array<{ functionName: string; args: readonly unknown[]; feeCurrency?: unknown }> = [];
+  const writes: Array<{ functionName: string; args: readonly unknown[]; feeCurrency?: unknown; gas?: bigint; maxFeePerGas?: bigint }> = [];
+  const estimates: Array<Record<string, unknown>> = [];
   let gamesCalls = 0;
   let receiptCalls = 0;
   let writeOnceArmed = over.rejectWriteOnce !== undefined;
@@ -67,6 +68,11 @@ function fakeClients(over: Over = {}) {
       }
       return { status: over.receiptStatus ?? 'success' };
     },
+    getBlock: async () => ({ baseFeePerGas: 25_000_000_000n }), // 25 gwei
+    estimateContractGas: async (req: Record<string, unknown>) => {
+      estimates.push(req);
+      return 250_000n;
+    },
   };
   const walletClient = {
     chain: { id: 11_142_220 },
@@ -81,7 +87,7 @@ function fakeClients(over: Over = {}) {
       return `0x${writes.length.toString(16).padStart(64, '0')}` as Hex;
     },
   };
-  return { publicClient: publicClient as unknown as never, walletClient: walletClient as unknown as never, writes };
+  return { publicClient: publicClient as unknown as never, walletClient: walletClient as unknown as never, writes, estimates };
 }
 
 describe('gameIdToBytes32', () => {
@@ -187,6 +193,35 @@ describe('stakeInEscrow (1v1)', () => {
     const r = await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, retryDelayMs: 0 });
     expect(writes.map((w) => w.functionName)).toEqual(['join']); // ONE join only — no double lock
     expect(r.joinTx).toBe('0x'); // resolved via the already-deposited path
+  });
+
+  // The 'gas required exceeds allowance (0)' incident: sending EXPLICIT fee
+  // fields (#69) made them part of eth_estimateGas too, where the node computes
+  // the affordable gas from a balance — the NATIVE one on that path, which is 0
+  // for a burner (gas lives in cUSD). The lock now estimates gas WITHOUT fee
+  // fields (as before #69, no affordability cap applied) and sends with an
+  // explicit gas limit (estimate × 1.5) alongside the explicit fee cap.
+
+  it('feeCurrency txs estimate WITHOUT fee fields and send with an explicit gas limit', async () => {
+    const { publicClient, walletClient, writes, estimates } = fakeClients({ allowance: 10n ** 18n });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
+    const join = writes.find((w) => w.functionName === 'join')!;
+    expect(join.gas).toBe(375_000n); // 250k estimate × 1.5
+    expect(join.maxFeePerGas).toBeGreaterThan(25_000_000_000n); // explicit cap > base fee
+    expect(estimates.length).toBeGreaterThan(0);
+    for (const e of estimates) {
+      expect(e.maxFeePerGas).toBeUndefined(); // NO fee fields in the estimate…
+      expect(e.feeCurrency).toBeUndefined(); // …so no balance-based allowance cap
+    }
+  });
+
+  it('native-coin txs are untouched (no explicit gas or fee overrides)', async () => {
+    const { publicClient, walletClient, writes, estimates } = fakeClients({ allowance: 10n ** 18n });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, retryDelayMs: 0 });
+    const join = writes.find((w) => w.functionName === 'join')!;
+    expect(join.gas).toBeUndefined();
+    expect(join.maxFeePerGas).toBeUndefined();
+    expect(estimates.length).toBe(0);
   });
 
   it('does NOT retry a user signature refusal (no second wallet prompt)', async () => {

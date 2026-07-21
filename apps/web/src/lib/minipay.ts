@@ -15,7 +15,7 @@ import {
 import { activeChain } from './chains';
 import { deploymentForChain, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
-import { buyCosmeticCusd, feeCurrencyExtra, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
+import { buyCosmeticCusd, feeCurrencyExtra, feeGasExtra, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
 import type { Hex } from 'viem';
 
 declare global {
@@ -235,10 +235,15 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
   const chain = wallet.walletClient.chain ?? null;
   const signer = wallet.walletClient.account ?? wallet.address;
   // Gas in cUSD when we control tx construction (MiniPay or the burner); a plain
-  // external wallet builds its own tx and pays the native coin. feeCurrencyExtra
-  // deliberately sets NO explicit 1559 caps (see its doc: viem's own estimate is
-  // the one that clears Celo's native-base-fee validation).
-  const extra = await feeCurrencyExtra(wallet.walletClient, wallet.publicClient, wallet.payGasInStable && dep ? dep.stablecoin : undefined);
+  // external wallet builds its own tx and pays the native coin. Same explicit
+  // fee-cap + fee-less gas estimate as the escrow lock: with fee fields in the
+  // request, eth_estimateGas applies a NATIVE-balance affordability cap — 0 for
+  // a burner ("gas required exceeds allowance (0)") — so the gas limit comes
+  // from a fee-less estimate instead (see feeGasExtra).
+  const feeCurrency = wallet.payGasInStable && dep ? dep.stablecoin : undefined;
+  const extra = await feeCurrencyExtra(wallet.walletClient, wallet.publicClient, feeCurrency);
+  const mintReq = { address: racePass, abi: RACE_PASS_ABI, functionName: 'mint', args: [], account: signer } as const;
+  const gasExtra = feeCurrency ? await feeGasExtra(wallet.publicClient, mintReq as never) : {};
   const hash = await wallet.walletClient.writeContract({
     account: signer,
     chain,
@@ -246,6 +251,7 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
     abi: RACE_PASS_ABI,
     functionName: 'mint',
     ...extra,
+    ...gasExtra,
   });
   const r = await wallet.publicClient.waitForTransactionReceipt({ hash });
   if (r.status !== 'success') throw new Error('race pass mint reverted');
