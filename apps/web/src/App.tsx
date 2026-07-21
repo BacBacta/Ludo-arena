@@ -22,7 +22,7 @@ import { SeasonSheet } from './components/SeasonSheet';
 import { RaceSheet } from './components/RaceSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
-import { getBurnerWallet } from './lib/burner';
+import { getBurnerWallet, restoreBurnerWallet } from './lib/burner';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable } from './lib/walletconnect';
@@ -219,9 +219,27 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (isMiniPay()) void connectWalletCta(true).finally(syncLobbyNow);
-    else syncLobbyNow();
-  }, [connectWalletCta, syncLobbyNow]);
+    if (isMiniPay()) {
+      void connectWalletCta(true).finally(syncLobbyNow);
+      return;
+    }
+    // B1 (non-MiniPay): restore the persisted burner at boot, BEFORE the lobby
+    // sync (which reads walletRef for hello). Without this a reload left the app
+    // wallet-less: the race card read as unfunded and — the killer — a staked
+    // queue entry went in as DEMO (walletBacked=false), which the matchmaker
+    // rightly never pairs with a wallet-backed opponent → an infinite spinner.
+    // restoreBurnerWallet only REUSES an existing burner (never mints), so a
+    // first-time visitor is unaffected.
+    if (!walletRef.current) {
+      const burner = restoreBurnerWallet();
+      if (burner) {
+        walletRef.current = burner;
+        dispatch({ type: 'SET_WALLET_ADDRESS', address: burner.address });
+        void refreshBalance(burner);
+      }
+    }
+    syncLobbyNow();
+  }, [connectWalletCta, syncLobbyNow, dispatch, refreshBalance]);
 
   // Re-sync EVERY time the player lands back on the lobby (post-game, end
   // screen exit, cancelled search): friend requests/acceptances that arrived

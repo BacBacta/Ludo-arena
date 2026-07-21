@@ -11,7 +11,7 @@ vi.hoisted(() => {
   };
 });
 
-import { burnerAddress, clearBurner, getBurnerWallet, hasBurner, loadOrCreateBurnerKey } from '../src/lib/burner';
+import { burnerAddress, clearBurner, getBurnerWallet, hasBurner, loadOrCreateBurnerKey, restoreBurnerWallet } from '../src/lib/burner';
 
 describe('burner wallet (B1)', () => {
   beforeEach(() => clearBurner());
@@ -65,5 +65,30 @@ describe('burner wallet (B1)', () => {
       message: 'ludo-arena wallet proof',
     });
     expect(signature).toMatch(/^0x[0-9a-f]{130}$/);
+  });
+});
+
+// Regression (the "matchmaking spins forever" incident): the burner was only
+// wired into walletRef inside joinRaceWeek, so a page RELOAD left the app
+// wallet-less — the staked queue then entered DEMO mode (walletBacked=false)
+// and could never pair with a wallet-backed opponent (matchmaking parity).
+// restoreBurnerWallet is the boot-time restore: it must REUSE a persisted
+// burner and must NEVER mint one for a first-time visitor.
+
+describe('restoreBurnerWallet (boot-time restore)', () => {
+  beforeEach(() => clearBurner()); // the first describe's cleanup doesn't reach here
+
+  it('returns null when no burner exists — and does NOT mint one', () => {
+    expect(hasBurner()).toBe(false);
+    expect(restoreBurnerWallet()).toBeNull();
+    expect(hasBurner()).toBe(false); // a first visit must stay burner-less
+  });
+
+  it('restores the SAME wallet (same address, funds follow) across a reload', () => {
+    const created = getBurnerWallet(); // the "joinRaceWeek" session
+    const restored = restoreBurnerWallet(); // the post-reload boot
+    expect(restored).not.toBeNull();
+    expect(restored!.address).toBe(created.address);
+    expect(restored!.payGasInStable).toBe(true); // still the feeCurrency wallet
   });
 });

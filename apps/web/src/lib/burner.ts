@@ -84,6 +84,16 @@ export function getBurnerWallet(): Wallet {
   };
 }
 
+/** Boot-time restore: the persisted burner as a ready Wallet, or null when none
+ *  exists. NEVER mints — a first-time visitor must stay burner-less until they
+ *  actually join the event (joinRaceWeek is the only minting path). Without this
+ *  restore a page reload left the app wallet-less: the staked queue then entered
+ *  DEMO mode (walletBacked=false) and could never pair with a wallet-backed
+ *  opponent — the "matchmaking spins forever" incident. */
+export function restoreBurnerWallet(): Wallet | null {
+  return hasBurner() ? getBurnerWallet() : null;
+}
+
 /** Wipe the burner (e.g. a "start over" affordance). Rarely needed — the same
  *  wallet is meant to persist for the whole event so the Pass + grant follow it. */
 export function clearBurner(): void {
