@@ -601,6 +601,12 @@ export type ClientMsg =
   // Decline a rematch the last opponent offered (or leave the end screen): the
   // server tells them so they stop waiting instead of hanging on "searching…".
   | { t: 'rematch.decline' }
+  // Ask whether the last opponent has ALREADY requested a rematch. The push
+  // `rematch.offer` is fire-and-forget and can be missed (a backgrounded socket,
+  // a race with game.over); the end screen polls this on mount so the offer is
+  // delivered reliably (pull) rather than only pushed. Server replies with
+  // `rematch.offer` iff the last opponent is idle and waiting on us.
+  | { t: 'rematch.poll' }
   // Unlock a premium dice skin by spending its ticket price (PREMIUM_SKINS).
   | { t: 'skin.buy'; skinId: string }
   // Send a quick emote or quick-chat to the current game (1v1 or 4p); id must
@@ -1093,6 +1099,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'game.resign':
     case 'game.rematch':
     case 'rematch.decline':
+    case 'rematch.poll':
     case 'streak.buyFreeze':
     case 'ping':
       return m;
