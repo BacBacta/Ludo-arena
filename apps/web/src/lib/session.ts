@@ -1643,6 +1643,18 @@ export class RemoteSession implements GameSession {
               // silent forever-"searching".
               if (this.deferredIntent) this.fireDeferredIntent();
             });
+        } else if (this.deferredIntent) {
+          // NO nonce issued → this (resumed) session is ALREADY proven server-side
+          // — the server only sends walletNonce when a proof is still needed. The
+          // deferred staked join must fire NOW: its other releases (the
+          // friends.update pushed after wallet.prove, the post-signature fallback)
+          // only exist on the nonce path, so holding on would wait forever. This
+          // was the "second staked attempt never queues" trap: attempt 1 proved
+          // the session, the match aborted, attempt 2 resumed the proven session,
+          // got no nonce, and held its queue.join eternally — both players
+          // "searching" with an empty queue. (The one-shot seed/claim flows
+          // already handled the no-nonce case; this path didn't.)
+          this.fireDeferredIntent();
         }
         const wasReconnecting = this.attempts > 0;
         this.attempts = 0;
