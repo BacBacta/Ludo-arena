@@ -57,6 +57,11 @@ on:
         description: 'arm-mainnet only: STAKING_ALLOWED_COUNTRIES (R-COMP-1 allowlist, CSV of ISO codes) — optional'
         required: false
         type: string
+      race_seed_cents:
+        description: 'arm-mainnet only: RACE_SEED_CENTS — cUSD gas seed per burner before its mint. Must cover gas×maxFeePerGas at the current Celo base fee (≈3.5c at 200 gwei); 10 gives headroom.'
+        required: false
+        default: '10'
+        type: string
 
 concurrency: fly-ops
 
@@ -118,6 +123,7 @@ jobs:
           ENABLE_STAKING: ${{ inputs.enable_staking }}
           RACE_ENDS_AT: ${{ inputs.race_ends_at }}
           STAKING_ALLOWED_COUNTRIES: ${{ inputs.staking_allowed_countries }}
+          RACE_SEED_CENTS: ${{ inputs.race_seed_cents }}
         run: |
           set -eu
           if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
@@ -143,7 +149,7 @@ jobs:
             echo "RACE_QUOTA_CENTS=10"
             echo "RACE_PER_GAME_CENTS=2"
             echo "RACE_POOL_CENTS=3000"
-            echo "RACE_SEED_CENTS=1"
+            echo "RACE_SEED_CENTS=${RACE_SEED_CENTS:-10}"
             echo "ARBITER_PRIVATE_KEY=$ARBITER_PRIVATE_KEY"
             echo "RACE_FAUCET_PRIVATE_KEY=$RACE_FAUCET_PRIVATE_KEY"
             if [ "${ENABLE_STAKING:-false}" = "true" ]; then echo "STAKING_ENABLED=true"; fi

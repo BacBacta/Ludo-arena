@@ -1199,7 +1199,8 @@ export default function App() {
       const wrongNet =
         m.includes('wrong_chain') || m.includes('does not match the target chain') || m.includes('unrecognized chain');
       const needGas =
-        m.includes('insufficient') || m.includes('funds for gas') || m.includes('exceeds the balance') || m.includes('max fee per gas less than');
+        m.includes('insufficient') || m.includes('funds for gas') || m.includes('exceeds the balance') ||
+        m.includes('exceeds allowance') || m.includes('gas required exceeds') || m.includes('max fee per gas less than');
       const msg = wrongNet
         ? t('raceWrongNetwork').replace('{chain}', activeChain.name)
         : needGas
