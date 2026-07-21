@@ -17,6 +17,16 @@
 # baked deployments.json (0xcf84c9… / 0x7c02f1…), so unsetting only removes
 # the drift risk for the NEXT escrow redeploy; behaviour is unchanged.
 #
+# unset-staking-allowed-countries: removes the STAKING_ALLOWED_COUNTRIES
+# secret, returning geo-gating to OPEN mode (no allowlist ⇒ isGeoBlocked is
+# always false; the server warns loudly at boot). Context: the allowlist is
+# fail-closed on an UNVERIFIED region, and with no trusted edge in front of
+# the Fly WS (TRUSTED_EDGE_SECRET unset, no cf-ipcountry header) every
+# player's region is unverifiable — so a set allowlist blocks staked play for
+# 100% of mainnet players. Removing it is the OPERATOR'S compliance call
+# (R-COMP-1): staked play becomes reachable from EVERY region until a trusted
+# edge + a legal-reviewed allowlist are wired (docs/DEPLOY.md §G-6).
+#
 # arm-mainnet: flips the running server to Celo MAINNET and sets the Race Week
 # faucet/JIT secrets in ONE atomic `flyctl secrets import` (single restart). The
 # two real key secrets (ARBITER_PRIVATE_KEY, RACE_FAUCET_PRIVATE_KEY) are read
@@ -39,6 +49,7 @@ on:
         options:
           - unset-cosmetics-store-address
           - unset-escrow-addresses
+          - unset-staking-allowed-countries
           - arm-mainnet
       confirm:
         description: 'arm-mainnet only: type ARM-MAINNET to confirm'
@@ -109,6 +120,26 @@ jobs:
             echo "Unset:$TO_UNSET — machine restarts with deployments.json as the only source."
           else
             echo "Neither escrow secret is set — nothing to do."
+          fi
+          echo "Secrets AFTER (names only):"
+          flyctl secrets list -a ludo-arena
+      - name: unset STAKING_ALLOWED_COUNTRIES
+        if: ${{ inputs.operation == 'unset-staking-allowed-countries' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN secret is not configured"; exit 1
+          fi
+          echo "Secrets BEFORE (names only):"
+          flyctl secrets list -a ludo-arena
+          # -w: whole-token match (same rationale as the escrow unset above).
+          if flyctl secrets list -a ludo-arena | grep -qw STAKING_ALLOWED_COUNTRIES; then
+            flyctl secrets unset STAKING_ALLOWED_COUNTRIES -a ludo-arena
+            echo "STAKING_ALLOWED_COUNTRIES unset — machine restarts with geo-gating OPEN (no allowlist)."
+            echo "::warning::Staked play is now reachable from EVERY region (R-COMP-1 operator call). Wire a trusted edge + a legal-reviewed allowlist before scaling real-money play (docs/DEPLOY.md §G-6)."
+          else
+            echo "STAKING_ALLOWED_COUNTRIES is not set — nothing to do."
           fi
           echo "Secrets AFTER (names only):"
           flyctl secrets list -a ludo-arena
