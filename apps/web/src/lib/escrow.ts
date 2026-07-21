@@ -102,28 +102,26 @@ export interface StakeReceipt {
 }
 
 /**
- * The tx overrides for a `feeCurrency` (gas-in-cUSD) transaction. Returns `{}`
- * when no fee currency is set (pay in the native coin).
+ * The tx overrides for a `feeCurrency` (gas-in-cUSD) transaction: `{ feeCurrency }`
+ * when set, else `{}` (pay in the native coin).
  *
- * The gas-price subtlety (B1): a CIP-64 tx's base fee is denominated in the FEE
- * TOKEN, not CELO. viem estimates the 1559 caps against the native base fee, so
- * for a LOCAL signer (the app-minted burner, whose walletClient carries a bound
- * account) the estimate lands BELOW the token base fee and the node rejects it
- * ("max fee per gas less than block base fee"). Celo's `eth_gasPrice(token)`
- * returns the token-denominated price — set the caps from it explicitly. Injected
- * wallets (MiniPay) build + price their own tx, so we only override for a local
- * signer. Verified on Celo mainnet (feeCurrencyDryRun): a 0-CELO burner's tx mines
- * and the gas is charged in cUSD.
+ * We deliberately do NOT set explicit 1559 caps. Celo's node validates
+ * `maxFeePerGas` against the NATIVE base fee (CELO), which moves independently of
+ * — and can be an order of magnitude above — the cUSD gas price. A cap derived
+ * from `eth_gasPrice(token)` (e.g. gp×2) therefore lands far below the native base
+ * fee whenever it spikes, and the node rejects the tx ("max fee per gas less than
+ * block base fee"). viem's own estimate for a feeCurrency tx sets the caps
+ * correctly against the native base fee — let it. Verified on Celo mainnet: with
+ * feeCurrency only, a funded burner's mint clears the gas check (fails just on
+ * balance when unfunded); an explicit gp×N cap is rejected once the base fee rises.
+ * (walletClient/publicClient kept in the signature for call-site symmetry.)
  */
 export async function feeCurrencyExtra(
-  walletClient: WalletClient,
-  publicClient: PublicClient,
+  _walletClient: WalletClient,
+  _publicClient: PublicClient,
   feeCurrency?: Address,
 ): Promise<Record<string, unknown>> {
-  if (!feeCurrency) return {};
-  if (!walletClient.account) return { feeCurrency }; // injected wallet prices its own gas
-  const gp = BigInt((await publicClient.request({ method: 'eth_gasPrice', params: [feeCurrency] } as never)) as string);
-  return { feeCurrency, maxFeePerGas: gp * 2n, maxPriorityFeePerGas: gp };
+  return feeCurrency ? { feeCurrency } : {};
 }
 
 /**

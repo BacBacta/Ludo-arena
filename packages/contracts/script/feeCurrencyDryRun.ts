@@ -90,13 +90,13 @@ async function main(): Promise<void> {
   if (celoBefore === 0n) console.log(`\n✔ burner has ZERO CELO — a successful tx below PROVES gas was paid in ${sym}.`);
   else console.log(`\n⚠ burner has some CELO; the strict proof is that its CELO stays UNCHANGED after the tx.`);
 
-  // Gas price for a feeCurrency tx is denominated in the TOKEN, not CELO — viem's
-  // default estimate uses the native base fee and comes out below the token base
-  // fee ("max fee per gas less than block base fee"). Celo's eth_gasPrice takes the
-  // fee-currency address and returns the price in that token; set the 1559 caps
-  // from it explicitly. (The client's burner path needs the same — see minipay.ts.)
+  // Gas: set ONLY feeCurrency and let viem estimate the 1559 caps. Celo validates
+  // maxFeePerGas against the NATIVE base fee (CELO), which can be far above the
+  // cUSD gas price, so an explicit cap derived from eth_gasPrice(token) is rejected
+  // once the native base fee spikes ("max fee per gas less than block base fee").
+  // (The client does the same — see feeCurrencyExtra in escrow.ts.)
   const gp = BigInt((await pc.request({ method: 'eth_gasPrice', params: [FEE_CURRENCY] } as never)) as string);
-  console.log(`  ${sym} gas price: ${gp} → maxFeePerGas ${gp * 2n}`);
+  console.log(`  ${sym} gas price (token-denominated, informational): ${gp}`);
 
   // The test tx: a 1-unit self-transfer of the fee token, WITH feeCurrency set so
   // gas is charged in the token (CIP-64). Minimal + state-changing → real gas.
@@ -107,8 +107,6 @@ async function main(): Promise<void> {
     functionName: 'transfer',
     args: [account.address, 1n],
     feeCurrency: FEE_CURRENCY,
-    maxFeePerGas: gp * 2n,
-    maxPriorityFeePerGas: gp,
   } as Parameters<typeof wc.writeContract>[0]);
   const receipt = await pc.waitForTransactionReceipt({ hash });
   console.log(`  tx ${hash} → ${receipt.status}`);
