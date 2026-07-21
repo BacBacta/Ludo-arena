@@ -25,6 +25,7 @@ export function Lobby({
   onPlay4,
   onPractice4,
   onConnectWallet,
+  onDisconnectWallet,
   onChallengeFriend,
   onAcceptFriend,
   onRemoveFriendEdge,
@@ -41,6 +42,8 @@ export function Lobby({
   onPractice4(): void;
   /** Connect MiniPay/injected wallet; resolves true when connected. */
   onConnectWallet(): Promise<boolean>;
+  /** Drop the connected wallet so a different one can be paired (outside MiniPay). */
+  onDisconnectWallet(): Promise<void>;
   /** Challenge a friend at a chosen stake (0 = free private table + offer). */
   onChallengeFriend(pid: string, stake: StakeCents): void;
   /** Reciprocal friend.add (accept an incoming request). */
@@ -198,7 +201,7 @@ export function Lobby({
 
   return (
     <div className="screen screen--lobby">
-      <TopBar onConnect={onConnectWallet} />
+      <TopBar onConnect={onConnectWallet} onDisconnect={onDisconnectWallet} />
 
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 

@@ -419,6 +419,7 @@ export type Action =
   | { type: 'GEO'; stakingBlocked: boolean }
   | { type: 'SET_BALANCE'; cents: number }
   | { type: 'SET_WALLET_ADDRESS'; address: string | null }
+  | { type: 'WALLET_DISCONNECT' }
   | { type: 'GO_LOBBY' }
   | { type: 'REMATCH_OFFER'; name: string }
   | { type: 'REMATCH_CLEAR' }
@@ -631,6 +632,10 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, balanceCents: a.cents, walletBacked: true };
     case 'SET_WALLET_ADDRESS':
       return { ...s, walletAddress: a.address };
+    case 'WALLET_DISCONNECT':
+      // Forget the connected wallet so the user can pair a different one (outside
+      // MiniPay). Drops the balance/backed flag so the header shows Connect again.
+      return { ...s, walletBacked: false, balanceCents: 0, walletAddress: null };
     case 'GO_LOBBY':
       return { ...s, screen: 'lobby', emotes: {}, giftFlight: null, practice4: false, online4: false, match: null, game: null, result: null, reconnecting: false, staking: 'idle', privateCode: null, rematchOffer: null, crownGain: null };
     case 'REMATCH_OFFER':

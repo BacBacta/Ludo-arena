@@ -27,7 +27,7 @@ import { describeTxError } from './lib/txError';
 import { needsPreLockSeed } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
-import { connectViaWalletConnect, walletConnectAvailable } from './lib/walletconnect';
+import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
 import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
@@ -210,6 +210,17 @@ export default function App() {
     },
     [dispatch, refreshBalance],
   );
+
+  /** Disconnect the current wallet so a DIFFERENT one can be paired (outside
+   *  MiniPay, whose wallet is ambient and not ours to drop). Clears our cached
+   *  client + closes any WalletConnect session so the next connect starts fresh
+   *  and re-prompts the account picker. */
+  const disconnectWallet = useCallback(async (): Promise<void> => {
+    walletRef.current = null;
+    dispatch({ type: 'WALLET_DISCONNECT' });
+    await disconnectWalletConnect().catch(() => undefined);
+    dispatch({ type: 'TOAST', message: t('walletDisconnected') });
+  }, [dispatch]);
 
   // Inside MiniPay the wallet is ambient — connect silently on launch so the
   // header shows the real balance and the staked tiers are playable at once.
@@ -1349,7 +1360,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} onJoinRace={joinRaceWeek} onOpenRaceBoard={openRaceBoard} onPlayRace={playRaceGame} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onDisconnectWallet={disconnectWallet} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} onJoinRace={joinRaceWeek} onOpenRaceBoard={openRaceBoard} onPlayRace={playRaceGame} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
