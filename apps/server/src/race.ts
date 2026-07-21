@@ -56,6 +56,34 @@ export function jitTopUpCents(perGameCents: number, funded: number, quotaCents: 
   return Math.max(0, Math.min(perGameCents, remainingQuota, poolLeft));
 }
 
+/** Per-wallet lifetime cap on gas-seed grants, as a multiple of the seed target.
+ *  Balance-based top-ups (below) re-fund a wallet whose balance dropped, so an
+ *  attacker cycling "receive seed → transfer out → ask again" could drain the
+ *  pool through one wallet; this bounds that wallet's lifetime draw to
+ *  seedCents × SEED_LIFETIME_MULT (the device fingerprint gates fresh wallets,
+ *  the pool cap is the global backstop). 3 = the initial seed + two rescues. */
+export const SEED_LIFETIME_MULT = 3;
+
+/** How many cents the wallet is MISSING to reach the seed target, given its live
+ *  on-chain balance. This — not "was the target ever granted" — must drive the
+ *  seed: a failed mint attempt still burns its cUSD gas, so a wallet that drew
+ *  its full grant can sit BELOW the mint's gas reservation with no way back
+ *  (the drained-burner trap; the #54 top-up only covered a RAISED target). */
+export function seedDeficitCents(targetCents: number, balanceCents: number): number {
+  return Math.max(0, targetCents - balanceCents);
+}
+
+/** The cents to actually grant for `deficit`, bounded by (a) the wallet's
+ *  remaining lifetime allowance (lifetimeCapCents − granted) and (b) the pool's
+ *  remaining budget (poolCents − spent). 0 = nothing to grant (no deficit, cap
+ *  reached, or pool dry). Pure so the accounting is unit-testable. */
+export function seedGrantCents(deficit: number, granted: number, lifetimeCapCents: number, spent: number, poolCents: number): number {
+  const capLeft = lifetimeCapCents - granted;
+  const poolLeft = poolCents - spent;
+  if (deficit <= 0 || capLeft <= 0 || poolLeft <= 0) return 0;
+  return Math.max(0, Math.min(deficit, capLeft, poolLeft));
+}
+
 export interface RaceConfig {
   /** Cents funded to each eligible player (their whole quota for the event). */
   quotaCents: number;
@@ -167,13 +195,20 @@ export class RaceFaucet {
     return (BigInt(cents) * 10n ** BigInt(d)) / 100n;
   }
 
-  /** The faucet wallet's remaining stablecoin balance, in cents (runway guard). */
-  async faucetBalanceCents(): Promise<number> {
+  /** Any address's stablecoin balance, in cents. The gas-seed handler reads the
+   *  BURNER's live balance with this — the top-up decision keys on what the wallet
+   *  actually holds on-chain, not on what was ever granted (see seedDeficitCents). */
+  async balanceCentsOf(addr: Address): Promise<number> {
     const [bal, d] = await Promise.all([
-      this.publicClient.readContract({ address: this.stablecoin, abi: ERC20_TRANSFER_ABI, functionName: 'balanceOf', args: [this.account.address] }) as Promise<bigint>,
+      this.publicClient.readContract({ address: this.stablecoin, abi: ERC20_TRANSFER_ABI, functionName: 'balanceOf', args: [getAddress(addr)] }) as Promise<bigint>,
       this.decimals(),
     ]);
     return Number((bal * 100n) / 10n ** BigInt(d));
+  }
+
+  /** The faucet wallet's remaining stablecoin balance, in cents (runway guard). */
+  async faucetBalanceCents(): Promise<number> {
+    return this.balanceCentsOf(this.account.address);
   }
 
   /** Send `cents` of the stablecoin to `to`. Waits for the receipt so the caller

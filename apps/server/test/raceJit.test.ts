@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { jitClaimCents, jitTopUpCents } from '../src/race.js';
+import { jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedGrantCents } from '../src/race.js';
 
 // JIT (just-in-time) funding is the mainnet anti-"claim-and-run" model: instead
 // of granting a wallet its whole quota up front, the faucet drips one stake at a
@@ -60,5 +60,51 @@ describe('JIT top-up after a finished game', () => {
     }
     expect(funded).toBe(quota); // never funded past the quota
     expect(games).toBe(4); // 2 (claim) + 4×2 = 10 = quota
+  });
+});
+
+// The gas seed (B1) funds a burner's mint gas in cUSD. The grant keys on the
+// wallet's LIVE balance, not on "was the target ever granted": a failed mint
+// attempt still burns its gas, so a fully-granted wallet can end up below the
+// mint's reservation — and the old granted-total idempotency refused to ever
+// re-fund it (the drained-burner trap). These tests pin the deficit accounting.
+
+describe('gas-seed deficit (balance-based)', () => {
+  it('a fresh burner (0 balance) needs the full target', () => {
+    expect(seedDeficitCents(10, 0)).toBe(10);
+  });
+  it('a topped-up burner needs nothing', () => {
+    expect(seedDeficitCents(10, 10)).toBe(0);
+    expect(seedDeficitCents(10, 25)).toBe(0);
+  });
+  it('a DRAINED burner (granted before, burned gas on failed mints) needs the gap', () => {
+    // Granted 10 once, two failed mints left 4 on-chain → deficit is 6, not 0.
+    expect(seedDeficitCents(10, 4)).toBe(6);
+  });
+});
+
+describe('gas-seed grant bounds', () => {
+  const cap = 10 * SEED_LIFETIME_MULT; // lifetime cap for a 10¢ target
+
+  it('grants the full deficit when cap and pool allow', () => {
+    expect(seedGrantCents(10, 0, cap, 0, 5000)).toBe(10);
+  });
+  it('re-funds a drained wallet (the self-heal the old logic refused)', () => {
+    // Already drew 10, balance fell to 4 → deficit 6 fits under the 30¢ cap.
+    expect(seedGrantCents(6, 10, cap, 10, 5000)).toBe(6);
+  });
+  it('stops at the lifetime cap (drain-and-reclaim abuse)', () => {
+    expect(seedGrantCents(10, cap, cap, cap, 5000)).toBe(0);
+  });
+  it('clamps the last grant to the cap remainder', () => {
+    // Drew 25 of the 30¢ cap → a 10¢ deficit only gets the 5¢ left.
+    expect(seedGrantCents(10, 25, cap, 25, 5000)).toBe(5);
+  });
+  it('clamps to the pool remainder and returns 0 when the pool is dry', () => {
+    expect(seedGrantCents(10, 0, cap, 4997, 5000)).toBe(3);
+    expect(seedGrantCents(10, 0, cap, 5000, 5000)).toBe(0);
+  });
+  it('grants nothing when there is no deficit', () => {
+    expect(seedGrantCents(0, 10, cap, 10, 5000)).toBe(0);
   });
 });
