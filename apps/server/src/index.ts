@@ -1999,36 +1999,43 @@ wss.on('connection', (ws, req) => {
         const sWallet = session.wallet;
         const seedKey = `race:seed:${sWallet.toLowerCase()}`;
         const seedFpKey = session.fingerprint ? `race:seedfp:${session.fingerprint}` : null;
-        // Idempotent per wallet: already seeded → restate, never re-transfer.
-        if (await store.getMeta(seedKey)) {
+        // Idempotent per wallet, but TOP-UP aware. A prior seed BELOW the current
+        // target is topped up by the delta — so raising RACE_SEED_CENTS (e.g. after
+        // a Celo base-fee spike left the first grant too small to cover the mint
+        // reservation) reaches already-seeded burners instead of stranding them.
+        const priorRaw = await store.getMeta(seedKey);
+        const priorCents = priorRaw ? Number((JSON.parse(priorRaw) as { cents?: number }).cents ?? 0) : 0;
+        if (priorCents >= raceFaucet.seedCents) {
           session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: true });
           break;
         }
-        // One seed per device (fingerprints are spoofable — a cheap gate; the
-        // amount is trivial and the pool cap is the real backstop). Burners make
-        // the soulbound Pass a weak sybil gate, so the fingerprint carries more
-        // weight here than in claim.
-        if (seedFpKey && (await store.getMeta(seedFpKey))) {
+        const topUpCents = raceFaucet.seedCents - priorCents; // full seed when fresh
+        // One seed per device (fingerprints are spoofable — a cheap gate; the pool
+        // cap is the real backstop). Only gate a FRESH wallet (priorCents === 0); a
+        // top-up for the SAME already-seeded wallet must pass — it's not a new device
+        // grabbing a second grant.
+        if (priorCents === 0 && seedFpKey && (await store.getMeta(seedFpKey))) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'This device already received its gas seed.' });
           break;
         }
         const seedSpent = Number((await store.getMeta('race:pool:spent')) || '0');
-        if (seedSpent + raceFaucet.seedCents > raceFaucet.poolCents) {
+        if (seedSpent + topUpCents > raceFaucet.poolCents) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Race Week funding pool is exhausted.' });
           break;
         }
-        // Reserve BEFORE the transfer (same crash-safety as claim): under-fund on
-        // a crash, never double-fund. Roll back on a failed transfer.
+        // Reserve BEFORE the transfer (same crash-safety as claim): record the NEW
+        // target, count only the delta against the pool. Roll back to the prior
+        // state on a failed transfer.
         await store.setMeta(seedKey, JSON.stringify({ cents: raceFaucet.seedCents, at: sNow, fp: session.fingerprint ?? null }));
         if (seedFpKey) await store.setMeta(seedFpKey, sWallet.toLowerCase());
-        await store.setMeta('race:pool:spent', String(seedSpent + raceFaucet.seedCents));
+        await store.setMeta('race:pool:spent', String(seedSpent + topUpCents));
         try {
-          const txHash = await raceFaucet.fund(sWallet as Address, raceFaucet.seedCents);
-          session.send({ t: 'race.seeded', seedCents: raceFaucet.seedCents, alreadySeeded: false, txHash });
-          telemetry('race.seed', { pid: tpid(playerId(sWallet, session.id)), cents: raceFaucet.seedCents, poolSpent: seedSpent + raceFaucet.seedCents });
+          const txHash = await raceFaucet.fund(sWallet as Address, topUpCents);
+          session.send({ t: 'race.seeded', seedCents: topUpCents, alreadySeeded: false, txHash });
+          telemetry('race.seed', { pid: tpid(playerId(sWallet, session.id)), cents: topUpCents, poolSpent: seedSpent + topUpCents });
         } catch (e) {
-          await store.setMeta(seedKey, '');
-          if (seedFpKey) await store.setMeta(seedFpKey, '');
+          await store.setMeta(seedKey, priorRaw ?? '');
+          if (seedFpKey && priorCents === 0) await store.setMeta(seedFpKey, '');
           await store.setMeta('race:pool:spent', String(seedSpent));
           console.error('[race] gas-seed transfer failed', e);
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Gas seed failed — try again in a moment.' });
