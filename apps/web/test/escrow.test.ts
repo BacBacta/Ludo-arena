@@ -32,6 +32,8 @@ interface Over {
   rejectWrite?: unknown;
   /** Throw on the FIRST writeContract only (transient broadcast failure). */
   rejectWriteOnce?: unknown;
+  /** Node without eth_gasPrice(feeCurrency) → the native-base-fee fallback. */
+  noTokenGasPrice?: boolean;
 }
 
 function fakeClients(over: Over = {}) {
@@ -68,7 +70,18 @@ function fakeClients(over: Over = {}) {
       }
       return { status: over.receiptStatus ?? 'success' };
     },
-    getBlock: async () => ({ baseFeePerGas: 25_000_000_000n }), // 25 gwei
+    getBlock: async () => ({ baseFeePerGas: 25_000_000_000n }), // 25 gwei NATIVE
+    // Celo fee-abstraction RPC: gas price DENOMINATED IN THE FEE CURRENCY.
+    // cUSD ≈ 3× the CELO price → the token-denominated price is ~⅓ of native:
+    // 10 gwei-cUSD here vs 25 gwei native above. Throw when `over.noTokenGasPrice`
+    // (models a node without the extension → native fallback).
+    request: async ({ method, params }: { method: string; params?: unknown[] }) => {
+      if (method === 'eth_gasPrice' && Array.isArray(params) && params.length === 1) {
+        if (over.noTokenGasPrice) throw new Error('method not supported');
+        return '0x2540be400'; // 10 gwei, in fee-currency units
+      }
+      throw new Error(`unexpected request ${method}`);
+    },
     estimateContractGas: async (req: Record<string, unknown>) => {
       estimates.push(req);
       return 250_000n;
@@ -211,12 +224,24 @@ describe('stakeInEscrow (1v1)', () => {
     // feeCurrency tx must pay out of its OWN gas limit — without the headroom the
     // mined tx ran out of gas mid-execution ('approve reverted' incident).
     expect(join.gas).toBe(425_000n);
-    expect(join.maxFeePerGas).toBeGreaterThan(25_000_000_000n); // explicit cap > base fee
+    // The cap is priced in FEE-CURRENCY units (CIP-64): the 'total cost exceeds
+    // the balance' incident happened at 12¢ of balance because the cap was
+    // derived from the NATIVE base fee — ~3× the cUSD-denominated price (CELO
+    // ≈ $0.35) — inflating the reservation past a few-cent wallet. Token price
+    // 10 gwei × 2 + 2 gwei priority = 22 gwei, NOT native 25×2+2.
+    expect(join.maxFeePerGas).toBe(22_000_000_000n);
     expect(estimates.length).toBeGreaterThan(0);
     for (const e of estimates) {
       expect(e.maxFeePerGas).toBeUndefined(); // NO fee fields in the estimate…
       expect(e.feeCurrency).toBeUndefined(); // …so no balance-based allowance cap
     }
+  });
+
+  it('falls back to the NATIVE base fee when the node lacks the fee-currency gasPrice extension', async () => {
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, noTokenGasPrice: true });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
+    const join = writes.find((w) => w.functionName === 'join')!;
+    expect(join.maxFeePerGas).toBe(52_000_000_000n); // native 25 × 2 + 2 gwei (over-margined but safe)
   });
 
   it('native-coin txs are untouched (no explicit gas or fee overrides)', async () => {

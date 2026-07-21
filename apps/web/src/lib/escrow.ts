@@ -190,11 +190,29 @@ export async function planFeeExtras(
   if (!feeCurrency) return {};
   const out: Record<string, unknown> = { feeCurrency };
   try {
-    const block = await publicClient.getBlock({ blockTag: 'latest' });
-    out.maxFeePerGas = planCapWei(plan, block.baseFeePerGas ?? 0n);
+    // CIP-64 UNITS: a feeCurrency tx's fee fields are denominated IN THE FEE
+    // CURRENCY. Celo's fee-abstraction RPC `eth_gasPrice([token])` returns the
+    // current suggested price in TOKEN units — the right base for the cap. The
+    // native base fee is the WRONG unit: with CELO ≈ ⅓ of a cUSD, a
+    // native-derived cap over-reserves ~3× and blew C4 on a 12¢ wallet ("total
+    // cost … exceeds the balance" with money actually there).
+    const priced = (await (publicClient as unknown as { request: (a: { method: string; params: unknown[] }) => Promise<unknown> }).request({
+      method: 'eth_gasPrice',
+      params: [feeCurrency],
+    })) as string;
+    out.maxFeePerGas = planCapWei(plan, BigInt(priced));
     out.maxPriorityFeePerGas = plan.priorityWei;
   } catch {
-    /* block read failed → let viem estimate the fees */
+    // Node without the extension: fall back to the NATIVE base fee — an
+    // over-margined cap (clears C1 with room) that the ladder's THRIFTY rung
+    // shrinks if it trips C4.
+    try {
+      const block = await publicClient.getBlock({ blockTag: 'latest' });
+      out.maxFeePerGas = planCapWei(plan, block.baseFeePerGas ?? 0n);
+      out.maxPriorityFeePerGas = plan.priorityWei;
+    } catch {
+      /* block read failed too → let viem estimate the fees */
+    }
   }
   try {
     const estimated = await (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> }).estimateContractGas(estimateRequest);
