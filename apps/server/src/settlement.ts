@@ -24,14 +24,24 @@ import {
   type Hex,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { celo } from 'viem/chains';
+import { celo as celoBase } from 'viem/chains';
 import type { Store, SettlementJob } from './store/index.js';
+
+// Widen viem's base-fee margin (default 1.2×) so the arbiter's settle/refundExpired
+// txs clear Celo's spiky base fee — a 1.2× cap landed below the block base fee and
+// was rejected ("maxFeePerGas cannot be lower than block base fee"), which would
+// STALL a lone-staker refund (the durable queue keeps retrying, but only succeeds
+// once the cap clears). Mirrors the client fix (apps/web/src/lib/chains.ts). The
+// spread keeps Celo's formatters + serializers (CIP-64 feeCurrency, gas in cUSD).
+const SETTLEMENT_BASE_FEE_MULTIPLIER = 3;
+const celo: Chain = { ...celoBase, fees: { ...celoBase.fees, baseFeeMultiplier: SETTLEMENT_BASE_FEE_MULTIPLIER } };
 
 const celoSepolia = defineChain({
   id: 11_142_220,
   name: 'Celo Sepolia',
   nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
   rpcUrls: { default: { http: ['https://forno.celo-sepolia.celo-testnet.org'] } },
+  fees: { baseFeeMultiplier: SETTLEMENT_BASE_FEE_MULTIPLIER },
   testnet: true,
 });
 
