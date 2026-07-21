@@ -162,6 +162,25 @@ export async function feeCurrencyExtra(
 }
 
 /**
+ * An explicit gas limit for a feeCurrency tx, estimated WITHOUT any fee fields.
+ * With explicit fees in the request (the #69 cap), eth_estimateGas also applies
+ * an affordability cap — computed against the NATIVE balance on that path, which
+ * is 0 for a burner (its gas lives in cUSD): "gas required exceeds allowance
+ * (0)". A fee-less estimate skips the affordability cap entirely (pre-#69
+ * behaviour); ×1.5 covers the CIP-64 fee-debit overhead and state drift between
+ * estimate and mine. Returns {} when the estimate itself fails (e.g. a lagging
+ * node that can't see a fresh allowance yet) — the send path then estimates,
+ * and the lock retry (one attempt later) covers the transient. */
+export async function feeGasExtra(publicClient: PublicClient, request: { address: Address; abi: readonly unknown[]; functionName: string; args: readonly unknown[]; account: unknown }): Promise<Record<string, unknown>> {
+  try {
+    const estimated = await (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> }).estimateContractGas(request);
+    return { gas: (estimated * 15n) / 10n };
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Locks the caller's stake: approve (only if the allowance is short) then
  * join(gameId, token, stake). Idempotent: every attempt re-checks the escrow
  * first, so an address that already joined never locks a second time.
@@ -206,13 +225,15 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
       const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
       if (allowance < stake) {
         onStatus?.('approving');
-        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra });
+        const approveGas = feeCurrency ? await feeGasExtra(publicClient, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }) : {};
+        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra, ...approveGas });
         const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
         if (r.status !== 'success') throw new Error('approve reverted');
       }
 
       onStatus?.('joining');
-      const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], ...extra });
+      const joinGas = feeCurrency ? await feeGasExtra(publicClient, { address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], account: signer }) : {};
+      const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], ...extra, ...joinGas });
       const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
       if (r.status !== 'success') throw new Error('join reverted');
 
@@ -259,13 +280,15 @@ export async function stakeInEscrowN(params: StakeParams & { seatCount: number }
       const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
       if (allowance < stake) {
         onStatus?.('approving');
-        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra });
+        const approveGas = feeCurrency ? await feeGasExtra(publicClient, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }) : {};
+        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...extra, ...approveGas });
         const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
         if (r.status !== 'success') throw new Error('approve reverted');
       }
 
       onStatus?.('joining');
-      const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], ...extra });
+      const joinGas = feeCurrency ? await feeGasExtra(publicClient, { address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], account: signer }) : {};
+      const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], ...extra, ...joinGas });
       const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
       if (r.status !== 'success') throw new Error('join reverted');
 
