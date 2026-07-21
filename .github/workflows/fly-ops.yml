@@ -16,6 +16,18 @@
 # adding this op: the addresses prod advertises in hello.ok already EQUAL the
 # baked deployments.json (0xcf84c9… / 0x7c02f1…), so unsetting only removes
 # the drift risk for the NEXT escrow redeploy; behaviour is unchanged.
+#
+# arm-mainnet: flips the running server to Celo MAINNET and sets the Race Week
+# faucet/JIT secrets in ONE atomic `flyctl secrets import` (single restart). The
+# two real key secrets (ARBITER_PRIVATE_KEY, RACE_FAUCET_PRIVATE_KEY) are read
+# from GitHub *repo secrets* — NOT from workflow inputs — so private keys never
+# appear in the run inputs or logs (GitHub masks registered secret values). To
+# guard against an accidental run it requires typing ARM-MAINNET in `confirm`.
+# STAKING_ENABLED (real-money staked play, R-COMP-2 gate) is set ONLY when
+# `enable_staking=true` is chosen explicitly — the default arms mainnet free
+# play + Race Week with staked play still OFF. Run this in lockstep with merging
+# the frontend switch (vercel.json VITE_CHAIN=celo) so client + server agree on
+# the chain.
 name: fly-ops
 on:
   workflow_dispatch:
@@ -27,6 +39,24 @@ on:
         options:
           - unset-cosmetics-store-address
           - unset-escrow-addresses
+          - arm-mainnet
+      confirm:
+        description: 'arm-mainnet only: type ARM-MAINNET to confirm'
+        required: false
+        type: string
+      enable_staking:
+        description: 'arm-mainnet only: set STAKING_ENABLED=true (real-money staked play — needs R-COMP-2 sign-off)'
+        required: false
+        default: false
+        type: boolean
+      race_ends_at:
+        description: 'arm-mainnet only: RACE_ENDS_AT (ISO 8601, e.g. 2026-08-01T00:00:00Z) — optional'
+        required: false
+        type: string
+      staking_allowed_countries:
+        description: 'arm-mainnet only: STAKING_ALLOWED_COUNTRIES (R-COMP-1 allowlist, CSV of ISO codes) — optional'
+        required: false
+        type: string
 
 concurrency: fly-ops
 
@@ -77,3 +107,53 @@ jobs:
           fi
           echo "Secrets AFTER (names only):"
           flyctl secrets list -a ludo-arena
+      - name: arm mainnet (Celo) — set launch secrets
+        if: ${{ inputs.operation == 'arm-mainnet' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          # Real key material — sourced from REPO SECRETS, never from inputs.
+          ARBITER_PRIVATE_KEY: ${{ secrets.ARBITER_PRIVATE_KEY }}
+          RACE_FAUCET_PRIVATE_KEY: ${{ secrets.RACE_FAUCET_PRIVATE_KEY }}
+          CONFIRM: ${{ inputs.confirm }}
+          ENABLE_STAKING: ${{ inputs.enable_staking }}
+          RACE_ENDS_AT: ${{ inputs.race_ends_at }}
+          STAKING_ALLOWED_COUNTRIES: ${{ inputs.staking_allowed_countries }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          if [ "${CONFIRM:-}" != "ARM-MAINNET" ]; then
+            echo "::error::type ARM-MAINNET in the 'confirm' box to proceed (guards against an accidental run)"; exit 1
+          fi
+          if [ -z "${ARBITER_PRIVATE_KEY:-}" ]; then
+            echo "::error::add the ARBITER_PRIVATE_KEY repo secret first (Settings → Secrets and variables → Actions)"; exit 1
+          fi
+          if [ -z "${RACE_FAUCET_PRIVATE_KEY:-}" ]; then
+            echo "::error::add the RACE_FAUCET_PRIVATE_KEY repo secret first (Settings → Secrets and variables → Actions)"; exit 1
+          fi
+          echo "Secrets BEFORE (names only):"
+          flyctl secrets list -a ludo-arena || true
+          # Build the import body from env — secret VALUES are GitHub-masked in
+          # logs, and `secrets import` reads NAME=value from stdin so nothing
+          # sensitive lands in argv. One import = one atomic restart.
+          {
+            echo "CHAIN=celo"
+            echo "RACE_WEEK_ACTIVE=true"
+            echo "RACE_JIT_FUNDING=true"
+            echo "RACE_FEE_IN_STABLE=true"
+            echo "RACE_QUOTA_CENTS=10"
+            echo "RACE_PER_GAME_CENTS=2"
+            echo "RACE_POOL_CENTS=3000"
+            echo "RACE_SEED_CENTS=1"
+            echo "ARBITER_PRIVATE_KEY=$ARBITER_PRIVATE_KEY"
+            echo "RACE_FAUCET_PRIVATE_KEY=$RACE_FAUCET_PRIVATE_KEY"
+            if [ "${ENABLE_STAKING:-false}" = "true" ]; then echo "STAKING_ENABLED=true"; fi
+            if [ -n "${RACE_ENDS_AT:-}" ]; then echo "RACE_ENDS_AT=$RACE_ENDS_AT"; fi
+            if [ -n "${STAKING_ALLOWED_COUNTRIES:-}" ]; then echo "STAKING_ALLOWED_COUNTRIES=$STAKING_ALLOWED_COUNTRIES"; fi
+          } | flyctl secrets import -a ludo-arena
+          echo "Secrets AFTER (names only):"
+          flyctl secrets list -a ludo-arena
+          if [ "${ENABLE_STAKING:-false}" = "true" ]; then
+            echo "::warning::STAKING_ENABLED=true — real-money staked play is now ARMED. Confirm R-COMP-2 sign-off + the STAKING_ALLOWED_COUNTRIES allowlist are correct."
+          else
+            echo "STAKING_ENABLED left UNSET — mainnet free play + Race Week are armed; staked play stays OFF (R-COMP-2 gate). Re-run with enable_staking=true after sign-off."
+          fi

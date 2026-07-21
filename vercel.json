@@ -8,7 +8,7 @@
   "build": {
     "env": {
       "VITE_SERVER_URL": "wss://ludo-arena.fly.dev",
-      "VITE_CHAIN": "celo-sepolia"
+      "VITE_CHAIN": "celo"
     }
   }
 }

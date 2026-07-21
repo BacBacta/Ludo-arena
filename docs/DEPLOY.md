@@ -101,7 +101,10 @@ it picks up `vercel.json`). Set/confirm project env vars (they are baked at
 build time):
 
 - `VITE_SERVER_URL = wss://ludo-arena-server.fly.dev`
-- `VITE_CHAIN = celo-sepolia`
+- `VITE_CHAIN = celo` — committed in `vercel.json` (`build.env`). This points the
+  frontend at **mainnet** (chainId 42220), so real cUSD cosmetics + the mainnet
+  RacePass go live on the next Vercel build. Flip the server (`CHAIN=celo`) FIRST
+  so both target the same chain; a dashboard value overrides the committed one.
 
 ## Order
 
@@ -224,7 +227,11 @@ Prereqs:
 - Contracts deployed on Celo mainnet: `NETWORK=celo DEPLOYER_PRIVATE_KEY=0x… npm run deploy -w packages/contracts`, then commit the regenerated `deployments.json` (both copies). By default arbiter = treasury = deployer; override with `ARBITER_ADDRESS=0x… TREASURY_ADDRESS=0x…` to split the roles (recommended — treasury → multisig).
 - **If treasury ≠ deployer**, the escrow's `owner` is the treasury (constructor sets `owner = treasury`), so the deploy CANNOT allowlist the stablecoin itself — it skips `setTokenAllowed` / `setTierRakeBps` with a loud warning printing the exact calls. The **treasury** must then call `setTokenAllowed(cUSD, true)` on BOTH LudoEscrow and LudoEscrowN (fund it with CELO for gas). Until it does, every staked `join()` reverts `TokenNotAllowed` — no staked game can start. The RacePass owner stays the deployer, so `setMintOpen(true)` is a deployer call.
 - The deploy records `racePass` **and** the real cUSD `stablecoin` in `deployments.json`, so neither `RACE_PASS_ADDRESS` nor `RACE_STABLECOIN_ADDRESS` is needed as a secret — the server resolves both from the baked file.
-- A DEDICATED faucet wallet (NOT the deployer) holding the $30 race pool in cUSD **+ CELO for gas** (it pays its own transfer gas). Arm the Pass mint after deploy: owner calls `setMintOpen(true)` on the RacePass.
+- A DEDICATED faucet wallet (NOT the deployer) holding the $30 race pool in cUSD **+ CELO for gas** (it pays its own transfer gas). Arm the Pass mint AFTER the server secrets are live (the server watches `Minted` to unlock the quota) — the RacePass owner (deployer) runs:
+  ```bash
+  NETWORK=celo OPEN=true DEPLOYER_PRIVATE_KEY=0x<deployer> npm run set-mint-open -w packages/contracts
+  ```
+  The script refuses to run unless the caller is the on-chain owner, is idempotent (no-op if already open), and reads the RacePass address from `deployments.json`. Close the window at event end with `OPEN=false`.
 - The deployer/arbiter wallet also needs ongoing CELO (it signs every settlement).
 
 ```bash
@@ -238,13 +245,32 @@ flyctl secrets set -a ludo-arena \
   RACE_QUOTA_CENTS="10" \
   RACE_PER_GAME_CENTS="2" \
   RACE_POOL_CENTS="3000" \
+  RACE_SEED_CENTS="1" \                          # B1: gas seed before the burner's first mint
+  RACE_FEE_IN_STABLE="true" \                    # B1: faucet pays its own gas in cUSD
   RACE_ENDS_AT="<ISO end time>"
 # Escrow addresses resolve from the baked deployments.json — make sure no stale
 # ESCROW_ADDRESS / ESCROW_N_ADDRESS override secret shadows the mainnet ones.
 ```
 
+`CHAIN="celo"` is also committed to `fly.toml`, so a plain `flyctl deploy` (or a
+push to `main`) already targets mainnet; the secret above just makes it explicit
+and wins over the file. The `STAKING_ENABLED`, `ARBITER_PRIVATE_KEY` and
+`RACE_FAUCET_PRIVATE_KEY` values are real key material / the real-money switch —
+set them here, never in the repo.
+
 > One Fly app = one `CHAIN`. Switching to `celo` ENDS the testnet event and starts
 > the mainnet one on the same server — they can't run simultaneously.
+
+#### No terminal? Arm from the Actions tab (`fly-ops` → `arm-mainnet`)
+
+For a web/no-CLI operator, the `arm-mainnet` op in `.github/workflows/fly-ops.yml`
+does the whole `flyctl secrets import` above in one click (single atomic restart):
+
+1. **Add two repo secrets** (Settings → Secrets and variables → Actions): `ARBITER_PRIVATE_KEY`, `RACE_FAUCET_PRIVATE_KEY`. The workflow reads them from `secrets.*`, so the keys never appear in inputs or logs (GitHub masks the values). `FLY_API_TOKEN` must already exist (the deploy workflow uses it).
+2. **Run the workflow**: Actions → `fly-ops` → Run workflow → operation `arm-mainnet`, type `ARM-MAINNET` in `confirm`. Leave `enable_staking` **off** for a free-play-only mainnet launch; set it **true** only after R-COMP-2 sign-off (it sets `STAKING_ENABLED=true`). Optionally fill `race_ends_at` (ISO) and `staking_allowed_countries` (R-COMP-1 CSV).
+3. It sets `CHAIN=celo` + the Race Week faucet/JIT secrets and restarts the machine. Run it **in lockstep with merging the frontend switch** (`vercel.json` `VITE_CHAIN=celo`) so client + server target the same chain.
+
+This does NOT bypass R-COMP-2: staked play arms only when you explicitly choose `enable_staking=true`, which is your sign-off decision to make.
 
 - `RACE_QUOTA_CENTS` = max a single wallet can ever draw (10 = ten 1¢ games).
 - `RACE_POOL_CENTS` = total budget ($30 = 3000). Grants stop when the pool is dry.

@@ -14,7 +14,10 @@ primary_region = "ams"
 
 [env]
   PORT = "8080"
-  CHAIN = "celo-sepolia"
+  # Mainnet (Celo, chainId 42220). Staked play stays OFF until the STAKING_ENABLED
+  # secret is set to "true" (R-COMP-2 gate) — free play + cosmetics + RacePass run
+  # on mainnet regardless. A `flyctl secrets set CHAIN=…` still overrides this.
+  CHAIN = "celo"
 
 [http_service]
   internal_port = 8080
