@@ -98,6 +98,20 @@ export function seedFpDrawCents(raw: string | null, targetCents: number): number
   }
 }
 
+/** The wallets a DEVICE has already claimed the Race Week grant with, parsed
+ *  from its `race:fp:` meta row. Legacy rows stored one bare wallet address —
+ *  parsed as that one wallet. Empty / missing rows (never claimed, or a
+ *  rolled-back claim) are none. */
+export function claimFpWallets(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const w = (JSON.parse(raw) as { wallets?: unknown }).wallets;
+    return Array.isArray(w) ? w.filter((x): x is string => typeof x === 'string') : [raw];
+  } catch {
+    return [raw]; // legacy row: the bare claiming-wallet address
+  }
+}
+
 export interface RaceConfig {
   /** Cents funded to each eligible player (their whole quota for the event). */
   quotaCents: number;

@@ -68,7 +68,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { createRaceFaucet, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { claimFpWallets, createRaceFaucet, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -2109,10 +2109,16 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'race.claimed', fundedCents: 0, alreadyFunded: true });
           break;
         }
-        // One grant per device: a farmer can't drain the pool across N wallets
-        // on one phone (fingerprints are spoofable — a cheap extra gate, not the
-        // whole defence; the soulbound Pass + proven wallet carry the weight).
-        if (fpKey && (await store.getMeta(fpKey))) {
+        // Per-device allowance: up to SEED_LIFETIME_MULT wallets may claim on one
+        // device — NOT a one-shot gate. Same wiped-burner trap as the gas seed
+        // (#58): "Clear site data" loses the claiming wallet's KEY, and a one-shot
+        // gate then locks the whole device out of the event forever, whatever
+        // replacement wallet it shows up with. The cap keeps farming bounded (one
+        // device backs at most 3 wallets; fingerprints are spoofable anyway — the
+        // soulbound Pass, the JIT drip and the pool cap carry the weight).
+        const fpPriorRaw = fpKey ? await store.getMeta(fpKey) : null;
+        const fpWallets = claimFpWallets(fpPriorRaw);
+        if (fpWallets.length >= SEED_LIFETIME_MULT && !fpWallets.includes(rWallet.toLowerCase())) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'This device already claimed its Race Week bonus.' });
           break;
         }
@@ -2136,7 +2142,7 @@ wss.on('connection', (ws, req) => {
         // Reserve BEFORE the transfer (record grant + debit pool), so a crash
         // mid-transfer can only UNDER-fund (support-fixable), never double-fund.
         await store.setMeta(walletKey, JSON.stringify({ cents: grantCents, at: rNow, fp: session.fingerprint ?? null }));
-        if (fpKey) await store.setMeta(fpKey, rWallet.toLowerCase());
+        if (fpKey) await store.setMeta(fpKey, JSON.stringify({ wallets: [...new Set([...fpWallets, rWallet.toLowerCase()])] }));
         await store.setMeta('race:pool:spent', String(spent + grantCents));
         // JIT: track the running total already funded to THIS wallet so the
         // top-up hook knows how much quota is left to drip out over its games.
@@ -2148,7 +2154,7 @@ wss.on('connection', (ws, req) => {
         } catch (e) {
           // Transfer failed after reserving → roll back so the player can retry.
           await store.setMeta(walletKey, '');
-          if (fpKey) await store.setMeta(fpKey, '');
+          if (fpKey) await store.setMeta(fpKey, fpPriorRaw ?? '');
           await store.setMeta('race:pool:spent', String(spent));
           if (raceFaucet.jit) await store.setMeta(`race:funded:${rWallet.toLowerCase()}`, '');
           console.error('[race] funding transfer failed', e);

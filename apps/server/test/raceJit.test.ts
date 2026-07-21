@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents } from '../src/race.js';
+import { claimFpWallets, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents } from '../src/race.js';
 
 // JIT (just-in-time) funding is the mainnet anti-"claim-and-run" model: instead
 // of granting a wallet its whole quota up front, the faucet drips one stake at a
@@ -136,5 +136,35 @@ describe('per-device seed draw parsing', () => {
     const drawn = seedFpDrawCents('0xoldburner', 10);
     // A replacement burner (deficit 10) is re-seeded: min(wallet grant, device headroom).
     expect(Math.min(seedGrantCents(10, 0, cap, 20, 5000), Math.max(0, cap - drawn))).toBe(10);
+  });
+});
+
+// The claim's device gate got the same treatment as the seed's (#58): a device
+// may back up to SEED_LIFETIME_MULT wallets instead of exactly one, so a player
+// whose burner key was wiped ("Clear site data") can re-claim with the
+// replacement wallet. claimFpWallets parses the device's claim roster,
+// including legacy rows that stored one bare wallet address.
+
+describe('per-device claim roster parsing', () => {
+  it('a never-claimed device (no row) has no wallets', () => {
+    expect(claimFpWallets(null)).toEqual([]);
+  });
+  it('a rolled-back row (empty string) has no wallets', () => {
+    expect(claimFpWallets('')).toEqual([]);
+  });
+  it('a legacy row (bare wallet address) is that one wallet', () => {
+    expect(claimFpWallets('0xabc0000000000000000000000000000000000def')).toEqual(['0xabc0000000000000000000000000000000000def']);
+  });
+  it('a JSON row returns its roster', () => {
+    expect(claimFpWallets('{"wallets":["0xaaa","0xbbb"]}')).toEqual(['0xaaa', '0xbbb']);
+  });
+  it('the wiped-burner scenario: a legacy one-wallet device still has 2 claims left', () => {
+    const wallets = claimFpWallets('0xoldburner');
+    expect(wallets.length < SEED_LIFETIME_MULT).toBe(true); // replacement wallet may claim
+  });
+  it('a full roster blocks a 4th wallet', () => {
+    const wallets = claimFpWallets('{"wallets":["0xa","0xb","0xc"]}');
+    expect(wallets.length >= SEED_LIFETIME_MULT).toBe(true);
+    expect(wallets.includes('0xd')).toBe(false); // …unless it already claimed
   });
 });
