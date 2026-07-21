@@ -68,7 +68,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { createRaceFaucet, jitClaimCents, jitTopUpCents, type RaceFaucet } from './race.js';
+import { createRaceFaucet, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -1999,17 +1999,28 @@ wss.on('connection', (ws, req) => {
         const sWallet = session.wallet;
         const seedKey = `race:seed:${sWallet.toLowerCase()}`;
         const seedFpKey = session.fingerprint ? `race:seedfp:${session.fingerprint}` : null;
-        // Idempotent per wallet, but TOP-UP aware. A prior seed BELOW the current
-        // target is topped up by the delta — so raising RACE_SEED_CENTS (e.g. after
-        // a Celo base-fee spike left the first grant too small to cover the mint
-        // reservation) reaches already-seeded burners instead of stranding them.
+        // The top-up keys on the burner's LIVE on-chain balance, not on "was the
+        // target ever granted": a failed mint attempt still burns its cUSD gas, so
+        // a fully-granted wallet can sit below the mint's gas reservation forever
+        // (the drained-burner trap — every retry got `alreadySeeded` and the mint
+        // kept failing on funds). `cents` in the meta is the wallet's CUMULATIVE
+        // lifetime draw (old records stored the reached target — same value), and
+        // bounds abuse (drain-and-reclaim) via SEED_LIFETIME_MULT.
         const priorRaw = await store.getMeta(seedKey);
         const priorCents = priorRaw ? Number((JSON.parse(priorRaw) as { cents?: number }).cents ?? 0) : 0;
-        if (priorCents >= raceFaucet.seedCents) {
+        let seedBalCents: number;
+        try {
+          seedBalCents = await raceFaucet.balanceCentsOf(sWallet as Address);
+        } catch {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Gas seed failed — try again in a moment.' });
+          break;
+        }
+        const seedDeficit = seedDeficitCents(raceFaucet.seedCents, seedBalCents);
+        if (seedDeficit <= 0) {
+          // The wallet already holds the full gas target — nothing to send.
           session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: true });
           break;
         }
-        const topUpCents = raceFaucet.seedCents - priorCents; // full seed when fresh
         // One seed per device (fingerprints are spoofable — a cheap gate; the pool
         // cap is the real backstop). Only gate a FRESH wallet (priorCents === 0); a
         // top-up for the SAME already-seeded wallet must pass — it's not a new device
@@ -2019,14 +2030,18 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const seedSpent = Number((await store.getMeta('race:pool:spent')) || '0');
-        if (seedSpent + topUpCents > raceFaucet.poolCents) {
-          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Race Week funding pool is exhausted.' });
+        const topUpCents = seedGrantCents(seedDeficit, priorCents, raceFaucet.seedCents * SEED_LIFETIME_MULT, seedSpent, raceFaucet.poolCents);
+        if (topUpCents <= 0) {
+          // Deficit is real but nothing can be granted: wallet at its lifetime cap
+          // or the pool is dry.
+          const capped = priorCents >= raceFaucet.seedCents * SEED_LIFETIME_MULT;
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: capped ? 'This wallet already used its gas-seed allowance.' : 'Race Week funding pool is exhausted.' });
           break;
         }
-        // Reserve BEFORE the transfer (same crash-safety as claim): record the NEW
-        // target, count only the delta against the pool. Roll back to the prior
-        // state on a failed transfer.
-        await store.setMeta(seedKey, JSON.stringify({ cents: raceFaucet.seedCents, at: sNow, fp: session.fingerprint ?? null }));
+        // Reserve BEFORE the transfer (same crash-safety as claim): record the new
+        // cumulative draw, count only the delta against the pool. Roll back to the
+        // prior state on a failed transfer.
+        await store.setMeta(seedKey, JSON.stringify({ cents: priorCents + topUpCents, at: sNow, fp: session.fingerprint ?? null }));
         if (seedFpKey) await store.setMeta(seedFpKey, sWallet.toLowerCase());
         await store.setMeta('race:pool:spent', String(seedSpent + topUpCents));
         try {
