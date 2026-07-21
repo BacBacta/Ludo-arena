@@ -43,7 +43,7 @@ function CloseHint({ onClose, top = 10 }: { onClose(): void; top?: number }) {
   );
 }
 
-export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
+export function TopBar({ onConnect, onDisconnect }: { onConnect?: () => Promise<boolean>; onDisconnect?: () => Promise<void> }) {
   const { balanceCents, walletBacked, soundOn, streak, challenge, tickets, profile } = useAppState();
   const dispatch = useAppDispatch();
   // Draw the eye to Progression when there's something to do there: an unfinished
@@ -121,6 +121,20 @@ export function TopBar({ onConnect }: { onConnect?: () => Promise<boolean> }) {
               >
                 {t('addCash')}
               </a>
+            )}
+            {/* Outside MiniPay, let the user drop this wallet and pair a different
+                one — MiniPay's wallet is ambient and not ours to disconnect. */}
+            {!isMiniPay() && onDisconnect && (
+              <button
+                className="topbar__disconnect"
+                title={t('disconnectWallet')}
+                aria-label={t('disconnectWallet')}
+                onClick={() => void onDisconnect()}
+              >
+                <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+                </svg>
+              </button>
             )}
           </div>
         ) : isMiniPay() ? (
