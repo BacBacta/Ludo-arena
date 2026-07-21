@@ -1185,17 +1185,26 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('raceClaimFailed') }); // null = timeout / no socket
       }
     } catch (e) {
-      // Mint (or connect) threw. Distinguish the two actionable cases: on the
-      // wrong network (→ add/switch the active chain) vs out of gas (→ CELO).
-      // {chain} is filled from activeChain.name so the message names the real
-      // target (Celo on mainnet, Celo Sepolia on testnet) — never a stale label.
-      const m = String((e as Error)?.message ?? e).toLowerCase();
-      const msg =
-        m.includes('wrong_chain') || m.includes('chain') || m.includes('network') || m.includes('deployment') || m.includes('unsupported')
-          ? t('raceWrongNetwork').replace('{chain}', activeChain.name)
-          : m.includes('insufficient') || m.includes('funds') || m.includes('gas')
-            ? t('raceNeedGas').replace('{chain}', activeChain.name)
-            : t('raceClaimFailed');
+      // Mint (or connect) threw. Surface the RAW cause — the toast is lossy and the
+      // classification below is heuristic, so the console line is what we debug from.
+      const raw = String((e as Error)?.message ?? e);
+      console.error('[joinRaceWeek] failed:', raw);
+      const m = raw.toLowerCase();
+      // A GENUINE wrong-network error carries the WRONG_CHAIN sentinel (an injected
+      // wallet that declined the switch) or viem's explicit mismatch phrase. Do NOT
+      // match a bare "chain"/"network": every viem error prints "Chain: Celo (id: …)"
+      // and "Request Arguments", so a greedy match mislabels EVERY failure (no gas,
+      // revert, RPC) as "wrong network" and hides the real cause. {chain} is filled
+      // from activeChain.name so the message names the real target.
+      const wrongNet =
+        m.includes('wrong_chain') || m.includes('does not match the target chain') || m.includes('unrecognized chain');
+      const needGas =
+        m.includes('insufficient') || m.includes('funds for gas') || m.includes('exceeds the balance') || m.includes('max fee per gas less than');
+      const msg = wrongNet
+        ? t('raceWrongNetwork').replace('{chain}', activeChain.name)
+        : needGas
+          ? t('raceNeedGas').replace('{chain}', activeChain.name)
+          : t('raceClaimFailed');
       dispatch({ type: 'TOAST', message: msg });
     } finally {
       dispatch({ type: 'RACE_JOINING', joining: false });
