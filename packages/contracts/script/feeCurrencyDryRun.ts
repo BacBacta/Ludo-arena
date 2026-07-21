@@ -90,6 +90,14 @@ async function main(): Promise<void> {
   if (celoBefore === 0n) console.log(`\n✔ burner has ZERO CELO — a successful tx below PROVES gas was paid in ${sym}.`);
   else console.log(`\n⚠ burner has some CELO; the strict proof is that its CELO stays UNCHANGED after the tx.`);
 
+  // Gas price for a feeCurrency tx is denominated in the TOKEN, not CELO — viem's
+  // default estimate uses the native base fee and comes out below the token base
+  // fee ("max fee per gas less than block base fee"). Celo's eth_gasPrice takes the
+  // fee-currency address and returns the price in that token; set the 1559 caps
+  // from it explicitly. (The client's burner path needs the same — see minipay.ts.)
+  const gp = BigInt((await pc.request({ method: 'eth_gasPrice', params: [FEE_CURRENCY] } as never)) as string);
+  console.log(`  ${sym} gas price: ${gp} → maxFeePerGas ${gp * 2n}`);
+
   // The test tx: a 1-unit self-transfer of the fee token, WITH feeCurrency set so
   // gas is charged in the token (CIP-64). Minimal + state-changing → real gas.
   console.log(`\nsending self-transfer of 1 base unit of ${sym}, gas paid in ${sym} (feeCurrency)…`);
@@ -99,12 +107,22 @@ async function main(): Promise<void> {
     functionName: 'transfer',
     args: [account.address, 1n],
     feeCurrency: FEE_CURRENCY,
+    maxFeePerGas: gp * 2n,
+    maxPriorityFeePerGas: gp,
   } as Parameters<typeof wc.writeContract>[0]);
   const receipt = await pc.waitForTransactionReceipt({ hash });
   console.log(`  tx ${hash} → ${receipt.status}`);
 
   const celoAfter = await pc.getBalance({ address: account.address });
-  const tokAfter = (await pc.readContract({ address: FEE_CURRENCY, abi: ERC20, functionName: 'balanceOf', args: [account.address] })) as bigint;
+  // Forno is a load-balanced RPC: a balance read right after the tx often hits a
+  // node that hasn't applied the block yet and returns the STALE pre-tx balance
+  // (making it look like 0 gas was charged). Re-read until the token balance moves
+  // off tokBefore (the gas debit) or a few tries elapse — the delta is the gas.
+  let tokAfter = tokBefore;
+  for (let i = 0; i < 8 && tokAfter === tokBefore; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+    tokAfter = (await pc.readContract({ address: FEE_CURRENCY, abi: ERC20, functionName: 'balanceOf', args: [account.address] })) as bigint;
+  }
   const gasInToken = tokBefore - tokAfter; // self-transfer nets 0, so the whole delta is gas
 
   let ok = true;
