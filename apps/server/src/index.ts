@@ -68,7 +68,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { claimFpWallets, createRaceFaucet, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -2070,16 +2070,7 @@ wss.on('connection', (ws, req) => {
           const seedCause = String((e as { shortMessage?: string }).shortMessage ?? (e as Error)?.message ?? e);
           const faucetCents = await raceFaucet.faucetBalanceCents().catch(() => null);
           console.error(`[race] gas-seed transfer failed (faucet balance: ${faucetCents ?? 'unreadable'}c, sending ${topUpCents}c)`, e);
-          // "Dry" needs headroom beyond the grant itself — the transfer's own gas
-          // is also paid from this balance (feeInStable).
-          const faucetDry = faucetCents !== null && faucetCents < topUpCents + 5;
-          session.send({
-            t: 'error',
-            code: 'BAD_STATE',
-            message: faucetDry
-              ? 'Race Week faucet is out of funds — refill pending, check back soon.'
-              : `Gas seed failed — try again in a moment. (${seedCause.slice(0, 140)})`,
-          });
+          session.send({ t: 'error', code: 'BAD_STATE', message: faucetFailureMessage('seed', faucetCents, topUpCents, seedCause) });
         }
         break;
       }
@@ -2157,8 +2148,13 @@ wss.on('connection', (ws, req) => {
           if (fpKey) await store.setMeta(fpKey, fpPriorRaw ?? '');
           await store.setMeta('race:pool:spent', String(spent));
           if (raceFaucet.jit) await store.setMeta(`race:funded:${rWallet.toLowerCase()}`, '');
-          console.error('[race] funding transfer failed', e);
-          session.send({ t: 'error', code: 'BAD_STATE', message: 'Funding failed — try again in a moment.' });
+          // Same diagnostics as the gas-seed catch: the dry faucet is the one
+          // hard failure retries can't fix, and viem's shortMessage names
+          // everything else — both belong in the toast and the Fly logs.
+          const claimCause = String((e as { shortMessage?: string }).shortMessage ?? (e as Error)?.message ?? e);
+          const claimFaucetCents = await raceFaucet.faucetBalanceCents().catch(() => null);
+          console.error(`[race] funding transfer failed (faucet balance: ${claimFaucetCents ?? 'unreadable'}c, sending ${grantCents}c)`, e);
+          session.send({ t: 'error', code: 'BAD_STATE', message: faucetFailureMessage('claim', claimFaucetCents, grantCents, claimCause) });
         }
         break;
       }

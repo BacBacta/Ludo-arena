@@ -112,6 +112,20 @@ export function claimFpWallets(raw: string | null): string[] {
   }
 }
 
+/** The player-facing message for a failed faucet transfer, shared by the seed
+ *  and claim paths. Dry faucet (balance below the grant + a gas margin — the
+ *  transfer's own gas is paid from the same balance under feeInStable) is the
+ *  one failure retrying can never fix, so it is named explicitly; anything else
+ *  surfaces the underlying cause (viem's shortMessage), truncated toast-size.
+ *  An unreadable balance (null) never claims "dry". */
+export function faucetFailureMessage(kind: 'seed' | 'claim', faucetCents: number | null, sendingCents: number, cause: string): string {
+  if (faucetCents !== null && faucetCents < sendingCents + 5) {
+    return 'Race Week faucet is out of funds — refill pending, check back soon.';
+  }
+  const label = kind === 'seed' ? 'Gas seed' : 'Funding';
+  return `${label} failed — try again in a moment. (${cause.slice(0, 140)})`;
+}
+
 export interface RaceConfig {
   /** Cents funded to each eligible player (their whole quota for the event). */
   quotaCents: number;
@@ -241,22 +255,36 @@ export class RaceFaucet {
 
   /** Send `cents` of the stablecoin to `to`. Waits for the receipt so the caller
    *  only records the grant once it's actually mined. Throws on revert. */
-  async fund(to: Address, cents: number): Promise<Hex> {
+  async fund(to: Address, cents: number, retryDelayMs = 2500): Promise<Hex> {
     const amount = await this.toUnits(cents);
     // Celo fee abstraction: pay this transfer's gas in the stablecoin itself, so
     // the faucet wallet never needs native CELO (B1). `feeCurrency` is a Celo
     // (CIP-64) field — only set when configured, and viem carries it through on a
     // Celo chain. The cast keeps the generic Chain type quiet, same as settlement.
     const feeExtra = this.feeInStable ? { feeCurrency: this.stablecoin } : {};
-    const hash = await this.walletClient.writeContract({
-      account: this.account,
-      chain: this.chain,
-      address: this.stablecoin,
-      abi: ERC20_TRANSFER_ABI,
-      functionName: 'transfer',
-      args: [getAddress(to), amount],
-      ...feeExtra,
-    } as Parameters<typeof this.walletClient.writeContract>[0]);
+    const send = (): Promise<Hex> =>
+      this.walletClient.writeContract({
+        account: this.account,
+        chain: this.chain,
+        address: this.stablecoin,
+        abi: ERC20_TRANSFER_ABI,
+        functionName: 'transfer',
+        args: [getAddress(to), amount],
+        ...feeExtra,
+      } as Parameters<typeof this.walletClient.writeContract>[0]);
+    let hash: Hex;
+    try {
+      hash = await send();
+    } catch {
+      // A failed BROADCAST never reached the chain, so ONE retry is double-spend
+      // safe — and once a hash exists we never resend (a resend there could pay
+      // twice). This absorbs a load-balanced RPC's transient failures, above all
+      // a stale pending nonce right after a previous faucet tx (the seed → claim
+      // transfers land within a minute of each other): wait out a block so viem
+      // re-derives nonce + fees from a fresh node view.
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      hash = await send();
+    }
     const r = await this.publicClient.waitForTransactionReceipt({ hash });
     if (r.status !== 'success') throw new Error('faucet transfer reverted');
     return hash;
