@@ -261,6 +261,17 @@ set them here, never in the repo.
 > One Fly app = one `CHAIN`. Switching to `celo` ENDS the testnet event and starts
 > the mainnet one on the same server — they can't run simultaneously.
 
+#### No terminal? Arm from the Actions tab (`fly-ops` → `arm-mainnet`)
+
+For a web/no-CLI operator, the `arm-mainnet` op in `.github/workflows/fly-ops.yml`
+does the whole `flyctl secrets import` above in one click (single atomic restart):
+
+1. **Add two repo secrets** (Settings → Secrets and variables → Actions): `ARBITER_PRIVATE_KEY`, `RACE_FAUCET_PRIVATE_KEY`. The workflow reads them from `secrets.*`, so the keys never appear in inputs or logs (GitHub masks the values). `FLY_API_TOKEN` must already exist (the deploy workflow uses it).
+2. **Run the workflow**: Actions → `fly-ops` → Run workflow → operation `arm-mainnet`, type `ARM-MAINNET` in `confirm`. Leave `enable_staking` **off** for a free-play-only mainnet launch; set it **true** only after R-COMP-2 sign-off (it sets `STAKING_ENABLED=true`). Optionally fill `race_ends_at` (ISO) and `staking_allowed_countries` (R-COMP-1 CSV).
+3. It sets `CHAIN=celo` + the Race Week faucet/JIT secrets and restarts the machine. Run it **in lockstep with merging the frontend switch** (`vercel.json` `VITE_CHAIN=celo`) so client + server target the same chain.
+
+This does NOT bypass R-COMP-2: staked play arms only when you explicitly choose `enable_staking=true`, which is your sign-off decision to make.
+
 - `RACE_QUOTA_CENTS` = max a single wallet can ever draw (10 = ten 1¢ games).
 - `RACE_POOL_CENTS` = total budget ($30 = 3000). Grants stop when the pool is dry.
 - `RACE_PER_GAME_CENTS` = drip size (1¢ stake + 1¢ gas buffer). Never exceeds the
