@@ -27,6 +27,15 @@
 # (R-COMP-1): staked play becomes reachable from EVERY region until a trusted
 # edge + a legal-reviewed allowlist are wired (docs/DEPLOY.md §G-6).
 #
+# set-tier-rake: on-chain OWNER call (not a Fly op) — sets the 1¢ Race tier to
+# 1 bps (≈ rake-free) on the DEPLOYED escrows via packages/contracts
+# `npm run set-tier-rake`. Needed because the deploy never seeded that tier, so
+# every 1¢ race pot settled at the 900 bps global default (winner underpaid 9%).
+# Reads the owner key from repo secrets (ESCROW_OWNER_PRIVATE_KEY /
+# TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY); the script verifies on-chain
+# ownership and is idempotent. Rake snapshots per game at join — only games
+# created after the call settle rake-free.
+#
 # arm-mainnet: flips the running server to Celo MAINNET and sets the Race Week
 # faucet/JIT secrets in ONE atomic `flyctl secrets import` (single restart). The
 # two real key secrets (ARBITER_PRIVATE_KEY, RACE_FAUCET_PRIVATE_KEY) are read
@@ -51,6 +60,7 @@ on:
           - unset-escrow-addresses
           - unset-staking-allowed-countries
           - arm-mainnet
+          - set-tier-rake
       confirm:
         description: 'arm-mainnet only: type ARM-MAINNET to confirm'
         required: false
@@ -81,6 +91,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: superfly/flyctl-actions/setup-flyctl@master
+      # set-tier-rake: an ON-CHAIN owner call, not a Fly operation — the runner
+      # (unlike the dev sandbox) can reach Celo RPC. Fixes the deployed escrows'
+      # missing 1¢ Race tier rake (fell back to the 900 bps global: every race
+      # winner was paid 1.82¢ of an announced 2¢). Idempotent; the script
+      # verifies the caller IS the escrow owner and aborts loudly otherwise,
+      # printing the owner address so the right key can be configured.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'set-tier-rake' }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.operation == 'set-tier-rake' }}
+        with:
+          node-version: 22
+      - name: set-tier-rake (rake-free 1c race tier on the DEPLOYED escrows)
+        if: ${{ inputs.operation == 'set-tier-rake' }}
+        env:
+          NETWORK: celo
+          # The escrow OWNER's key (the TREASURY when roles were split at deploy).
+          # First configured secret wins; the on-chain owner check is the real gate.
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
+        run: |
+          if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
+            echo "::error::No owner key configured — add one repo secret among ESCROW_OWNER_PRIVATE_KEY / TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY (must be the escrow owner)."; exit 1
+          fi
+          npm ci
+          npm run set-tier-rake -w packages/contracts
       - name: unset COSMETICS_STORE_ADDRESS
         if: ${{ inputs.operation == 'unset-cosmetics-store-address' }}
         env:
