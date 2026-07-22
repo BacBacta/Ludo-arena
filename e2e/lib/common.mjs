@@ -62,10 +62,18 @@ export class WireBot {
   }
 
   connect(extraHello = {}) {
+    // A RECONNECT (resume flows) must clear the previous socket's tombstone —
+    // playUntilOver guards on `closed`, and a stale true made a resumed bot
+    // abandon its play loop instantly (the server then auto-played it).
+    this.closed = false;
     return new Promise((resolve, reject) => {
       // opts.url lets a single run point different bots at different endpoints
       // (e.g. separate chaos proxies for asymmetric latency); defaults to SRV.
-      const ws = new WebSocket(this.opts.url ?? SRV);
+      // opts.wsOpts forwards ws options — e.g. `localAddress: '127.0.0.2'` binds
+      // a distinct loopback SOURCE address per bot, so a single-host bench can
+      // exercise flows the same-IP anti-collusion gate would otherwise refuse
+      // (staked pairing). Loopback-only; production behaviour is untouched.
+      const ws = new WebSocket(this.opts.url ?? SRV, this.opts.wsOpts);
       this.ws = ws;
       const to = setTimeout(() => reject(new Error(`${this.name}: hello timeout`)), 8000);
       ws.on('open', () => {

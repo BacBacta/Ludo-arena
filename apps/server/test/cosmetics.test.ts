@@ -14,10 +14,10 @@ describe('cosmetics verifier (rec 6)', () => {
   });
 
   it('is dormant on a chain with no CosmeticsStore deployed', () => {
-    // localhost's deployment carries an escrow + stablecoin but no CosmeticsStore,
-    // so the verifier stays off. (celo mainnet used to be the sentinel here, but it
-    // now has a full deployment — see deployments.json.)
-    expect(createCosmeticsVerifier({ CHAIN: 'localhost' })).toBeNull();
+    // Injected deployments (every checked-in chain now carries a full stack —
+    // localhost gained one with the e2e race bench): a chain whose deployment
+    // row has no cosmeticsStore keeps the verifier OFF.
+    expect(createCosmeticsVerifier({ CHAIN: 'localhost' }, { localhost: { chainId: 31_337 } })).toBeNull();
   });
 
   it('builds a verifier when a store address is explicitly configured', () => {

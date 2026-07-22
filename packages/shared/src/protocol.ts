@@ -41,6 +41,13 @@ export const RAKE_BPS = 900;
  *  game at join, so this display table MUST be kept in step with the deployed
  *  configuration (same rule as RAKE_BPS before it). */
 export const RAKE_BPS_BY_STAKE: Readonly<Record<number, number>> = {
+  // Race Week micro-tier: rake-free BY DESIGN (acquisition event; the UI
+  // promises "rake $0.00"). 1 bps, not 0: the escrow treats a 0 tier override
+  // as "unset → fall back to the global 900 bps" — which silently skimmed 9%
+  // off every race pot on-chain (winner got 1.82¢ of an announced 2¢) and, by
+  // leaving winners under the JIT target, made the faucet refill what the
+  // rake had taken. 1 bps ≈ 0 (0.0002¢ dust on a 2¢ pot).
+  1: 1,
   25: 1000, // 10% — acquisition tier, carries the per-settlement gas overhead
   100: 800, // 8%
   500: 600, // 6% — retention tier, priced to keep high-stake players
@@ -710,17 +717,24 @@ export interface FriendInfo {
 
 /** Race Week event state, surfaced in hello.ok while the event is armed (absent
  *  off-event). `funded` = this wallet already claimed its one-time Pass-gated
- *  grant; `endsAt` drives the client countdown; `poolLeftCents` = the WINNABLE
- *  prize budget left (entry grants + JIT top-ups), NOT the faucet's gas subsidy —
- *  gas seeds are an operational cost of a distinct wallet and never tick the pool
- *  down (server tracks them on a separate counter, bounded by the same budget). */
+ *  grant; `endsAt` drives the client countdown.
+ *
+ *  `prizePoolCents` is the FIXED leaderboard prize the banner advertises — a
+ *  separate, operator-held wallet paid out to the top of the board at event end.
+ *  It never changes as games are played. THIS is what the banner shows.
+ *
+ *  `poolLeftCents`/`poolCents` are the FAUCET's internal funding budget (entry
+ *  grants + JIT top-ups) — an operational cost, NOT a prize. They are no longer
+ *  shown to players (a shrinking "prize pool" that was really the faucet
+ *  spending down read as "the faucet eats the prize"); kept on the wire only for
+ *  diagnostics / backward compatibility. */
 export interface RaceState {
   active: boolean;
   quotaCents: number;
   endsAt?: string;
   poolLeftCents: number;
   funded: boolean;
-  /** Total provisioned pool (for the client's pool gauge); absent on old servers. */
+  /** Total provisioned faucet budget (internal/diagnostic); absent on old servers. */
   poolCents?: number;
   /** The FIXED leaderboard prize pool paid out to the top players (a separate,
    *  off-chain wallet — NOT the gas/stake faucet, which is poolCents). Shown on the
@@ -840,7 +854,11 @@ export type ServerMsg =
   | { t: 'race.claimed'; fundedCents: number; alreadyFunded: boolean; txHash?: string }
   // Race Week gas-seed ack (B1): `seedCents` of cUSD was just sent to cover the
   // player's mint/join gas (0 + `alreadySeeded` on a repeat — already seeded).
-  | { t: 'race.seeded'; seedCents: number; alreadySeeded: boolean; txHash?: string }
+  // `rateLimited` (0 cents, not alreadySeeded): the request landed inside the
+  // anti-spam window and nothing was sent — retry shortly. The server always
+  // REPLIES to race.seed: a silent drop left honest clients hanging to their
+  // timeout and reporting "Gas seed failed" when nothing had failed.
+  | { t: 'race.seeded'; seedCents: number; alreadySeeded: boolean; txHash?: string; rateLimited?: boolean }
   // Race Week leaderboard: `top` = highest-scoring players (name + points +
   // 1-indexed rank), `myRank`/`myPoints` locate the caller (rank 0 = unranked).
   | { t: 'race.board'; top: Array<{ name: string; points: number; rank: number }>; myRank: number; myPoints: number }

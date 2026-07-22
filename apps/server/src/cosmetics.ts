@@ -66,8 +66,11 @@ interface DeploymentC {
 }
 
 /** Build the verifier from env (CHAIN + COSMETICS_STORE_ADDRESS or deployments.json
- *  cosmeticsStore), or null when the store isn't deployed → cUSD claims stay off. */
-export function createCosmeticsVerifier(env: NodeJS.ProcessEnv = process.env): CosmeticsVerifier | null {
+ *  cosmeticsStore), or null when the store isn't deployed → cUSD claims stay off.
+ *  `deploymentsOverride` lets tests exercise the no-store branch without
+ *  depending on which chains the CHECKED-IN deployments.json happens to cover
+ *  (the localhost entry gained a full stack when the e2e race bench landed). */
+export function createCosmeticsVerifier(env: NodeJS.ProcessEnv = process.env, deploymentsOverride?: Record<string, DeploymentC>): CosmeticsVerifier | null {
   const chain = CHAINS[env.CHAIN?.trim() || 'celo-sepolia'];
   if (!chain) return null;
 
@@ -80,7 +83,7 @@ export function createCosmeticsVerifier(env: NodeJS.ProcessEnv = process.env): C
   let fromDeployments: Address | undefined;
   const deploymentsPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'contracts', 'deployments.json');
   try {
-    const deployments = JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, DeploymentC>;
+    const deployments = deploymentsOverride ?? (JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, DeploymentC>);
     fromDeployments = Object.values(deployments).find((d) => d.chainId === chain.id)?.cosmeticsStore;
   } catch {
     /* no deployments file bundled */
