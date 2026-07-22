@@ -95,16 +95,28 @@ await B.seed();
 await A.mintPass();
 await B.mintPass();
 await sleep(3200); // seed and claim share the per-session anti-spam clock
+// Balance-aware claim: a SEEDED wallet (10c ≥ perGame) self-funds — it is
+// registered as a participant (leaderboard + JIT eligibility) but granted
+// NOTHING, conserving the faucet for genuinely empty wallets.
 const claimA1 = await A.claim();
-t.check('claim funds the JIT entry grant (perGame=2c)', claimA1.t === 'race.claimed' && claimA1.fundedCents === PER_GAME, JSON.stringify(claimA1));
+t.check('a seeded wallet claims as a self-funded participant (0c grant)', claimA1.t === 'race.claimed' && claimA1.fundedCents === 0, JSON.stringify(claimA1));
 const claimRL = await A.claim();
 t.check('an immediate re-claim is refused EXPLICITLY (rate-limit reply, not a hang)', claimRL.t === 'error' && claimRL.code === 'LIMIT_REACHED', JSON.stringify(claimRL));
 await sleep(3200);
 const claimA2 = await A.claim();
 t.check('re-claim is idempotent (alreadyFunded, 0c)', claimA2.t === 'race.claimed' && claimA2.alreadyFunded === true && claimA2.fundedCents === 0, JSON.stringify(claimA2));
 const claimB = await B.claim();
-t.check('B claim funds too', claimB.t === 'race.claimed' && claimB.fundedCents === PER_GAME, JSON.stringify(claimB));
-t.check('A wallet on-chain after seed+claim = 12c', (await A.onchainBalanceCents()) === SEED_CENTS + PER_GAME, `bal=${await A.onchainBalanceCents()}c`);
+t.check('B claims as self-funded too', claimB.t === 'race.claimed' && claimB.fundedCents === 0, JSON.stringify(claimB));
+t.check('A wallet unchanged by the 0c claim (still the 10c seed)', (await A.onchainBalanceCents()) === SEED_CENTS, `bal=${await A.onchainBalanceCents()}c`);
+// …and an EMPTY wallet (no seed) still gets the real JIT entry grant.
+const Z = new RaceBot('SimZoe');
+await Z.fuel();
+await Z.open();
+await Z.mintPass();
+const claimZ = await Z.claim();
+t.check('an EMPTY wallet still receives the real entry grant (perGame=2c)', claimZ.t === 'race.claimed' && claimZ.fundedCents === PER_GAME, JSON.stringify(claimZ));
+t.check('…and the cUSD landed on-chain', (await Z.onchainBalanceCents()) === PER_GAME, `bal=${await Z.onchainBalanceCents()}c`);
+Z.close();
 
 const probe = new RaceBot('SimProbe');
 await probe.open();
