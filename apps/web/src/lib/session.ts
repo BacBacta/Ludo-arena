@@ -1580,6 +1580,14 @@ export class RemoteSession implements GameSession {
         } else {
           sendIntent();
         }
+      } else if (this.hadGame && !this.inGame) {
+        // POST-GAME reconnect (end screen: hadGame, game already over): immediately
+        // pull any rematch offer the opponent made while this socket was down —
+        // don't wait up to 4 s for the next periodic poll (a silent no-op the whole
+        // time the socket was closed). The server also re-pushes a pending offer on
+        // resume; this is the belt-and-suspenders half if that push is ever missed.
+        // Excludes a MID-game reconnect (inGame): the server no-ops a poll then.
+        this.send({ t: 'rematch.poll' });
       }
     };
     ws.onclose = () => {
