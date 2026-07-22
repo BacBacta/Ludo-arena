@@ -301,9 +301,6 @@ export function Lobby({
                 : remaining < 86_400_000
                   ? t('raceEndsIn').replace('{t}', `${Math.floor(remaining / 3_600_000)} h ${Math.floor((remaining % 3_600_000) / 60_000)} min`)
                   : t('raceEndsIn').replace('{t}', `${Math.floor(remaining / 86_400_000)} d ${Math.floor((remaining % 86_400_000) / 3_600_000)} h`);
-        // Pool gauge: % of the provisioned pool still available (old servers omit
-        // poolCents → hide the gauge rather than showing a wrong bar).
-        const poolPct = race.poolCents ? Math.max(0, Math.min(100, Math.round((race.poolLeftCents / race.poolCents) * 100))) : null;
         const top3 = (raceBoard?.top ?? []).slice(0, 3);
         const medals = ['🥇', '🥈', '🥉'];
         return (
@@ -334,18 +331,16 @@ export function Lobby({
                 </button>
               )}
 
-              {/* Prize-pool gauge: how much of the pool is still up for grabs —
-                  ALWAYS visible (scarcity pulls joins; entrants keep the prize
-                  in sight). Was hidden once entered, which read as "no pool". */}
-              {poolPct !== null && (
-                <div className="racebar">
-                  <div className="racebar__head">
-                    <span>💰 {t('racePoolLabel')}</span>
-                    <b>{fmtUsd(race.poolLeftCents)} / {fmtUsd(race.poolCents!)}</b>
-                  </div>
-                  <div className="racebar__track"><span className="racebar__fill" style={{ width: `${poolPct}%` }} /></div>
+              {/* The FIXED leaderboard prize — a stable reward for the top players.
+                  NOT the gas/stake faucet (a separate internal budget that drains as
+                  players are subsidised); showing that here read as "the prize is
+                  shrinking". This stays constant for the whole event. */}
+              {race.prizePoolCents ? (
+                <div className="racebar racebar--prize">
+                  <span>🏆 {t('racePrizeLabel')}</span>
+                  <b>{fmtUsd(race.prizePoolCents)}</b>
                 </div>
-              )}
+              ) : null}
 
               <div className="racecard__actions">
                 {race.funded ? (

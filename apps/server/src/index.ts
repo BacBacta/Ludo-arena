@@ -461,6 +461,10 @@ async function raceStateFor(wallet: string | undefined): Promise<RaceState | und
     funded,
     poolLeftCents: poolLeftCents(raceFaucet.poolCents, prize),
     poolCents: raceFaucet.poolCents,
+    // The FIXED leaderboard prize (a separate off-chain wallet), shown on the
+    // banner. Defaults to the faucet budget only if unset, but is meant to be the
+    // real prize ($30 → 3000) so players see a stable reward, not the faucet drain.
+    prizePoolCents: Number(process.env.RACE_PRIZE_POOL_CENTS ?? '3000') || 3000,
   };
 }
 
@@ -480,6 +484,13 @@ async function topUpRaceFunding(store: Awaited<ReturnType<typeof createStore>>, 
   // Only participants (claimed their Pass-gated grant) top up; skip demo wallets.
   if (!(await store.getMeta(`race:grant:${w}`))) return;
   const run = async () => {
+    // Balance-aware: don't subsidise a wallet that can already afford the next
+    // stake from its OWN funds — the faucet is a subsidy for the fund-less, not a
+    // top-up for everyone. Only skip when we can CONFIRM a sufficient balance (a
+    // failed RPC read falls through and funds as before, so a node hiccup never
+    // strands a genuinely empty wallet).
+    const bal = await faucet.balanceCentsOf(wallet as Address).catch(() => null);
+    if (bal !== null && bal >= faucet.perGameCents) return; // self-funding — skip
     const funded = Number((await store.getMeta(fundedKey)) || '0');
     // JIT is a PRIZE draw; bound it by the TOTAL budget left (prize + gas already
     // spent) so the faucet never over-commits, but advance only the prize counter.
@@ -2179,6 +2190,22 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Could not verify your Race Pass mint.' });
           break;
         }
+        const { prize: spent, seed: seedRest } = await raceSpend(store);
+        // Balance-aware: a wallet that can already cover a stake self-funds —
+        // register it as a participant (leaderboard + the balance-aware per-game
+        // top-ups) but grant NOTHING and leave the pool untouched, conserving the
+        // faucet for empty wallets. Only when we can CONFIRM the balance; a failed
+        // RPC read falls through to the normal grant so a node hiccup never blocks
+        // a genuinely empty player.
+        const rBal = await raceFaucet.balanceCentsOf(rWallet as Address).catch(() => null);
+        if (rBal !== null && rBal >= raceFaucet.perGameCents) {
+          await store.setMeta(walletKey, JSON.stringify({ cents: 0, at: rNow, fp: session.fingerprint ?? null }));
+          if (fpKey) await store.setMeta(fpKey, JSON.stringify({ wallets: [...new Set([...fpWallets, rWallet.toLowerCase()])] }));
+          if (raceFaucet.jit) await store.setMeta(`race:funded:${rWallet.toLowerCase()}`, '0');
+          session.send({ t: 'race.claimed', fundedCents: 0, alreadyFunded: true });
+          telemetry('race.claim', { pid: tpid(playerId(rWallet, session.id)), cents: 0, poolSpent: spent });
+          break;
+        }
         // How much to fund NOW. Lump-sum mode grants the whole quota at once.
         // JIT mode (mainnet anti-fund-and-run) grants only one stake + gas buffer;
         // the rest is topped up after each COMPLETED event game (see onResult), so
@@ -2186,7 +2213,6 @@ wss.on('connection', (ws, req) => {
         const grantCents = raceFaucet.jit ? jitClaimCents(raceFaucet.perGameCents, raceFaucet.quotaCents) : raceFaucet.quotaCents;
         // Hard budget cap: never fund past the provisioned budget — checked against
         // the TOTAL draw (prize + gas), but the grant advances only the prize counter.
-        const { prize: spent, seed: seedRest } = await raceSpend(store);
         if (grantCents > budgetLeftCents(raceFaucet.poolCents, spent, seedRest)) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Race Week funding pool is exhausted.' });
           break;

@@ -722,6 +722,10 @@ export interface RaceState {
   funded: boolean;
   /** Total provisioned pool (for the client's pool gauge); absent on old servers. */
   poolCents?: number;
+  /** The FIXED leaderboard prize pool paid out to the top players (a separate,
+   *  off-chain wallet — NOT the gas/stake faucet, which is poolCents). Shown on the
+   *  banner so players see a stable reward, not the faucet draining. Cents. */
+  prizePoolCents?: number;
 }
 
 /** Caps on the social graph: enough for a real circle, bounded for the hello
