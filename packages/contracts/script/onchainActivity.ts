@@ -80,36 +80,49 @@ const rpc = env(preset.rpcEnv) ?? preset.defaultRpc;
 const publicClient = createPublicClient({ chain: preset.chain, transport: http(rpc) });
 const BLOCKSCOUT = env('BLOCKSCOUT_URL') ?? preset.blockscout;
 
-// Blockscout v2 counters — transactions_count is every tx to/from the address.
-// Returns null on any failure so we can fall back to the RPC nonce.
-async function blockscoutTxCount(addr: Address): Promise<number | null> {
+const CAP = 10_000; // etherscan-compat txlist page cap
+
+// Etherscan-compatible txlist (Blockscout supports it at /api). Counts the
+// address's top-level normal transactions — for a contract that is every direct
+// call INTO it (join / settle / mint / purchase / admin); for a wallet, its
+// sent + received txs. Returns { count, capped } or null if the probe failed.
+// This is more trustworthy than the v2 /counters endpoint, which returned 0 for
+// addresses that provably have transactions.
+async function explorerTxCount(addr: Address): Promise<{ count: number; capped: boolean } | null> {
   try {
-    const res = await fetch(`${BLOCKSCOUT}/api/v2/addresses/${addr}/counters`, { headers: { accept: 'application/json' } });
+    const url = `${BLOCKSCOUT}/api?module=account&action=txlist&address=${addr}&startblock=0&endblock=99999999&page=1&offset=${CAP}&sort=asc`;
+    const res = await fetch(url, { headers: { accept: 'application/json' } });
     if (!res.ok) return null;
-    const j = (await res.json()) as { transactions_count?: string };
-    if (j.transactions_count == null) return null;
-    const n = Number(j.transactions_count);
-    return Number.isFinite(n) ? n : null;
+    const j = (await res.json()) as { status?: string; message?: string; result?: unknown };
+    // Blockscout returns status "0" + message "No transactions found" for an
+    // empty (but valid) address — that is a real zero, not a probe failure.
+    if (Array.isArray(j.result)) return { count: j.result.length, capped: j.result.length >= CAP };
+    if (j.status === '0' && typeof j.message === 'string' && /no transactions/i.test(j.message)) return { count: 0, capped: false };
+    return null;
   } catch {
     return null;
   }
 }
 
-type Row = { label: string; addr: Address; kind: 'contract' | 'wallet'; count: number | null; source: 'explorer' | 'rpc-nonce' | 'unavailable' };
+type Row = {
+  label: string;
+  addr: Address;
+  kind: 'contract' | 'wallet';
+  nonce: number | null; // txs SENT by the address (authoritative via RPC)
+  explorer: number | null; // top-level txs to/from (indexer)
+  capped: boolean;
+};
 
 async function measure(label: string, addr: Address | undefined, kind: 'contract' | 'wallet'): Promise<Row | null> {
   if (!addr || !isAddress(addr)) return null;
-  const explorer = await blockscoutTxCount(addr);
-  if (explorer != null) return { label, addr, kind, count: explorer, source: 'explorer' };
-  // Fallback: the RPC nonce = txs the address SENT. Meaningful for wallets;
-  // for a contract it undercounts (incoming calls don't bump the nonce), so we
-  // flag it rather than pass it off as the real figure.
-  try {
-    const nonce = await publicClient.getTransactionCount({ address: addr });
-    return { label, addr, kind, count: nonce, source: 'rpc-nonce' };
-  } catch {
-    return { label, addr, kind, count: null, source: 'unavailable' };
-  }
+  const [nonceRes, ex] = await Promise.all([
+    publicClient.getTransactionCount({ address: addr }).then(
+      (n) => n,
+      () => null,
+    ),
+    explorerTxCount(addr),
+  ]);
+  return { label, addr, kind, nonce: nonceRes, explorer: ex?.count ?? null, capped: ex?.capped ?? false };
 }
 
 const contractDefs: Array<[string, Address | undefined]> = [
@@ -127,26 +140,41 @@ const walletDefs: Array<[string, Address | undefined]> = [
 const contractRows = (await Promise.all(contractDefs.map(([l, a]) => measure(l, a, 'contract')))).filter(Boolean) as Row[];
 const walletRows = (await Promise.all(walletDefs.map(([l, a]) => measure(l, a, 'wallet')))).filter(Boolean) as Row[];
 
+const num = (n: number | null): string => (n == null ? 'n/a' : n.toLocaleString('en-US'));
 const fmt = (r: Row): string => {
-  const n = r.count == null ? 'n/a' : r.count.toLocaleString('en-US');
-  const tag = r.source === 'explorer' ? '' : r.source === 'rpc-nonce' ? '  (nonce — sent only)' : '  (unavailable)';
-  return `    ${r.label.padEnd(24)} ${n.padStart(8)}  ${r.addr}${tag}`;
+  const ex = r.explorer == null ? 'n/a' : `${num(r.explorer)}${r.capped ? '+' : ''}`;
+  return `    ${r.label.padEnd(24)} ${ex.padStart(8)} txs   (sent by it: ${num(r.nonce)})   ${r.addr}`;
 };
 
-const contractTotalKnown = contractRows.every((r) => r.source === 'explorer' && r.count != null);
-const contractTotal = contractRows.reduce((s, r) => s + (r.count ?? 0), 0);
-const walletTotal = walletRows.reduce((s, r) => s + (r.count ?? 0), 0);
+const allRows = [...contractRows, ...walletRows];
+const explorerHealthy = allRows.some((r) => (r.explorer ?? 0) > 0) || allRows.every((r) => r.explorer != null);
+const contractExplorerTotal = contractRows.reduce((s, r) => s + (r.explorer ?? 0), 0);
+const walletNonceTotal = walletRows.reduce((s, r) => s + (r.nonce ?? 0), 0);
+// A guaranteed floor from RPC alone: every tx our wallets broadcast (deploys,
+// settlements, drips, admin) — indexer-independent, always correct.
+const broadcastFloor = walletNonceTotal;
 
 console.log(`\n[onchain-activity] network=${networkName}  explorer=${BLOCKSCOUT}`);
-console.log(`\n  Dapp contracts — transactions received (the Proof of Ship figure):`);
+console.log(`  columns: "txs" = top-level transactions to/from (indexer) · "sent by it" = RPC nonce (authoritative)`);
+console.log(`\n  Dapp contracts — transactions INTO our code (the Proof of Ship figure):`);
 contractRows.forEach((r) => console.log(fmt(r)));
 console.log(`    ${'—'.repeat(24)} ${'—'.repeat(8)}`);
-console.log(`    ${'TOTAL (our contracts)'.padEnd(24)} ${contractTotal.toLocaleString('en-US').padStart(8)}${contractTotalKnown ? '' : '  (partial — some rows are nonce-only)'}`);
+console.log(`    ${'TOTAL (our contracts)'.padEnd(24)} ${num(contractExplorerTotal).padStart(8)} txs`);
 
-console.log(`\n  Operational wallets — transactions broadcast (nonce/explorer):`);
+console.log(`\n  Operational wallets — transactions we BROADCAST (settle / drip / admin / deploy):`);
 walletRows.forEach((r) => console.log(fmt(r)));
-console.log(`\n  Note: arbiter settlements are calls to the escrow, so they are already`);
-console.log(`  inside the contract totals above — the wallet rows are shown for context`);
-console.log(`  and are NOT added to the contract headline (would double-count).`);
-console.log(`  Wallet-broadcast subtotal (context only): ${walletTotal.toLocaleString('en-US')}`);
+console.log(`\n  Note: arbiter/treasury settlements are calls to the escrow, so they are`);
+console.log(`  already inside the contract totals above — the wallet rows are shown for`);
+console.log(`  context and are NOT added to the contract headline (would double-count).`);
+console.log(`  Wallet-broadcast subtotal (RPC nonce, always correct): ${num(broadcastFloor)}`);
+
+if (!explorerHealthy) {
+  console.log(`\n  ⚠ The explorer (${BLOCKSCOUT}) returned no data for any address — its`);
+  console.log(`    index is unavailable or the host changed. The contract "txs" column`);
+  console.log(`    can't be trusted right now; re-run later or set BLOCKSCOUT_URL to a`);
+  console.log(`    working Celo explorer. The RPC nonce column above is unaffected.`);
+}
+console.log(`\n  Bottom line: our wallets have broadcast at least ${num(broadcastFloor)} mainnet txs`);
+console.log(`  (deploys + settlements + drips + admin — RPC-proven), plus ${num(contractExplorerTotal)} txs`);
+console.log(`  recorded INTO our contracts by the explorer (player joins / mints / purchases).`);
 console.log('');
