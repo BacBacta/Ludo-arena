@@ -62,6 +62,10 @@ export class WireBot {
   }
 
   connect(extraHello = {}) {
+    // A RECONNECT (resume flows) must clear the previous socket's tombstone —
+    // playUntilOver guards on `closed`, and a stale true made a resumed bot
+    // abandon its play loop instantly (the server then auto-played it).
+    this.closed = false;
     return new Promise((resolve, reject) => {
       // opts.url lets a single run point different bots at different endpoints
       // (e.g. separate chaos proxies for asymmetric latency); defaults to SRV.
