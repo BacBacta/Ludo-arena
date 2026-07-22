@@ -34,6 +34,10 @@ interface Over {
   rejectWriteOnce?: unknown;
   /** Node without eth_gasPrice(feeCurrency) → the native-base-fee fallback. */
   noTokenGasPrice?: boolean;
+  /** Local signer (the app burner: walletClient.account SET) — gets the explicit
+   *  fee caps + gas limit (viem builds the whole tx). Default (undefined) models an
+   *  INJECTED wallet (MiniPay), which mandates LEGACY txs and gets ONLY feeCurrency. */
+  localSigner?: boolean;
 }
 
 function fakeClients(over: Over = {}) {
@@ -89,7 +93,7 @@ function fakeClients(over: Over = {}) {
   };
   const walletClient = {
     chain: { id: 11_142_220 },
-    account: undefined, // injected wallet (MiniPay) → signer is the passed account
+    account: over.localSigner ? ({ address: ME } as unknown) : undefined, // local signer (burner) vs injected (MiniPay)
     writeContract: async (a: { functionName: string; args: readonly unknown[]; feeCurrency?: unknown }) => {
       writes.push(a);
       if (writeOnceArmed) {
@@ -216,7 +220,7 @@ describe('stakeInEscrow (1v1)', () => {
   // explicit gas limit (estimate × 1.5) alongside the explicit fee cap.
 
   it('feeCurrency txs estimate WITHOUT fee fields and send with an explicit gas limit', async () => {
-    const { publicClient, walletClient, writes, estimates } = fakeClients({ allowance: 10n ** 18n });
+    const { publicClient, walletClient, writes, estimates } = fakeClients({ allowance: 10n ** 18n, localSigner: true });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
     const join = writes.find((w) => w.functionName === 'join')!;
     // BALANCED plan: 250k estimate × 1.30 + 100k CIP-64 intrinsic headroom. The
@@ -238,7 +242,7 @@ describe('stakeInEscrow (1v1)', () => {
   });
 
   it('falls back to the NATIVE base fee when the node lacks the fee-currency gasPrice extension', async () => {
-    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, noTokenGasPrice: true });
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, noTokenGasPrice: true, localSigner: true });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
     const join = writes.find((w) => w.functionName === 'join')!;
     expect(join.maxFeePerGas).toBe(52_000_000_000n); // native 25 × 2 + 2 gwei (over-margined but safe)
@@ -253,11 +257,27 @@ describe('stakeInEscrow (1v1)', () => {
     expect(estimates.length).toBe(0);
   });
 
+  it('injected wallets (MiniPay) get ONLY feeCurrency — no 1559 caps or gas limit (legacy)', async () => {
+    // MiniPay mandates LEGACY txs and prices its own gas. Sending maxFeePerGas /
+    // an explicit gas limit made it REFUSE the tx ("approve reverted: User rejected
+    // transaction") — the recurring Race Week / staking failure. An injected wallet
+    // (walletClient.account === undefined) must carry feeCurrency and nothing else.
+    const { publicClient, walletClient, writes, estimates } = fakeClients({ allowance: 0n }); // no localSigner → injected
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
+    expect(writes.length).toBeGreaterThan(0);
+    for (const w of writes) {
+      expect(w.feeCurrency).toBe(TOKEN); // pays gas in cUSD…
+      expect(w.maxFeePerGas).toBeUndefined(); // …but NO 1559 caps (legacy)
+      expect(w.gas).toBeUndefined(); // …and no explicit gas limit
+    }
+    expect(estimates.length).toBe(0); // no fee-less estimate on the injected path
+  });
+
   it('ADAPTS after "total cost exceeds balance": the retry is cheaper (thrifty plan)', async () => {
     // The C4 incident verbatim. The ladder must answer a reservation overflow
     // with a SMALLER gas limit and a THINNER cap — not the same oversized tx.
     const c4 = new Error('the total cost (gas * gas fee + value) of executing this transaction exceeds the balance of the account');
-    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, rejectWriteOnce: c4 });
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, rejectWriteOnce: c4, localSigner: true });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
     const [first, second] = writes;
     expect(second!.gas!).toBeLessThan(first!.gas!);
@@ -266,7 +286,7 @@ describe('stakeInEscrow (1v1)', () => {
 
   it('ADAPTS after a cap-too-low reject: the retry pays a HIGHER cap', async () => {
     const c1 = new Error('The fee cap (`maxFeePerGas` = 52 gwei) cannot be lower than the block base fee');
-    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, rejectWriteOnce: c1 });
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, rejectWriteOnce: c1, localSigner: true });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
     const [first, second] = writes;
     expect(second!.maxFeePerGas!).toBeGreaterThan(first!.maxFeePerGas!);

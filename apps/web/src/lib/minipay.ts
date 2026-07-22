@@ -248,7 +248,7 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
     functionName: 'mint',
     args: [],
     account: signer,
-  });
+  }, !!wallet.walletClient.account);
   const hash = await wallet.walletClient.writeContract({
     account: signer,
     chain,
