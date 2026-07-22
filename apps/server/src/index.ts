@@ -1286,6 +1286,26 @@ wss.on('connection', (ws, req) => {
         if (resumedSession.room4 && resumedSession.seat4 != null && !resumedSession.room4.isOver()) {
           resumedSession.room4.attach(resumedSession.seat4, resumedSession);
         }
+        // A resumed session whose 1v1 match is still PENDING (deposits/reveals
+        // in flight — no Room yet, so `resumed` above is undefined) gets its
+        // match context REPLAYED: the original match.found may have died with
+        // the previous socket (R-RT-1 takeover — e.g. a one-shot resuming the
+        // same token closed the match socket mid-staking). Without the replay
+        // the client concludes the game is gone, drops its match context, and
+        // the eventual game.state strands it on a blank screen while auto-play
+        // forfeits its LOCKED stake. Duplicate match.found / game.entropy are
+        // no-ops on both sides, so replaying is always safe.
+        if (resumedSession.pendingGameId) {
+          const pend = pendingReveals.get(resumedSession.pendingGameId);
+          if (pend) {
+            const pSeat: Seat | null = pend.a === resumedSession ? 0 : pend.b === resumedSession ? 1 : null;
+            if (pSeat !== null) {
+              const pMe = pSeat === 0 ? pend.a : pend.b;
+              const pOpp = pSeat === 0 ? pend.b : pend.a;
+              resumedSession.send(matchFoundMsg(pend.gameId, pSeat, pMe, pOpp, pend.stake, potCents(pend.stake), pend.commit));
+            }
+          }
+        }
         return;
       }
       // A socket may legitimately re-hello (the web client does it on profile edit

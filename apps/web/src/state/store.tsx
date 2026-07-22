@@ -479,7 +479,13 @@ export function reducer(s: AppState, a: Action): AppState {
         // staked play requires a wallet, so there is no simulated debit anymore.
       };
     case 'GAME_STATE':
-      return { ...s, screen: 'game', game: a.game };
+      // The screen flip REQUIRES the match context: every legitimate flow
+      // (queue, rematch, private table, bot, resume) dispatches MATCH_FOUND or
+      // RESUME first. A state that arrives with NO match means the app lost the
+      // context (e.g. a mid-staking drop bounced it to the lobby) — switching
+      // anyway strands the player on a BLANK page (GameScreen null-renders)
+      // while the server auto-plays their locked stake to a forfeit.
+      return s.match ? { ...s, screen: 'game', game: a.game } : s;
     case 'DICE':
       return {
         ...s,
