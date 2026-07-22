@@ -5,7 +5,6 @@
  * MiniPay, pass `feeCurrency` to pay gas in cUSD with a legacy tx.
  */
 import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
-import { RACE_STAKE_CENTS } from '@ludo/shared';
 import { BALANCED, classifyTxFailure, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
 
 export const ERC20_ABI = [
@@ -302,15 +301,14 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
 
       if (allowance < stake) {
         onStatus?.('approving');
-        // Race micro-stakes: approve the whole lifetime quota's worth (10×1¢) in
-        // ONE transaction, so every later event game — and above all the INSTANT
-        // rematch — skips the approve+receipt entirely (one tx instead of two:
-        // several seconds off every match start). Scoped to the 1¢ tier; normal
-        // tiers keep the exact-amount approve. The allowance only ever feeds OUR
-        // escrow's join(), and the wallet holds cents by construction.
-        const approveAmount = stakeCents === RACE_STAKE_CENTS ? stake * 10n : stake;
-        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, approveAmount], account: signer }, !!walletClient.account);
-        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, approveAmount], ...approveExtras });
+        // EXACT-amount approve, every game (incl. the Race 1¢ tier). The allowance
+        // is fully consumed by OUR escrow's join(), so each event game re-approves
+        // (approve + join = 2 tx). Deliberate: a batched quota approve would halve
+        // a player's on-chain approve count, and the Proof of Ship tx-volume metric
+        // rewards keeping it. The four other staking speedups (parallel reads,
+        // decimals cache, faster receipt polling) cost no transactions and stay.
+        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account);
+        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...approveExtras });
         const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
         if (r.status !== 'success') throw new Error('approve reverted');
       }
