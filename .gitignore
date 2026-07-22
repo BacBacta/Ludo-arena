@@ -29,3 +29,4 @@ simulation/out/
 
 # Claude Code personal settings (per-user permissions — never shared)
 .claude/settings.local.json
+dump.rdb
