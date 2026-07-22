@@ -14,6 +14,7 @@
     "geo-test": "tsx scripts/geoTest.ts",
     "friends-test": "tsx scripts/friendsTest.ts",
     "settle-verify": "tsx scripts/settleVerify.ts",
+    "reset-race-board": "tsx scripts/resetRaceBoard.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

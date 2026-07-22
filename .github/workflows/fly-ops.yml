@@ -62,10 +62,16 @@ on:
           - arm-mainnet
           - set-tier-rake
           - race-status
+          - reset-race-board
       confirm:
-        description: 'arm-mainnet only: type ARM-MAINNET to confirm'
+        description: 'arm-mainnet: type ARM-MAINNET · reset-race-board: type RESET-BOARD'
         required: false
         type: string
+      reset_full:
+        description: 'reset-race-board only: also zero the campaign spend counters (pool + seed budget)'
+        required: false
+        default: false
+        type: boolean
       enable_staking:
         description: 'arm-mainnet only: set STAKING_ENABLED=true (real-money staked play — needs R-COMP-2 sign-off)'
         required: false
@@ -252,3 +258,24 @@ jobs:
           else
             echo "STAKING_ENABLED left UNSET — mainnet free play + Race Week are armed; staked play stays OFF (R-COMP-2 gate). Re-run with enable_staking=true after sign-off."
           fi
+      # reset-race-board: wipe the Race Week leaderboard for a clean pre-launch
+      # slate. Runs INSIDE the machine (via ssh) because the store (Redis/Postgres)
+      # is only reachable from there — the reset uses the server's own createStore,
+      # so it works on any backend. `reset_full` also zeroes the campaign spend
+      # counters (pool + seed budget). Confirm-gated (RESET-BOARD) against misfires.
+      - name: reset Race Week leaderboard
+        if: ${{ inputs.operation == 'reset-race-board' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          CONFIRM: ${{ inputs.confirm }}
+          RESET_FULL: ${{ inputs.reset_full }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          if [ "${CONFIRM:-}" != "RESET-BOARD" ]; then
+            echo "::error::type RESET-BOARD in the 'confirm' box to proceed (guards against an accidental run)"; exit 1
+          fi
+          ARG=""
+          if [ "${RESET_FULL:-false}" = "true" ]; then ARG="full"; fi
+          echo "Resetting the Race Week leaderboard on ludo-arena (full=${RESET_FULL:-false})…"
+          flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && npm run reset-race-board -w apps/server -- $ARG'"
