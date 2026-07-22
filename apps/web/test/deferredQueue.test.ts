@@ -122,6 +122,29 @@ describe('post-game socket drop (the mobile rematch black hole)', () => {
     expect(sentTypes(ws2)).not.toContain('queue.join'); // a resume NEVER re-queues by itself
     session.dispose();
   });
+
+  it('AUTO-polls the rematch offer the instant a post-game socket reconnects (no wait for the 4 s poll)', async () => {
+    FakeWS.instances.length = 0;
+    const session = new RemoteSession(evStub, 1, 'ws://test', () => undefined, '0x00000000000000000000000000000000000000aa', { kind: 'queue' }, { consent: { tosVersion: 'v', age18: true } } as never);
+    await vi.waitFor(() => { if (FakeWS.instances.length === 0) throw new Error('no ws'); });
+    const ws = FakeWS.instances[0]!;
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    ws.onmessage?.({ data: JSON.stringify({ t: 'match.found', gameId: 'g1', seat: 0, opponent: { name: 'Rival', flag: '' }, stakeCents: 1, potCents: 2, fairnessCommit: 'a'.repeat(64) }) });
+    ws.onmessage?.({ data: JSON.stringify({ t: 'game.over', winner: 0, reason: 'finish', payoutCents: 2, rakeCents: 0, eloDelta: 1, fairnessReveal: { serverSeed: '', entropies: ['', ''] } }) });
+    (ws as unknown as { onclose: (() => void) | null }).onclose?.();
+    await vi.waitFor(
+      () => { if (FakeWS.instances.length < 2) throw new Error('no reconnect'); },
+      { timeout: 3000 },
+    );
+    const ws2 = FakeWS.instances[1]!;
+    // NO manual session.pollRematch() here: the reconnect itself must pull the
+    // offer, so an offer missed while the socket was down surfaces at once.
+    ws2.onopen?.();
+    expect(sentTypes(ws2)).toContain('rematch.poll');
+    expect(sentTypes(ws2)).not.toContain('queue.join'); // still never re-queues on its own
+    session.dispose();
+  });
 });
 
 describe('mid-staking socket drop (the blank-blue-screen freeze)', () => {

@@ -1317,6 +1317,25 @@ wss.on('connection', (ws, req) => {
             }
           }
         }
+        // Post-game resume: proactively RE-DELIVER a pending rematch offer. The
+        // opponent's `rematch.offer` push (or an earlier `rematch.poll` answer) was
+        // lost while THIS socket was down — the loser then sits on the end screen
+        // never seeing Accept/Decline until the next 4 s client poll, and on a
+        // flaky mobile socket that poll can keep missing. Re-sending here closes
+        // the gap the instant the channel is back. Same guard as `rematch.poll`.
+        if (!resumedSession.room && !resumedSession.pendingGameId && !resumedSession.rematchWanted) {
+          const rematcher = resumedSession.lastOpponentId ? sessions.get(resumedSession.lastOpponentId) : undefined;
+          if (
+            rematcher &&
+            rematcher.alive &&
+            rematcher.rematchWanted &&
+            rematcher.lastOpponentId === resumedSession.id &&
+            !rematcher.room &&
+            !rematcher.pendingGameId
+          ) {
+            resumedSession.send({ t: 'rematch.offer', name: label(rematcher) });
+          }
+        }
         return;
       }
       // A socket may legitimately re-hello (the web client does it on profile edit
