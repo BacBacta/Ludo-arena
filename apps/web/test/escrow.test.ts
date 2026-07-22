@@ -155,20 +155,21 @@ describe('stakeInEscrow (1v1)', () => {
     expect(writes[0]!.args).toEqual([ESCROW, 250_000n]); // exactly 25c, nothing pre-authorised
   });
 
-  it('the RACE micro-stake batch-approves the lifetime quota (10×1c) so later games skip the approve tx', async () => {
-    // Match start on the 1c tier is latency-critical (instant rematches): one
-    // 10c approve up front means every later event game is join-only.
+  it('the RACE micro-stake approves EXACTLY one stake — no batched quota (preserves on-chain tx count)', async () => {
+    // Deliberate: each event game re-approves (approve + join = 2 tx). A batched
+    // quota approve would halve the player's on-chain approve count, which the
+    // Proof of Ship tx-volume metric rewards keeping.
     const { publicClient, walletClient, writes } = fakeClients({ allowance: 0n, decimals: 6 });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 1, fairnessCommit: COMMIT });
     expect(writes.map((w) => w.functionName)).toEqual(['approve', 'join']);
-    expect(writes[0]!.args).toEqual([ESCROW, 100_000n]); // 10 × 1c at 6 decimals
-    expect(writes[1]!.args[2]).toBe(10_000n); // the join still locks exactly 1c
+    expect(writes[0]!.args).toEqual([ESCROW, 10_000n]); // exactly 1c at 6 decimals — NOT 10×
+    expect(writes[1]!.args[2]).toBe(10_000n); // the join locks exactly 1c
   });
 
-  it('a race game with the batch allowance in place is join-only (the fast path)', async () => {
+  it('a sufficient existing allowance skips the approve (only join is sent)', async () => {
     const { publicClient, walletClient, writes } = fakeClients({ allowance: 100_000n, decimals: 6 });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 1, fairnessCommit: COMMIT });
-    expect(writes.map((w) => w.functionName)).toEqual(['join']); // no approve — instant-rematch speed
+    expect(writes.map((w) => w.functionName)).toEqual(['join']); // allowance already covers the stake
   });
 
   it('is idempotent: an address that already joined does NOT lock a second time', async () => {
