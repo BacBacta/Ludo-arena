@@ -5,7 +5,7 @@
  *  CREATE games, not just display rank). Board data is fetched over a
  *  one-shot socket (App.openRaceBoard → RACE_BOARD) and read from the store. */
 import { useFocusTrap } from './useFocusTrap';
-import { useAppDispatch, useAppState } from '../state/store';
+import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
 
@@ -32,6 +32,11 @@ export function RaceSheet({ onPlay }: { onPlay?: () => void }) {
         <h3 className="racesheet__title">🏁 {t('raceBoardTitle')}</h3>
         <div className="racesheet__chips">
           <span className="racechip racechip--live">● {t('raceLiveBadge')}</span>
+          {/* The prize pool, front and centre on the standings too — the number
+              players are racing for should never be more than a glance away. */}
+          {race?.poolCents ? (
+            <span className="racechip racechip--pool">💰 {fmtUsd(race.poolLeftCents)} / {fmtUsd(race.poolCents)}</span>
+          ) : null}
           <span className="racechip">{t('raceScoring')}</span>
         </div>
 
