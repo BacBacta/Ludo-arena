@@ -301,9 +301,12 @@ export function Lobby({
                 : remaining < 86_400_000
                   ? t('raceEndsIn').replace('{t}', `${Math.floor(remaining / 3_600_000)} h ${Math.floor((remaining % 3_600_000) / 60_000)} min`)
                   : t('raceEndsIn').replace('{t}', `${Math.floor(remaining / 86_400_000)} d ${Math.floor((remaining % 86_400_000) / 3_600_000)} h`);
-        // Pool gauge: % of the provisioned pool still available (old servers omit
-        // poolCents → hide the gauge rather than showing a wrong bar).
-        const poolPct = race.poolCents ? Math.max(0, Math.min(100, Math.round((race.poolLeftCents / race.poolCents) * 100))) : null;
+        // The banner shows the FIXED leaderboard prize (a separate operator wallet
+        // paid out at event end), NOT the faucet's shrinking funding budget — the
+        // old gauge tied to poolLeft read as "the prize is being spent" when it was
+        // really the faucet doing its job. Fall back to poolCents only for old
+        // servers that don't send prizeCents yet.
+        const prizeCents = race.prizeCents ?? race.poolCents ?? null;
         const top3 = (raceBoard?.top ?? []).slice(0, 3);
         const medals = ['🥇', '🥈', '🥉'];
         return (
@@ -334,16 +337,15 @@ export function Lobby({
                 </button>
               )}
 
-              {/* Prize-pool gauge: how much of the pool is still up for grabs —
-                  ALWAYS visible (scarcity pulls joins; entrants keep the prize
-                  in sight). Was hidden once entered, which read as "no pool". */}
-              {poolPct !== null && (
-                <div className="racebar">
-                  <div className="racebar__head">
-                    <span>💰 {t('racePoolLabel')}</span>
-                    <b>{fmtUsd(race.poolLeftCents)} / {fmtUsd(race.poolCents!)}</b>
-                  </div>
-                  <div className="racebar__track"><span className="racebar__fill" style={{ width: `${poolPct}%` }} /></div>
+              {/* The prize: a FIXED amount paid to the leaderboard's top at event
+                  end (a separate operator wallet, not the faucet). Shown as a
+                  confident, unchanging figure — no gauge that ticks down as the
+                  faucet funds entries (which read as "the prize is shrinking"). */}
+              {prizeCents !== null && (
+                <div className="raceprize">
+                  <span className="raceprize__label">🏆 {t('racePoolLabel')}</span>
+                  <b className="raceprize__amount">{fmtUsd(prizeCents)}</b>
+                  <small className="raceprize__sub">{t('racePrizeSub')}</small>
                 </div>
               )}
 

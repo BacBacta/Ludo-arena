@@ -710,18 +710,27 @@ export interface FriendInfo {
 
 /** Race Week event state, surfaced in hello.ok while the event is armed (absent
  *  off-event). `funded` = this wallet already claimed its one-time Pass-gated
- *  grant; `endsAt` drives the client countdown; `poolLeftCents` = the WINNABLE
- *  prize budget left (entry grants + JIT top-ups), NOT the faucet's gas subsidy —
- *  gas seeds are an operational cost of a distinct wallet and never tick the pool
- *  down (server tracks them on a separate counter, bounded by the same budget). */
+ *  grant; `endsAt` drives the client countdown.
+ *
+ *  `prizeCents` is the FIXED leaderboard prize the banner advertises — a
+ *  separate, operator-held wallet paid out to the top of the board at event end.
+ *  It never changes as games are played. THIS is what the banner shows.
+ *
+ *  `poolLeftCents`/`poolCents` are the FAUCET's internal funding budget (entry
+ *  grants + JIT top-ups) — an operational cost, NOT a prize. They are no longer
+ *  shown to players (a shrinking "prize pool" that was really the faucet
+ *  spending down read as "the faucet eats the prize"); kept on the wire only for
+ *  diagnostics / backward compatibility. */
 export interface RaceState {
   active: boolean;
   quotaCents: number;
   endsAt?: string;
   poolLeftCents: number;
   funded: boolean;
-  /** Total provisioned pool (for the client's pool gauge); absent on old servers. */
+  /** Total provisioned faucet budget (internal/diagnostic); absent on old servers. */
   poolCents?: number;
+  /** The FIXED leaderboard prize shown on the banner (cents); absent on old servers. */
+  prizeCents?: number;
 }
 
 /** Caps on the social graph: enough for a real circle, bounded for the hello

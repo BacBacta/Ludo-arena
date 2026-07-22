@@ -56,6 +56,19 @@ export function jitTopUpCents(perGameCents: number, funded: number, quotaCents: 
   return Math.max(0, Math.min(perGameCents, remainingQuota, poolLeft));
 }
 
+/** Balance-aware JIT drip: the top-up is a SAFETY NET for a wallet that cannot
+ *  afford the next event game, not an unconditional per-game payout — a player
+ *  whose wallet already covers stake+gas (winners funding themselves from
+ *  winnings) draws NOTHING, and a partially-drained wallet draws only its
+ *  deficit. `balanceCents = null` (balance read failed) fails OPEN to the
+ *  normal drip: an RPC hiccup must never freeze a legitimate player out of the
+ *  event — quota + pool caps still bound the worst case. Unspent quota stays
+ *  available for when the wallet really drains. */
+export function jitDripCents(perGameCents: number, funded: number, quotaCents: number, spent: number, poolCents: number, balanceCents: number | null): number {
+  const deficit = balanceCents === null ? perGameCents : seedDeficitCents(perGameCents, balanceCents);
+  return Math.min(jitTopUpCents(perGameCents, funded, quotaCents, spent, poolCents), deficit);
+}
+
 /** Per-wallet lifetime cap on gas-seed grants, as a multiple of the seed target.
  *  Balance-based top-ups (below) re-fund a wallet whose balance dropped, so an
  *  attacker cycling "receive seed → transfer out → ask again" could drain the
@@ -172,6 +185,12 @@ export interface RaceConfig {
    *  pay the mint + join gas (in cUSD). 0 disables the seed endpoint. Tiny — it
    *  only has to cover a few cents of Celo gas. */
   seedCents: number;
+  /** The FIXED leaderboard prize the banner advertises (cents). This is the
+   *  separate, operator-held prize wallet paid out to the top of the board at
+   *  event end — NOT the faucet's funding budget (`poolCents`), which is a pure
+   *  operational cost and must never be displayed as "the prize shrinking".
+   *  Display-only; no on-chain coupling. */
+  prizeCents?: number;
 }
 
 /** Client-facing Race Week state (in hello.ok): whether the event is on, the
@@ -196,6 +215,7 @@ export class RaceFaucet {
   readonly perGameCents: number;
   readonly feeInStable: boolean;
   readonly seedCents: number;
+  readonly prizeCents: number;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
@@ -214,6 +234,7 @@ export class RaceFaucet {
     this.perGameCents = cfg.perGameCents;
     this.feeInStable = cfg.feeInStable;
     this.seedCents = cfg.seedCents;
+    this.prizeCents = cfg.prizeCents ?? 3000; // $30 leaderboard prize by default
     this.account = privateKeyToAccount(faucetKey);
     const transport = http(rpc);
     this.publicClient = createPublicClient({ chain, transport });
@@ -359,7 +380,11 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   // Default 0 (off) → the seed endpoint is dormant unless a non-MiniPay launch
   // explicitly provisions it. Only meaningful with feeInStable on Celo.
   const seedCents = Math.max(0, Number(env.RACE_SEED_CENTS ?? '0'));
+  // The FIXED leaderboard prize the banner advertises — the separate,
+  // operator-held prize wallet, NOT the faucet funding budget (poolCents).
+  // Default $30 so the banner is correct even before the secret is set.
+  const prizeCents = Math.max(0, Number(env.RACE_PRIZE_CENTS ?? '3000'));
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
-  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable, seedCents }, rpc);
+  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable, seedCents, prizeCents }, rpc);
 }

@@ -68,7 +68,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitTopUpCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitDripCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -461,6 +461,7 @@ async function raceStateFor(wallet: string | undefined): Promise<RaceState | und
     funded,
     poolLeftCents: poolLeftCents(raceFaucet.poolCents, prize),
     poolCents: raceFaucet.poolCents,
+    prizeCents: raceFaucet.prizeCents, // the FIXED leaderboard prize the banner shows
   };
 }
 
@@ -484,8 +485,15 @@ async function topUpRaceFunding(store: Awaited<ReturnType<typeof createStore>>, 
     // JIT is a PRIZE draw; bound it by the TOTAL budget left (prize + gas already
     // spent) so the faucet never over-commits, but advance only the prize counter.
     const { prize, total } = await raceSpend(store);
-    const cents = jitTopUpCents(faucet.perGameCents, funded, faucet.quotaCents, total, faucet.poolCents);
-    if (cents <= 0) return; // quota drawn or pool dry — leaderboard still scores
+    // Balance-aware (operator report: the faucet kept funding wallets that
+    // already held USDT). The drip is a SAFETY NET, not an unconditional payout:
+    // a wallet that can already afford the next stake+gas (a winner funding
+    // itself from winnings) draws NOTHING; a drained wallet draws only its
+    // deficit. A failed balance read falls back to the normal drip (never
+    // freezes a real player out over a transient RPC hiccup).
+    const balCents = await faucet.balanceCentsOf(wallet as Address).catch(() => null);
+    const cents = jitDripCents(faucet.perGameCents, funded, faucet.quotaCents, total, faucet.poolCents, balCents);
+    if (cents <= 0) return; // quota drawn, pool dry, OR the wallet is self-funded
     // Reserve BEFORE the transfer (same crash-safety as claim): a crash mid-send
     // can only UNDER-fund, never double-fund. Roll back both counters on revert.
     await store.setMeta(fundedKey, String(funded + cents));
