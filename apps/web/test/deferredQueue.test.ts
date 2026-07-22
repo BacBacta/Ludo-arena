@@ -93,6 +93,37 @@ describe('deferred staked queue.join release', () => {
   });
 });
 
+describe('post-game socket drop (the mobile rematch black hole)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('RECONNECTS after game.over so the rematch channel survives a dropped socket', async () => {
+    FakeWS.instances.length = 0;
+    const session = new RemoteSession(evStub, 1, 'ws://test', () => undefined, '0x00000000000000000000000000000000000000aa', { kind: 'queue' }, { consent: { tosVersion: 'v', age18: true } } as never);
+    await vi.waitFor(() => { if (FakeWS.instances.length === 0) throw new Error('no ws'); });
+    const ws = FakeWS.instances[0]!;
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    // A game runs and ends → the player sits on the end screen.
+    ws.onmessage?.({ data: JSON.stringify({ t: 'match.found', gameId: 'g1', seat: 0, opponent: { name: 'Rival', flag: '' }, stakeCents: 1, potCents: 2, fairnessCommit: 'a'.repeat(64) }) });
+    ws.onmessage?.({ data: JSON.stringify({ t: 'game.over', winner: 0, reason: 'finish', payoutCents: 2, rakeCents: 0, eloDelta: 1, fairnessReveal: { serverSeed: '', entropies: ['', ''] } }) });
+    // The mobile socket silently dies on the end screen…
+    (ws as unknown as { onclose: (() => void) | null }).onclose?.();
+    // …and the session must come back (old code: no reconnect after the game →
+    // the opponent's offer was undeliverable and our polls were silent no-ops).
+    await vi.waitFor(
+      () => { if (FakeWS.instances.length < 2) throw new Error('no reconnect'); },
+      { timeout: 3000 },
+    );
+    const ws2 = FakeWS.instances[1]!;
+    ws2.onopen?.();
+    ws2.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    session.pollRematch();
+    expect(sentTypes(ws2)).toContain('rematch.poll'); // the channel lives again
+    expect(sentTypes(ws2)).not.toContain('queue.join'); // a resume NEVER re-queues by itself
+    session.dispose();
+  });
+});
+
 describe('pollRematch (reliable rematch offer — pull recovers a missed push)', () => {
   beforeEach(() => localStorage.clear());
 

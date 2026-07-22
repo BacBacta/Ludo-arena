@@ -272,12 +272,21 @@ export default function App() {
   const prevScreenSync = useRef<string>('lobby');
   useEffect(() => {
     if (state.screen === 'lobby' && prevScreenSync.current !== 'lobby') syncLobbyNow();
-    // Landing on the end screen: pull any rematch the opponent already asked for
-    // (a missed fire-and-forget `rematch.offer` push). The reliable half of the
-    // rematch notification — see session.pollRematch / the server rematch.poll.
-    if (state.screen === 'end' && prevScreenSync.current !== 'end') sessionRef.current?.pollRematch();
     prevScreenSync.current = state.screen;
   }, [state.screen, syncLobbyNow]);
+
+  // Rematch offer, PULLED while on the end screen. A mount-only poll always ran
+  // too early: both players land here at game.over BEFORE either clicks Rejouer,
+  // so the wish only exists seconds later — and the push half (rematch.offer)
+  // can be missed by a sleepy mobile socket. Poll every few seconds until an
+  // offer arrives or the screen changes; paired with the session's post-game
+  // reconnect so the channel itself never silently dies.
+  useEffect(() => {
+    if (state.screen !== 'end' || state.rematchOffer) return;
+    sessionRef.current?.pollRematch();
+    const id = setInterval(() => sessionRef.current?.pollRematch(), 4_000);
+    return () => clearInterval(id);
+  }, [state.screen, state.rematchOffer]);
 
   // Living presence + near-instant social: the lobby holds NO persistent socket
   // (offline-first, one-shot syncs), so a friend request / acceptance / presence
@@ -1007,9 +1016,12 @@ export default function App() {
         dispatch({ type: 'TOAST', message: t('rematchLeft') });
       }, REMATCH_WAIT_MS);
     } else {
-      void startMatch(state.stakeCents);
+      // Dead socket → fresh session. Re-queue at the FINISHED MATCH's stake:
+      // state.stakeCents is the lobby picker (often Free/0), which would have
+      // re-queued a race rematch as a FREE game.
+      void startMatch((state.match?.stakeCents ?? state.stakeCents) as StakeCents);
     }
-  }, [dispatch, startMatch, state.stakeCents, clearRematchWait]);
+  }, [dispatch, startMatch, state.stakeCents, state.match, clearRematchWait]);
 
   // Decline the opponent's offer, or just leave the end screen: tell a waiting
   // opponent (via the live session) instead of leaving them on "searching…".

@@ -1430,6 +1430,9 @@ export class RemoteSession implements GameSession {
   private ws: WebSocket | null = null;
   private disposed = false;
   private inGame = false;
+  /** True once this session has hosted a game — post-game (end screen) drops
+   *  then RECONNECT instead of dying, so the rematch stays reachable. */
+  private hadGame = false;
   private attempts = 0;
   private initialAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1550,6 +1553,19 @@ export class RemoteSession implements GameSession {
       clearTimeout(failTimer);
       if (this.disposed) return;
       if (!this.inGame) {
+        // POST-GAME drop (the end screen) — CHECKED BEFORE the initial branch:
+        // the socket that hosted the game IS the initial one, and letting its
+        // close fall into the initial-retry path re-ran connect(true), whose
+        // onopen RE-SENDS the original intent — silently re-queueing a player
+        // who is just sitting on the end screen. Resume-only instead: keep the
+        // session alive (the server holds the rematch wish/offer on THIS
+        // session; a dead socket made offers undeliverable and rematch.poll a
+        // silent no-op — the mobile rematch black hole). The resume is a cheap
+        // token hello and sends NO game intent (that block is initial-only).
+        if (this.hadGame) {
+          this.scheduleReconnect();
+          return;
+        }
         if (!initial) return;
         // Initial connection never reached a game. RETRY a few times before giving
         // up: a single slow/dropped handshake on 3G must not read as "unreachable".
@@ -1707,6 +1723,7 @@ export class RemoteSession implements GameSession {
       }
       case 'match.found':
         this.inGame = true;
+        this.hadGame = true;
         // Anti-grinding reveal: the server has committed its seed (msg.fairnessCommit);
         // now reveal our raw entropy so the dice can be finalized. Keyed by gameId so
         // a rematch (a NEW game on the same socket) re-reveals — otherwise the rematch
