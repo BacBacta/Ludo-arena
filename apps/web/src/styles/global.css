@@ -1117,6 +1117,11 @@ small.muted { font-size: 12px; }
   color: var(--txt); background: rgba(0, 0, 0, 0.05);
 }
 .racechip--live { color: #0a1f1a; background: var(--race-green-2); animation: racePulse 1.8s ease-in-out infinite; }
+.racechip--pool {
+  color: #7a5600; font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, rgba(255, 240, 200, 0.95), rgba(255, 224, 138, 0.6));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(212, 160, 23, 0.4);
+}
 .racesheet__scroll { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px; }
 
 /* Podium (top 3): winner centre + raised, blocks by rank */

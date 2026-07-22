@@ -334,9 +334,10 @@ export function Lobby({
                 </button>
               )}
 
-              {/* Prize-pool gauge: how much of the event budget is still up for
-                  grabs — scarcity is the join trigger. */}
-              {poolPct !== null && !race.funded && (
+              {/* Prize-pool gauge: how much of the pool is still up for grabs —
+                  ALWAYS visible (scarcity pulls joins; entrants keep the prize
+                  in sight). Was hidden once entered, which read as "no pool". */}
+              {poolPct !== null && (
                 <div className="racebar">
                   <div className="racebar__head">
                     <span>💰 {t('racePoolLabel')}</span>
