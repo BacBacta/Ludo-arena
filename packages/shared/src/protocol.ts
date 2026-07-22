@@ -710,13 +710,16 @@ export interface FriendInfo {
 
 /** Race Week event state, surfaced in hello.ok while the event is armed (absent
  *  off-event). `funded` = this wallet already claimed its one-time Pass-gated
- *  grant; `endsAt` drives the client countdown; `poolLeftCents` = budget left. */
+ *  grant; `endsAt` drives the client countdown; `poolLeftCents` = the WINNABLE
+ *  prize budget left (entry grants + JIT top-ups), NOT the faucet's gas subsidy —
+ *  gas seeds are an operational cost of a distinct wallet and never tick the pool
+ *  down (server tracks them on a separate counter, bounded by the same budget). */
 export interface RaceState {
   active: boolean;
   quotaCents: number;
   endsAt?: string;
-  funded: boolean;
   poolLeftCents: number;
+  funded: boolean;
   /** Total provisioned pool (for the client's pool gauge); absent on old servers. */
   poolCents?: number;
 }

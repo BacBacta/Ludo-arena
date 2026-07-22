@@ -84,6 +84,28 @@ export function seedGrantCents(deficit: number, granted: number, lifetimeCapCent
   return Math.max(0, Math.min(deficit, capLeft, poolLeft));
 }
 
+// The provisioned Race Week budget is spent along two dimensions:
+//   • PRIZE — entry grants + JIT top-ups: cUSD that becomes a stake and can be
+//     WON back through a game. This is the only dimension players see as the pool.
+//   • GAS   — cUSD seeded to burners to pay their OWN gas: a pure operational cost
+//     of the faucet wallet, never winnable.
+// Both leave the one faucet wallet, so the budget CAP bounds their sum, but the
+// gauge shows only the prize dimension (gas seeding must not read as "the faucet
+// eats the prize pool" — the faucet is a distinct wallet).
+
+/** Player-facing prize pool remaining = provisioned pool − PRIZE draws only.
+ *  Gas seeds never reduce this. */
+export function poolLeftCents(poolCents: number, prizeSpent: number): number {
+  return Math.max(0, poolCents - prizeSpent);
+}
+
+/** Total budget headroom the faucet may still commit = provisioned pool − BOTH
+ *  dimensions. Every draw (grant, JIT, gas seed) is bounded by this so the one
+ *  faucet wallet never over-commits its provisioned budget. */
+export function budgetLeftCents(poolCents: number, prizeSpent: number, seedSpent: number): number {
+  return Math.max(0, poolCents - prizeSpent - seedSpent);
+}
+
 /** The cents a DEVICE has already drawn from the gas seed, parsed from its
  *  `race:seedfp:` meta row. Legacy rows stored the seeded wallet's address
  *  (the old one-shot gate) — parsed as one full draw of `targetCents`. Empty /

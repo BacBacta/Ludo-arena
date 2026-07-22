@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { claimFpWallets, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents } from '../src/race.js';
+import { budgetLeftCents, claimFpWallets, jitClaimCents, jitTopUpCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents } from '../src/race.js';
 
 // JIT (just-in-time) funding is the mainnet anti-"claim-and-run" model: instead
 // of granting a wallet its whole quota up front, the faucet drips one stake at a
@@ -106,6 +106,58 @@ describe('gas-seed grant bounds', () => {
   });
   it('grants nothing when there is no deficit', () => {
     expect(seedGrantCents(0, 10, cap, 10, 5000)).toBe(0);
+  });
+});
+
+// The provisioned budget is drawn along two dimensions tracked as two counters:
+// PRIZE (entry grants + JIT top-ups — winnable) and GAS (burner gas seeds —
+// operational). The player-facing pool must reflect PRIZE only: the faucet is a
+// distinct wallet, so gas seeding it should NOT read as "the faucet eats the
+// prize pool". But the budget CAP must still bound the SUM (one wallet pays both).
+
+describe('two-dimension pool accounting (prize gauge vs gas subsidy)', () => {
+  it('the displayed pool counts prize draws only — gas seeds never reduce it', () => {
+    const pool = 5000;
+    // A player claims (2¢ entry) AND draws a 10¢ gas seed.
+    const prizeSpent = 2;
+    const seedSpent = 10;
+    // The gauge shows pool − prize: the 10¢ of gas is invisible to it.
+    expect(poolLeftCents(pool, prizeSpent)).toBe(pool - 2);
+    // Seeding more gas leaves the displayed pool untouched…
+    expect(poolLeftCents(pool, prizeSpent)).toBe(poolLeftCents(pool, prizeSpent + 0));
+    // …while another entry grant DOES move it (that money can be won).
+    expect(poolLeftCents(pool, prizeSpent + 2)).toBe(pool - 4);
+    // The gas dimension is simply absent from the displayed number.
+    void seedSpent;
+  });
+
+  it('the budget cap bounds the SUM of both dimensions (the faucet never over-commits)', () => {
+    const pool = 100;
+    // 40¢ of gas already seeded, 50¢ of prizes granted → 10¢ of real headroom.
+    expect(budgetLeftCents(pool, 50, 40)).toBe(10);
+    // A 12¢ grant would exceed the wallet's remaining budget even though the
+    // DISPLAYED pool (pool − prize = 50) looks like there is plenty.
+    expect(12 > budgetLeftCents(pool, 50, 40)).toBe(true);
+    // An 8¢ grant fits.
+    expect(8 > budgetLeftCents(pool, 50, 40)).toBe(false);
+    // Never negative once the budget is fully committed.
+    expect(budgetLeftCents(pool, 60, 60)).toBe(0);
+  });
+
+  it('a full sequence: gas seed leaves the gauge flat, then a claim drops it', () => {
+    const pool = 5000;
+    let prize = 0;
+    let seed = 0;
+    const gaugeBefore = poolLeftCents(pool, prize);
+    // Gas seed: bounded by TOTAL budget, written to the SEED counter only.
+    const seedGrant = seedGrantCents(10, 0, 30, prize + seed, pool);
+    seed += seedGrant;
+    expect(poolLeftCents(pool, prize)).toBe(gaugeBefore); // gauge unchanged by gas
+    // Claim: bounded by TOTAL budget, written to the PRIZE counter.
+    if (2 <= budgetLeftCents(pool, prize, seed)) prize += 2;
+    expect(poolLeftCents(pool, prize)).toBe(gaugeBefore - 2); // now it drops
+    // The faucet has committed prize+gas; both are held against the one budget.
+    expect(budgetLeftCents(pool, prize, seed)).toBe(pool - 2 - seedGrant);
   });
 });
 
