@@ -180,11 +180,17 @@ export async function playStakedGame(a, b, { maxMs = 300_000 } = {}) {
   const mb = b.mark();
   a.over = null;
   b.over = null;
+  const t0 = Date.now();
   await Promise.all([a.lockStake(), b.lockStake()]);
+  const tLocked = Date.now();
   await Promise.all([
     a.awaitFrom(ma, (m) => m.t === 'game.state', 150_000, 'game.state (locks verified)'),
     b.awaitFrom(mb, (m) => m.t === 'game.state', 150_000, 'game.state (locks verified)'),
   ]);
+  // Match-start latency telemetry: how long paired players stare at the
+  // "locking your stake" screen. locks = approve(+receipt)+join(+receipt);
+  // start = server lock-poll detection + depositor check + broadcast.
+  console.log(`  · stake locks ${tLocked - t0}ms · locks→game.state ${Date.now() - tLocked}ms`);
   const [overA, overB] = await Promise.all([
     a.playUntilOver({ maxMs }),
     b.playUntilOver({ maxMs }),

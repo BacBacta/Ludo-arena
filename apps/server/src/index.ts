@@ -253,8 +253,11 @@ const REVEAL_TIMEOUT_MS = 6_000;
 // C3 — don't start a staked game until BOTH stakes are locked on-chain (status
 // Active), or a blitz game could finish before the joins mine and pay the winner
 // nothing. Poll the escrow between reveal and Room creation.
-const LOCK_POLL_MS = 3_000;
-const MAX_LOCK_POLLS = 40; // ~2 min: generous for two Celo approve+join txs to mine
+// 1s cadence (was 3s): the poll is one cheap eth_call, and its granularity is
+// pure match-start latency — after the SECOND player's join mines, the game
+// waited up to a full poll period before anyone noticed both stakes were in.
+const LOCK_POLL_MS = 1_000;
+const MAX_LOCK_POLLS = 120; // same ~2 min window: generous for two Celo approve+join txs to mine
 
 function generateTableCode(): string {
   for (let attempt = 0; attempt < 20; attempt++) {

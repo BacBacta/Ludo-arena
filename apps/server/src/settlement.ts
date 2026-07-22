@@ -136,7 +136,9 @@ export class Arbiter {
     this.chainId = chain.id;
     this.feeCurrency = feeCurrency;
     const transport = http(rpc);
-    this.publicClient = createPublicClient({ chain, transport });
+    // 1s receipt polling (Celo block time) — a faster-confirmed settle pays the
+    // winner sooner, which the instant-rematch bridge leans on.
+    this.publicClient = createPublicClient({ chain, transport, pollingInterval: 1_000 });
     this.walletClient = createWalletClient({ account: this.account, chain, transport });
   }
 

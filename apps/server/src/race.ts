@@ -229,7 +229,9 @@ export class RaceFaucet {
     this.seedCents = cfg.seedCents;
     this.account = privateKeyToAccount(faucetKey);
     const transport = http(rpc);
-    this.publicClient = createPublicClient({ chain, transport });
+    // 1s receipt polling (Celo block time) — the default 4s made every faucet
+    // transfer (gas seed, entry grant, JIT drip) read as UI lag to the player.
+    this.publicClient = createPublicClient({ chain, transport, pollingInterval: 1_000 });
     this.walletClient = createWalletClient({ account: this.account, chain, transport });
   }
 
