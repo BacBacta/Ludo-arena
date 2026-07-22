@@ -360,7 +360,16 @@ export function Lobby({
                   🏆<small>{t('raceBoardCta')}</small>
                 </button>
               </div>
-              <small className="racecard__rule">{t('raceScoring')}</small>
+              {/* How to play & win — collapsed by default (keeps the card compact),
+                  the {pool} amount is injected live so it tracks the real prize. */}
+              <details className="racehow">
+                <summary className="racehow__sum">ℹ️ {t('raceHowToTitle')} · {t('raceScoring')}</summary>
+                <ol className="racehow__steps">
+                  <li>{t('raceHowStep1')}</li>
+                  <li>{t('raceHowStep2')}</li>
+                  <li>{t('raceHowStep3').replace('{pool}', race.prizePoolCents ? fmtUsd(race.prizePoolCents) : t('racePrizeLabel'))}</li>
+                </ol>
+              </details>
             </div>
           </>
         );
