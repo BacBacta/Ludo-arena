@@ -164,19 +164,28 @@ t.check('game 2 pair formed', !!A.match?.gameId && A.match.gameId === B.match?.g
 const g2 = A.match.gameId;
 const { overA: over2 } = await playStakedGame(A, B);
 t.check('game 2 reaches game.over', !!over2, `winner=${over2?.winner}`);
-await A.await((m) => m.t === 'game.settled' && m.gameId === g2, 45000, 'game.settled g2').catch(() => null);
-await sleep(8000); // JIT hook
-const w2 = over2.winner === A.match.seat ? A : B;
-const l2 = w2 === A ? B : A;
-const l2c = await l2.onchainBalanceCents();
-const w2c = await w2.onchainBalanceCents();
-t.check('drained LOSER is topped back up to the per-game target (deficit drip = 2c)', l2c === PER_GAME, `loser=${l2c}c (target ${PER_GAME}c)`);
-t.check('drained WINNER topped only by its deficit (1c — payout counts first)', w2c === PER_GAME, `winner=${w2c}c (1.9998c payout + 1c drip)`);
-const faucetSpent = faucetBefore2 - (await balanceUnits(faucetAddr));
-t.check('faucet paid exactly the two deficits (3c), not 2×perGame', faucetSpent === (await centsToUnits(3)), `spent=${faucetSpent} units`);
 
 // ================================================================= PHASE C
-console.log('\n————— PHASE C · rematch (fresh entropy, same seats, full cycle) —————');
+// The INSTANT rematch — the field behaviour that regressed: players click
+// Rejouer seconds after game.over, while the settlement is STILL IN FLIGHT
+// (the bench's slow-settle proxy holds settle txs 10s, like Celo). Both
+// players must be able to FUND the rematch stake from game-end drips alone —
+// deferring the winner's drip behind the settlement left them at 0c and the
+// rematch lock reverting on funds.
+console.log('\n————— PHASE C · INSTANT rematch (settlement still in flight) —————');
+const w2 = over2.winner === A.match.seat ? A : B;
+const l2 = w2 === A ? B : A;
+let afford = false;
+const affordDeadline = Date.now() + 5000; // drips land ~1s; settle held 8s (under viem's 10s HTTP timeout)
+while (Date.now() < affordDeadline) {
+  const [wc, lc] = [await w2.onchainBalanceCents(), await l2.onchainBalanceCents()];
+  if (wc >= 1 && lc >= 1) { afford = true; break; }
+  await sleep(400);
+}
+t.check('BOTH players can fund an instant rematch BEFORE the settlement mines', afford, `winner=${await w2.onchainBalanceCents()}c loser=${await l2.onchainBalanceCents()}c (settle still held)`);
+const faucetSpent2 = faucetBefore2 - (await balanceUnits(faucetAddr));
+t.check('game-end drips topped BOTH drained wallets to target (faucet −4c)', faucetSpent2 === (await centsToUnits(2 * PER_GAME)), `spent=${faucetSpent2} units`);
+
 const seatsBefore = { A: A.match.seat, B: B.match.seat };
 const mA = A.mark();
 const mB = B.mark();
@@ -194,8 +203,8 @@ t.check('rematch pairs the SAME two players directly', A.match.gameId === B.matc
 t.check('rematch keeps the SAME seats (no silent colour swap)', A.match.seat === seatsBefore.A && B.match.seat === seatsBefore.B, `A ${seatsBefore.A}→${A.match.seat}, B ${seatsBefore.B}→${B.match.seat}`);
 const g3 = A.match.gameId;
 const { overA: over3 } = await playStakedGame(A, B);
-t.check('rematch game completes', !!over3, `winner=${over3?.winner}`);
-const settled3 = await A.await((m) => m.t === 'game.settled' && m.gameId === g3, 45000, 'rematch settled').catch(() => null);
+t.check('INSTANT rematch game completes end-to-end (stakes locked pre-settlement)', !!over3, `winner=${over3?.winner}`);
+const settled3 = await A.await((m) => m.t === 'game.settled' && m.gameId === g3, 60000, 'rematch settled').catch(() => null);
 t.check('rematch game settles on-chain', !!settled3?.txHash, JSON.stringify(settled3 ?? 'timeout'));
 A.close();
 B.close();

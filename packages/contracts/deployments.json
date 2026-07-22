@@ -1,22 +1,22 @@
 {
   "localhost": {
     "chainId": 31337,
-    "escrow": "0xc6e7df5e7b4f2a278906862b61205850344d4e7d",
-    "escrowTx": "0x9debc857d276499cf401d33e28eb46ebe664d3f7174f6ec548c805999a9ac1f4",
-    "escrowN": "0x59b670e9fa9d0a427751af201d676719a970857b",
-    "escrowNTx": "0x9006f2f6ad4c13ccc46b64cecf437cab86c54266d74d54a81922eac45d404c1b",
-    "cosmeticsStore": "0x84ea74d481ee0a5332c457a4d796187f6ba67feb",
-    "cosmeticsStoreTx": "0x3f46ad6a38facb500dfd8bdf5d5d489c3d01d0f4025705b331875f305139c406",
-    "racePass": "0xa82ff9afd8f496c3d6ac40e2a0f282e47488cfc9",
-    "racePassTx": "0x27f4f1f30ccbb4c3d83c17b428301d88631ac84922f85d072745c1b87b13c5e5",
-    "stablecoin": "0x3aa5ebb10dc797cac828524e59a333d0a371443c",
+    "escrow": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+    "escrowTx": "0x4177224ef32b32ad1b1b14ff7ee219bdea3d37b847ccfd3ee95f03ed93d0ed73",
+    "escrowN": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+    "escrowNTx": "0x46c165c12dd4ac70bd40bb7748297f69983e51fd4146efee94039b1646ada76b",
+    "cosmeticsStore": "0x0dcd1bf9a1b36ce34237eeafef220932846bcd82",
+    "cosmeticsStoreTx": "0xafc9e795316c04c6fac5669a76ea271663cbc42a61712701c30a40450dd8718c",
+    "racePass": "0x0b306bf915c4d645ff596e518faf3f9669b97016",
+    "racePassTx": "0x9d69eab3919fca1be530ae1b09af88154f621b5951f265d2f022eca753e095a3",
+    "stablecoin": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
     "stablecoinDecimals": 6,
     "stablecoinIsTestUSD": true,
-    "stablecoinTx": "0xe1e6dcc8a717a2e08172288a13880c10463a6bbe973761d3c2e7ccf4aa874f2f",
+    "stablecoinTx": "0xedd732e573e10179a23e6f18ffb2dd0be270e80ad5cda5ffd22cf8ae906edade",
     "arbiter": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "treasury": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "rakeBps": 900,
-    "deployedAt": "2026-07-22T15:14:37.785Z"
+    "deployedAt": "2026-07-22T16:07:32.262Z"
   },
   "celo-sepolia": {
     "chainId": 11142220,
