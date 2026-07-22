@@ -41,6 +41,13 @@ export const RAKE_BPS = 900;
  *  game at join, so this display table MUST be kept in step with the deployed
  *  configuration (same rule as RAKE_BPS before it). */
 export const RAKE_BPS_BY_STAKE: Readonly<Record<number, number>> = {
+  // Race Week micro-tier: rake-free BY DESIGN (acquisition event; the UI
+  // promises "rake $0.00"). 1 bps, not 0: the escrow treats a 0 tier override
+  // as "unset → fall back to the global 900 bps" — which silently skimmed 9%
+  // off every race pot on-chain (winner got 1.82¢ of an announced 2¢) and, by
+  // leaving winners under the JIT target, made the faucet refill what the
+  // rake had taken. 1 bps ≈ 0 (0.0002¢ dust on a 2¢ pot).
+  1: 1,
   25: 1000, // 10% — acquisition tier, carries the per-settlement gas overhead
   100: 800, // 8%
   500: 600, // 6% — retention tier, priced to keep high-stake players

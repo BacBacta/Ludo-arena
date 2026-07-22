@@ -2348,13 +2348,22 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'game.rematch': {
-        if (session.room || session.pendingGameId) break;
+        // ALWAYS-REPLY contract (same family as the race.seed silent drop): a
+        // swallowed rematch click leaves the end screen "searching" forever with
+        // no way for the player to tell a dropped request from a slow pairing.
+        if (session.room || session.pendingGameId) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
+          break;
+        }
         // A repeated game.rematch must not stack queue entries: it falls through to
         // matchmaker.join below, which (unlike queue.join) had no dedupe guard, so
         // the token bucket alone allowed ~30 entries/s for one session — each one
         // pairing into its own staked game past a daily-limit check that reads the
-        // still-undebited counter.
-        if (matchmaker.isQueued(session) || freerollMatchmaker.isQueued(session)) break;
+        // still-undebited counter. Ack the duplicate truthfully: they ARE queued.
+        if (matchmaker.isQueued(session) || freerollMatchmaker.isQueued(session)) {
+          session.send({ t: 'queue.ok', position: 1 });
+          break;
+        }
         // Fresh per-game entropy commit (fairness): rebind BEFORE pairing/seeding so
         // the server commits its next seed without ever knowing this game's raw
         // entropy — the client reveals it later on match.found. Without this, a

@@ -20,8 +20,15 @@ cd packages/contracts && npx hardhat node &
 # 2. contrats réels (MockUSDT + escrows + RacePass, clé dev hardhat)
 NETWORK=localhost npm run deploy -w packages/contracts
 
-# 3. serveur armé (staking + Race Week + JIT + seed), état mémoire
+# 3. store DURABLE obligatoire : le serveur REFUSE les vraies mises en mode
+#    mémoire ("Staked games are temporarily unavailable") — gate R-COMP correct.
+redis-server --port 6379 --daemonize yes
+# Postgres local (ou docker) : createdb ludo, port au choix.
+
+# 4. serveur armé (staking + Race Week + JIT + seed)
 cd apps/server && \
+REDIS_URL=redis://127.0.0.1:6379 \
+DATABASE_URL=postgres://ludo@127.0.0.1:5433/ludo \
 CHAIN=localhost STAKING_ENABLED=true \
 ARBITER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
 RACE_WEEK_ACTIVE=true RACE_JIT_FUNDING=true \

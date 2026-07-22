@@ -2,40 +2,60 @@
  * Race Week full-journey simulation (real chain + real server + protocol bots).
  *
  * Phases:
- *  A — onboarding & display: SIWE, gas seed (+idempotence), Pass mint, claim
- *      (+idempotence), FIXED prize on the wire.
- *  B — staked happy path ×2: on-chain locks, full game, settlement on-chain
- *      (winner paid, treasury raked, escrow emptied), balance-aware JIT
- *      (rich wallet: NO drip; drained wallets: deficit-only drip).
- *  C — rematch: both re-commit fresh entropy, direct re-pair keeps seats,
- *      second staked cycle completes.
+ *  A — onboarding & display: SIWE, gas seed (+rate-limit reply, +idempotence),
+ *      Pass mint, claim (+rate-limit reply, +idempotence), FIXED prize on the wire.
+ *  B — staked happy path ×2: on-chain locks, full game, settlement in EXACT
+ *      TOKEN UNITS (winner paid pot−1bps dust, treasury rake, loser −stake),
+ *      balance-aware JIT (rich wallet: NO drip; drained wallets: deficit only).
+ *  C — rematch: fresh entropy, direct re-pair keeps seats, full staked cycle.
  *  D — failure modes: mid-staking drop → context replay (no abort);
- *      opponent gone → grace abort with refund enqueue; re-queue un-wedge.
+ *      opponent gone → grace abort + instant re-queue; re-queue un-wedge.
  *  E — in-game disconnect → token resume → game completes.
+ *
+ * All waits use log MARKS (awaitFrom) — a predicate over the whole history can
+ * match a STALE message (that harness bug once sent a lock to game 1's already
+ * settled escrow and read as a server fault). Money asserts use exact UNITS.
  *
  * Run: node e2e/race/sim-race.mjs   (stack: see e2e/race/README.md)
  */
 import { tally } from '../lib/common.mjs';
-import { RaceBot, armChain, balanceCents, deployments, playStakedGame, sleep, walletFor, DEPLOYER_PK, publicClient } from './lib.mjs';
+import { RaceBot, armChain, balanceCents, balanceUnits, centsToUnits, deployments, playStakedGame, sleep, walletFor, DEPLOYER_PK, publicClient } from './lib.mjs';
 
 const t = tally('sim-race');
 const dep = deployments();
 const SEED_CENTS = 10;
 const PER_GAME = 2;
+const RAKE_BPS_RACE = 1n; // the ≈0 race-tier rake (1 bps — 0 is inexpressible per tier)
 
 // ---------------------------------------------------------------- helpers
 const ERC20_MIN_ABI = [
   { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
-  { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
 ];
 async function drainTo(bot, keepCents) {
-  const d = await publicClient.readContract({ address: dep.stablecoin, abi: ERC20_MIN_ABI, functionName: 'decimals' });
-  const bal = await publicClient.readContract({ address: dep.stablecoin, abi: ERC20_MIN_ABI, functionName: 'balanceOf', args: [bot.account.address] });
-  const keep = (BigInt(keepCents) * 10n ** BigInt(d)) / 100n;
+  const bal = await balanceUnits(bot.account.address);
+  const keep = await centsToUnits(keepCents);
   if (bal > keep) {
     const h = await bot.wallet.writeContract({ address: dep.stablecoin, abi: ERC20_MIN_ABI, functionName: 'transfer', args: [walletFor(DEPLOYER_PK).account.address, bal - keep] });
     await publicClient.waitForTransactionReceipt({ hash: h });
+  }
+}
+/** Queue both bots and wait for the FRESH match.found pair (marked). */
+async function pairUp(x, y, label) {
+  const mx = x.mark();
+  const my = y.mark();
+  x.send({ t: 'queue.join', stake: 1 });
+  y.send({ t: 'queue.join', stake: 1 });
+  await Promise.all([
+    x.awaitFrom(mx, (m) => m.t === 'match.found', 15000, `match.found ${label} (${x.name})`),
+    y.awaitFrom(my, (m) => m.t === 'match.found', 15000, `match.found ${label} (${y.name})`),
+  ]);
+}
+/** Seed-only onboarding for failure-mode bots (10c covers the 1c stake). */
+async function seedOnly(...bots) {
+  await Promise.all(bots.map((b) => b.fuel()));
+  for (const b of bots) {
+    await b.open();
+    await b.seed();
   }
 }
 
@@ -84,82 +104,78 @@ probe.close();
 
 // ================================================================= PHASE B
 console.log('\n————— PHASE B · staked happy path + balance-aware JIT —————');
-const faucetBefore = await balanceCents(faucetAddr);
-A.send({ t: 'queue.join', stake: 1 });
-B.send({ t: 'queue.join', stake: 1 });
-await Promise.all([
-  A.await((m) => m.t === 'match.found', 15000, 'match.found A'),
-  B.await((m) => m.t === 'match.found', 15000, 'match.found B'),
-]);
+const stakeUnits = await centsToUnits(1);
+const potUnits = stakeUnits * 2n;
+const rakeUnits = (potUnits * RAKE_BPS_RACE) / 10_000n; // 1bps dust (2 units at 6dp)
+const faucetBefore = await balanceUnits(faucetAddr);
+await pairUp(A, B, 'g1');
 t.check('staked pair formed across distinct IPs', A.match?.gameId === B.match?.gameId && A.match.stakeCents === 1, `game=${A.match?.gameId?.slice(0, 8)}`);
 
-const balA0 = await A.onchainBalanceCents();
-const balB0 = await B.onchainBalanceCents();
-const treasury0 = await balanceCents(dep.treasury);
+const balA0 = await balanceUnits(A.account.address);
+const balB0 = await balanceUnits(B.account.address);
+const treasury0 = await balanceUnits(dep.treasury);
 const { overA } = await playStakedGame(A, B);
 t.check('game 1 reaches game.over on both sides', !!overA && !!B.over, `winner=${overA?.winner} reason=${overA?.reason}`);
+t.check('announced payout is the full 2c pot (rake-free race tier)', overA.payoutCents === 2 && overA.rakeCents === 0, `payout=${overA?.payoutCents} rake=${overA?.rakeCents}`);
 
-const settledA = await A.await((m) => m.t === 'game.settled', 45000, 'game.settled A').catch(() => null);
+const settledA = await A.await((m) => m.t === 'game.settled' && m.gameId === A.match.gameId, 45000, 'game.settled A').catch(() => null);
 t.check('settlement lands on-chain (game.settled with txHash)', !!settledA?.txHash, JSON.stringify(settledA ?? 'timeout'));
 await sleep(8000); // let the JIT hook run (fire-and-forget after onResult)
 
 const winner = overA.winner === A.match.seat ? A : B;
 const loser = winner === A ? B : A;
-const winBal = await winner.onchainBalanceCents();
-const loseBal = await loser.onchainBalanceCents();
-const balW0 = winner === A ? balA0 : balB0;
-const balL0 = winner === A ? balB0 : balA0;
-t.check('winner: −1c stake, +payout on-chain', winBal === balW0 - 1 + overA.payoutCents, `before=${balW0} after=${winBal} payout=${overA.payoutCents}`);
-t.check('loser: exactly −1c stake (no other movement)', loseBal === balL0 - 1, `before=${balL0} after=${loseBal}`);
-t.check('treasury collected the rake', (await balanceCents(dep.treasury)) - treasury0 === 2 - overA.payoutCents, `rake=${(await balanceCents(dep.treasury)) - treasury0}`);
-t.check('RICH wallets drew NOTHING from the faucet (balance-aware JIT)', (await balanceCents(faucetAddr)) === faucetBefore, `faucet ${faucetBefore}c → ${await balanceCents(faucetAddr)}c`);
+const winU = await balanceUnits(winner.account.address);
+const loseU = await balanceUnits(loser.account.address);
+const winU0 = winner === A ? balA0 : balB0;
+const loseU0 = winner === A ? balB0 : balA0;
+t.check('winner: −stake +pot−1bps dust, EXACT in units', winU === winU0 - stakeUnits + potUnits - rakeUnits, `Δ=${winU - winU0} expected=${potUnits - rakeUnits - stakeUnits}`);
+t.check('loser: exactly −stake in units', loseU === loseU0 - stakeUnits, `Δ=${loseU - loseU0}`);
+t.check('treasury collected exactly the 1bps dust', (await balanceUnits(dep.treasury)) - treasury0 === rakeUnits, `Δ=${(await balanceUnits(dep.treasury)) - treasury0}`);
+t.check('RICH wallets drew NOTHING from the faucet (balance-aware JIT)', (await balanceUnits(faucetAddr)) === faucetBefore, `faucet Δ=${(await balanceUnits(faucetAddr)) - faucetBefore}`);
 
 // — game 2 with DRAINED wallets → the JIT safety net must top up the deficit.
 console.log('· draining both wallets to 1c and playing game 2…');
 await drainTo(A, 1);
 await drainTo(B, 1);
-const faucetBefore2 = await balanceCents(faucetAddr);
-A.match = null; A.over = null; A.state = null;
-B.match = null; B.over = null; B.state = null;
-A.send({ t: 'queue.join', stake: 1 });
-B.send({ t: 'queue.join', stake: 1 });
-await Promise.all([
-  A.await((m) => m.t === 'match.found' && m.gameId !== overA.gameId && !!m.gameId, 15000, 'match.found A (g2)').then((m) => (A.match = m)),
-  B.await((m) => m.t === 'match.found' && m.gameId === A.match?.gameId, 15000, 'match.found B (g2)').then((m) => (B.match = m)),
-]).catch(() => { /* fallthrough: match fields set by connect handler anyway */ });
+const faucetBefore2 = await balanceUnits(faucetAddr);
+await pairUp(A, B, 'g2');
 t.check('game 2 pair formed', !!A.match?.gameId && A.match.gameId === B.match?.gameId, `game=${A.match?.gameId?.slice(0, 8)}`);
+const g2 = A.match.gameId;
 const { overA: over2 } = await playStakedGame(A, B);
 t.check('game 2 reaches game.over', !!over2, `winner=${over2?.winner}`);
-await A.await((m) => m.t === 'game.settled' && m.gameId === A.match.gameId, 45000, 'game.settled g2').catch(() => null);
+await A.await((m) => m.t === 'game.settled' && m.gameId === g2, 45000, 'game.settled g2').catch(() => null);
 await sleep(8000); // JIT hook
 const w2 = over2.winner === A.match.seat ? A : B;
 const l2 = w2 === A ? B : A;
-const w2bal = await w2.onchainBalanceCents();
-const l2bal = await l2.onchainBalanceCents();
-t.check('drained LOSER is topped back up to the per-game target (deficit-only drip)', l2bal === PER_GAME, `loser=${l2bal}c (target ${PER_GAME}c)`);
-t.check('drained WINNER got at most its deficit (payout counts first)', w2bal >= PER_GAME && w2bal <= PER_GAME + over2.payoutCents, `winner=${w2bal}c payout=${over2.payoutCents}c`);
-t.check('faucet paid only the deficits, not 2×perGame', faucetBefore2 - (await balanceCents(faucetAddr)) <= 2 * PER_GAME - over2.payoutCents, `faucet spent ${faucetBefore2 - (await balanceCents(faucetAddr))}c`);
+const l2c = await l2.onchainBalanceCents();
+const w2c = await w2.onchainBalanceCents();
+t.check('drained LOSER is topped back up to the per-game target (deficit drip = 2c)', l2c === PER_GAME, `loser=${l2c}c (target ${PER_GAME}c)`);
+t.check('drained WINNER topped only by its deficit (1c — payout counts first)', w2c === PER_GAME, `winner=${w2c}c (1.9998c payout + 1c drip)`);
+const faucetSpent = faucetBefore2 - (await balanceUnits(faucetAddr));
+t.check('faucet paid exactly the two deficits (3c), not 2×perGame', faucetSpent === (await centsToUnits(3)), `spent=${faucetSpent} units`);
 
 // ================================================================= PHASE C
 console.log('\n————— PHASE C · rematch (fresh entropy, same seats, full cycle) —————');
 const seatsBefore = { A: A.match.seat, B: B.match.seat };
-const g2id = A.match.gameId;
+const mA = A.mark();
+const mB = B.mark();
 A.requestRematch();
 await sleep(500);
-const mark = B.mark();
 B.send({ t: 'rematch.poll' });
-const offer = await B.awaitFrom(mark, (m) => m.t === 'rematch.offer', 8000, 'rematch.offer').catch(() => null);
+const offer = await B.awaitFrom(mB, (m) => m.t === 'rematch.offer', 8000, 'rematch.offer').catch(() => null);
 t.check('opponent sees the rematch offer (poll pulls the push)', !!offer, JSON.stringify(offer ?? 'none'));
 B.requestRematch();
 await Promise.all([
-  A.await((m) => m.t === 'match.found' && m.gameId !== g2id, 15000, 'rematch match.found A').then((m) => (A.match = m)),
-  B.await((m) => m.t === 'match.found' && m.gameId !== g2id, 15000, 'rematch match.found B').then((m) => (B.match = m)),
+  A.awaitFrom(mA, (m) => m.t === 'match.found', 15000, 'rematch match.found A'),
+  B.awaitFrom(mB, (m) => m.t === 'match.found', 15000, 'rematch match.found B'),
 ]);
-t.check('rematch pairs the SAME two players directly', A.match.gameId === B.match.gameId, `game=${A.match.gameId.slice(0, 8)}`);
+t.check('rematch pairs the SAME two players directly', A.match.gameId === B.match.gameId && A.match.gameId !== g2, `game=${A.match.gameId.slice(0, 8)}`);
 t.check('rematch keeps the SAME seats (no silent colour swap)', A.match.seat === seatsBefore.A && B.match.seat === seatsBefore.B, `A ${seatsBefore.A}→${A.match.seat}, B ${seatsBefore.B}→${B.match.seat}`);
+const g3 = A.match.gameId;
 const { overA: over3 } = await playStakedGame(A, B);
-t.check('rematch game completes and settles', !!over3, `winner=${over3?.winner}`);
-await A.await((m) => m.t === 'game.settled' && m.gameId === A.match.gameId, 45000, 'rematch settled').catch(() => null);
+t.check('rematch game completes', !!over3, `winner=${over3?.winner}`);
+const settled3 = await A.await((m) => m.t === 'game.settled' && m.gameId === g3, 45000, 'rematch settled').catch(() => null);
+t.check('rematch game settles on-chain', !!settled3?.txHash, JSON.stringify(settled3 ?? 'timeout'));
 A.close();
 B.close();
 
@@ -168,80 +184,56 @@ console.log('\n————— PHASE D · failure modes —————');
 // D1: mid-staking socket drop → resume replays the match context, no abort.
 const C = new RaceBot('SimChloe');
 const D = new RaceBot('SimDavid');
-await Promise.all([C.fuel(), D.fuel()]);
-await C.open(); await D.open();
-await C.seed(); await D.seed(); // seed alone funds the 1c stake (claim covered in phase A)
-C.send({ t: 'queue.join', stake: 1 });
-D.send({ t: 'queue.join', stake: 1 });
-await Promise.all([
-  C.await((m) => m.t === 'match.found', 15000, 'match.found C'),
-  D.await((m) => m.t === 'match.found', 15000, 'match.found D'),
-]);
+await seedOnly(C, D);
+await pairUp(C, D, 'd1');
 const dropGame = C.match.gameId;
+const rm = C.mark();
 C.ws.close(); // the takeover/blip: socket dies before any lock
 await sleep(1500);
 await C.open({ sessionToken: C.hello.sessionToken }); // resume within the 15s grace
-const replay = await C.await((m) => m.t === 'match.found' && m.gameId === dropGame && C.log.indexOf(m) > 0, 10000, 'match.found replay').catch(() => null);
-t.check('D1 resume within grace REPLAYS the pending match (no abort)', !!replay || C.match?.gameId === dropGame, `replayed=${!!replay}`);
+const replay = await C.awaitFrom(rm, (m) => m.t === 'match.found' && m.gameId === dropGame, 10000, 'match.found replay').catch(() => null);
+t.check('D1 resume within grace REPLAYS the pending match (no abort)', !!replay, `replayed=${!!replay}`);
 const aborted = C.log.concat(D.log).find((m) => m.t === 'error' && m.code === 'MATCH_ABORTED');
 t.check('D1 nobody got MATCH_ABORTED during the drop', !aborted, JSON.stringify(aborted ?? 'clean'));
 const { overA: overCD } = await playStakedGame(C, D, { maxMs: 300_000 });
 t.check('D1 the dropped-then-resumed match still completes end-to-end', !!overCD, `winner=${overCD?.winner}`);
-C.close(); D.close();
+C.close();
+D.close();
 
 // D2: opponent leaves for good → grace expires → abort with the leave reason.
 const E = new RaceBot('SimEva');
 const F = new RaceBot('SimFred');
-await Promise.all([E.fuel(), F.fuel()]);
-await E.open(); await F.open();
-await E.seed(); await F.seed(); // seed alone funds the 1c stake (claim covered in phase A)
-E.send({ t: 'queue.join', stake: 1 });
-F.send({ t: 'queue.join', stake: 1 });
-await Promise.all([
-  E.await((m) => m.t === 'match.found', 15000, 'match.found E'),
-  F.await((m) => m.t === 'match.found', 15000, 'match.found F'),
-]);
+await seedOnly(E, F);
+await pairUp(E, F, 'd2');
+const eMark = E.mark();
 F.ws.close(); // F never comes back
-const eAbort = await E.await((m) => m.t === 'error' && m.code === 'MATCH_ABORTED', 30000, 'E abort after grace').catch(() => null);
+const eAbort = await E.awaitFrom(eMark, (m) => m.t === 'error' && m.code === 'MATCH_ABORTED', 30000, 'E abort after grace').catch(() => null);
 t.check('D2 the innocent player is released after the grace (opponent-left abort)', !!eAbort && /left/i.test(eAbort.message ?? ''), JSON.stringify(eAbort ?? 'none'));
 // …and can immediately queue again.
-E.match = null;
+const eMark2 = E.mark();
 E.send({ t: 'queue.join', stake: 1 });
-const requeueOk = await E.await((m) => m.t === 'queue.ok', 8000, 'E re-queue').catch(() => null);
+const requeueOk = await E.awaitFrom(eMark2, (m) => m.t === 'queue.ok', 8000, 'E re-queue').catch(() => null);
 t.check('D2 the released player can re-queue at once (no wedge)', !!requeueOk, JSON.stringify(requeueOk ?? 'none'));
 E.close();
 
 // D3: re-queue while pending un-wedges the stale match for BOTH sides.
 const G = new RaceBot('SimGala');
 const H = new RaceBot('SimHugo');
-await Promise.all([G.fuel(), H.fuel()]);
-await G.open(); await H.open();
-await G.seed(); await H.seed(); // seed alone funds the 1c stake (claim covered in phase A)
-G.send({ t: 'queue.join', stake: 1 });
-H.send({ t: 'queue.join', stake: 1 });
-await Promise.all([
-  G.await((m) => m.t === 'match.found', 15000, 'match.found G'),
-  H.await((m) => m.t === 'match.found', 15000, 'match.found H'),
-]);
+await seedOnly(G, H);
+await pairUp(G, H, 'd3');
 const gMark = G.mark();
 H.send({ t: 'queue.join', stake: 1 }); // H bails on the pending match by re-queuing
 const gAbort = await G.awaitFrom(gMark, (m) => m.t === 'error' && m.code === 'MATCH_ABORTED', 15000, 'G aborted by H re-queue').catch(() => null);
 t.check('D3 re-queue during pending aborts the stale match for the opponent', !!gAbort, JSON.stringify(gAbort ?? 'none'));
-G.close(); H.close();
+G.close();
+H.close();
 
 // ================================================================= PHASE E
 console.log('\n————— PHASE E · in-game disconnect → resume → completion —————');
 const K = new RaceBot('SimKira');
 const L = new RaceBot('SimLeon');
-await Promise.all([K.fuel(), L.fuel()]);
-await K.open(); await L.open();
-await K.seed(); await L.seed(); // seed alone funds the 1c stake (claim covered in phase A)
-K.send({ t: 'queue.join', stake: 1 });
-L.send({ t: 'queue.join', stake: 1 });
-await Promise.all([
-  K.await((m) => m.t === 'match.found', 15000, 'match.found K'),
-  L.await((m) => m.t === 'match.found', 15000, 'match.found L'),
-]);
+await seedOnly(K, L);
+await pairUp(K, L, 'e');
 await Promise.all([K.lockStake(), L.lockStake()]);
 await Promise.all([
   K.await((m) => m.t === 'game.state', 150_000, 'game.state K'),
@@ -259,7 +251,8 @@ K.state = K.hello.resumed?.state ?? K.state;
 const playK2 = K.playUntilOver({ maxMs: 300_000 });
 const [overK] = await Promise.all([playK2, playL, playK.catch(() => null)]);
 t.check('E the interrupted game still completes for both', !!(overK ?? K.over) && !!L.over, `winner=${(overK ?? K.over)?.winner}`);
-K.close(); L.close();
+K.close();
+L.close();
 
 t.done();
 process.exit(process.exitCode ?? 0);

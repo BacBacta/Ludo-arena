@@ -65,6 +65,12 @@ export async function balanceCents(addr) {
   const [bal, d] = [await publicClient.readContract({ address: deployments().stablecoin, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr] }), await tokenDecimals()];
   return Number((bal * 100n) / 10n ** BigInt(d));
 }
+/** Exact token units — the money-conservation assertions work at this
+ *  granularity (integer cents would hide sub-cent rake/dust discrepancies,
+ *  which is exactly how the 9%-rake-on-the-race-tier bug stayed invisible). */
+export function balanceUnits(addr) {
+  return publicClient.readContract({ address: deployments().stablecoin, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr] });
+}
 
 /** Chain bootstrap after deploy: open the Pass mint, fund the faucet wallet. */
 export async function armChain({ faucetUsdCents = 3000 } = {}) {

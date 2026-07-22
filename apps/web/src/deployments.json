@@ -5,10 +5,10 @@
     "escrowTx": "0x4177224ef32b32ad1b1b14ff7ee219bdea3d37b847ccfd3ee95f03ed93d0ed73",
     "escrowN": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
     "escrowNTx": "0x46c165c12dd4ac70bd40bb7748297f69983e51fd4146efee94039b1646ada76b",
-    "cosmeticsStore": "0xb7f8bc63bbcad18155201308c8f3540b07f84f5e",
-    "cosmeticsStoreTx": "0x85b74e14ca7fa184792f33cbbe893d144c0ee7d91fe27d237daa1c17c28eec10",
-    "racePass": "0x0dcd1bf9a1b36ce34237eeafef220932846bcd82",
-    "racePassTx": "0x1d46d4285dfadce8c9b9c79604ddaf451881a0400abe10fc606b03d8f360a22e",
+    "cosmeticsStore": "0x0dcd1bf9a1b36ce34237eeafef220932846bcd82",
+    "cosmeticsStoreTx": "0xafc9e795316c04c6fac5669a76ea271663cbc42a61712701c30a40450dd8718c",
+    "racePass": "0x0b306bf915c4d645ff596e518faf3f9669b97016",
+    "racePassTx": "0x9d69eab3919fca1be530ae1b09af88154f621b5951f265d2f022eca753e095a3",
     "stablecoin": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
     "stablecoinDecimals": 6,
     "stablecoinIsTestUSD": true,
@@ -16,7 +16,7 @@
     "arbiter": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "treasury": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "rakeBps": 900,
-    "deployedAt": "2026-07-22T14:20:49.587Z"
+    "deployedAt": "2026-07-22T14:33:07.109Z"
   },
   "celo-sepolia": {
     "chainId": 11142220,
