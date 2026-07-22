@@ -39,8 +39,17 @@ async function drainTo(bot, keepCents) {
     await publicClient.waitForTransactionReceipt({ hash: h });
   }
 }
-/** Queue both bots and wait for the FRESH match.found pair (marked). */
+/** Queue both bots and wait for the FRESH match.found pair (marked). Resets the
+ *  per-game bot state FIRST — a stale `over/state` from the previous game made
+ *  playUntilOver return instantly while the real game ran on without players
+ *  (the rounds-3/4 ghost: auto-play forfeits, rematch refused "Already in a
+ *  game", balances read a full minute before the real settlement). */
 async function pairUp(x, y, label) {
+  for (const b of [x, y]) {
+    b.match = null;
+    b.over = null;
+    b.state = null;
+  }
   const mx = x.mark();
   const my = y.mark();
   x.send({ t: 'queue.join', stake: 1 });

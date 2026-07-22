@@ -170,12 +170,20 @@ export class RaceBot extends WireBot {
   }
 }
 
-/** Drive one staked game start-to-finish for an already-matched pair. */
+/** Drive one staked game start-to-finish for an already-matched pair.
+ *  MARKS everywhere: a whole-history wait once matched game 1's stale
+ *  game.state/over during game 2 — the bots then "finished" instantly while
+ *  the real game ran on with two absent players (auto-play to forfeit), and
+ *  every downstream assertion read the wrong world. */
 export async function playStakedGame(a, b, { maxMs = 300_000 } = {}) {
+  const ma = a.mark();
+  const mb = b.mark();
+  a.over = null;
+  b.over = null;
   await Promise.all([a.lockStake(), b.lockStake()]);
   await Promise.all([
-    a.await((m) => m.t === 'game.state', 150_000, 'game.state (locks verified)'),
-    b.await((m) => m.t === 'game.state', 150_000, 'game.state (locks verified)'),
+    a.awaitFrom(ma, (m) => m.t === 'game.state', 150_000, 'game.state (locks verified)'),
+    b.awaitFrom(mb, (m) => m.t === 'game.state', 150_000, 'game.state (locks verified)'),
   ]);
   const [overA, overB] = await Promise.all([
     a.playUntilOver({ maxMs }),
