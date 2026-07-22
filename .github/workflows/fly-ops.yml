@@ -61,6 +61,7 @@ on:
           - unset-staking-allowed-countries
           - arm-mainnet
           - set-tier-rake
+          - race-status
       confirm:
         description: 'arm-mainnet only: type ARM-MAINNET to confirm'
         required: false
@@ -116,6 +117,28 @@ jobs:
           fi
           npm ci
           npm run set-tier-rake -w packages/contracts
+      # race-status: READ-ONLY — prints the faucet's live cUSD balance + how many
+      # players it can still fund. No tx, no Fly change; the runner reaches Celo
+      # RPC (the dev sandbox can't). Derives the faucet address from the standing
+      # RACE_FAUCET_PRIVATE_KEY secret (never printed) — same secret arm-mainnet uses.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'race-status' }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.operation == 'race-status' }}
+        with:
+          node-version: 22
+      - name: race-status (faucet balance + funding capacity)
+        if: ${{ inputs.operation == 'race-status' }}
+        env:
+          NETWORK: celo
+          RACE_FAUCET_PRIVATE_KEY: ${{ secrets.RACE_FAUCET_PRIVATE_KEY }}
+          FAUCET_ADDRESS: ${{ vars.RACE_FAUCET_ADDRESS }}
+        run: |
+          if [ -z "$RACE_FAUCET_PRIVATE_KEY" ] && [ -z "$FAUCET_ADDRESS" ]; then
+            echo "::error::Set the RACE_FAUCET_PRIVATE_KEY secret (or a RACE_FAUCET_ADDRESS repo variable) so the faucet balance can be read."; exit 1
+          fi
+          npm ci
+          npm run race-status -w packages/contracts
       - name: unset COSMETICS_STORE_ADDRESS
         if: ${{ inputs.operation == 'unset-cosmetics-store-address' }}
         env:
