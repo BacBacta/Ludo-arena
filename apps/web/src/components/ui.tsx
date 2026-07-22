@@ -360,7 +360,10 @@ export function Toast() {
       aria-live="polite"
       onClick={() => dispatch({ type: 'CLEAR_TOAST' })}
     >
-      {toast}
+      <span className="toast__msg">{toast}</span>
+      {/* Dwell bar: how long the notice stays (toastDurationMs) — a premium cue
+          that the card is dismissible and time-bound, not stuck. */}
+      <span className="toast__dwell" style={{ animationDuration: `${toastDurationMs(toast)}ms` }} aria-hidden="true" />
     </div>
   );
 }

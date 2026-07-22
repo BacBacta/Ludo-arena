@@ -1176,6 +1176,126 @@ small.muted { font-size: 12px; }
 .raceempty b { font-size: 14px; }
 .raceempty__cta { min-width: 200px; }
 
+/* ---- Race Week premium pass: gold-lit card, metallic podium, glossy gauge.
+   Overrides layered on the base race styles above so the structure stays. ---- */
+.racecard {
+  border: 1px solid rgba(255, 211, 92, 0.38);
+  box-shadow:
+    0 24px 52px -16px rgba(0, 60, 40, 0.75),
+    0 0 0 1px rgba(255, 211, 92, 0.12),
+    0 0 34px -10px rgba(255, 211, 92, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.racecard::after { /* slow diagonal sheen sweeping the card — the "trophy glass" read */
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, 0.06) 45%, rgba(255, 255, 255, 0.13) 50%, rgba(255, 255, 255, 0.06) 55%, transparent 68%);
+  background-size: 260% 100%;
+  animation: raceSheen 5.5s ease-in-out infinite;
+}
+@keyframes raceSheen { 0%, 55% { background-position: 130% 0; } 100% { background-position: -140% 0; } }
+.racecard__flag {
+  background: radial-gradient(130% 130% at 30% 20%, rgba(255, 224, 138, 0.35), rgba(255, 211, 92, 0.12) 60%, rgba(52, 224, 164, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.45), 0 6px 16px -6px rgba(255, 211, 92, 0.4);
+  animation: raceFlagFloat 3.6s ease-in-out infinite;
+}
+@keyframes raceFlagFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+.racecard__podchip {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+.racecard__podchip--first {
+  background: linear-gradient(180deg, rgba(255, 224, 138, 0.22), rgba(255, 191, 61, 0.1));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 0 1px rgba(255, 211, 92, 0.5), 0 4px 14px -6px rgba(255, 200, 60, 0.45);
+}
+.racebar__track { height: 9px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+.racebar__fill { position: relative; overflow: hidden; }
+.racebar__fill::after { /* travelling glint on the remaining-pool fill */
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: raceGaugeShine 2.4s ease-in-out infinite;
+}
+@keyframes raceGaugeShine { from { transform: translateX(-130%); } to { transform: translateX(360%); } }
+.btn--race-play { position: relative; overflow: hidden; }
+.btn--race-play::after { /* sheen sweep across the gold CTA */
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.5) 50%, transparent 65%);
+  background-size: 240% 100%;
+  animation: raceSheen 3.8s ease-in-out infinite;
+}
+
+/* Sheet: richer banner, metallic podium (gold / silver / bronze), gold "me". */
+.racesheet__banner {
+  height: 8px;
+  opacity: 0.7;
+  box-shadow: 0 6px 18px -6px rgba(255, 211, 92, 0.4);
+}
+.podium__block {
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), inset 0 -10px 18px rgba(0, 0, 0, 0.18), 0 8px 18px -8px rgba(0, 0, 0, 0.35);
+}
+.podium__col--2 .podium__block { background: linear-gradient(180deg, #eef2f8, #b9c4d4); color: #3c4658; }
+.podium__col--1 .podium__block {
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.55), inset 0 -12px 20px rgba(160, 110, 0, 0.25), 0 10px 26px -8px rgba(255, 190, 50, 0.55);
+}
+.podium__col--1 { filter: drop-shadow(0 10px 22px rgba(255, 200, 60, 0.28)); }
+.podium__crown {
+  position: absolute;
+  top: -15px;
+  font-size: 16px;
+  filter: drop-shadow(0 3px 6px rgba(160, 110, 0, 0.45));
+  animation: crownFloat 2.6s ease-in-out infinite;
+}
+@keyframes crownFloat { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-3px) rotate(6deg); } }
+.podium__pts { color: #a97a00; }
+.racerow {
+  background: linear-gradient(180deg, rgba(12, 22, 52, 0.04), rgba(12, 22, 52, 0.02));
+  box-shadow: inset 0 0 0 1px rgba(12, 22, 52, 0.05);
+}
+.racerow__rank {
+  min-width: 30px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(12, 22, 52, 0.06);
+  font-size: 11.5px;
+}
+.racerow__pts { color: #a97a00; }
+.racerow--me {
+  background: linear-gradient(180deg, rgba(255, 224, 138, 0.3), rgba(255, 211, 92, 0.14));
+  outline: 1px solid rgba(212, 160, 23, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 6px 16px -8px rgba(212, 160, 23, 0.5);
+}
+.racerow__you { background: linear-gradient(180deg, #ffd35c, #f0b428); color: #3a2c00; }
+.racerow--sticky { box-shadow: 0 -8px 18px -12px rgba(12, 22, 52, 0.3), 0 6px 16px -8px rgba(212, 160, 23, 0.5); }
+@media (prefers-reduced-motion: reduce) {
+  .racecard::after, .btn--race-play::after, .racebar__fill::after { animation: none; content: none; }
+  .racecard__flag, .podium__crown { animation: none; }
+}
+
+/* Rematch offer banner (end screen) — gold glass, breathing glow. */
+.rematchoffer {
+  background: linear-gradient(180deg, rgba(255, 240, 200, 0.92), rgba(255, 224, 138, 0.55));
+  border: 1px solid rgba(212, 160, 23, 0.55);
+  color: #7a5600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 8px 20px -10px rgba(212, 160, 23, 0.6);
+  animation: offerGlow 2.2s ease-in-out infinite;
+}
+@keyframes offerGlow {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 8px 20px -10px rgba(212, 160, 23, 0.6); }
+  50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 10px 26px -8px rgba(212, 160, 23, 0.9); }
+}
+@media (prefers-reduced-motion: reduce) { .rematchoffer { animation: none; } }
+
 .fairnote--links a, .fairnote--links .linklike { white-space: nowrap; }
 .help__card { max-height: 82dvh; display: flex; flex-direction: column; }
 .help__scroll { overflow-y: auto; margin: 4px 0 12px; text-align: left; }
@@ -2214,21 +2334,65 @@ small.muted { font-size: 12px; }
   margin-bottom: 8px;
   animation: fade 0.25s ease;
 }
+/* Premium notification card — every in-app notice flows through this one
+   surface. Glass sheet + gold hairline (the modal__card language), springs in
+   from the top, wraps long diagnostics instead of clipping them, and shows a
+   dwell bar so the card reads as dismissible and time-bound (tap closes). */
 .toast {
   position: fixed;
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  background: #ffffff;
-  border-bottom: 3px solid var(--candy);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
+  max-width: min(460px, calc(100vw - 28px));
   color: var(--txt);
-  padding: 8px 16px;
-  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(239, 244, 252, 0.94));
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 18px 44px -12px rgba(12, 22, 52, 0.5),
+    0 6px 16px -8px rgba(12, 22, 52, 0.35),
+    0 0 0 1px rgba(62, 99, 221, 0.08);
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.45;
   z-index: 20;
-  white-space: nowrap;
-  animation: fade 0.25s ease;
+  cursor: pointer;
+  animation: toastIn 0.38s cubic-bezier(0.2, 0.85, 0.3, 1.18) both;
+}
+.toast::before { /* gold hairline crowning the card, like the modal sheets */
+  content: '';
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent) 25%, var(--accent-2) 50%, var(--accent) 75%, transparent);
+}
+.toast__msg { padding: 9px 16px 8px; text-align: center; white-space: normal; overflow-wrap: break-word; }
+.toast__dwell {
+  display: block;
+  height: 2.5px;
+  margin: 0 12px 6px;
+  border-radius: 999px;
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  opacity: 0.85;
+  animation-name: toastDwell;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-16px) scale(0.94); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+@keyframes toastDwell { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+  .toast__dwell { display: none; }
 }
 
 /* empty-league placeholder rows keep the card composed before first game */

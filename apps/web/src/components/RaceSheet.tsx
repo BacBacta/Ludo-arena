@@ -63,6 +63,7 @@ export function RaceSheet({ onPlay }: { onPlay?: () => void }) {
               <div className="podium">
                 {podiumOrder.map((r) => (
                   <div key={r.rank} className={`podium__col podium__col--${r.rank}${r.rank === board.myRank ? ' podium__col--me' : ''}`}>
+                    {r.rank === 1 && <span className="podium__crown" aria-hidden="true">👑</span>}
                     <span className="podium__medal" aria-hidden="true">{medalFor(r.rank)}</span>
                     <b className="podium__name">{r.name}</b>
                     <span className="podium__pts">{r.points} {t('racePoints')}</span>
