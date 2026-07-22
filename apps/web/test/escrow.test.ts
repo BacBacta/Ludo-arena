@@ -149,6 +149,28 @@ describe('stakeInEscrow (1v1)', () => {
     expect(writes.map((w) => w.functionName)).toEqual(['join']); // no approve
   });
 
+  it('normal tiers approve the EXACT stake (money hygiene)', async () => {
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 0n, decimals: 6 });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT });
+    expect(writes[0]!.args).toEqual([ESCROW, 250_000n]); // exactly 25c, nothing pre-authorised
+  });
+
+  it('the RACE micro-stake batch-approves the lifetime quota (10×1c) so later games skip the approve tx', async () => {
+    // Match start on the 1c tier is latency-critical (instant rematches): one
+    // 10c approve up front means every later event game is join-only.
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 0n, decimals: 6 });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 1, fairnessCommit: COMMIT });
+    expect(writes.map((w) => w.functionName)).toEqual(['approve', 'join']);
+    expect(writes[0]!.args).toEqual([ESCROW, 100_000n]); // 10 × 1c at 6 decimals
+    expect(writes[1]!.args[2]).toBe(10_000n); // the join still locks exactly 1c
+  });
+
+  it('a race game with the batch allowance in place is join-only (the fast path)', async () => {
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 100_000n, decimals: 6 });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 1, fairnessCommit: COMMIT });
+    expect(writes.map((w) => w.functionName)).toEqual(['join']); // no approve — instant-rematch speed
+  });
+
   it('is idempotent: an address that already joined does NOT lock a second time', async () => {
     // games getter returns playerA == ME → already deposited.
     const { publicClient, walletClient, writes } = fakeClients({ games: [TOKEN, 250_000n, ME, ZERO, 0, 2, 900] });

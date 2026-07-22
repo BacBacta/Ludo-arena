@@ -71,7 +71,9 @@ export async function connectWalletWith(provider: Eip1193Provider): Promise<Wall
   const walletClient = createWalletClient({ chain: activeChain, transport: custom(provider) });
   const [address] = await walletClient.requestAddresses();
   if (!address) return null;
-  const publicClient = createPublicClient({ chain: activeChain, transport: http() });
+  // Celo mines ~1s blocks; viem's default 4s receipt polling quadruples the
+  // wait on every approve/join — the bulk of the paired-players' staking lag.
+  const publicClient = createPublicClient({ chain: activeChain, transport: http(), pollingInterval: 1_000 });
   // Celo chains add custom tx/block formatters, so the inferred client types
   // diverge from viem's plain Wallet/PublicClient; flatten at this boundary.
   return {

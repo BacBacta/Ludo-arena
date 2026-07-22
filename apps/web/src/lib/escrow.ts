@@ -5,6 +5,7 @@
  * MiniPay, pass `feeCurrency` to pay gas in cUSD with a legacy tx.
  */
 import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
+import { RACE_STAKE_CENTS } from '@ludo/shared';
 import { BALANCED, classifyTxFailure, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
 
 export const ERC20_ABI = [
@@ -75,6 +76,18 @@ export function gameIdToBytes32(gameId: string): Hex {
 export function stakeUnits(stakeCents: number, decimals: number): bigint {
   if (decimals < 2) throw new Error('token decimals < 2 unsupported');
   return BigInt(stakeCents) * 10n ** BigInt(decimals - 2);
+}
+
+/** A token's decimals never change — cache per address so every stake lock
+ *  after the first saves one RPC roundtrip off the match-start latency. */
+const decimalsCache = new Map<string, number>();
+async function tokenDecimals(publicClient: PublicClient, token: Address): Promise<number> {
+  const key = token.toLowerCase();
+  const hit = decimalsCache.get(key);
+  if (hit !== undefined) return hit;
+  const d = (await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' })) as number;
+  decimalsCache.set(key, d);
+  return d;
 }
 
 export type StakeStatus = 'approving' | 'joining' | 'locked';
@@ -202,37 +215,43 @@ export async function planFeeExtras(
   // the node validates our explicit cap against the base fee.
   if (!localSigner) return { feeCurrency };
   const out: Record<string, unknown> = { feeCurrency };
-  try {
-    // CIP-64 UNITS: a feeCurrency tx's fee fields are denominated IN THE FEE
-    // CURRENCY. Celo's fee-abstraction RPC `eth_gasPrice([token])` returns the
-    // current suggested price in TOKEN units — the right base for the cap. The
-    // native base fee is the WRONG unit: with CELO ≈ ⅓ of a cUSD, a
-    // native-derived cap over-reserves ~3× and blew C4 on a 12¢ wallet ("total
-    // cost … exceeds the balance" with money actually there).
-    const priced = (await (publicClient as unknown as { request: (a: { method: string; params: unknown[] }) => Promise<unknown> }).request({
-      method: 'eth_gasPrice',
-      params: [feeCurrency],
-    })) as string;
-    out.maxFeePerGas = planCapWei(plan, BigInt(priced));
-    out.maxPriorityFeePerGas = plan.priorityWei;
-  } catch {
-    // Node without the extension: fall back to the NATIVE base fee — an
-    // over-margined cap (clears C1 with room) that the ladder's THRIFTY rung
-    // shrinks if it trips C4.
+  // The price and the gas estimate are independent reads — fetched IN PARALLEL
+  // (this runs twice per lock, approve + join; every serial roundtrip here is
+  // dead time the paired opponent spends staring at "locking your stake").
+  const priceP = (async () => {
     try {
-      const block = await publicClient.getBlock({ blockTag: 'latest' });
-      out.maxFeePerGas = planCapWei(plan, block.baseFeePerGas ?? 0n);
-      out.maxPriorityFeePerGas = plan.priorityWei;
+      // CIP-64 UNITS: a feeCurrency tx's fee fields are denominated IN THE FEE
+      // CURRENCY. Celo's fee-abstraction RPC `eth_gasPrice([token])` returns the
+      // current suggested price in TOKEN units — the right base for the cap. The
+      // native base fee is the WRONG unit: with CELO ≈ ⅓ of a cUSD, a
+      // native-derived cap over-reserves ~3× and blew C4 on a 12¢ wallet ("total
+      // cost … exceeds the balance" with money actually there).
+      const priced = (await (publicClient as unknown as { request: (a: { method: string; params: unknown[] }) => Promise<unknown> }).request({
+        method: 'eth_gasPrice',
+        params: [feeCurrency],
+      })) as string;
+      return BigInt(priced);
     } catch {
-      /* block read failed too → let viem estimate the fees */
+      // Node without the extension: fall back to the NATIVE base fee — an
+      // over-margined cap (clears C1 with room) that the ladder's THRIFTY rung
+      // shrinks if it trips C4.
+      try {
+        const block = await publicClient.getBlock({ blockTag: 'latest' });
+        return block.baseFeePerGas ?? 0n;
+      } catch {
+        return null; // both reads failed → let viem estimate the fees
+      }
     }
+  })();
+  const gasP = (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> })
+    .estimateContractGas(estimateRequest)
+    .catch(() => null); // estimate refused (lagging node) → let the send path estimate
+  const [priceBase, estimated] = await Promise.all([priceP, gasP]);
+  if (priceBase !== null) {
+    out.maxFeePerGas = planCapWei(plan, priceBase);
+    out.maxPriorityFeePerGas = plan.priorityWei;
   }
-  try {
-    const estimated = await (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> }).estimateContractGas(estimateRequest);
-    out.gas = planGasLimit(plan, estimated);
-  } catch {
-    /* estimate refused (lagging node) → let the send path estimate */
-  }
+  if (estimated !== null) out.gas = planGasLimit(plan, estimated);
   return out;
 }
 
@@ -254,7 +273,7 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
   const commit32 = commitToBytes32(fairnessCommit);
   const chain = walletClient.chain ?? null;
 
-  const decimals = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
+  const decimals = await tokenDecimals(publicClient, token);
   const stake = stakeUnits(stakeCents, decimals);
   // A client with a bound account (local key) signs locally; otherwise the
   // injected wallet (MiniPay) signs the tx for the address.
@@ -269,18 +288,29 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
       // Already joined this game (a resumed session, or the PREVIOUS attempt's
       // join landed but its receipt was lost)? Don't double-lock — this check
       // running at the top of EVERY attempt is what makes the retry safe.
-      const game = await publicClient.readContract({ address: escrow, abi: ESCROW_ABI, functionName: 'games', args: [gameId32] });
+      // The escrow state and the allowance are independent — read in parallel
+      // (each serial roundtrip here is match-start latency both players feel).
+      const [game, allowance] = await Promise.all([
+        publicClient.readContract({ address: escrow, abi: ESCROW_ABI, functionName: 'games', args: [gameId32] }),
+        publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] }),
+      ]);
       const [, , playerA, playerB] = game;
       if ([playerA, playerB].some((p) => p.toLowerCase() === account.toLowerCase())) {
         onStatus?.('locked');
         return { gameId32, stake, approveTx, joinTx: '0x' as Hex };
       }
 
-      const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
       if (allowance < stake) {
         onStatus?.('approving');
-        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account);
-        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...approveExtras });
+        // Race micro-stakes: approve the whole lifetime quota's worth (10×1¢) in
+        // ONE transaction, so every later event game — and above all the INSTANT
+        // rematch — skips the approve+receipt entirely (one tx instead of two:
+        // several seconds off every match start). Scoped to the 1¢ tier; normal
+        // tiers keep the exact-amount approve. The allowance only ever feeds OUR
+        // escrow's join(), and the wallet holds cents by construction.
+        const approveAmount = stakeCents === RACE_STAKE_CENTS ? stake * 10n : stake;
+        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, approveAmount], account: signer }, !!walletClient.account);
+        approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, approveAmount], ...approveExtras });
         const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
         if (r.status !== 'success') throw new Error('approve reverted');
       }

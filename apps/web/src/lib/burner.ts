@@ -70,7 +70,9 @@ export function burnerAddress(): Address | null {
 export function getBurnerWallet(): Wallet {
   const account = privateKeyToAccount(loadOrCreateBurnerKey());
   const walletClient = createWalletClient({ account, chain: activeChain, transport: http() });
-  const publicClient = createPublicClient({ chain: activeChain, transport: http() });
+  // Celo mines ~1s blocks; viem's default 4s receipt polling quadruples the
+  // wait on every approve/join — the bulk of the paired-players' staking lag.
+  const publicClient = createPublicClient({ chain: activeChain, transport: http(), pollingInterval: 1_000 });
   return {
     // Celo chains add custom formatters, so the inferred client types diverge
     // from viem's plain Wallet/PublicClient; flatten at this boundary (same as

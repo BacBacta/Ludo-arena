@@ -16,7 +16,7 @@
     "arbiter": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "treasury": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "rakeBps": 900,
-    "deployedAt": "2026-07-22T16:07:32.262Z"
+    "deployedAt": "2026-07-22T16:36:27.163Z"
   },
   "celo-sepolia": {
     "chainId": 11142220,
