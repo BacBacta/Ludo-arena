@@ -282,6 +282,45 @@ describe('one-shot syncs stand down while a session is alive (token takeover gua
   });
 });
 
+describe('persistent resign (a frozen game can ALWAYS be left)', () => {
+  beforeEach(() => localStorage.clear());
+
+  // Production freeze: a stuck room keeps the client in reconnect cycles, and a
+  // forfeit tapped while the socket is mid-cycle was a silent no-op — the
+  // player could not leave the game at all. The resign wish must survive the
+  // reconnect and be re-sent once the session is live again.
+  it('a resign tapped during a dead socket is re-sent after the reconnect', async () => {
+    FakeWS.instances.length = 0;
+    const session = new RemoteSession(evStub, 1, 'ws://test', () => undefined, '0x00000000000000000000000000000000000000aa', { kind: 'queue' }, { consent: { tosVersion: 'v', age18: true } } as never);
+    await vi.waitFor(() => { if (FakeWS.instances.length === 0) throw new Error('no ws'); });
+    const ws = FakeWS.instances[0]!;
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    ws.onmessage?.({ data: JSON.stringify({ t: 'match.found', gameId: 'g1', seat: 0, opponent: { name: 'Rival', flag: '' }, stakeCents: 1, potCents: 2, fairnessCommit: 'a'.repeat(64) }) });
+    ws.onmessage?.({ data: JSON.stringify({ t: 'game.state', state: { turn: 1, phase: 'awaiting-roll', positions: [[0, 0], [0, 0]], dice: null } }) });
+    // The socket dies (frozen-room reconnect churn); the player taps forfeit
+    // while nothing is connected — the send lands nowhere.
+    (ws as unknown as { readyState: number }).readyState = 3; // CLOSED: send() no-ops
+    session.resign();
+    (ws as unknown as { onclose: (() => void) | null }).onclose?.();
+    await vi.waitFor(() => { if (FakeWS.instances.length < 2) throw new Error('no reconnect'); }, { timeout: 3000 });
+    const ws2 = FakeWS.instances[1]!;
+    ws2.onopen?.();
+    ws2.onmessage?.({ data: JSON.stringify({ ...HELLO_OK_BASE, resumed: { gameId: 'g1', seat: 0, state: { turn: 1, phase: 'awaiting-roll', positions: [[0, 0], [0, 0]], dice: null }, stakeCents: 1, potCents: 2, opponent: { name: 'Rival', flag: '' }, fairnessCommit: 'a'.repeat(64) } }) });
+    expect(sentTypes(ws2)).toContain('game.resign'); // the wish survived the drop
+    // …and once the server really ends the game, the wish is cleared: a LATER
+    // reconnect must not resign the NEXT game by accident.
+    ws2.onmessage?.({ data: JSON.stringify({ t: 'game.over', winner: 1, reason: 'resign', payoutCents: 2, rakeCents: 0, eloDelta: -1, fairnessReveal: { serverSeed: '', entropies: ['', ''] } }) });
+    (ws2 as unknown as { onclose: (() => void) | null }).onclose?.();
+    await vi.waitFor(() => { if (FakeWS.instances.length < 3) throw new Error('no reconnect #2'); }, { timeout: 3000 });
+    const ws3 = FakeWS.instances[2]!;
+    ws3.onopen?.();
+    ws3.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    expect(sentTypes(ws3)).not.toContain('game.resign');
+    session.dispose();
+  });
+});
+
 describe('pollRematch (reliable rematch offer — pull recovers a missed push)', () => {
   beforeEach(() => localStorage.clear());
 

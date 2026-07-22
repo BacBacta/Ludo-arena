@@ -1487,6 +1487,9 @@ export class RemoteSession implements GameSession {
   private pendingLimbo: ReturnType<typeof setTimeout> | null = null;
   /** Resolver for an in-flight race.seed request sent over THIS live socket. */
   private seedResolve: ((r: RaceSeedResult | null) => void) | null = null;
+  /** A forfeit the player asked for that hasn't produced game.over yet —
+   *  re-sent after every reconnect so a frozen game can ALWAYS be left. */
+  private pendingResign = false;
   /** A staked initial intent held back until the wallet is SIWE-proven (browser
    *  wallets only) — fired on the friends.update the server pushes after prove. */
   private deferredIntent: (() => void) | null = null;
@@ -1796,6 +1799,10 @@ export class RemoteSession implements GameSession {
         // Record the escrow addresses the server settles against, so a stake can
         // be refused before deposit if this bundle's addresses drifted (G-2).
         setServerContracts(msg.contracts);
+        // A forfeit tapped during a reconnect cycle would otherwise be lost
+        // (send() no-ops on a non-open socket) — deliver it now that the
+        // session is live again, whatever the resume shape turns out to be.
+        if (this.pendingResign && this.inGame) this.send({ t: 'game.resign' });
         if (msg.resumed) {
           this.inGame = true;
           this.sawState = true;
@@ -1861,6 +1868,7 @@ export class RemoteSession implements GameSession {
         break;
       case 'game.over':
         this.inGame = false;
+        this.pendingResign = false; // the game really ended — stop re-sending
         this.ev.onOver(msg);
         break;
       case 'game.settled':
@@ -1948,6 +1956,12 @@ export class RemoteSession implements GameSession {
 
   resign(): void {
     // server forfeits the room → game.over(reason:'resign') drives the rest.
+    // PERSISTENT: on a frozen/reconnecting game the socket is often mid-cycle
+    // when the player taps forfeit, and a plain send() no-ops on a non-open
+    // socket — "impossible to leave, even by forfeit" (production freeze). The
+    // wish is remembered and re-sent after every reconnect until the game
+    // really ends (cleared on game.over / dispose).
+    this.pendingResign = true;
     this.send({ t: 'game.resign' });
   }
 
