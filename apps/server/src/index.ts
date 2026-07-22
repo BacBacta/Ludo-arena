@@ -2489,25 +2489,43 @@ wss.on('connection', (ws, req) => {
     for (const [code, table] of privateTables) {
       if (table.host === session) privateTables.delete(code);
     }
-    // Abandon a game that was awaiting entropy reveals (Room not created yet).
+    // Abandon a game that was awaiting entropy reveals (Room not created yet) —
+    // AFTER a reconnect grace, never instantly. The immediate abandon turned
+    // EVERY transient socket loss in the pending window into "Opponent left
+    // before the game started" for the innocent player: a mobile blip, and
+    // above all the R-RT-1 takeover — a one-shot sync resuming the same token
+    // becomes session.ws, then closes a second later, which read here as the
+    // session disconnecting (production incident: a MiniPay player pairing
+    // while the app was still boot-syncing spuriously aborted the match). A
+    // dropped client resumes in ~1s (rebinding ws + alive, and the hello replay
+    // restores its match context); only a player STILL gone when the grace
+    // expires abandons the match. The pending window stays bounded regardless:
+    // stake-lock polling and the re-queue un-wedge tear down stale entries.
     if (session.pendingGameId) {
       const p = pendingReveals.get(session.pendingGameId);
       if (p) {
-        pendingReveals.delete(p.gameId);
-        const opp = p.a === session ? p.b : p.a;
-        opp.pendingGameId = undefined;
-        // Freeroll entries were spent at match time: refund BOTH players so a
-        // pre-game disconnect can't burn the honest opponent's earned ticket.
-        if (p.freeroll) {
-          refundFreerollEntry(p.a);
-          refundFreerollEntry(p.b);
-        }
-        // Staked game abandoned pre-Room: auto-refund any on-chain deposit either
-        // side already locked (R-SETTLE-1) — the queue voids/refunds by status.
-        scheduleRefund1v1(p);
-        // MATCH_ABORTED so the waiting opponent leaves the staking screen for the
-        // lobby (see abortPendingStaked) instead of being stranded on a toast.
-        opp.send({ t: 'error', code: 'MATCH_ABORTED', message: 'Opponent left before the game started. Any locked stake is refunded shortly.' });
+        const gone = session;
+        setTimeout(() => {
+          if (pendingReveals.get(p.gameId) !== p) return; // started or aborted meanwhile
+          if (gone.alive) return; // resumed within the grace — the match lives on
+          pendingReveals.delete(p.gameId);
+          const opp = p.a === gone ? p.b : p.a;
+          if (gone.pendingGameId === p.gameId) gone.pendingGameId = undefined;
+          opp.pendingGameId = undefined;
+          // Freeroll entries were spent at match time: refund BOTH players so a
+          // pre-game disconnect can't burn the honest opponent's earned ticket.
+          if (p.freeroll) {
+            refundFreerollEntry(p.a);
+            refundFreerollEntry(p.b);
+          }
+          // Staked game abandoned pre-Room: auto-refund any on-chain deposit either
+          // side already locked (R-SETTLE-1) — the queue voids/refunds by status.
+          scheduleRefund1v1(p);
+          // MATCH_ABORTED so the waiting opponent leaves the staking screen for the
+          // lobby (see abortPendingStaked) instead of being stranded on a toast.
+          opp.send({ t: 'error', code: 'MATCH_ABORTED', message: 'Opponent left before the game started. Any locked stake is refunded shortly.' });
+          console.warn(`[pending] ${p.gameId} abandoned: player still gone after the ${PENDING_DISCONNECT_GRACE_MS / 1000}s reconnect grace`);
+        }, PENDING_DISCONNECT_GRACE_MS);
       }
     }
     // The room keeps running: clock + auto-move handle absence (disconnection != forfeit).
@@ -2519,6 +2537,14 @@ wss.on('connection', (ws, req) => {
     }, 600_000);
   });
 });
+
+/** How long a disconnected player may take to resume before their PENDING
+ *  match (Room not created yet) is abandoned. Started rooms already tolerate
+ *  absence (clock + auto-move); this extends the same "disconnection is not
+ *  desertion" posture to the staking window, where reconnects are routine
+ *  (mobile blips, R-RT-1 socket takeovers). Bounded well inside the 2-minute
+ *  stake-lock timeout that caps the pending window overall. */
+const PENDING_DISCONNECT_GRACE_MS = 15_000;
 
 /** Full match context so a reconnecting client can rebuild its game screen. */
 function resumedGame(s: Session): ResumedGame | undefined {

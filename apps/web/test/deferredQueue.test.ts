@@ -40,7 +40,7 @@ vi.hoisted(() => {
   (globalThis as unknown as Record<string, unknown>).WebSocket = FakeWS;
 });
 
-import { RemoteSession } from '../src/lib/session';
+import { RemoteSession, syncLobby } from '../src/lib/session';
 
 type FakeWSType = { instances: Array<{ url: string; sent: string[]; onopen: (() => void) | null; onmessage: ((e: { data: string }) => void) | null }> };
 const FakeWS = (globalThis as unknown as { WebSocket: FakeWSType }).WebSocket;
@@ -229,6 +229,33 @@ describe('requestRaceSeed (pre-lock gas seed over the LIVE match socket)', () =>
     ws.onmessage?.({ data: JSON.stringify({ t: 'race.seeded', seedCents: 8, alreadySeeded: false, txHash: '0xseed' }) });
     await expect(p).resolves.toMatchObject({ seedCents: 8 });
     session.dispose();
+  });
+});
+
+describe('one-shot syncs stand down while a session is alive (token takeover guard)', () => {
+  beforeEach(() => localStorage.clear());
+
+  // Production incident #2: a MiniPay player queued while the app was still
+  // boot-syncing; the queued syncLobby ONE-SHOT then resumed the same session
+  // token, the server's takeover (R-RT-1) closed the fresh match session's
+  // socket, and when the one-shot itself closed a second later the server read
+  // it as the SESSION disconnecting — instantly aborting the pending match
+  // ("Opponent left before the game started" for the innocent opponent).
+  const noop = { league: () => undefined, challenge: () => undefined, streak: () => undefined, limits: () => undefined };
+
+  it('syncLobby opens NO socket while a RemoteSession lives, and works again after dispose', async () => {
+    const { session, ws } = await openedSession({});
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    const before = FakeWS.instances.length;
+    syncLobby('ws://test', undefined, noop);
+    await new Promise((r) => setTimeout(r, 20)); // let the queued thunk execute
+    expect(FakeWS.instances.length).toBe(before); // stood down — no takeover possible
+    session.dispose();
+    syncLobby('ws://test', undefined, noop);
+    await vi.waitFor(() => {
+      if (FakeWS.instances.length === before) throw new Error('sync did not run');
+    });
+    expect(FakeWS.instances.length).toBe(before + 1); // free again once no session lives
   });
 });
 
