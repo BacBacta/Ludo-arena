@@ -68,7 +68,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitTopUpCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitTopUpCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -429,18 +429,37 @@ const cosmeticsVerifier = bootSubsystem('cosmetics verifier', createCosmeticsVer
 // key + a deployed RacePass → race.claim stays dormant off-event.
 const raceFaucet = bootSubsystem('Race Week faucet', createRaceFaucet);
 
+// The provisioned Race Week budget is drawn down along TWO dimensions, tracked
+// as two counters so the player-facing "prize pool" reflects only winnable money:
+//   • PRIZE (POOL_SPENT_KEY): entry grants + JIT top-ups — cUSD that becomes a
+//     stake and can be WON back through a game. This is what the gauge shows.
+//   • GAS   (SEED_SPENT_KEY): cUSD seeded to burners to pay their own gas — a
+//     pure operational cost of the faucet WALLET, never a prize. Invisible to
+//     players (the faucet is a distinct wallet; showing gas drain the pool read
+//     as "the faucet eats the prize pool").
+// Both leave the one faucet wallet, so the pool CAP bounds their SUM (real
+// budget guard); only PRIZE is surfaced as poolLeftCents.
+const POOL_SPENT_KEY = 'race:pool:spent';
+const SEED_SPENT_KEY = 'race:seed:spent';
+async function raceSpend(s: Awaited<ReturnType<typeof createStore>>): Promise<{ prize: number; seed: number; total: number }> {
+  const prize = Number((await s.getMeta(POOL_SPENT_KEY)) || '0');
+  const seed = Number((await s.getMeta(SEED_SPENT_KEY)) || '0');
+  return { prize, seed, total: prize + seed };
+}
+
 /** Client-facing Race Week state for hello.ok: dormant (undefined) off-event,
  *  else whether THIS wallet already claimed its grant + the funding params. */
 async function raceStateFor(wallet: string | undefined): Promise<RaceState | undefined> {
   if (!raceFaucet) return undefined;
   const funded = wallet ? !!(await store.getMeta(`race:grant:${wallet.toLowerCase()}`)) : false;
-  const spent = Number((await store.getMeta('race:pool:spent')) || '0');
+  // Prize dimension only — gas seeds don't tick down the pool players race for.
+  const { prize } = await raceSpend(store);
   return {
     active: true,
     quotaCents: raceFaucet.quotaCents,
     endsAt: raceFaucet.endsAt,
     funded,
-    poolLeftCents: Math.max(0, raceFaucet.poolCents - spent),
+    poolLeftCents: poolLeftCents(raceFaucet.poolCents, prize),
     poolCents: raceFaucet.poolCents,
   };
 }
@@ -462,19 +481,21 @@ async function topUpRaceFunding(store: Awaited<ReturnType<typeof createStore>>, 
   if (!(await store.getMeta(`race:grant:${w}`))) return;
   const run = async () => {
     const funded = Number((await store.getMeta(fundedKey)) || '0');
-    const spent = Number((await store.getMeta('race:pool:spent')) || '0');
-    const cents = jitTopUpCents(faucet.perGameCents, funded, faucet.quotaCents, spent, faucet.poolCents);
+    // JIT is a PRIZE draw; bound it by the TOTAL budget left (prize + gas already
+    // spent) so the faucet never over-commits, but advance only the prize counter.
+    const { prize, total } = await raceSpend(store);
+    const cents = jitTopUpCents(faucet.perGameCents, funded, faucet.quotaCents, total, faucet.poolCents);
     if (cents <= 0) return; // quota drawn or pool dry — leaderboard still scores
     // Reserve BEFORE the transfer (same crash-safety as claim): a crash mid-send
     // can only UNDER-fund, never double-fund. Roll back both counters on revert.
     await store.setMeta(fundedKey, String(funded + cents));
-    await store.setMeta('race:pool:spent', String(spent + cents));
+    await store.setMeta(POOL_SPENT_KEY, String(prize + cents));
     try {
       await faucet.fund(wallet as Address, cents);
-      telemetry('race.topup', { pid: tpid(w), cents, poolSpent: spent + cents });
+      telemetry('race.topup', { pid: tpid(w), cents, poolSpent: prize + cents });
     } catch (e) {
       await store.setMeta(fundedKey, String(funded));
-      await store.setMeta('race:pool:spent', String(spent));
+      await store.setMeta(POOL_SPENT_KEY, String(prize));
       console.error('[race] top-up transfer failed', e);
     }
   };
@@ -2052,9 +2073,12 @@ wss.on('connection', (ws, req) => {
         const fpPriorRaw = seedFpKey ? await store.getMeta(seedFpKey) : null;
         const fpDrawn = seedFpDrawCents(fpPriorRaw, raceFaucet.seedCents);
         const seedCap = raceFaucet.seedCents * SEED_LIFETIME_MULT;
-        const seedSpent = Number((await store.getMeta('race:pool:spent')) || '0');
+        // Gas is the SEED dimension: bound it by the TOTAL budget left (prize +
+        // gas) so it can't overrun the faucet, but track it in its OWN counter so
+        // it never ticks down the player-facing prize pool.
+        const { seed: seedSpent, total: spentTotal } = await raceSpend(store);
         const topUpCents = Math.min(
-          seedGrantCents(seedDeficit, priorCents, seedCap, seedSpent, raceFaucet.poolCents),
+          seedGrantCents(seedDeficit, priorCents, seedCap, spentTotal, raceFaucet.poolCents),
           Math.max(0, seedCap - fpDrawn),
         );
         if (topUpCents <= 0) {
@@ -2069,15 +2093,15 @@ wss.on('connection', (ws, req) => {
         // pool. Roll back to the prior state on a failed transfer.
         await store.setMeta(seedKey, JSON.stringify({ cents: priorCents + topUpCents, at: sNow, fp: session.fingerprint ?? null }));
         if (seedFpKey) await store.setMeta(seedFpKey, JSON.stringify({ cents: fpDrawn + topUpCents, wallet: sWallet.toLowerCase() }));
-        await store.setMeta('race:pool:spent', String(seedSpent + topUpCents));
+        await store.setMeta(SEED_SPENT_KEY, String(seedSpent + topUpCents));
         try {
           const txHash = await raceFaucet.fund(sWallet as Address, topUpCents);
           session.send({ t: 'race.seeded', seedCents: topUpCents, alreadySeeded: false, txHash });
-          telemetry('race.seed', { pid: tpid(playerId(sWallet, session.id)), cents: topUpCents, poolSpent: seedSpent + topUpCents });
+          telemetry('race.seed', { pid: tpid(playerId(sWallet, session.id)), cents: topUpCents, seedSpent: seedSpent + topUpCents });
         } catch (e) {
           await store.setMeta(seedKey, priorRaw ?? '');
           if (seedFpKey) await store.setMeta(seedFpKey, fpPriorRaw ?? '');
-          await store.setMeta('race:pool:spent', String(seedSpent));
+          await store.setMeta(SEED_SPENT_KEY, String(seedSpent));
           // Name the cause instead of a blind "try again": the faucet wallet pays
           // grants AND its own gas in cUSD, so the single most likely hard failure
           // is its balance running out — which no retry will ever fix. Read the
@@ -2140,9 +2164,10 @@ wss.on('connection', (ws, req) => {
         // the rest is topped up after each COMPLETED event game (see onResult), so
         // a wallet that claims and vanishes keeps just `perGameCents`, not the quota.
         const grantCents = raceFaucet.jit ? jitClaimCents(raceFaucet.perGameCents, raceFaucet.quotaCents) : raceFaucet.quotaCents;
-        // Hard pool cap: never fund past the provisioned budget.
-        const spent = Number((await store.getMeta('race:pool:spent')) || '0');
-        if (spent + grantCents > raceFaucet.poolCents) {
+        // Hard budget cap: never fund past the provisioned budget — checked against
+        // the TOTAL draw (prize + gas), but the grant advances only the prize counter.
+        const { prize: spent, seed: seedRest } = await raceSpend(store);
+        if (grantCents > budgetLeftCents(raceFaucet.poolCents, spent, seedRest)) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'Race Week funding pool is exhausted.' });
           break;
         }
@@ -2150,7 +2175,7 @@ wss.on('connection', (ws, req) => {
         // mid-transfer can only UNDER-fund (support-fixable), never double-fund.
         await store.setMeta(walletKey, JSON.stringify({ cents: grantCents, at: rNow, fp: session.fingerprint ?? null }));
         if (fpKey) await store.setMeta(fpKey, JSON.stringify({ wallets: [...new Set([...fpWallets, rWallet.toLowerCase()])] }));
-        await store.setMeta('race:pool:spent', String(spent + grantCents));
+        await store.setMeta(POOL_SPENT_KEY, String(spent + grantCents));
         // JIT: track the running total already funded to THIS wallet so the
         // top-up hook knows how much quota is left to drip out over its games.
         if (raceFaucet.jit) await store.setMeta(`race:funded:${rWallet.toLowerCase()}`, String(grantCents));
@@ -2162,7 +2187,7 @@ wss.on('connection', (ws, req) => {
           // Transfer failed after reserving → roll back so the player can retry.
           await store.setMeta(walletKey, '');
           if (fpKey) await store.setMeta(fpKey, fpPriorRaw ?? '');
-          await store.setMeta('race:pool:spent', String(spent));
+          await store.setMeta(POOL_SPENT_KEY, String(spent));
           if (raceFaucet.jit) await store.setMeta(`race:funded:${rWallet.toLowerCase()}`, '');
           // Same diagnostics as the gas-seed catch: the dry faucet is the one
           // hard failure retries can't fix, and viem's shortMessage names
