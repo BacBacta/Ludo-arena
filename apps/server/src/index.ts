@@ -2059,7 +2059,13 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const sNow = Date.now();
-        if (sNow - (session.lastRaceAt ?? 0) < 3000) break; // it sends a tx
+        if (sNow - (session.lastRaceAt ?? 0) < 3000) {
+          // Anti-spam window (it sends a tx) — but ALWAYS reply: a silent drop
+          // left honest clients (double-tap, quick pre-lock retry) hanging to
+          // their own timeout and reporting "Gas seed failed" out of thin air.
+          session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: false, rateLimited: true });
+          break;
+        }
         session.lastRaceAt = sNow;
         const sWallet = session.wallet;
         const seedKey = `race:seed:${sWallet.toLowerCase()}`;
@@ -2158,7 +2164,11 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const rNow = Date.now();
-        if (rNow - (session.lastRaceAt ?? 0) < 3000) break; // it sends a tx
+        if (rNow - (session.lastRaceAt ?? 0) < 3000) {
+          // Same always-reply contract as race.seed: a silent drop reads as a hang.
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'One moment — please try again.' });
+          break;
+        }
         session.lastRaceAt = rNow;
         const rWallet = session.wallet;
         const walletKey = `race:grant:${rWallet.toLowerCase()}`;
