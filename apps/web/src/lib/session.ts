@@ -390,6 +390,18 @@ function queueOneShot<T>(run: () => Promise<T>): Promise<T> {
   return next;
 }
 
+/** RemoteSessions currently alive (constructed, not yet disposed). Background
+ *  one-shots consult this AT EXECUTION TIME: a one-shot hello that resumes the
+ *  tab's session token makes the server's takeover (R-RT-1) close the live
+ *  session's socket — which, fired mid-staking, aborted real matches
+ *  ("Opponent left before the game started" while both players were present).
+ *  Checked when the queued thunk RUNS, not when it was queued, so a boot-time
+ *  sync that is still in the chain when a match session spins up stands down. */
+let liveSessions = 0;
+export function hasLiveSession(): boolean {
+  return liveSessions > 0;
+}
+
 /** One-shot lobby sync at app open: pulls fresh league standings + daily
  *  challenge/limits over a throwaway hello, so device-cached data self-heals
  *  (weekly rollover, server-side resets) without waiting for the next game.
@@ -412,6 +424,14 @@ export function syncLobby(
   void queueOneShot(
     () =>
       new Promise<void>((resolve) => {
+        // A live session already streams everything this sync would fetch —
+        // and resuming the token from here would STEAL its socket (R-RT-1),
+        // killing a match mid-staking. Stand down; checked at run time so a
+        // boot sync still queued when a match session appears also yields.
+        if (hasLiveSession()) {
+          resolve();
+          return;
+        }
         let ws: WebSocket;
         try {
           ws = new WebSocket(withQa(serverUrl));
@@ -1484,6 +1504,7 @@ export class RemoteSession implements GameSession {
     /** Consent + wallet signer for staked play (18+/ToS + SIWE ownership proof). */
     private readonly auth?: WalletAuth,
   ) {
+    liveSessions += 1; // background one-shots stand down while we're alive
     this.freshEntropy();
     // Commit to our entropy (hash) BEFORE connecting, so hello can carry the commit
     // and the server binds its seed without ever seeing our raw value first.
@@ -1950,7 +1971,9 @@ export class RemoteSession implements GameSession {
   }
 
   dispose(): void {
+    if (this.disposed) return; // double dispose must not corrupt the live count
     this.disposed = true;
+    liveSessions = Math.max(0, liveSessions - 1);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.deferredTimer) clearTimeout(this.deferredTimer);
     if (this.heartbeat) clearInterval(this.heartbeat);
