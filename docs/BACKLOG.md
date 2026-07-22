@@ -55,6 +55,16 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 - [ ] **ES2.3 Private tournaments between friends** (bracket over private tables).
 - [x] **BUG (pre-existing, surfaced by ES2.1 verification) — diagnosed & resolved**: the E4.4 acceptance script failed on unmodified main because it predated TWO deliberate pre-launch guards, not because of a server defect: (1) the ToS consent gate refused its staked `table.create` (script now sends `consent` in hello); (2) the E5.3 anticheat refuses STAKED pairings between two sockets on the same IP (`collusionBlock`, "Same-network play…") — both test clients are localhost, and the script swallowed the `LIMIT_REACHED` reply and timed out on `both matched`. The script now asserts the same-IP refusal POSITIVELY and runs the create/join/play-to-`game.over` coverage on a FREE table (unaffected by the guard).
 
+## E-race — Race Week event
+
+- [x] **ER.1 "How to play & win" banner**: collapsible `<details>` explainer in the lobby race card (join free → play to climb → Top 10 share the pool), with the prize amount injected live from `race.prizePoolCents`; i18n in all 5 locales. *AC: tsc enforces Dict completeness; web suite green.*
+- [ ] **ER.2 Prize distribution at event end** (calcul + distribution — TODO, no money moves yet). Design locked:
+  - **Barème**: fixed `$30` pool (`RACE_PRIZE_POOL_CENTS`), **Top 10 long-tail** `RACE_PRIZE_TIERS` bps = `3000,1800,1200,900,700,600,500,500,400,400` (1st $9 … 10th $1.20, sums to 10000 bps).
+  - **Ties**: a tied group **pools the tier slots it spans (capped at rank 10) and splits equally**; rounding remainder → lexicographically-smallest wallet.
+  - **Pipeline**: (1) `computePrizeSplit(board, tiersBps, poolCents)` — pure, fully unit-tested; freeze `race:board` → `race:board:final:<eventId>` + `race:closed:<eventId>` (scoring refuses after freeze). (2) `PrizePayoutQueue` mirroring `SettlementQueue`: cUSD push from the prize wallet with **gas in cUSD (`feeCurrency`, reuse `RaceFaucet` transfer)**, idempotent `race:paid:<eventId>:<wallet>`, retry + `postOpsAlert`, boot resume, all-or-nothing pre-flight on balance. (3) in-app win notify + leaderboard badge.
+  - **Trigger**: manual Fly ops workflow `race-payout` with `confirm: PAYOUT-<eventId>`, **dry-run by default** (compute + print split, no send); reads `RACE_PRIZE_POOL_PRIVATE_KEY` from Fly secrets (never handled in-repo).
+  - **Ship order**: (1)+freeze first (pure calc + gel, zero on-chain), validate the barème/ties on real cases, THEN wire the transfer.
+
 ## E7 — MiniPay listing
 
 - [ ] **E7.1 ToS + privacy policy** (static pages, required by the Mini Apps ToS).
