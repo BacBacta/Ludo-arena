@@ -57,6 +57,12 @@ export interface RoomResult {
 // (DIE_SETTLE_MS=0); prod keeps the 900ms animation beat by default.
 const DIE_SETTLE_MS = Number(process.env.DIE_SETTLE_MS ?? 900);
 
+/** How far past a turn deadline a live room may drift before the watchdog
+ *  declares its clock LOST and forces the expiry. Comfortably wider than the
+ *  die-settle beat and any GC/event-loop hiccup, far narrower than a player's
+ *  patience. */
+const WATCHDOG_GRACE_MS = 10_000;
+
 export class Room {
   readonly gameId: string;
   readonly stakeCents: StakeCents;
@@ -232,7 +238,17 @@ export class Room {
         this.clearClock();
         this.clock = setTimeout(() => {
           if (this.over) return;
-          this.applyAndBroadcast(seat, only);
+          try {
+            this.applyAndBroadcast(seat, only);
+          } catch (e) {
+            // A throw here (engine edge, persist hiccup) used to die INSIDE the
+            // bare timer: the move never landed and NO clock was re-armed — the
+            // room froze forever ("Rudo is playing…", dice dead, resign moot).
+            // Never leave a live room clockless: resync + re-arm; the auto-play
+            // streak bounds repeated failures into a timeout-forfeit.
+            console.error(`[room] ${this.gameId} settle-move failed — resyncing`, e);
+            this.announceTurn();
+          }
         }, DIE_SETTLE_MS);
       } else {
         // MULTIPLE choices: the roller must pick a token, so the client NEEDS the
@@ -298,25 +314,57 @@ export class Room {
       this.finish(seat === 0 ? 1 : 0, 'timeout-forfeit');
       return;
     }
-    if (this.state.phase === 'awaiting-roll') {
-      this.doRoll();
-      // if the roll opened a choice, auto-play as well
-      const after: GameState = this.state;
-      if (after.phase === 'awaiting-move' && after.turn === seat) {
-        const die = after.dice ?? 1;
-        const token = pickAutoMove(after, seat, die) ?? after.legal[0];
+    try {
+      if (this.state.phase === 'awaiting-roll') {
+        this.doRoll();
+        // if the roll opened a choice, auto-play as well
+        const after: GameState = this.state;
+        if (after.phase === 'awaiting-move' && after.turn === seat) {
+          const die = after.dice ?? 1;
+          const token = pickAutoMove(after, seat, die) ?? after.legal[0];
+          if (token !== undefined) this.applyAndBroadcast(seat, token);
+        }
+      } else if (this.state.phase === 'awaiting-move') {
+        const die = this.state.dice ?? 1;
+        const token = pickAutoMove(this.state, seat, die) ?? this.state.legal[0];
         if (token !== undefined) this.applyAndBroadcast(seat, token);
       }
-    } else if (this.state.phase === 'awaiting-move') {
-      const die = this.state.dice ?? 1;
-      const token = pickAutoMove(this.state, seat, die) ?? this.state.legal[0];
-      if (token !== undefined) this.applyAndBroadcast(seat, token);
+    } catch (e) {
+      // Auto-play blew up inside a bare timer: without this catch the room was
+      // left with NO clock and froze for both players. Re-arm; the streak
+      // counter above bounds repeated failures into a timeout-forfeit, so a
+      // permanently-broken turn always terminates instead of hanging.
+      console.error(`[room] ${this.gameId} auto-play failed — clock re-armed (streak ${this.autoMoveStreak[seat]}/${BLITZ.forfeitAfterAutoMoves})`, e);
+      if (!this.over) {
+        this.deadlineTs = Date.now() + BLITZ.moveClockMs; // fresh window for the re-armed clock
+        this.armClock();
+      }
     }
     // Tell both clients this was an auto-play and how close the seat is to a
     // timeout-forfeit — the waiting player sees progress instead of a stall.
     if (!this.over) {
       this.broadcast({ t: 'game.auto', seat, count: this.autoMoveStreak[seat], max: BLITZ.forfeitAfterAutoMoves });
     }
+  }
+
+  /** Self-healing safety net for LOST CLOCKS (production freeze: "Rudo is
+   *  playing…" forever, dice dead, resign unreachable). If a live room's turn
+   *  deadline is long past, whatever timer should have advanced it is gone —
+   *  force the expiry as if it had fired. Auto-play then moves the game on and
+   *  the 3-miss streak still terminates a permanently stuck seat. Called by
+   *  the server's periodic sweep; `true` = a stall was recovered. */
+  watchdog(now = Date.now()): boolean {
+    if (this.over || this.deadlineTs === 0) return false;
+    if (now <= this.deadlineTs + WATCHDOG_GRACE_MS) return false;
+    console.warn(`[room] ${this.gameId} clock lost (deadline ${now - this.deadlineTs}ms overdue) — forcing expiry`);
+    this.clearClock();
+    try {
+      this.onClockExpired();
+    } catch (e) {
+      console.error(`[room] ${this.gameId} watchdog expiry failed — clock re-armed`, e);
+      if (!this.over) this.armClock();
+    }
+    return true;
   }
 
   private finish(winner: Seat, reason: GameOverReason): void {

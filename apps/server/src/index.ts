@@ -181,6 +181,21 @@ const QA_KEY = process.env.QA_KEY ?? '';
 
 const sessions = new Map<string, Session>();
 const rooms = new Map<string, Room>();
+// Lost-clock watchdog (production freeze: a live game stuck on "X is
+// playing…" with a dead die and resign unreachable). Any room whose turn
+// deadline is long past with no timer left to advance it is force-expired:
+// auto-play moves the game on, and the 3-miss streak still terminates a
+// permanently stuck seat. One cheap in-memory scan; 5s cadence keeps worst-
+// case recovery well under the patience threshold.
+setInterval(() => {
+  for (const room of rooms.values()) {
+    try {
+      room.watchdog();
+    } catch (e) {
+      console.error('[room] watchdog sweep', e);
+    }
+  }
+}, 5_000);
 const matchmaker = new Matchmaker<Session>();
 // Freeroll (ticket-gated free 1v1) waits in its own queue so it never pairs
 // with regular free/staked players; entry tickets are spent at match time.
