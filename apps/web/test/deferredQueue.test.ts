@@ -124,6 +124,114 @@ describe('post-game socket drop (the mobile rematch black hole)', () => {
   });
 });
 
+describe('mid-staking socket drop (the blank-blue-screen freeze)', () => {
+  beforeEach(() => localStorage.clear());
+
+  // Production incident: player B (desktop, low-balance burner) got match.found,
+  // then the pre-lock gas seed ONE-SHOT resumed the same session token → the
+  // server's R-RT-1 takeover CLOSED the match socket mid-staking. On reconnect
+  // the game was still PENDING (deposits in flight) so hello.ok had no
+  // `resumed` — and the client concluded "game gone" (onGone → lobby, match
+  // context dropped). When the room then started, game.state flipped the app to
+  // the game screen with NO match → GameScreen null-rendered a blank blue page
+  // forever while the server auto-played B to a 3-miss forfeit of a real stake.
+  it('a PENDING match survives a drop: no onGone, context replayed, state lands', async () => {
+    FakeWS.instances.length = 0;
+    let gone = 0;
+    let stated = 0;
+    const ev = new Proxy({}, {
+      get: (_t, k) => {
+        if (k === 'onGone') return () => { gone += 1; };
+        if (k === 'onState') return () => { stated += 1; };
+        return () => undefined;
+      },
+    }) as never;
+    const session = new RemoteSession(ev, 1, 'ws://test', () => undefined, '0x00000000000000000000000000000000000000aa', { kind: 'queue' }, { consent: { tosVersion: 'v', age18: true } } as never);
+    await vi.waitFor(() => { if (FakeWS.instances.length === 0) throw new Error('no ws'); });
+    const ws = FakeWS.instances[0]!;
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    // Opponent found — the game is created but NOT started (stakes in flight).
+    ws.onmessage?.({ data: JSON.stringify({ t: 'match.found', gameId: 'g1', seat: 1, opponent: { name: 'Rival', flag: '' }, stakeCents: 1, potCents: 2, fairnessCommit: 'a'.repeat(64) }) });
+    // The takeover (or any blip) closes the match socket mid-staking…
+    (ws as unknown as { onclose: (() => void) | null }).onclose?.();
+    await vi.waitFor(
+      () => { if (FakeWS.instances.length < 2) throw new Error('no reconnect'); },
+      { timeout: 3000 },
+    );
+    const ws2 = FakeWS.instances[1]!;
+    ws2.onopen?.();
+    // …and the resumed hello has NO `resumed` (the room hasn't started yet).
+    ws2.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    // The old code declared the game gone RIGHT HERE (lobby, match dropped).
+    expect(gone).toBe(0);
+    // The server replays the pending match context on the fresh socket…
+    ws2.onmessage?.({ data: JSON.stringify({ t: 'match.found', gameId: 'g1', seat: 1, opponent: { name: 'Rival', flag: '' }, stakeCents: 1, potCents: 2, fairnessCommit: 'a'.repeat(64) }) });
+    // …and the room eventually starts: the state must reach the app normally.
+    ws2.onmessage?.({ data: JSON.stringify({ t: 'game.state', state: { turn: 1, phase: 'awaiting-roll', positions: [[0, 0], [0, 0]], dice: null } }) });
+    expect(stated).toBeGreaterThan(0);
+    expect(gone).toBe(0);
+    // A resume never re-queues by itself (the #81 landmine stays dead).
+    expect(sentTypes(ws2)).not.toContain('queue.join');
+    session.dispose();
+  });
+
+  it('a STARTED game that is truly gone on resume still fires onGone (legit path)', async () => {
+    FakeWS.instances.length = 0;
+    let gone = 0;
+    const ev = new Proxy({}, { get: (_t, k) => (k === 'onGone' ? () => { gone += 1; } : () => undefined) }) as never;
+    const session = new RemoteSession(ev, 1, 'ws://test', () => undefined, '0x00000000000000000000000000000000000000aa', { kind: 'queue' }, { consent: { tosVersion: 'v', age18: true } } as never);
+    await vi.waitFor(() => { if (FakeWS.instances.length === 0) throw new Error('no ws'); });
+    const ws = FakeWS.instances[0]!;
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    ws.onmessage?.({ data: JSON.stringify({ t: 'match.found', gameId: 'g1', seat: 0, opponent: { name: 'Rival', flag: '' }, stakeCents: 1, potCents: 2, fairnessCommit: 'a'.repeat(64) }) });
+    // The room started (we SAW state) — this is a real in-progress game.
+    ws.onmessage?.({ data: JSON.stringify({ t: 'game.state', state: { turn: 0, phase: 'awaiting-roll', positions: [[0, 0], [0, 0]], dice: null } }) });
+    (ws as unknown as { onclose: (() => void) | null }).onclose?.();
+    await vi.waitFor(
+      () => { if (FakeWS.instances.length < 2) throw new Error('no reconnect'); },
+      { timeout: 3000 },
+    );
+    const ws2 = FakeWS.instances[1]!;
+    ws2.onopen?.();
+    // No `resumed` for a game we had STARTED → it ended/expired while away.
+    ws2.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    expect(gone).toBe(1);
+    session.dispose();
+  });
+
+  it('a REPLAYED match.found re-reveals the entropy (the original may have died with the socket)', async () => {
+    const { session, ws } = await openedSession({ signMessage: async () => '0xsig' });
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    const mf = { t: 'match.found', gameId: 'g1', seat: 0, opponent: { name: 'Rival', flag: '' }, stakeCents: 1, potCents: 2, fairnessCommit: 'a'.repeat(64) };
+    ws.onmessage?.({ data: JSON.stringify(mf) });
+    ws.onmessage?.({ data: JSON.stringify(mf) }); // replay (server resend on resume)
+    const entropies = sentTypes(ws).filter((t) => t === 'game.entropy');
+    expect(entropies.length).toBe(2); // duplicate is a silent no-op server-side
+    session.dispose();
+  });
+});
+
+describe('requestRaceSeed (pre-lock gas seed over the LIVE match socket)', () => {
+  beforeEach(() => localStorage.clear());
+
+  // The seed must ride the existing game socket: the old one-shot resumed the
+  // SAME session token, and the server's takeover closed the match socket at
+  // the exact moment the stake was being locked (the freeze's first domino).
+  it('sends race.seed on the open socket — never opens a second connection', async () => {
+    const { session, ws } = await openedSession({ signMessage: async () => '0xsig' });
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) });
+    const before = FakeWS.instances.length;
+    const p = session.requestRaceSeed();
+    expect(sentTypes(ws)).toContain('race.seed');
+    expect(FakeWS.instances.length).toBe(before); // no one-shot, no takeover
+    ws.onmessage?.({ data: JSON.stringify({ t: 'race.seeded', seedCents: 8, alreadySeeded: false, txHash: '0xseed' }) });
+    await expect(p).resolves.toMatchObject({ seedCents: 8 });
+    session.dispose();
+  });
+});
+
 describe('pollRematch (reliable rematch offer — pull recovers a missed push)', () => {
   beforeEach(() => localStorage.clear());
 

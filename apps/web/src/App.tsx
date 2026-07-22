@@ -271,7 +271,12 @@ export default function App() {
   // "he never received my request" in practice.
   const prevScreenSync = useRef<string>('lobby');
   useEffect(() => {
-    if (state.screen === 'lobby' && prevScreenSync.current !== 'lobby') syncLobbyNow();
+    // Skip while a live session exists: a one-shot sync resumes the SAME
+    // session token, and the server's takeover (R-RT-1) closes the session's
+    // socket — stabbing an in-flight match/rematch channel in the back. The
+    // live session already delivers everything the sync would (hello.ok +
+    // pushes), so nothing is lost by skipping.
+    if (state.screen === 'lobby' && prevScreenSync.current !== 'lobby' && !sessionRef.current) syncLobbyNow();
     prevScreenSync.current = state.screen;
   }, [state.screen, syncLobbyNow]);
 
@@ -296,7 +301,11 @@ export default function App() {
   // immediate without a held connection. Skipped off-lobby.
   useEffect(() => {
     if (state.screen !== 'lobby') return;
-    const id = setInterval(syncLobbyNow, 8_000);
+    // Same live-session guard as above: the 8 s presence poll must not keep
+    // stealing (and closing) the socket of a session that is still alive.
+    const id = setInterval(() => {
+      if (!sessionRef.current) syncLobbyNow();
+    }, 8_000);
     return () => clearInterval(id);
   }, [state.screen, syncLobbyNow]);
 
@@ -326,8 +335,13 @@ export default function App() {
         if (wallet.payGasInStable && stakeCents === RACE_STAKE_CENTS && !isMiniPay()) {
           const balCents = await walletBalanceCents(wallet).catch(() => null);
           if (needsPreLockSeed(balCents)) {
-            const signer = (message: string) => wallet.walletClient.signMessage({ account: wallet.walletClient.account ?? wallet.address, message });
-            const seeded = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch(() => null);
+            // Over the LIVE match socket — NEVER the one-shot here: the one-shot
+            // resumes the same session token and the server's takeover closes
+            // this match's socket mid-staking (the blank-screen forfeit trap).
+            // The one-shot stays as a fallback for the sessionless mint flow.
+            const seeded = sessionRef.current instanceof RemoteSession
+              ? await sessionRef.current.requestRaceSeed()
+              : await sendRaceSeed(SERVER_URL, wallet.address, (message: string) => wallet.walletClient.signMessage({ account: wallet.walletClient.account ?? wallet.address, message })).catch(() => null);
             console.log('[stake] pre-lock seed (balance %s c):', balCents, JSON.stringify(seeded));
           }
         }

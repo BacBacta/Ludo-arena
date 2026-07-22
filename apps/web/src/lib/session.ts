@@ -1454,7 +1454,19 @@ export class RemoteSession implements GameSession {
   };
   private entropy = ''; // fresh 256-bit value per game (regenerated on rematch)
   private entropyCommit = ''; // sha256(entropy); sent in hello / rematch (anti-grinding)
-  private revealedGameId = ''; // gameId we last revealed entropy for (once per game)
+  /** True once the CURRENT match's room really started (we saw game.state /
+   *  resumed). Distinguishes, on a resume with no `resumed` payload, a game
+   *  that truly ended while away (sawState → onGone) from a match still
+   *  PENDING its stake locks — where onGone would wrongly drop the match
+   *  context and strand the player on a blank screen when the room starts. */
+  private sawState = false;
+  /** Backstop for the pending-resume wait: if the server replays nothing
+   *  (the pending match was aborted while we were away), give up after a
+   *  grace instead of waiting forever. Cleared the moment the match shows
+   *  any sign of life (match.found replay / game.state / resumed). */
+  private pendingLimbo: ReturnType<typeof setTimeout> | null = null;
+  /** Resolver for an in-flight race.seed request sent over THIS live socket. */
+  private seedResolve: ((r: RaceSeedResult | null) => void) | null = null;
   /** A staked initial intent held back until the wallet is SIWE-proven (browser
    *  wallets only) — fired on the friends.update the server pushes after prove. */
   private deferredIntent: (() => void) | null = null;
@@ -1613,6 +1625,50 @@ export class RemoteSession implements GameSession {
     }, delay);
   }
 
+  /** Pending-resume backstop: the server replays match.found for a live pending
+   *  match right after a resumed hello — if NOTHING arrives (the match was
+   *  aborted while we were away, so no replay, no state, no abort will ever
+   *  come to cancel this), give up after a grace instead of waiting forever. */
+  private armPendingLimbo(): void {
+    if (this.pendingLimbo) return;
+    this.pendingLimbo = setTimeout(() => {
+      this.pendingLimbo = null;
+      if (!this.disposed && this.inGame && !this.sawState) {
+        this.inGame = false;
+        this.ev.onGone();
+      }
+    }, 20_000);
+  }
+
+  private clearPendingLimbo(): void {
+    if (this.pendingLimbo) {
+      clearTimeout(this.pendingLimbo);
+      this.pendingLimbo = null;
+    }
+  }
+
+  /** Race Week gas seed over the LIVE socket. The one-shot variant
+   *  (sendRaceSeed) resumes the SAME session token, and the server's takeover
+   *  (R-RT-1) then CLOSES this session's socket — which is catastrophic
+   *  mid-staking: the drop cost the player their match context while the stake
+   *  locked, stranding them on a blank screen as auto-play forfeited the game.
+   *  This session is already SIWE-proven for staked play, so the seed can
+   *  simply ride the existing connection. Resolves null on timeout/closed. */
+  requestRaceSeed(): Promise<RaceSeedResult | null> {
+    if (this.disposed || !this.ws || this.ws.readyState !== WebSocket.OPEN) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.seedResolve?.(null); // supersede a stale in-flight request
+      this.seedResolve = resolve;
+      this.send({ t: 'race.seed' });
+      setTimeout(() => {
+        if (this.seedResolve === resolve) {
+          this.seedResolve = null;
+          resolve(null);
+        }
+      }, 30_000); // transfer + receipt
+    });
+  }
+
   /** Send a staked join that was held back until the wallet was proven (once). */
   private fireDeferredIntent(): void {
     if (this.deferredTimer) {
@@ -1713,30 +1769,47 @@ export class RemoteSession implements GameSession {
         setServerContracts(msg.contracts);
         if (msg.resumed) {
           this.inGame = true;
+          this.sawState = true;
+          this.clearPendingLimbo();
           this.ev.onResumed(msg.resumed, msg.resumed.state);
         } else if (wasReconnecting && this.inGame) {
-          // the game ended (or expired) while we were away
-          this.inGame = false;
-          this.ev.onGone();
+          if (this.sawState) {
+            // the STARTED game ended (or expired) while we were away
+            this.inGame = false;
+            this.ev.onGone();
+          } else {
+            // The match was still PENDING (stakes/reveals in flight) when the
+            // socket dropped — `resumed` only covers STARTED rooms, so its
+            // absence proves nothing here. Declaring the game gone at this
+            // point dropped the match context, and the room's later game.state
+            // stranded the player on a blank screen while auto-play forfeited
+            // their LOCKED stake. Wait instead: the server replays match.found
+            // for a live pending game, starts it (game.state), or aborts it
+            // (MATCH_ABORTED). The limbo timer covers "none of the above"
+            // (aborted while we were away — nothing will ever arrive).
+            this.armPendingLimbo();
+          }
         }
         break;
       }
       case 'match.found':
         this.inGame = true;
         this.hadGame = true;
+        this.sawState = false; // a fresh match: its room hasn't started yet
+        this.clearPendingLimbo(); // the pending match is alive (this may be a replay)
         // Anti-grinding reveal: the server has committed its seed (msg.fairnessCommit);
-        // now reveal our raw entropy so the dice can be finalized. Keyed by gameId so
-        // a rematch (a NEW game on the same socket) re-reveals — otherwise the rematch
-        // game never finalizes and the dice stay blocked.
-        if (this.revealedGameId !== msg.gameId) {
-          this.revealedGameId = msg.gameId;
-          this.send({ t: 'game.entropy', entropy: this.entropy });
-        }
+        // now reveal our raw entropy so the dice can be finalized. Sent on EVERY
+        // match.found — including the server's replay to a resumed socket — because
+        // the original reveal may have died with the previous socket, and a
+        // duplicate reveal is a silent no-op on both sides (same value re-stored).
+        this.send({ t: 'game.entropy', entropy: this.entropy });
         // Carry our own entropy so the fairness modal can prove the server bound it
         // at our seat in the reveal (R-DICE-1), not pre-grind the sequence itself.
         this.ev.onMatchFound({ ...msg, myEntropy: this.entropy });
         break;
       case 'game.state':
+        this.sawState = true; // the room is really running
+        this.clearPendingLimbo();
         this.ev.onState(msg.state);
         break;
       case 'game.dice':
@@ -1803,6 +1876,13 @@ export class RemoteSession implements GameSession {
       case 'friend.gift.received':
         this.ev.onGiftReceived?.({ from: msg.from, id: msg.id, ownedIds: msg.ownedIds });
         break;
+      case 'race.seeded': {
+        // Answer to a requestRaceSeed sent over this live socket (pre-lock seed).
+        const seedDone = this.seedResolve;
+        this.seedResolve = null;
+        seedDone?.({ seedCents: msg.seedCents, alreadySeeded: msg.alreadySeeded, txHash: msg.txHash });
+        break;
+      }
       case 'rematch.offer':
         this.ev.onRematchOffer(msg.name);
         break;
@@ -1874,6 +1954,10 @@ export class RemoteSession implements GameSession {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.deferredTimer) clearTimeout(this.deferredTimer);
     if (this.heartbeat) clearInterval(this.heartbeat);
+    this.clearPendingLimbo();
+    const seed = this.seedResolve;
+    this.seedResolve = null;
+    seed?.(null);
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
     this.ws?.close();
   }
