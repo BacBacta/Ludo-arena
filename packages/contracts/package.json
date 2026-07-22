@@ -14,7 +14,8 @@
     "deploy-racepass": "tsx script/deployRacePass.ts",
     "set-mint-open": "tsx script/setMintOpen.ts",
     "set-tier-rake": "tsx script/setTierRake.ts",
-    "race-status": "tsx script/raceStatus.ts"
+    "race-status": "tsx script/raceStatus.ts",
+    "onchain-activity": "tsx script/onchainActivity.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

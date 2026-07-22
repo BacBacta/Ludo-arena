@@ -62,6 +62,7 @@ on:
           - arm-mainnet
           - set-tier-rake
           - race-status
+          - onchain-activity
           - reset-race-board
       confirm:
         description: 'arm-mainnet: type ARM-MAINNET · reset-race-board: type RESET-BOARD'
@@ -145,6 +146,27 @@ jobs:
           fi
           npm ci
           npm run race-status -w packages/contracts
+      # onchain-activity: READ-ONLY — counts the transactions our mainnet
+      # deployment has generated (the Proof of Ship figure). No tx, no Fly
+      # change; reads a public block explorer (Blockscout, no key) with an RPC
+      # nonce fallback. Contract addresses come from the baked deployments.json;
+      # the faucet address is derived from RACE_FAUCET_PRIVATE_KEY (never printed)
+      # or a RACE_FAUCET_ADDRESS repo variable — both optional.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'onchain-activity' }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.operation == 'onchain-activity' }}
+        with:
+          node-version: 22
+      - name: onchain-activity (mainnet transaction count)
+        if: ${{ inputs.operation == 'onchain-activity' }}
+        env:
+          NETWORK: celo
+          RACE_FAUCET_PRIVATE_KEY: ${{ secrets.RACE_FAUCET_PRIVATE_KEY }}
+          FAUCET_ADDRESS: ${{ vars.RACE_FAUCET_ADDRESS }}
+        run: |
+          npm ci
+          npm run onchain-activity -w packages/contracts
       - name: unset COSMETICS_STORE_ADDRESS
         if: ${{ inputs.operation == 'unset-cosmetics-store-address' }}
         env:
