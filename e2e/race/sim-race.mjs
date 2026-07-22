@@ -176,7 +176,7 @@ console.log('\n————— PHASE C · INSTANT rematch (settlement still in f
 const w2 = over2.winner === A.match.seat ? A : B;
 const l2 = w2 === A ? B : A;
 let afford = false;
-const affordDeadline = Date.now() + 6000; // drips land ~1s; settle held 10s
+const affordDeadline = Date.now() + 5000; // drips land ~1s; settle held 8s (under viem's 10s HTTP timeout)
 while (Date.now() < affordDeadline) {
   const [wc, lc] = [await w2.onchainBalanceCents(), await l2.onchainBalanceCents()];
   if (wc >= 1 && lc >= 1) { afford = true; break; }
