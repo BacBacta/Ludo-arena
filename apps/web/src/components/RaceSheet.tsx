@@ -32,10 +32,11 @@ export function RaceSheet({ onPlay }: { onPlay?: () => void }) {
         <h3 className="racesheet__title">🏁 {t('raceBoardTitle')}</h3>
         <div className="racesheet__chips">
           <span className="racechip racechip--live">● {t('raceLiveBadge')}</span>
-          {/* The prize pool, front and centre on the standings too — the number
-              players are racing for should never be more than a glance away. */}
-          {race?.poolCents ? (
-            <span className="racechip racechip--pool">💰 {fmtUsd(race.poolLeftCents)} / {fmtUsd(race.poolCents)}</span>
+          {/* The FIXED leaderboard prize, front and centre on the standings too —
+              the number players are racing for, shown as one confident figure
+              (not the faucet's shrinking funding budget). */}
+          {race?.prizePoolCents ?? race?.poolCents ? (
+            <span className="racechip racechip--pool">🏆 {fmtUsd(race.prizePoolCents ?? race.poolCents!)}</span>
           ) : null}
           <span className="racechip">{t('raceScoring')}</span>
         </div>

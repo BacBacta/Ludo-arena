@@ -12,7 +12,8 @@
     "node": "hardhat node",
     "typecheck": "tsc --noEmit",
     "deploy-racepass": "tsx script/deployRacePass.ts",
-    "set-mint-open": "tsx script/setMintOpen.ts"
+    "set-mint-open": "tsx script/setMintOpen.ts",
+    "set-tier-rake": "tsx script/setTierRake.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { budgetLeftCents, claimFpWallets, jitClaimCents, jitTopUpCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents } from '../src/race.js';
+import { budgetLeftCents, claimFpWallets, jitClaimCents, jitDripCents, jitTopUpCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents } from '../src/race.js';
 
 // JIT (just-in-time) funding is the mainnet anti-"claim-and-run" model: instead
 // of granting a wallet its whole quota up front, the faucet drips one stake at a
@@ -106,6 +106,50 @@ describe('gas-seed grant bounds', () => {
   });
   it('grants nothing when there is no deficit', () => {
     expect(seedGrantCents(0, 10, cap, 10, 5000)).toBe(0);
+  });
+});
+
+// Balance-aware drip (operator report: "games keep drawing on the faucet even
+// though the players' wallets hold USDT"). The JIT top-up must be a SAFETY NET
+// for players who would otherwise be unable to play the next event game — not
+// an unconditional per-game payout. A player whose wallet already covers the
+// next stake+gas gets NOTHING (winners self-fund from their winnings); only a
+// wallet BELOW the per-game amount is topped up, and only by its deficit. The
+// player's untouched quota remains available for when they really need it.
+
+describe('JIT drip is balance-aware (no drip for self-funded wallets)', () => {
+  const quota = 10;
+  const perGame = 2;
+  const pool = 3000;
+
+  it('a wallet that can already afford the next game gets nothing', () => {
+    expect(jitDripCents(perGame, 2, quota, 2, pool, 2)).toBe(0); // balance == perGame
+    expect(jitDripCents(perGame, 2, quota, 2, pool, 194)).toBe(0); // $1.94 in the wallet
+  });
+
+  it('an empty wallet gets the full per-game drip', () => {
+    expect(jitDripCents(perGame, 2, quota, 2, pool, 0)).toBe(2);
+  });
+
+  it('a partially-funded wallet gets only its deficit', () => {
+    expect(jitDripCents(perGame, 2, quota, 2, pool, 1)).toBe(1);
+  });
+
+  it('an unreadable balance (null) fails OPEN to the normal drip (never blocks play)', () => {
+    expect(jitDripCents(perGame, 2, quota, 2, pool, null)).toBe(2);
+  });
+
+  it('quota and pool caps still bound the deficit drip', () => {
+    expect(jitDripCents(perGame, quota, quota, 20, pool, 0)).toBe(0); // quota drawn
+    expect(jitDripCents(perGame, 2, quota, pool, pool, 0)).toBe(0); // pool dry
+    expect(jitDripCents(perGame, 9, quota, 18, pool, 0)).toBe(1); // quota remainder
+  });
+
+  it('a winner who accumulated winnings stops drawing the faucet mid-quota', () => {
+    // funded 4 of 10, but the wallet holds 6¢ of winnings → no drip; the 6
+    // remaining quota cents stay available if they later drain below 2¢.
+    expect(jitDripCents(perGame, 4, quota, 8, pool, 6)).toBe(0);
+    expect(jitDripCents(perGame, 4, quota, 8, pool, 1)).toBe(1); // drained later → deficit only
   });
 });
 

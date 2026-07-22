@@ -68,7 +68,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitTopUpCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitDripCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -484,19 +484,19 @@ async function topUpRaceFunding(store: Awaited<ReturnType<typeof createStore>>, 
   // Only participants (claimed their Pass-gated grant) top up; skip demo wallets.
   if (!(await store.getMeta(`race:grant:${w}`))) return;
   const run = async () => {
-    // Balance-aware: don't subsidise a wallet that can already afford the next
-    // stake from its OWN funds — the faucet is a subsidy for the fund-less, not a
-    // top-up for everyone. Only skip when we can CONFIRM a sufficient balance (a
-    // failed RPC read falls through and funds as before, so a node hiccup never
-    // strands a genuinely empty wallet).
-    const bal = await faucet.balanceCentsOf(wallet as Address).catch(() => null);
-    if (bal !== null && bal >= faucet.perGameCents) return; // self-funding — skip
     const funded = Number((await store.getMeta(fundedKey)) || '0');
     // JIT is a PRIZE draw; bound it by the TOTAL budget left (prize + gas already
     // spent) so the faucet never over-commits, but advance only the prize counter.
     const { prize, total } = await raceSpend(store);
-    const cents = jitTopUpCents(faucet.perGameCents, funded, faucet.quotaCents, total, faucet.poolCents);
-    if (cents <= 0) return; // quota drawn or pool dry — leaderboard still scores
+    // Balance-aware (operator report: the faucet kept funding wallets that
+    // already held USDT). The drip is a SAFETY NET, not an unconditional payout:
+    // a wallet that can already afford the next stake+gas (a winner funding
+    // itself from winnings) draws NOTHING; a drained wallet draws only its
+    // deficit. A failed balance read falls back to the normal drip (never
+    // freezes a real player out over a transient RPC hiccup).
+    const balCents = await faucet.balanceCentsOf(wallet as Address).catch(() => null);
+    const cents = jitDripCents(faucet.perGameCents, funded, faucet.quotaCents, total, faucet.poolCents, balCents);
+    if (cents <= 0) return; // quota drawn, pool dry, OR the wallet is self-funded
     // Reserve BEFORE the transfer (same crash-safety as claim): a crash mid-send
     // can only UNDER-fund, never double-fund. Roll back both counters on revert.
     await store.setMeta(fundedKey, String(funded + cents));
@@ -530,13 +530,27 @@ const settlementContracts: SettlementContracts | undefined =
       }
     : undefined;
 // gameId → who to notify with game.settled once the payout tx is mined.
-const settlementNotify = new Map<string, { sessionIds: [string, string]; winner: Seat }>();
+// `winnerWallet` also drives the WINNER's deferred JIT drip (see below) even if
+// their session is gone by settlement time.
+const settlementNotify = new Map<string, { sessionIds: [string, string]; winner: Seat; winnerWallet?: string }>();
+/** The winner's Race Week JIT drip, deferred to the settlement TERMINAL: at
+ *  game.end their payout is still IN FLIGHT (a settle takes seconds on Celo),
+ *  so a drip there reads the pre-settle balance and refills a player who is
+ *  about to be paid — the bench caught the faucet granting a full 2¢ drip
+ *  75 ms before that wallet's 2¢ payout landed. Dripping after the terminal
+ *  sees the settled balance: paid winners draw nothing, a FAILED payout still
+ *  lets the safety net fund the (unpaid) winner's next game. */
+function dripWinnerAfterSettlement(gameId: string): void {
+  const info = settlementNotify.get(gameId);
+  if (info?.winnerWallet && raceFaucet?.jit) void topUpRaceFunding(store, raceFaucet, info.winnerWallet);
+}
 const settlementQueue = arbiter
   ? new SettlementQueue({
       store,
       arbiter,
       onAlert: postOpsAlert,
       onSettled: (gameId, txHash) => {
+        dripWinnerAfterSettlement(gameId);
         const info = settlementNotify.get(gameId);
         if (!info) return;
         for (const id of info.sessionIds) {
@@ -555,8 +569,13 @@ const settlementQueue = arbiter
       // Drop the notify entry on EVERY terminal outcome, not just the two that
       // notify players: a `failed` payout, an already-resolved game and a no-op
       // refund would otherwise keep their entry forever (an unbounded slow leak
-      // only a long soak would surface).
-      onTerminal: (gameId) => settlementNotify.delete(gameId),
+      // only a long soak would surface). A `failed` terminal still runs the
+      // winner's deferred drip first — they walked away UNPAID (ops alerted),
+      // so the JIT safety net may still fund their next event game.
+      onTerminal: (gameId) => {
+        dripWinnerAfterSettlement(gameId);
+        settlementNotify.delete(gameId);
+      },
     })
   : null;
 // gameId → seats to notify + winner seat, for the durable 4p queue's callbacks.
@@ -901,9 +920,15 @@ function wireRoom(room: Room): void {
       // next stake — dripped up to their quota, pool-capped. A wallet that claims
       // and never plays never reaches this hook, so it can't drain past the first
       // grant. Off unless RACE_JIT_FUNDING=true (the lump-sum event is unaffected).
+      // LOSER only here: the WINNER's payout is still in flight (a settle takes
+      // seconds on Celo) and a drip now reads their PRE-settle balance — the
+      // faucet then refills a player who is about to be paid. The winner drips
+      // from the settlement terminal instead (dripWinnerAfterSettlement) — except
+      // when no settlement job will ever run (demo pair / arbiter disarmed).
       if (raceFaucet.jit) {
-        void topUpRaceFunding(store, raceFaucet, winW);
         void topUpRaceFunding(store, raceFaucet, loseW);
+        const willSettle = settlementQueue && pa.wallet && pb.wallet;
+        if (!willSettle) void topUpRaceFunding(store, raceFaucet, winW);
       }
     }
 
@@ -939,7 +964,7 @@ function wireRoom(room: Room): void {
     // Staked game with both wallets known → settle the payout on-chain (E3.3).
     const winnerWallet = result.players[result.winner].wallet;
     if (settlementQueue && result.stakeCents > 0 && pa.wallet && pb.wallet && winnerWallet) {
-      settlementNotify.set(result.gameId, { sessionIds: [pa.id, pb.id], winner: result.winner });
+      settlementNotify.set(result.gameId, { sessionIds: [pa.id, pb.id], winner: result.winner, winnerWallet });
       // Reveal the dice fairness on-chain at settlement (provably-fair anchor): the
       // seed whose sha256 is the escrow's fairnessCommit + both entropies.
       const reveal = { serverSeed: result.fairness.serverSeed, entropies: [...result.fairness.entropies] };
@@ -978,7 +1003,7 @@ for (const snap of await store.loadRooms()) {
     const winnerWallet = snap.players[winnerSeat]?.wallet;
     const bothWallets = snap.players[0].wallet && snap.players[1].wallet;
     if (winnerWallet && bothWallets && !(await store.hasSettlement(snap.gameId))) {
-      settlementNotify.set(snap.gameId, { sessionIds: [snap.players[0].sessionId, snap.players[1].sessionId], winner: winnerSeat });
+      settlementNotify.set(snap.gameId, { sessionIds: [snap.players[0].sessionId, snap.players[1].sessionId], winner: winnerSeat, winnerWallet });
       const reveal = { serverSeed: snap.fairness.serverSeed, entropies: [...snap.fairness.entropies] };
       await settlementQueue.enqueue(snap.gameId, winnerWallet, reveal).catch((e) => console.error('[settlement] boot re-enqueue', e));
       console.warn(`[settlement] re-enqueued orphaned staked game ${snap.gameId} (crash between game-over and settlement)`);
@@ -2081,7 +2106,13 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const sNow = Date.now();
-        if (sNow - (session.lastRaceAt ?? 0) < 3000) break; // it sends a tx
+        if (sNow - (session.lastRaceAt ?? 0) < 3000) {
+          // Anti-spam window (it sends a tx) — but ALWAYS reply: a silent drop
+          // left honest clients (double-tap, quick pre-lock retry) hanging to
+          // their own timeout and reporting "Gas seed failed" out of thin air.
+          session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: false, rateLimited: true });
+          break;
+        }
         session.lastRaceAt = sNow;
         const sWallet = session.wallet;
         const seedKey = `race:seed:${sWallet.toLowerCase()}`;
@@ -2180,7 +2211,11 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const rNow = Date.now();
-        if (rNow - (session.lastRaceAt ?? 0) < 3000) break; // it sends a tx
+        if (rNow - (session.lastRaceAt ?? 0) < 3000) {
+          // Same always-reply contract as race.seed: a silent drop reads as a hang.
+          session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'One moment — please try again.' });
+          break;
+        }
         session.lastRaceAt = rNow;
         const rWallet = session.wallet;
         const walletKey = `race:grant:${rWallet.toLowerCase()}`;
@@ -2375,13 +2410,22 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'game.rematch': {
-        if (session.room || session.pendingGameId) break;
+        // ALWAYS-REPLY contract (same family as the race.seed silent drop): a
+        // swallowed rematch click leaves the end screen "searching" forever with
+        // no way for the player to tell a dropped request from a slow pairing.
+        if (session.room || session.pendingGameId) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: 'Already in a game.' });
+          break;
+        }
         // A repeated game.rematch must not stack queue entries: it falls through to
         // matchmaker.join below, which (unlike queue.join) had no dedupe guard, so
         // the token bucket alone allowed ~30 entries/s for one session — each one
         // pairing into its own staked game past a daily-limit check that reads the
-        // still-undebited counter.
-        if (matchmaker.isQueued(session) || freerollMatchmaker.isQueued(session)) break;
+        // still-undebited counter. Ack the duplicate truthfully: they ARE queued.
+        if (matchmaker.isQueued(session) || freerollMatchmaker.isQueued(session)) {
+          session.send({ t: 'queue.ok', position: 1 });
+          break;
+        }
         // Fresh per-game entropy commit (fairness): rebind BEFORE pairing/seeding so
         // the server commits its next seed without ever knowing this game's raw
         // entropy — the client reveals it later on match.found. Without this, a

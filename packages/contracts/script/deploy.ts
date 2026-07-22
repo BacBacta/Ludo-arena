@@ -234,6 +234,9 @@ const escrowN = await deployContract('LudoEscrowN', LudoEscrowN.abi, LudoEscrowN
 // with a loud warning when the deployer isn't the owner (same as setTokenAllowed).
 {
   const TIER_RAKES: Array<{ cents: number; bps: number }> = [
+    // Race Week micro-tier ≈ rake-free (1 bps, not 0: the contract reads a 0
+    // override as "unset → global 900 bps", which skimmed 9% off race pots).
+    { cents: 1, bps: 1 },
     { cents: 25, bps: 1000 },
     { cents: 100, bps: 800 },
     { cents: 500, bps: 600 },

@@ -56,6 +56,19 @@ export function jitTopUpCents(perGameCents: number, funded: number, quotaCents: 
   return Math.max(0, Math.min(perGameCents, remainingQuota, poolLeft));
 }
 
+/** Balance-aware JIT drip: the top-up is a SAFETY NET for a wallet that cannot
+ *  afford the next event game, not an unconditional per-game payout — a player
+ *  whose wallet already covers stake+gas (winners funding themselves from
+ *  winnings) draws NOTHING, and a partially-drained wallet draws only its
+ *  deficit. `balanceCents = null` (balance read failed) fails OPEN to the
+ *  normal drip: an RPC hiccup must never freeze a legitimate player out of the
+ *  event — quota + pool caps still bound the worst case. Unspent quota stays
+ *  available for when the wallet really drains. */
+export function jitDripCents(perGameCents: number, funded: number, quotaCents: number, spent: number, poolCents: number, balanceCents: number | null): number {
+  const deficit = balanceCents === null ? perGameCents : seedDeficitCents(perGameCents, balanceCents);
+  return Math.min(jitTopUpCents(perGameCents, funded, quotaCents, spent, poolCents), deficit);
+}
+
 /** Per-wallet lifetime cap on gas-seed grants, as a multiple of the seed target.
  *  Balance-based top-ups (below) re-fund a wallet whose balance dropped, so an
  *  attacker cycling "receive seed → transfer out → ask again" could drain the
