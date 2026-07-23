@@ -174,6 +174,29 @@ export function Lobby({
     onPlay4(s as StakeCents); // s is drawn from ALLOWED_STAKES_CENTS
   };
 
+  // FOOTER TAB BAR (MiniPay feedback: "the page feels crowded — separate the
+  // topics into different pages accessible by a menu in the footer"). The
+  // monolithic lobby becomes 5 tabs; every section keeps its exact behaviour,
+  // it just renders under its topic. Play is always the landing tab.
+  type LobbyTab = 'play' | 'race' | 'friends' | 'shop' | 'profile';
+  const [tab, setTab] = useState<LobbyTab>('play');
+  const raceLive = !!race?.active;
+  // The Race tab exists only while the server reports a live event; if the
+  // event ends while the player is ON that tab, fall back to Play.
+  useEffect(() => {
+    if (!raceLive && tab === 'race') setTab('play');
+  }, [raceLive, tab]);
+  // Each tab is its own page: switching starts at the top.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [tab]);
+  const switchTab = (next: LobbyTab): void => {
+    playTap();
+    setTab(next);
+  };
+  /** Actionable social count → red badge on the Friends tab. */
+  const friendsBadge = friendRequests.length;
+
   // Stakes are secondary in the hero (Option A): a "Play for USDT" toggle reveals
   // the tiers, so the dominant CTA can be a plain free online 1v1.
   const [showStakes, setShowStakes] = useState(false);
@@ -205,6 +228,7 @@ export function Lobby({
 
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
+      {tab === 'play' && (<>
       {/* HERO (Option A): one promise, one dominant CTA that starts a REAL online
           1v1 for free. Stakes are a secondary, opt-in choice below. The scene
           shows the game itself — four seat-colour pegs around the real 3D die,
@@ -281,14 +305,33 @@ export function Lobby({
         <span><i>3</i>{t('howStep3')}</span>
       </div>
 
+      {/* Slim LIVE-event pointer: the full Race card lives on its own tab now,
+          but a live event must stay discoverable from the landing tab. */}
+      {raceLive && (
+        <button className="racestrip" onClick={() => switchTab('race')}>
+          <span className="racestrip__flag" aria-hidden="true">🏁</span>
+          <b>{t('raceCardTitle')}</b>
+          <em className="racecard__live">● {t('raceLiveBadge')}</em>
+          {race?.prizePoolCents ? <span className="racestrip__prize">🏆 {fmtUsd(race.prizePoolCents)}</span> : null}
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+      )}
+      </>)}
+
       {/* RACE WEEK — the live event surface (only while the server reports it
           armed). A time-limited leaderboard with a subsidised micro-stake: the
           player mints a soulbound RacePass (anti-sybil entry) and the pool funds
           their stake quota, then event 1v1s score on the board. Premium event
           styling: dark racing card, LIVE badge, ticking countdown, pool gauge and
           a podium preview — an event must read as the most special thing on the
-          page, not another grey row. */}
-      {race?.active && (() => {
+          page, not another grey row. Lives on its OWN tab (footer nav). */}
+      {tab === 'race' && !raceLive && (
+        <div className="card friendteaser">
+          <span className="friendteaser__ic">🏁</span>
+          <span className="friendrow__meta"><b>{t('raceTitle')}</b><small>{t('raceNoEvent')}</small></span>
+        </div>
+      )}
+      {tab === 'race' && race?.active && (() => {
         // No endsAt configured = open-ended armed event: never read as "ended",
         // no countdown chip. With an endsAt, a live (30 s tick) countdown; the
         // join CTA disables once it's elapsed.
@@ -384,7 +427,7 @@ export function Lobby({
           Full lifecycle: accept (gold) OR decline (✕ → friend.remove clears the
           edge server-side); tapping the person opens their public profile so
           you're not accepting blind. */}
-      {friendRequests.length > 0 && (
+      {tab === 'friends' && friendRequests.length > 0 && (
         <div className="card friendreqcard">
           <div className="friendhead">
             <b>🔔 {t('friendRequestsTitle')}</b>
@@ -416,7 +459,7 @@ export function Lobby({
       {/* SENT INVITATIONS — the sender's view: every request I made that the
           other side hasn't answered yet, with a quiet withdraw. Without this
           list a sent request was fire-and-forget ("did it even go through?"). */}
-      {sentRequests.length > 0 && (
+      {tab === 'friends' && sentRequests.length > 0 && (
         <div className="card friendscard">
           <div className="friendhead">
             <b>⏳ {t('sentRequestsTitle')}</b>
@@ -450,7 +493,7 @@ export function Lobby({
           until the player has SOME history: a first-time visitor must not face
           "Tier 0/50 · 0/30" walls of zeros plus a $ purchase before their first
           game (same principle as the guarded profile stats below). */}
-      {season && hasHistory && (() => {
+      {tab === 'profile' && season && hasHistory && (() => {
         const reached = season.tier;
         const maxed = reached >= season.tierCount;
         const prevCost = crownsForTier(reached);
@@ -484,6 +527,7 @@ export function Lobby({
         );
       })()}
 
+      {tab === 'play' && (<>
       <div className="seclabel">{t('gameModes')}</div>
       <div className="card modelist">
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
@@ -519,11 +563,14 @@ export function Lobby({
         </button>
       </div>
 
-      {/* COSMETICS SHOP — a real lobby entry. The ONLY way in used to be a tiny
+      </>)}
+
+      {/* COSMETICS SHOP — its own tab. The ONLY way in used to be a tiny
           unlabeled die icon in the topbar, indistinguishable from a settings
           toggle ("the shop is invisible"). This card names it, previews the
           catalog, and wears the gold store language — it IS the monetisation
           surface. Opens the same cosmetics sheet as the topbar icon. */}
+      {tab === 'shop' && (
       <button className="card shopcard" onClick={() => { playTap(); dispatch({ type: 'DICE_MODAL', open: true }); }}>
         <span className="shopcard__ic" aria-hidden="true">🛍️</span>
         <span className="mrow__txt">
@@ -533,6 +580,7 @@ export function Lobby({
         <span className="shopcard__previews" aria-hidden="true">🎲✨</span>
         <span className="mrow__chev" aria-hidden="true">›</span>
       </button>
+      )}
 
       {/* ADD FRIENDS — the proactive invite entry the lobby was missing: players
           I recently faced (wallet-linked → have a pid) that I'm not already
@@ -540,7 +588,7 @@ export function Lobby({
           request (onAcceptFriend = friend.add serves both invite and accept).
           Wallet-gated like the whole feature — hidden for guests so there's no
           dead button that always errors "connect a wallet". */}
-      {walletBacked && addableOpponents.length > 0 && (
+      {tab === 'friends' && walletBacked && addableOpponents.length > 0 && (
         <div className="card friendscard">
           <div className="friendhead">
             <b>➕ {t('addFriendsTitle')}</b>
@@ -573,7 +621,7 @@ export function Lobby({
       {/* FRIENDS (E-social 2): the persistent circle. Living presence (online
           first, pulsing dot, "seen 2 h ago"), tap-through to the public profile
           (head-to-head), gift, stake-picked challenge, and a 2-tap unfriend. */}
-      {friends.length > 0 && (
+      {tab === 'friends' && friends.length > 0 && (
         <div className="card friendscard">
           <div className="friendhead">
             <b>{t('friendsTitle')}</b>
@@ -619,7 +667,10 @@ export function Lobby({
       {/* EMPTY-STATE TEASER — discoverability: with no circle at all, the whole
           feature used to be invisible (every section hidden when empty), so a
           new player never learnt it existed. One quiet card explains it. */}
-      {walletBacked && friends.length === 0 && friendRequests.length === 0 && sentRequests.length === 0 && addableOpponents.length === 0 && (
+      {/* On the dedicated Friends tab the teaser also shows for guests — a
+          blank page would read as broken (the old wallet gate avoided a dead
+          button on the crowded landing; the teaser has none). */}
+      {tab === 'friends' && friends.length === 0 && friendRequests.length === 0 && sentRequests.length === 0 && addableOpponents.length === 0 && (
         <div className="card friendteaser">
           <span className="friendteaser__ic">🤝</span>
           <span className="friendrow__meta">
@@ -665,7 +716,7 @@ export function Lobby({
           wallet-backed account: a guest carries default-looking numbers (Silver,
           1200, 0-0) that read as fake data — reported twice. Guests instead get
           a slim row that keeps the profile editor reachable, with no numbers. */}
-      {walletBacked && profile.name ? (
+      {tab === 'profile' && (walletBacked && profile.name ? (
         <button
           className="card profilecard"
           onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
@@ -698,28 +749,28 @@ export function Lobby({
           <small>{t('setupProfile')}</small>
           <span className="profilecard__edit" aria-hidden="true">✏️</span>
         </button>
-      )}
+      ))}
 
       {/* A brand-new player (no personal history) gets ONE clear incentive to start.
           The daily loop + rivals live in the Progression sheet (top-bar), so the
           landing stays focused on Play + Season. The weekly league was retired. */}
-      {!hasHistory && (
+      {tab === 'play' && !hasHistory && (
         <div className="card firstwin">
           <span className="chip-ic chip-ic--opp"><IconTrophy /></span>
           <span>{t('firstWin')}</span>
         </div>
       )}
 
-      {/* modal-opening "links" are buttons (keyboard-focusable, exposed to AT);
-          only the mailto is a real anchor. */}
+      {/* Info & legal live on the Profile tab now (the tester-reported clutter
+          was largely this block competing with Play on one page). All links are
+          buttons (keyboard-focusable, exposed to AT); only the mailto is real. */}
+      {tab === 'profile' && (<>
       <div className="fairnote">
         {t('fairnote')}{' '}
         <button type="button" className="linklike" onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>{t('howItWorks')}</button>
         {' · '}
         <button type="button" className="linklike" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>{t('rgLink')}</button>
       </div>
-      {/* info & legal: the landing said nothing about tickets/freeroll/league,
-          and Terms/Privacy/Support had no entry point outside the staking gate. */}
       <div className="fairnote fairnote--links">
         <button type="button" className="linklike" onClick={() => { playTap(); dispatch({ type: 'HOWTO_MODAL', open: true }); }}>{t('footRules')}</button>
         {' · '}
@@ -735,8 +786,31 @@ export function Lobby({
         {' · '}
         <span className="buildtag">v{__APP_VERSION__}</span>
       </div>
+      </>)}
 
       <Table4Modal onPractice={sheetPractice} onFree={sheetFree} onStaked={sheetStaked} />
+
+      {/* FOOTER TAB BAR — the requested navigation menu. Fixed, thumb-reach,
+          safe-area aware; the Race tab appears only during a live event. */}
+      <nav className="tabbar" aria-label="Lobby">
+        <button className={`tabbar__btn${tab === 'play' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'play'} onClick={() => switchTab('play')}>
+          <span className="tabbar__ic" aria-hidden="true">🎲</span>{t('tabPlay')}
+        </button>
+        {raceLive && (
+          <button className={`tabbar__btn${tab === 'race' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'race'} onClick={() => switchTab('race')}>
+            <span className="tabbar__ic" aria-hidden="true">🏁<i className="tabbar__live" /></span>{t('tabRace')}
+          </button>
+        )}
+        <button className={`tabbar__btn${tab === 'friends' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'friends'} onClick={() => switchTab('friends')}>
+          <span className="tabbar__ic" aria-hidden="true">🤝{friendsBadge > 0 && <i className="tabbar__badge">{friendsBadge}</i>}</span>{t('tabFriends')}
+        </button>
+        <button className={`tabbar__btn${tab === 'shop' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'shop'} onClick={() => switchTab('shop')}>
+          <span className="tabbar__ic" aria-hidden="true">🛍️</span>{t('tabShop')}
+        </button>
+        <button className={`tabbar__btn${tab === 'profile' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'profile'} onClick={() => switchTab('profile')}>
+          <span className="tabbar__ic" aria-hidden="true">👤</span>{t('tabProfile')}
+        </button>
+      </nav>
     </div>
   );
 }

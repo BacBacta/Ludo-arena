@@ -366,6 +366,14 @@ const en = {
   htPractice: 'Try a free practice game',
   htGotIt: "Got it — let's play",
   footRules: 'How to play',
+  // Footer tab bar (MiniPay feedback: "the page feels crowded — separate the
+  // topics into different pages accessible by a menu in the footer").
+  tabPlay: 'Play',
+  tabRace: 'Race',
+  tabFriends: 'Friends',
+  tabShop: 'Shop',
+  tabProfile: 'Profile',
+  raceNoEvent: 'No live event right now — check back soon!',
   // Turn-clock urgency nudge (teaches the auto-play rule where it bites).
   hurry: '⏱ {s}s — play now or the turn plays itself!',
   // Stake sheet: the payouts shown are NET (potCents already subtracts the rake).
@@ -740,6 +748,12 @@ const fr: Dict = {
   htPractice: 'Essayer une partie d’entraînement',
   htGotIt: 'Compris — on joue',
   footRules: 'Comment jouer',
+  tabPlay: 'Jouer',
+  tabRace: 'Race',
+  tabFriends: 'Amis',
+  tabShop: 'Boutique',
+  tabProfile: 'Profil',
+  raceNoEvent: 'Aucun événement en cours — reviens bientôt !',
   hurry: '⏱ {s}s — joue maintenant ou le tour se joue tout seul !',
   rakeNote: 'Les montants affichés sont ce que le gagnant reçoit — les frais sont déjà déduits.',
 };
@@ -1109,6 +1123,12 @@ const pt: Dict = {
   htPractice: 'Jogar uma partida de treino',
   htGotIt: 'Entendi — vamos jogar',
   footRules: 'Como jogar',
+  tabPlay: 'Jogar',
+  tabRace: 'Corrida',
+  tabFriends: 'Amigos',
+  tabShop: 'Loja',
+  tabProfile: 'Perfil',
+  raceNoEvent: 'Nenhum evento ao vivo agora — volte em breve!',
   hurry: '⏱ {s}s — jogue agora ou a vez joga sozinha!',
   rakeNote: 'Os valores mostrados são o que o vencedor recebe — a taxa já está descontada.',
 };
@@ -1478,6 +1498,12 @@ const es: Dict = {
   htPractice: 'Probar una partida de práctica',
   htGotIt: 'Entendido — a jugar',
   footRules: 'Cómo jugar',
+  tabPlay: 'Jugar',
+  tabRace: 'Carrera',
+  tabFriends: 'Amigos',
+  tabShop: 'Tienda',
+  tabProfile: 'Perfil',
+  raceNoEvent: 'No hay evento en vivo ahora — ¡vuelve pronto!',
   hurry: '⏱ {s}s — ¡juega ya o el turno se juega solo!',
   rakeNote: 'Los importes mostrados son lo que recibe el ganador — la comisión ya está descontada.',
 };
@@ -1847,6 +1873,12 @@ const sw: Dict = {
   htPractice: 'Jaribu mchezo wa mazoezi',
   htGotIt: 'Nimeelewa — tucheze',
   footRules: 'Jinsi ya kucheza',
+  tabPlay: 'Cheza',
+  tabRace: 'Mbio',
+  tabFriends: 'Marafiki',
+  tabShop: 'Duka',
+  tabProfile: 'Wasifu',
+  raceNoEvent: 'Hakuna tukio kwa sasa — rudi hivi karibuni!',
   hurry: '⏱ {s}s — cheza sasa au zamu itajichezea!',
   rakeNote: 'Kiasi kinachoonyeshwa ni anachopokea mshindi — ada tayari imetolewa.',
 };
