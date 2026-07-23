@@ -279,7 +279,7 @@ export class Room {
 
   private playerMeta(seat: Seat): RoomSnapshot['players'][number] {
     const c = this.clients[seat];
-    return { sessionId: c.id, wallet: c.wallet, name: c.name, flag: c.flag, elo: c.elo };
+    return { sessionId: c.id, wallet: c.wallet, name: c.name, flag: c.flag, elo: c.elo, isHouseBot: c.isHouseBot };
   }
 
   private doRoll(): void {

@@ -24,6 +24,7 @@ import {
   PROFILE_NAME_MAX,
   potCents,
   potCents4,
+  RACE_STAKE_CENTS,
   TABLE_CODE_CHARS,
   TABLE_CODE_LEN,
   TOS_VERSION,
@@ -58,6 +59,7 @@ function utcPlusDays(days: number): string {
 }
 import type { Seat } from '@ludo/game-engine';
 import { Matchmaker } from './matchmaking.js';
+import { createHouseBot } from './houseBot.js';
 import { RateLimiter } from './rateLimit.js';
 import { Room, type Client } from './room.js';
 import { createFairness, createFairness4, createSeed4Commit, createSeedCommit, finalizeFairness, finalizeFairness4, randomSeatSeed, sha256Hex, type Fairness, type Fairness4 } from './fairness.js';
@@ -440,6 +442,11 @@ function bootSubsystem<T>(label: string, factory: () => T | null): T | null {
 }
 // On-chain settlement (E3.3). null unless staking is armed AND a key is configured.
 const arbiter = stakingEnabled ? bootSubsystem('settlement arbiter (staked 1v1)', createArbiter) : null;
+// Race house bot (operator-owned): fills Race matchmaking on demand + absorbs
+// flagged farmers. null unless RACE_HOUSE_BOT_ENABLED=true AND staking is armed
+// (it needs the same escrow/arbiter path). Games it plays never score and never
+// draw the faucet; every one is tagged is_house_bot.
+const houseBot = stakingEnabled ? bootSubsystem('Race house bot', createHouseBot) : null;
 // cUSD cosmetic-purchase verifier (rec 6). null until the CosmeticsStore is
 // deployed → cosmetic.claim stays off (ticket unlocks still work regardless).
 const cosmeticsVerifier = bootSubsystem('cosmetics verifier', createCosmeticsVerifier);
@@ -993,7 +1000,9 @@ function wireRoom(room: Room): void {
 
 /** Detached placeholder until the real session reattaches via its token. */
 function stubClient(p: RoomSnapshot['players'][number]): Client {
-  return { id: p.sessionId, wallet: p.wallet, name: p.name, flag: p.flag, elo: p.elo, send() {} };
+  // isHouseBot restored so a bot game survives a restart non-scoring + tagged,
+  // and the Room re-derives its bot seat (keeps driving it).
+  return { id: p.sessionId, wallet: p.wallet, name: p.name, flag: p.flag, elo: p.elo, isHouseBot: p.isHouseBot, send() {} };
 }
 
 // ---------- boot: restore in-progress games ----------
@@ -1604,6 +1613,15 @@ wss.on('connection', (ws, req) => {
         if (!pair) {
           await store.queuePush(msg.stake, session.id);
           session.send({ t: 'queue.ok', position: matchmaker.position(msg.stake, session) });
+          break;
+        }
+        // HOUSE-BOT FARMER INTERCEPT: a Race pairing between two wash-trading
+        // wallets (same IP, or already many games today) is DENIED — the seeker
+        // faces the non-scoring bot instead, and the partner goes back in queue.
+        // Kills the reciprocal farm at the exact pairing moment.
+        if (houseBot && msg.stake === RACE_STAKE_CENTS && (await raceCollusionSuspect(pair[0].session, pair[1].session))) {
+          matchmaker.join(msg.stake, pair[0]); // re-insert the waiter (may re-pair with someone else)
+          await summonHouseBotFor(session);
           break;
         }
         await store.queueRemove(pair[0].session.id);
@@ -2890,6 +2908,71 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
   await startGame(0, a, b, true);
 }
 
+// ---------- Race house bot: summon + anti-collusion ----------
+
+/** How long a lone Race seeker waits for a human before the house bot fills in. */
+const RACE_BOT_FALLBACK_MS = Number(process.env.RACE_BOT_FALLBACK_MS ?? 12_000);
+/** Games already played today between the SAME two Race wallets before a fresh
+ *  pairing between them is treated as wash-trading — the seeker is routed to the
+ *  bot instead (denies the reciprocal farm). 0 disables the intercept. */
+const RACE_COLLUSION_PAIR_CAP = Number(process.env.RACE_COLLUSION_PAIR_CAP ?? 3);
+
+// Believable, indistinguishable opponent identities (operator disclosure choice).
+const BOT_NAMES = ['Kwame', 'Amara', 'Tunde', 'Zola', 'Kofi', 'Nadia', 'Sipho', 'Ama', 'Jabari', 'Imani', 'Chidi', 'Aya'];
+const BOT_FLAGS = ['🇬🇭', '🇳🇬', '🇰🇪', '🇿🇦', '🇨🇮', '🇸🇳', '🇹🇿', '🇺🇬'];
+
+/** A synthetic, socket-less Session driven entirely server-side: the Room plays
+ *  its seat (isHouseBot) and its stake is locked on-chain from the house wallet.
+ *  Its .wallet MUST equal the on-chain depositor (houseBot.address) — the
+ *  stake-lock depositor check and the settlement gate both depend on it. Kept
+ *  OUT of the `sessions` map (all seat lookups tolerate its absence). */
+function makeHouseBotSession(): Session {
+  const entropy = randomBytes(32).toString('hex');
+  const i = Math.floor(Math.random() * BOT_NAMES.length);
+  return {
+    id: `housebot:${randomBytes(8).toString('hex')}`,
+    ws: null,
+    entropy,
+    entropyCommit: sha256Hex(entropy),
+    wallet: houseBot!.address,
+    stake: null,
+    room: null,
+    seat: null,
+    room4: null,
+    seat4: null,
+    alive: true,
+    isHouseBot: true,
+    name: BOT_NAMES[i]!,
+    flag: BOT_FLAGS[i % BOT_FLAGS.length]!,
+    elo: 1180 + Math.floor(Math.random() * 80),
+    send() {},
+  };
+}
+
+/** Would pairing these two Race players be wash-trading? Same socket IP (a
+ *  self-play signature) or too many games already between them today. Used to
+ *  intercept a proposed human↔human Race pairing and route the seeker to the bot. */
+async function raceCollusionSuspect(a: Session, b: Session): Promise<boolean> {
+  if (!a.wallet || !b.wallet) return false;
+  if (a.ip && b.ip && a.ip === b.ip) return true;
+  if (RACE_COLLUSION_PAIR_CAP <= 0) return false;
+  try {
+    const n = await store.pairGamesToday(playerId(a.wallet, a.id), playerId(b.wallet, b.id), utcToday());
+    return n >= RACE_COLLUSION_PAIR_CAP;
+  } catch {
+    return false; // never let a store hiccup block matchmaking
+  }
+}
+
+/** Pair a real Race seeker against the house bot (fallback fill or farmer
+ *  intercept). No-op unless the bot is armed and the seeker is a wallet-backed,
+ *  non-busy human on the Race tier. Leaves the queue exactly as startGame's
+ *  busy-seat guard expects (caller removed the seeker from the matchmaker). */
+async function summonHouseBotFor(human: Session): Promise<void> {
+  if (!houseBot || !human.wallet || human.room || human.pendingGameId) return;
+  await startGame(RACE_STAKE_CENTS as StakeCents, human, makeHouseBotSession());
+}
+
 async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = false, fromTable = false): Promise<void> {
   // Last-resort guard: never start a game for a seat that is already playing or
   // already staking another one. The 1 s matchmaker sweep calls straight in here
@@ -2948,9 +3031,17 @@ async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = f
   const pot = potCents(stake);
   if (newFlow) {
     const { serverSeed, commit } = createSeedCommit();
-    pendingReveals.set(gameId, { gameId, stake, a, b, serverSeed, commit, entropies: [null, null], freeroll });
+    const pending = { gameId, stake, a, b, serverSeed, commit, entropies: [null, null] as [string | null, string | null], freeroll };
+    pendingReveals.set(gameId, pending);
     a.pendingGameId = gameId;
     b.pendingGameId = gameId;
+    // HOUSE BOT seat: it has no socket to send game.entropy, so seed its reveal
+    // NOW (its entropyCommit was set at creation, keeping newFlow=true above).
+    // Done before match.found is even sent, so there's no race with the human's
+    // reveal. Its on-chain stake lock is kicked from maybeStartPending, once the
+    // human has revealed too (so pollStakeLock is running to refund on failure).
+    const botSeatStart: Seat | null = a.isHouseBot ? 0 : b.isHouseBot ? 1 : null;
+    if (botSeatStart !== null) pending.entropies[botSeatStart] = (botSeatStart === 0 ? a : b).entropy;
     // Announce the match + the seed commit now; the Room + play start only after
     // both reveal their entropy (finalizeGame). Client auto-reveals on match.found.
     a.send(matchFoundMsg(gameId, 0, a, b, stake, pot, commit));
@@ -3091,6 +3182,20 @@ function maybeStartPending(p: PendingReveal): void {
   if (p.lockPolling) return;
   p.lockPolling = true;
   pollStakeLock(p, 0);
+  // HOUSE BOT: now that both entropies are in and pollStakeLock is running, lock
+  // the bot's OWN 1c on-chain (approve + escrow.join from the house wallet) with
+  // the SAME fairnessCommit the human deposits under. On failure, abort+refund
+  // the human immediately rather than waiting out the ~120s poll window. Fires
+  // exactly once (lockPolling guards re-entry).
+  if (houseBot) {
+    const botSeat: Seat | null = p.a.isHouseBot ? 0 : p.b.isHouseBot ? 1 : null;
+    if (botSeat !== null) {
+      void houseBot.lockStake(p.gameId, p.stake, p.commit).catch((e) => {
+        console.error(`[house-bot] lockStake failed for ${p.gameId} — aborting + refunding the human`, e);
+        abortPendingStaked(p, 'Match cancelled — any locked stake is refunded shortly.');
+      });
+    }
+  }
 }
 
 /** Enqueue an automatic refund for a staked 1v1 that must NOT proceed (a pre-Room
@@ -3478,9 +3583,35 @@ function scheduleRefundUnfilled4(gameId: string, humans: Session[]): void {
 // ELO windows widen while players wait: re-check the queues every second.
 setInterval(() => {
   for (const { stake, pair } of matchmaker.sweep()) {
+    // Same farmer intercept as queue.join: a wash-trading Race pair is split —
+    // the seeker faces the bot, the partner returns to queue.
+    if (houseBot && stake === RACE_STAKE_CENTS) {
+      void raceCollusionSuspect(pair[0].session, pair[1].session).then((suspect) => {
+        if (suspect) {
+          matchmaker.join(stake, pair[1]);
+          return store.queueRemove(pair[0].session.id).then(() => summonHouseBotFor(pair[0].session));
+        }
+        return Promise.all([store.queueRemove(pair[0].session.id), store.queueRemove(pair[1].session.id)]).then(() =>
+          startGame(stake, pair[0].session, pair[1].session),
+        );
+      }).catch((e) => console.error('[ludo-server] sweep startGame', e));
+      continue;
+    }
     Promise.all([store.queueRemove(pair[0].session.id), store.queueRemove(pair[1].session.id)])
       .then(() => startGame(stake, pair[0].session, pair[1].session))
       .catch((e) => console.error('[ludo-server] sweep startGame', e));
+  }
+  // HOUSE-BOT FALLBACK: a lone Race seeker who has waited past the window with no
+  // human is handed the bot (real 1c staked game, non-scoring). Runs after the
+  // pairing pass so a fresh human is always preferred over the bot.
+  if (houseBot) {
+    const cutoff = Date.now() - RACE_BOT_FALLBACK_MS;
+    for (const e of matchmaker.waitersOlderThan(RACE_STAKE_CENTS as StakeCents, cutoff)) {
+      const human = e.session;
+      if (!human.wallet || human.room || human.pendingGameId) continue;
+      matchmaker.leave(RACE_STAKE_CENTS as StakeCents, human);
+      void store.queueRemove(human.id).then(() => summonHouseBotFor(human)).catch((err) => console.error('[house-bot] fallback summon', err));
+    }
   }
   for (const { pair } of freerollMatchmaker.sweep()) {
     startFreeroll(pair[0].session, pair[1].session).catch((e) => console.error('[ludo-server] sweep freeroll', e));
