@@ -6,7 +6,8 @@ import { SUPPORT_EMAIL, TopBar, Table4Modal } from '../components/ui';
 import { IconShield, IconTicket, IconTrophy, IconUsers } from '../components/icons';
 import { HeroPeg, PEG_COLORS } from '../components/Board';
 import { Die3D } from '../components/Die3D';
-import { skinById } from '../lib/diceSkins';
+import { DieFace } from '../components/Die';
+import { DICE_SKINS, skinById } from '../lib/diceSkins';
 import { isMiniPay } from '../lib/minipay';
 import { playDice, playTap } from '../lib/sound';
 import { frameClass } from '../lib/avatarFrames';
@@ -300,14 +301,16 @@ export function Lobby({
         </small>
       )}
 
-      {/* The promise in three steps — right under the CTAs so a first-time visitor
-          understands the product (free-first, fair, seasonal rewards) before the
-          rest of the page. */}
-      <div className="howstrip">
-        <span><i>1</i>{t('howStep1')}</span>
-        <span><i>2</i>{t('howStep2')}</span>
-        <span><i>3</i>{t('howStep3')}</span>
-      </div>
+      {/* The promise in three steps — FIRST VISIT ONLY. For returning players
+          it was pure clutter under the CTAs (the primer sheet + Help cover it);
+          the landing must stay lean — density here is churn. */}
+      {!hasHistory && (
+        <div className="howstrip">
+          <span><i>1</i>{t('howStep1')}</span>
+          <span><i>2</i>{t('howStep2')}</span>
+          <span><i>3</i>{t('howStep3')}</span>
+        </div>
+      )}
 
       {/* Slim LIVE-event pointer: the full Race card lives on its own tab now,
           but a live event must stay discoverable from the landing tab. */}
@@ -584,37 +587,38 @@ export function Lobby({
 
       {tab === 'play' && (<>
       <div className="seclabel">{t('gameModes')}</div>
-      <div className="card modelist">
-        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
-          <span className="mrow__ic mrow__ic--gold"><IconUsers /></span>
-          <span className="mrow__txt">
-            <b>{t('fourPlayer')}</b>
-            <small>{`${t('t4Practice')} · ${t('t4FreeOnline')} · ${t('t4Real')}`}</small>
-          </span>
-          <span className="mrow__chev" aria-hidden="true">›</span>
+      {/* MODES as a 2×2 game-style tile grid (was a verbose 3-row list — the
+          landing's densest block). Practice gets a landing tile of its own:
+          the instant offline game was buried inside the 4-player sheet, and
+          it's the single best churn-killer for a hesitant first-timer. */}
+      <div className="modegrid">
+        <button className="modetile" onClick={() => { playTap(); onPractice4(); }}>
+          <span className="modetile__ic modetile__ic--bot" aria-hidden="true">🤖</span>
+          <b>{t('t4Practice')}</b>
+          <small>{t('t4PracticeD')}</small>
         </button>
-        <button className="mrow" onClick={() => { playTap(); createTable(); }}>
-          <span className="mrow__ic mrow__ic--me"><IconUsers /></span>
-          <span className="mrow__txt">
-            <b>{t('privateTable')}</b>
-            <small>{t('privateTableDesc')}</small>
-          </span>
-          <span className="mrow__chev" aria-hidden="true">›</span>
+        <button className="modetile" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
+          <span className="modetile__ic modetile__ic--gold" aria-hidden="true"><IconUsers /></span>
+          <b>{t('fourPlayer')}</b>
+          <small>{`${t('t4FreeOnline')} · ${t('t4Real')}`}</small>
+        </button>
+        <button className="modetile" onClick={() => { playTap(); createTable(); }}>
+          <span className="modetile__ic modetile__ic--me" aria-hidden="true"><IconUsers /></span>
+          <b>{t('privateTable')}</b>
+          <small>{t('privateTableDesc')}</small>
         </button>
         <button
-          className={`mrow${tickets < FREEROLL.entryTickets ? ' mrow--dim' : ''}`}
+          className={`modetile${tickets < FREEROLL.entryTickets ? ' modetile--dim' : ''}`}
           onClick={() => {
             playTap();
             if (tickets < FREEROLL.entryTickets) dispatch({ type: 'TOAST', message: t('freerollNeedTicket') });
             else onFreeroll();
           }}
         >
-          <span className="mrow__ic mrow__ic--gold"><IconTrophy /></span>
-          <span className="mrow__txt">
-            <b>{t('freeroll')}</b>
-            <small>{t('freerollDesc')}</small>
-          </span>
-          <span className="mrow__badge"><IconTicket className="mrow__ticket" /> {tickets}</span>
+          <span className="modetile__badge"><IconTicket className="mrow__ticket" /> {tickets}</span>
+          <span className="modetile__ic modetile__ic--gold" aria-hidden="true"><IconTrophy /></span>
+          <b>{t('freeroll')}</b>
+          <small>{t('freerollDesc')}</small>
         </button>
       </div>
 
@@ -641,6 +645,14 @@ export function Lobby({
         <span className="shopfeat__txt">
           <small>{t('shopFeatured')}</small>
           <b>{skinById(diceSkin).name}</b>
+          {/* collect-them-all pull: a peek at three other materials + the
+              catalog count, so the card sells the range, not just the die */}
+          <span className="shopfeat__more" aria-hidden="true">
+            {['emerald', 'amber', 'midnight'].filter((id) => id !== diceSkin).slice(0, 3).map((id) => (
+              <span key={id} className="shopfeat__mini"><DieFace value={5} skin={skinById(id)} /></span>
+            ))}
+            <i>+{DICE_SKINS.length}</i>
+          </span>
           <em>{t('shopOpenCatalog')} ›</em>
         </span>
       </button>
