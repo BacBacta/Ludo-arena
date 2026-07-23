@@ -112,6 +112,100 @@ body::before {
   max-height: calc(100svh - 300px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
 
+/* The lobby scrolls above a fixed footer tab bar — clear its height. */
+.screen--lobby { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
+
+/* FOOTER TAB BAR (MiniPay feedback: split the crowded lobby into pages).
+   Fixed, thumb-reach, safe-area aware; glassy plate over the candy backdrop. */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-around;
+  gap: 2px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(23, 43, 99, 0.12);
+  box-shadow: 0 -6px 18px rgba(23, 43, 99, 0.14);
+}
+.tabbar__btn {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  border: none;
+  background: none;
+  padding: 4px 2px 3px;
+  border-radius: 12px;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tabbar__btn--on { color: var(--ink, #172b63); background: rgba(245, 179, 1, 0.16); }
+.tabbar__btn:active { transform: translateY(1px); }
+.tabbar__ic { position: relative; font-size: 19px; line-height: 1.1; }
+/* red pulsing LIVE dot on the Race tab */
+.tabbar__live {
+  position: absolute;
+  top: -1px;
+  right: -7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e5484d;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  animation: rushpulse 1.2s ease-in-out infinite;
+}
+/* numeric badge (pending friend requests) */
+.tabbar__badge {
+  position: absolute;
+  top: -4px;
+  right: -10px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 15px;
+  text-align: center;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
+/* Slim LIVE-event pointer on the Play tab (full Race card lives on its tab). */
+.racestrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  color: #fff;
+  background: linear-gradient(90deg, #12141f, #232b45);
+  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
+}
+.racestrip b { flex: 0 1 auto; }
+.racestrip__flag { font-size: 17px; }
+.racestrip__prize { margin-left: auto; font-weight: 800; color: var(--accent-2); }
+.racestrip .mrow__chev { color: rgba(255, 255, 255, 0.6); }
+
 /* staggered lobby entrance */
 .screen--lobby > * { animation: fadeup 0.4s ease both; }
 .screen--lobby > *:nth-child(1) { animation-delay: 0.02s; }
