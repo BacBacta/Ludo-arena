@@ -150,9 +150,15 @@ body::before {
   color: var(--muted);
   cursor: pointer;
 }
-.tabbar__btn--on { color: var(--ink, #172b63); background: rgba(245, 179, 1, 0.16); }
+.tabbar__btn { transition: background 0.18s ease, color 0.18s ease; }
+.tabbar__btn--on {
+  color: #6b4d00;
+  background: linear-gradient(180deg, rgba(255, 217, 77, 0.55), rgba(245, 179, 1, 0.38));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 2px 6px rgba(245, 179, 1, 0.35);
+}
 .tabbar__btn:active { transform: translateY(1px); }
-.tabbar__ic { position: relative; font-size: 19px; line-height: 1.1; }
+.tabbar__ic { position: relative; font-size: 19px; line-height: 1.1; transition: transform 0.18s ease; }
+.tabbar__btn--on .tabbar__ic { transform: translateY(-1px) scale(1.12); }
 /* red pulsing LIVE dot on the Race tab */
 .tabbar__live {
   position: absolute;
@@ -347,6 +353,93 @@ body::before {
 
 /* mrow works as an anchor too (support mailto rows in the settings list). */
 a.mrow { text-decoration: none; color: inherit; }
+
+/* ---- Landing "2026" pass: lean, game-like, hyper-tappable ---- */
+
+/* MODES as a 2×2 tile grid — replaces the verbose 3-row list. Tiles read as
+   game entries (big coin, short label), not as settings rows. */
+.modegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.modetile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 13px 13px 12px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--txt);
+  cursor: pointer;
+  text-align: left;
+  box-shadow: var(--surface-shadow);
+  transition: transform 0.12s ease, box-shadow 0.15s ease;
+}
+.modetile:active { transform: translateY(2px) scale(0.99); }
+.modetile--dim { opacity: 0.65; }
+.modetile b { font-family: var(--font-display); font-size: 14.5px; line-height: 1.15; }
+.modetile small { font-size: 10.5px; line-height: 1.35; color: var(--muted); }
+.modetile__ic {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  font-size: 20px;
+}
+.modetile__ic .icon { width: 19px; height: 19px; }
+.modetile__ic--gold { background: rgba(245, 179, 1, 0.16); color: var(--accent); }
+.modetile__ic--me { background: rgba(46, 158, 107, 0.14); color: var(--me); }
+.modetile__ic--bot { background: rgba(62, 99, 221, 0.13); }
+.modetile__badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(245, 179, 1, 0.16);
+  color: #b98700;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* Premium shine sweep on the primary CTA: a gloss band crosses every ~4.5s.
+   Pure decoration — pointer-events none, killed under reduced motion. */
+.btn--hero { position: relative; overflow: hidden; }
+.btn--hero::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -30%;
+  width: 34%;
+  transform: skewX(-18deg) translateX(-120%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  animation: ctaShine 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes ctaShine {
+  0%, 62% { transform: skewX(-18deg) translateX(-140%); }
+  78%, 100% { transform: skewX(-18deg) translateX(520%); }
+}
+@media (prefers-reduced-motion: reduce) { .btn--hero::after { animation: none; opacity: 0; } }
+
+/* Shop featured card: peek at other materials + catalog count. */
+.shopfeat__more { display: inline-flex; align-items: center; gap: 5px; margin: 3px 0 1px; }
+.shopfeat__mini {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(23, 43, 99, 0.25);
+}
+.shopfeat__mini .die { width: 22px; height: 22px; display: block; }
+.shopfeat__more i { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--label); }
 
 /* staggered lobby entrance */
 .screen--lobby > * { animation: fadeup 0.4s ease both; }
@@ -2478,15 +2571,17 @@ small.muted { font-size: 12px; }
    sparkle badge, so it reads as "shop/skins" instead of a settings icon. */
 .shopbtn {
   position: relative;
-  background: rgba(245, 179, 1, 0.18);
-  border: 1px solid rgba(245, 179, 1, 0.5);
-  color: var(--accent-2);
-  border-radius: 10px;
+  /* solid glass chip — the old translucent tint washed out on the blue stage */
+  background: rgba(255, 255, 255, 0.92);
+  border: none;
+  color: #b98700;
+  border-radius: 11px;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 6px 7px;
   display: flex;
   align-items: center;
   line-height: 0;
+  box-shadow: 0 2px 8px rgba(23, 43, 99, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .shopbtn:active { transform: scale(0.94); }
 .shopbtn .icon { width: 18px; height: 18px; }
@@ -2505,13 +2600,15 @@ small.muted { font-size: 12px; }
   display: flex;
   align-items: center;
   gap: 4px;
-  background: rgba(46, 158, 107, 0.16);
-  border: 1px solid rgba(46, 158, 107, 0.5);
+  /* solid glass chip (matches .shopbtn) — the tinted outline read as disabled */
+  background: rgba(255, 255, 255, 0.92);
+  border: none;
   color: var(--me);
-  border-radius: 10px;
+  border-radius: 11px;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 6px 9px;
   line-height: 0;
+  box-shadow: 0 2px 8px rgba(23, 43, 99, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .progbtn:active { transform: scale(0.94); }
 .progbtn .icon { width: 18px; height: 18px; }
