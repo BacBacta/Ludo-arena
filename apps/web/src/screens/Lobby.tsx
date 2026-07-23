@@ -228,6 +228,10 @@ export function Lobby({
 
       {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
+      {/* keyed per tab: switching replays the staggered entrance, so every
+          page ARRIVES with the same premium rhythm the landing has */}
+      <div className="tabpage" key={tab}>
+
       {tab === 'play' && (<>
       {/* HERO (Option A): one promise, one dominant CTA that starts a REAL online
           1v1 for free. Stakes are a secondary, opt-in choice below. The scene
@@ -325,6 +329,16 @@ export function Lobby({
           styling: dark racing card, LIVE badge, ticking countdown, pool gauge and
           a podium preview — an event must read as the most special thing on the
           page, not another grey row. Lives on its OWN tab (footer nav). */}
+      {tab === 'race' && (
+        <div className="pagehead pagehead--race">
+          <span className="pagehead__ic" aria-hidden="true">🏁</span>
+          <div className="pagehead__txt">
+            <b>{t('raceTitle')}</b>
+            <small>{t('raceCardSub')}</small>
+          </div>
+          {raceLive && <em className="racecard__live pagehead__live">● {t('raceLiveBadge')}</em>}
+        </div>
+      )}
       {tab === 'race' && !raceLive && (
         <div className="card friendteaser">
           <span className="friendteaser__ic">🏁</span>
@@ -351,7 +365,6 @@ export function Lobby({
         const medals = ['🥇', '🥈', '🥉'];
         return (
           <>
-            <div className="seclabel">🏁 {t('raceTitle')}</div>
             <div className="card racecard">
               <div className="racecard__top">
                 <span className="racecard__flag" aria-hidden="true">🏁</span>
@@ -427,6 +440,15 @@ export function Lobby({
           Full lifecycle: accept (gold) OR decline (✕ → friend.remove clears the
           edge server-side); tapping the person opens their public profile so
           you're not accepting blind. */}
+      {tab === 'friends' && (
+        <div className="pagehead pagehead--friends">
+          <span className="pagehead__ic" aria-hidden="true">🤝</span>
+          <div className="pagehead__txt">
+            <b>{t('friendsTitle')}</b>
+            <small>{onlineCount > 0 ? `● ${onlineCount} ${t('friendOnline')}` : t('friendsPageSub')}</small>
+          </div>
+        </div>
+      )}
       {tab === 'friends' && friendRequests.length > 0 && (
         <div className="card friendreqcard">
           <div className="friendhead">
@@ -493,6 +515,39 @@ export function Lobby({
           until the player has SOME history: a first-time visitor must not face
           "Tier 0/50 · 0/30" walls of zeros plus a $ purchase before their first
           game (same principle as the guarded profile stats below). */}
+      {/* PROFILE — an identity HERO, not a slim row: big framed avatar, name,
+          stat chips; same PROFILE_EDIT behaviour as the old cards. Guests keep
+          a numbers-free version (default stats read as fake data — reported). */}
+      {tab === 'profile' && (<>
+      <div className="pagehead pagehead--profile">
+        <span className="pagehead__ic" aria-hidden="true">👤</span>
+        <div className="pagehead__txt">
+          <b>{t('tabProfile')}</b>
+          <small>{t('profilePageSub')}</small>
+        </div>
+      </div>
+      <button
+        className="card profilehero"
+        onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
+        aria-label={t('editProfile')}
+      >
+        <span className="profilehero__edit" aria-hidden="true">✏️</span>
+        <span className={`profilehero__avatar ${frameClass(avatarFrame)}`}>
+          {avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : <span className="profilehero__flag">{walletBacked && profile.name ? profile.flag : '🌍'}</span>}
+          <PremiumFrame frame={avatarFrame} />
+        </span>
+        <b className="profilehero__name">{profile.name || t('guestLabel')}</b>
+        {walletBacked && profile.name ? (
+          <span className="profilehero__stats">
+            <span className="statchip"><b>{profile.elo}</b> ELO</span>
+            <span className="statchip statchip--w"><b>{profile.wins}</b> {t('winsShort')}</span>
+            <span className="statchip statchip--l"><b>{Math.max(0, profile.games - profile.wins)}</b> {t('lossesShort')}</span>
+          </span>
+        ) : (
+          <small className="profilehero__setup">{t('setupProfile')}</small>
+        )}
+      </button>
+      </>)}
       {tab === 'profile' && season && hasHistory && (() => {
         const reached = season.tier;
         const maxed = reached >= season.tierCount;
@@ -565,22 +620,56 @@ export function Lobby({
 
       </>)}
 
-      {/* COSMETICS SHOP — its own tab. The ONLY way in used to be a tiny
-          unlabeled die icon in the topbar, indistinguishable from a settings
-          toggle ("the shop is invisible"). This card names it, previews the
-          catalog, and wears the gold store language — it IS the monetisation
-          surface. Opens the same cosmetics sheet as the topbar icon. */}
-      {tab === 'shop' && (
-      <button className="card shopcard" onClick={() => { playTap(); dispatch({ type: 'DICE_MODAL', open: true }); }}>
-        <span className="shopcard__ic" aria-hidden="true">🛍️</span>
-        <span className="mrow__txt">
+      {/* COSMETICS SHOP — a real STOREFRONT, not one flat card (the tab looked
+          like an afterthought next to the landing). Featured = the player's own
+          equipped die rendered live in 3D (the product demos itself, same trick
+          as the lobby hero); below it, clear rows into the catalog, the
+          collection album and the premium pass, plus the ticket balance. */}
+      {tab === 'shop' && (<>
+      <div className="pagehead pagehead--shop">
+        <span className="pagehead__ic" aria-hidden="true">🛍️</span>
+        <div className="pagehead__txt">
           <b>{t('shopCardTitle')}</b>
           <small>{t('shopCardSub')}</small>
+        </div>
+      </div>
+      <button className="card shopfeat" onClick={() => { playTap(); dispatch({ type: 'DICE_MODAL', open: true }); }}>
+        <span className="shopfeat__stage" aria-hidden="true">
+          <span className="shopfeat__glow" />
+          <Die3D value={5} rollKey={0} skin={skinById(diceSkin)} />
         </span>
-        <span className="shopcard__previews" aria-hidden="true">🎲✨</span>
-        <span className="mrow__chev" aria-hidden="true">›</span>
+        <span className="shopfeat__txt">
+          <small>{t('shopFeatured')}</small>
+          <b>{skinById(diceSkin).name}</b>
+          <em>{t('shopOpenCatalog')} ›</em>
+        </span>
       </button>
-      )}
+      <div className="card modelist">
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'DICE_MODAL', open: true }); }}>
+          <span className="mrow__ic mrow__ic--gold">🎲</span>
+          <span className="mrow__txt"><b>{t('shopOpenCatalog')}</b><small>{t('shopCardSub')}</small></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'COLLECTION_MODAL', open: true }); }}>
+          <span className="mrow__ic mrow__ic--me">📔</span>
+          <span className="mrow__txt"><b>{t('collectionTitle')}</b><small>{t('collectionIntro')}</small></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+        {season && !season.premium && cosmeticsCusdAvailable && (
+          <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'SEASON_MODAL', open: true }); }}>
+            <span className="mrow__ic mrow__ic--gold">👑</span>
+            <span className="mrow__txt"><b>{t('seasonPremiumTitle')}</b><small>{t('seasonPremiumBlurb')}</small></span>
+            <span className="mrow__badge">{fmtUsd(SEASON_PREMIUM.cents)}</span>
+          </button>
+        )}
+      </div>
+      <div className="card ticketstrip">
+        <span className="ticketstrip__ic" aria-hidden="true"><IconTicket /></span>
+        <b>{tickets}</b>
+        <span className="ticketstrip__label">{t('ticketsLabel')}</span>
+        <small>{t('hTicketsBody')}</small>
+      </div>
+      </>)}
 
       {/* ADD FRIENDS — the proactive invite entry the lobby was missing: players
           I recently faced (wallet-linked → have a pid) that I'm not already
@@ -716,40 +805,6 @@ export function Lobby({
           wallet-backed account: a guest carries default-looking numbers (Silver,
           1200, 0-0) that read as fake data — reported twice. Guests instead get
           a slim row that keeps the profile editor reachable, with no numbers. */}
-      {tab === 'profile' && (walletBacked && profile.name ? (
-        <button
-          className="card profilecard"
-          onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
-          aria-label={t('editProfile')}
-        >
-          <div className="profilecard__id">
-            <span className={`profilecard__flag ${frameClass(avatarFrame)}`}>
-              {avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : profile.flag}
-              <PremiumFrame frame={avatarFrame} />
-            </span>
-            <div className="profilecard__meta">
-              <b>{profile.name}</b>
-            </div>
-          </div>
-          <div className="profilecard__stats">
-            <span><b>{profile.elo}</b> ELO</span>
-            <span className="profilecard__w">{profile.wins} {t('winsShort')}</span>
-            <span className="profilecard__l">{Math.max(0, profile.games - profile.wins)} {t('lossesShort')}</span>
-          </div>
-          <span className="profilecard__edit" aria-hidden="true">✏️</span>
-        </button>
-      ) : (
-        <button
-          className="card guestrow"
-          onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
-          aria-label={t('editProfile')}
-        >
-          <span className="guestrow__flag">{avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : '🌍'}</span>
-          <b>{profile.name || t('guestLabel')}</b>
-          <small>{t('setupProfile')}</small>
-          <span className="profilecard__edit" aria-hidden="true">✏️</span>
-        </button>
-      ))}
 
       {/* A brand-new player (no personal history) gets ONE clear incentive to start.
           The daily loop + rivals live in the Progression sheet (top-bar), so the
@@ -761,23 +816,46 @@ export function Lobby({
         </div>
       )}
 
-      {/* Info & legal live on the Profile tab now (the tester-reported clutter
-          was largely this block competing with Play on one page). All links are
-          buttons (keyboard-focusable, exposed to AT); only the mailto is real. */}
+      {/* Info & legal on the Profile tab — a proper settings LIST (the old
+          dot-separated text soup was the visual noise the testers flagged).
+          Same destinations; only the mailto is a real anchor. */}
       {tab === 'profile' && (<>
-      <div className="fairnote">
-        {t('fairnote')}{' '}
-        <button type="button" className="linklike" onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}>{t('howItWorks')}</button>
-        {' · '}
-        <button type="button" className="linklike" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>{t('rgLink')}</button>
+      <div className="card modelist">
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'PROGRESSION_MODAL', open: true }); }}>
+          <span className="mrow__ic mrow__ic--gold">🔥</span>
+          <span className="mrow__txt"><b>{t('progressionTitle')}</b><small>{t('progressionEmpty')}</small></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+      </div>
+      <div className="seclabel">{t('profileInfoLabel')}</div>
+      <div className="card modelist">
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'HOWTO_MODAL', open: true }); }}>
+          <span className="mrow__ic mrow__ic--me">🎮</span>
+          <span className="mrow__txt"><b>{t('footRules')}</b></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'HELP_MODAL', open: true }); }}>
+          <span className="mrow__ic mrow__ic--me">❓</span>
+          <span className="mrow__txt"><b>{t('footHelp')}</b></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'FAIR_MODAL', open: true }); }}>
+          <span className="mrow__ic mrow__ic--me">🛡️</span>
+          <span className="mrow__txt"><b>{t('howItWorks')}</b><small>{t('fairnote')}</small></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'SETTINGS', open: true }); }}>
+          <span className="mrow__ic mrow__ic--opp">⚖️</span>
+          <span className="mrow__txt"><b>{t('rgLink')}</b></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
+        <a className="mrow" href={`mailto:${SUPPORT_EMAIL}`}>
+          <span className="mrow__ic mrow__ic--me">📮</span>
+          <span className="mrow__txt"><b>{t('footSupport')}</b></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </a>
       </div>
       <div className="fairnote fairnote--links">
-        <button type="button" className="linklike" onClick={() => { playTap(); dispatch({ type: 'HOWTO_MODAL', open: true }); }}>{t('footRules')}</button>
-        {' · '}
-        <button type="button" className="linklike" onClick={() => { playTap(); dispatch({ type: 'HELP_MODAL', open: true }); }}>{t('footHelp')}</button>
-        {' · '}
-        <a href={`mailto:${SUPPORT_EMAIL}`}>{t('footSupport')}</a>
-        {' · '}
         <button type="button" className="linklike" onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'tos' })}>{t('legalReadTos')}</button>
         {' · '}
         <button type="button" className="linklike" onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'privacy' })}>{t('legalReadPrivacy')}</button>
@@ -787,6 +865,8 @@ export function Lobby({
         <span className="buildtag">v{__APP_VERSION__}</span>
       </div>
       </>)}
+
+      </div>{/* /tabpage */}
 
       <Table4Modal onPractice={sheetPractice} onFree={sheetFree} onStaked={sheetStaked} />
 
