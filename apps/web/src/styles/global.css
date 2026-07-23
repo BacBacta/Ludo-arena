@@ -206,6 +206,148 @@ body::before {
 .racestrip__prize { margin-left: auto; font-weight: 800; color: var(--accent-2); }
 .racestrip .mrow__chev { color: rgba(255, 255, 255, 0.6); }
 
+/* ---- Cross-tab premium pass: every tab opens with the same rhythm ---- */
+
+/* Keyed per tab: remounting replays the staggered entrance on every switch. */
+.tabpage { display: flex; flex-direction: column; min-height: 0; }
+.tabpage > * { animation: fadeup 0.35s ease both; }
+.tabpage > *:nth-child(1) { animation-delay: 0.02s; }
+.tabpage > *:nth-child(2) { animation-delay: 0.06s; }
+.tabpage > *:nth-child(3) { animation-delay: 0.1s; }
+.tabpage > *:nth-child(4) { animation-delay: 0.14s; }
+.tabpage > *:nth-child(5) { animation-delay: 0.18s; }
+.tabpage > *:nth-child(6) { animation-delay: 0.22s; }
+@media (prefers-reduced-motion: reduce) { .tabpage > * { animation: none; } }
+
+/* Per-tab identity header: big icon coin + title/sub on a tinted glass band.
+   Each tab wears its own colour story; the type scale matches the hero. */
+.pagehead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(23, 43, 99, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.pagehead__ic {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  font-size: 24px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 8px rgba(0, 0, 0, 0.18);
+}
+.pagehead__txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pagehead__txt b { font-family: var(--font-display); font-size: 19px; font-weight: 700; letter-spacing: 0.3px; }
+.pagehead__txt small { font-size: 11.5px; opacity: 0.85; line-height: 1.35; }
+.pagehead__live { margin-left: auto; }
+.pagehead--race { background: linear-gradient(135deg, #12141f 0%, #232b45 70%, #2c3a66 100%); }
+.pagehead--friends { background: linear-gradient(135deg, #1c7a4c 0%, #2e9e6b 70%, #45b57f 100%); }
+.pagehead--shop { background: linear-gradient(135deg, #8a5f00 0%, #c78a00 55%, #f5b301 100%); }
+.pagehead--profile { background: linear-gradient(135deg, #2947a8 0%, #3e63dd 70%, #5b7ce6 100%); }
+
+/* Shop storefront: the player's own equipped die, live in 3D, as the feature. */
+.shopfeat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 14px;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.shopfeat__stage {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 38%, #31406e 0%, #1d2747 68%, #141b33 100%);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(23, 43, 99, 0.25);
+}
+.shopfeat__glow {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 179, 1, 0.4) 0%, transparent 65%);
+  animation: rushpulse 2.4s ease-in-out infinite;
+}
+/* keep the cube above the glow WITHOUT touching its internal absolute layout */
+.shopfeat__stage .die3d-stage { z-index: 1; }
+.shopfeat__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.shopfeat__txt small { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--label); }
+.shopfeat__txt b { font-family: var(--font-display); font-size: 18px; color: var(--txt); }
+.shopfeat__txt em { font-style: normal; font-size: 12.5px; font-weight: 700; color: #b98700; }
+
+/* Ticket balance strip (shop): the free-currency counter, storefront-styled. */
+.ticketstrip {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px 14px;
+}
+.ticketstrip__ic { align-self: center; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: rgba(245, 179, 1, 0.16); color: #b98700; }
+.ticketstrip b { font-family: var(--font-display); font-size: 20px; color: var(--txt); }
+.ticketstrip__label { font-weight: 700; font-size: 13px; color: var(--txt); }
+.ticketstrip small { flex: 1 1 100%; margin-top: 2px; font-size: 11px; line-height: 1.45; color: var(--muted); }
+.ticketstrip { flex-wrap: wrap; }
+
+/* Profile identity hero: centred column, big framed avatar, stat chips. */
+.profilehero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 20px 16px 18px;
+  border: none;
+  cursor: pointer;
+}
+.profilehero__edit { position: absolute; top: 12px; right: 14px; font-size: 15px; opacity: 0.65; }
+.profilehero__avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--card-2);
+  box-shadow: inset 0 0 0 3px rgba(245, 179, 1, 0.55), 0 6px 14px rgba(23, 43, 99, 0.2);
+  overflow: visible;
+}
+.profilehero__avatar .profilecard__img { width: 64px; height: 64px; border-radius: 50%; }
+.profilehero__flag { font-size: 34px; }
+.profilehero__name { font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--txt); }
+.profilehero__setup { font-size: 12px; color: var(--muted); }
+.profilehero__stats { display: flex; gap: 8px; }
+.statchip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--card-2);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.statchip b { font-family: var(--font-display); font-size: 14px; color: var(--txt); }
+.statchip--w b { color: var(--me); }
+.statchip--l b { color: var(--danger); }
+
+/* mrow works as an anchor too (support mailto rows in the settings list). */
+a.mrow { text-decoration: none; color: inherit; }
+
 /* staggered lobby entrance */
 .screen--lobby > * { animation: fadeup 0.4s ease both; }
 .screen--lobby > *:nth-child(1) { animation-delay: 0.02s; }
@@ -420,12 +562,17 @@ a.btn {
 .mrow__ic {
   width: 38px; height: 38px; border-radius: 12px; flex: 0 0 38px;
   display: flex; align-items: center; justify-content: center;
+  font-size: 18px; /* emoji glyph rows (shop/profile lists) sit like the SVGs */
 }
 .mrow__ic .icon { width: 19px; height: 19px; }
 .mrow__ic--gold { background: rgba(245, 179, 1, 0.14); color: var(--accent); }
 .mrow__ic--me { background: rgba(46, 158, 107, 0.14); color: var(--me); }
+.mrow__ic--opp { background: rgba(232, 131, 58, 0.14); color: var(--opp); }
 .mrow__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.mrow__txt b { font-family: var(--font-display); font-size: 15px; }
+.mrow__txt b { font-family: var(--font-display); font-size: 15px; display: block; }
+/* Sentence-case every row title: several i18n labels are lowercase inline
+   phrases ("comment ça marche ?") and read sloppy as list entries. */
+.mrow__txt b::first-letter { text-transform: uppercase; }
 .mrow__txt small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mrow__chev { font-size: 22px; color: var(--muted); line-height: 1; padding-bottom: 3px; }
 .mrow__badge {

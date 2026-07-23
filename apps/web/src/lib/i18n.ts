@@ -374,6 +374,13 @@ const en = {
   tabShop: 'Shop',
   tabProfile: 'Profile',
   raceNoEvent: 'No live event right now — check back soon!',
+  // Per-tab identity headers (global UI pass: every tab opens with the same
+  // premium rhythm the landing has, instead of a bare list of cards).
+  friendsPageSub: 'Challenge rivals, gift cosmetics, climb together',
+  profilePageSub: 'Your identity, progression & settings',
+  shopFeatured: 'Your equipped die',
+  shopOpenCatalog: 'Open the catalog',
+  profileInfoLabel: 'Info & legal',
   // Turn-clock urgency nudge (teaches the auto-play rule where it bites).
   hurry: '⏱ {s}s — play now or the turn plays itself!',
   // Stake sheet: the payouts shown are NET (potCents already subtracts the rake).
@@ -754,6 +761,11 @@ const fr: Dict = {
   tabShop: 'Boutique',
   tabProfile: 'Profil',
   raceNoEvent: 'Aucun événement en cours — reviens bientôt !',
+  friendsPageSub: 'Défie tes rivaux, offre des cosmétiques, grimpez ensemble',
+  profilePageSub: 'Ton identité, ta progression et tes réglages',
+  shopFeatured: 'Ton dé équipé',
+  shopOpenCatalog: 'Ouvrir le catalogue',
+  profileInfoLabel: 'Infos & légal',
   hurry: '⏱ {s}s — joue maintenant ou le tour se joue tout seul !',
   rakeNote: 'Les montants affichés sont ce que le gagnant reçoit — les frais sont déjà déduits.',
 };
@@ -1129,6 +1141,11 @@ const pt: Dict = {
   tabShop: 'Loja',
   tabProfile: 'Perfil',
   raceNoEvent: 'Nenhum evento ao vivo agora — volte em breve!',
+  friendsPageSub: 'Desafie rivais, presenteie cosméticos, subam juntos',
+  profilePageSub: 'Sua identidade, progressão e ajustes',
+  shopFeatured: 'Seu dado equipado',
+  shopOpenCatalog: 'Abrir o catálogo',
+  profileInfoLabel: 'Info & legal',
   hurry: '⏱ {s}s — jogue agora ou a vez joga sozinha!',
   rakeNote: 'Os valores mostrados são o que o vencedor recebe — a taxa já está descontada.',
 };
@@ -1504,6 +1521,11 @@ const es: Dict = {
   tabShop: 'Tienda',
   tabProfile: 'Perfil',
   raceNoEvent: 'No hay evento en vivo ahora — ¡vuelve pronto!',
+  friendsPageSub: 'Desafía a tus rivales, regala cosméticos, subid juntos',
+  profilePageSub: 'Tu identidad, progresión y ajustes',
+  shopFeatured: 'Tu dado equipado',
+  shopOpenCatalog: 'Abrir el catálogo',
+  profileInfoLabel: 'Info y legal',
   hurry: '⏱ {s}s — ¡juega ya o el turno se juega solo!',
   rakeNote: 'Los importes mostrados son lo que recibe el ganador — la comisión ya está descontada.',
 };
@@ -1879,6 +1901,11 @@ const sw: Dict = {
   tabShop: 'Duka',
   tabProfile: 'Wasifu',
   raceNoEvent: 'Hakuna tukio kwa sasa — rudi hivi karibuni!',
+  friendsPageSub: 'Pambana na wapinzani, zawadia vipodozi, pandeni pamoja',
+  profilePageSub: 'Utambulisho wako, maendeleo na mipangilio',
+  shopFeatured: 'Dadu yako iliyovaliwa',
+  shopOpenCatalog: 'Fungua katalogi',
+  profileInfoLabel: 'Taarifa na kisheria',
   hurry: '⏱ {s}s — cheza sasa au zamu itajichezea!',
   rakeNote: 'Kiasi kinachoonyeshwa ni anachopokea mshindi — ada tayari imetolewa.',
 };
