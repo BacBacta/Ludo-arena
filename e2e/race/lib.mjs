@@ -35,6 +35,11 @@ export function deployments() {
 // hardhat's deterministic dev accounts: #0 = deployer/arbiter/treasury, #1 = faucet.
 export const DEPLOYER_PK = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 export const FAUCET_PK = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
+// Race HOUSE BOT wallet — hardhat account #3 (0x90F7…b906), DISTINCT from the
+// deployer/arbiter/treasury (#0) and faucet (#1) so balance-delta assertions
+// never alias. The server signs the bot's 1c stake from this key.
+export const HOUSE_BOT_PK = '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6';
+export const HOUSE_BOT_ADDR = privateKeyToAccount(HOUSE_BOT_PK).address;
 
 const ERC20_ABI = [
   { type: 'function', name: 'mint', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [] },
@@ -72,14 +77,22 @@ export function balanceUnits(addr) {
   return publicClient.readContract({ address: deployments().stablecoin, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr] });
 }
 
-/** Chain bootstrap after deploy: open the Pass mint, fund the faucet wallet. */
-export async function armChain({ faucetUsdCents = 3000 } = {}) {
+/** Chain bootstrap after deploy: open the Pass mint, fund the faucet wallet, and
+ *  (for the house-bot sim) fund the house-bot wallet with cUSD + native gas. The
+ *  house bot is funded from the DEPLOYER mint, NOT the RACE_FAUCET wallet — its
+ *  stakes must never draw the player-subsidy faucet. */
+export async function armChain({ faucetUsdCents = 3000, houseBotUsdCents = 200 } = {}) {
   const dep = deployments();
   const deployer = walletFor(DEPLOYER_PK);
   const faucetAddr = privateKeyToAccount(FAUCET_PK).address;
   await deployer.writeContract({ address: dep.racePass, abi: RACEPASS_ABI, functionName: 'setMintOpen', args: [true] });
   await deployer.writeContract({ address: dep.stablecoin, abi: ERC20_ABI, functionName: 'mint', args: [faucetAddr, await centsToUnits(faucetUsdCents)] });
-  return { dep, faucetAddr };
+  // House-bot wallet: cUSD for many 1c stakes + native ETH for gas (FEE_IN_STABLE
+  // is unset on hardhat, so gas is paid in ETH, not cUSD — forgetting this makes
+  // the bot's approve/join silently fail and the match aborts on stake-lock).
+  await deployer.writeContract({ address: dep.stablecoin, abi: ERC20_ABI, functionName: 'mint', args: [HOUSE_BOT_ADDR, await centsToUnits(houseBotUsdCents)] });
+  await publicClient.request({ method: 'hardhat_setBalance', params: [HOUSE_BOT_ADDR, `0x${parseEther('1').toString(16)}`] });
+  return { dep, faucetAddr, houseBotAddr: HOUSE_BOT_ADDR };
 }
 
 export const walletProofMessage = (nonce) => `Ludo Arena — verify wallet ownership.\nNonce: ${nonce}`;
@@ -196,6 +209,19 @@ export async function playStakedGame(a, b, { maxMs = 300_000 } = {}) {
     b.playUntilOver({ maxMs }),
   ]);
   return { overA, overB };
+}
+
+/** Drive one staked game where the opponent is the SERVER-SIDE house bot: ONLY
+ *  the human locks (approve+join); the server locks the bot's 1c from the house
+ *  wallet and drives its seat. Waits for game.state (which proves BOTH the human
+ *  lock AND the server-side bot lock landed and the escrow went Active), then
+ *  plays the human to game.over. Returns the human's over payload. */
+export async function playStakedVsHouse(human, { maxMs = 300_000 } = {}) {
+  const m = human.mark();
+  human.over = null;
+  await human.lockStake();
+  await human.awaitFrom(m, (x) => x.t === 'game.state', 150_000, 'game.state (human lock + server bot lock verified)');
+  return human.playUntilOver({ maxMs });
 }
 
 export { sleep, sha256 };

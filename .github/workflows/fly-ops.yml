@@ -64,9 +64,10 @@ on:
           - race-status
           - onchain-activity
           - race-audit
+          - arm-house-bot
           - reset-race-board
       confirm:
-        description: 'arm-mainnet: type ARM-MAINNET · reset-race-board: type RESET-BOARD'
+        description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT'
         required: false
         type: string
       reset_full:
@@ -324,3 +325,36 @@ jobs:
           SAFE=$(printf '%s' "${AUDIT_NAME:-}" | tr -cd '[:alnum:] _-')
           echo "Auditing the Race Week leaderboard on ludo-arena (name filter: '${SAFE:-<top 3>}')…"
           flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && NAME=\"$SAFE\" npm run race-audit -w apps/server'"
+      # arm-house-bot: turn ON the Race house bot on the running server in one
+      # atomic secrets import (single restart). RACE_HOUSE_BOT_PRIVATE_KEY is read
+      # from a GitHub REPO SECRET (never an input), so the key never appears in the
+      # run inputs or logs. The bot fills Race matchmaking on demand + absorbs
+      # flagged farmers; its games NEVER score and NEVER draw the faucet, and each
+      # is tagged is_house_bot. Requires typing ARM-HOUSE-BOT (guards a misfire).
+      # PRE-ARM CHECKLIST (operator): (1) fund the house-bot wallet with cUSD +
+      # (if not FEE_IN_STABLE) native CELO; (2) staking must already be armed
+      # (STAKING_ENABLED + arbiter) — the bot rides the same escrow path.
+      - name: arm Race house bot
+        if: ${{ inputs.operation == 'arm-house-bot' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          RACE_HOUSE_BOT_PRIVATE_KEY: ${{ secrets.RACE_HOUSE_BOT_PRIVATE_KEY }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          if [ "${CONFIRM:-}" != "ARM-HOUSE-BOT" ]; then
+            echo "::error::type ARM-HOUSE-BOT in the 'confirm' box to proceed (guards against an accidental run)"; exit 1
+          fi
+          if [ -z "${RACE_HOUSE_BOT_PRIVATE_KEY:-}" ]; then
+            echo "::error::add the RACE_HOUSE_BOT_PRIVATE_KEY repo secret first (Settings → Secrets and variables → Actions), and fund that wallet with cUSD (+ CELO if not FEE_IN_STABLE)"; exit 1
+          fi
+          echo "Secrets BEFORE (names only):"
+          flyctl secrets list -a ludo-arena || true
+          {
+            echo "RACE_HOUSE_BOT_ENABLED=true"
+            echo "RACE_HOUSE_BOT_PRIVATE_KEY=$RACE_HOUSE_BOT_PRIVATE_KEY"
+          } | flyctl secrets import -a ludo-arena
+          echo "Secrets AFTER (names only):"
+          flyctl secrets list -a ludo-arena
+          echo "::warning::Race house bot ARMED — it now stakes real 1c on the Race tier. Confirm the house-bot wallet is funded. Disarm by unsetting RACE_HOUSE_BOT_ENABLED."
