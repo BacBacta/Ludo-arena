@@ -63,6 +63,7 @@ on:
           - set-tier-rake
           - race-status
           - onchain-activity
+          - race-audit
           - reset-race-board
       confirm:
         description: 'arm-mainnet: type ARM-MAINNET · reset-race-board: type RESET-BOARD'
@@ -90,6 +91,10 @@ on:
         description: 'arm-mainnet only: RACE_SEED_CENTS — cUSD gas seed per burner before its mint. Must cover gas×maxFeePerGas at the current Celo base fee (≈3.5c at 200 gwei); 10 gives headroom.'
         required: false
         default: '10'
+        type: string
+      race_audit_name:
+        description: 'race-audit only: spotlight players whose name contains this text (case-insensitive). Blank = spotlight the top 3.'
+        required: false
         type: string
 
 concurrency: fly-ops
@@ -301,3 +306,21 @@ jobs:
           if [ "${RESET_FULL:-false}" = "true" ]; then ARG="full"; fi
           echo "Resetting the Race Week leaderboard on ludo-arena (full=${RESET_FULL:-false})…"
           flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && npm run reset-race-board -w apps/server -- $ARG'"
+      # race-audit: READ-ONLY leaderboard forensics — reconstructs the real match
+      # history behind each player's points to surface wash-trading / farming.
+      # Runs INSIDE the machine (via ssh) because the prod store (Postgres) is
+      # only reachable from there; it issues SELECTs only, no writes. NAME (from
+      # race_audit_name) spotlights matching players; blank spotlights the top 3.
+      - name: audit Race Week leaderboard
+        if: ${{ inputs.operation == 'race-audit' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          AUDIT_NAME: ${{ inputs.race_audit_name }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          # NAME is passed through the remote env; single-quoted to survive the ssh
+          # shell. Only [a-zA-Z0-9 _-] are kept so it can't break out of the command.
+          SAFE=$(printf '%s' "${AUDIT_NAME:-}" | tr -cd '[:alnum:] _-')
+          echo "Auditing the Race Week leaderboard on ludo-arena (name filter: '${SAFE:-<top 3>}')…"
+          flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && NAME=\"$SAFE\" npm run race-audit -w apps/server'"
