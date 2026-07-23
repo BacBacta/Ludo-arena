@@ -22,6 +22,7 @@ import { WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import type { TokenPattern } from '../lib/tokenSkins';
 import { boardThemeById, type BoardTheme } from '../lib/boardThemes';
 import { playHop } from '../lib/sound';
+import { t } from '../lib/i18n';
 
 /** True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — matches the
  *  4-player board (Board4) so the staked board reads with the same premium look. */
@@ -61,6 +62,10 @@ export interface PlayerBanner {
   name: string;
   flag: string;
   active: boolean;
+  /** This banner is the local player's — renders a gold "YOU" chip after the
+   *  name. MiniPay testers couldn't tell which side was theirs; on a 15s clock
+   *  that hesitation costs the turn. */
+  you?: boolean;
 }
 
 /** Display positions stepping one cell at a time toward the real ones. */
@@ -609,6 +614,7 @@ export function Board({ game, mySeat, onTokenTap, locked, banners, tokenPatterns
           className={`plabel plabel--q${(flip ? 1 - b.seat : b.seat) === 0 ? 0 : 2}${b.active ? ' plabel--active' : ''}`}
         >
           {b.name}
+          {b.you && <span className="plabel__you">{t('you').toUpperCase()}</span>}
         </div>
       ))}
     </div>

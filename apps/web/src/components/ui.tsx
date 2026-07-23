@@ -1059,11 +1059,22 @@ export function HelpModal() {
     close();
     dispatch({ type: 'FAIR_MODAL', open: true });
   };
+  const openHowTo = (): void => {
+    close();
+    dispatch({ type: 'HOWTO_MODAL', open: true });
+  };
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card help__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h3>{t('helpTitle')}</h3>
         <div className="help__scroll">
+          {/* Game rules first — the MiniPay testers' top ask. This sheet only
+              covers the meta (tickets, season, money); the rules live in the
+              dedicated How-to-play sheet. */}
+          <section className="help__sec">
+            <h4>🎮 {t('howToTitle')}</h4>
+            <p><a className="help__link" onClick={openHowTo}>{t('howToTitle')} →</a></p>
+          </section>
           <section className="help__sec">
             <h4>🎟️ {t('hTickets')}</h4>
             <p>{t('hTicketsBody')}</p>

@@ -196,7 +196,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           game={game}
           mySeat={mySeat}
           onTokenTap={(token) => myTurn && game.phase === 'awaiting-move' && doMove(gameRef.current, mySeat, token)}
-          banners={PLAYERS.map((p, seat) => ({ seat, name: p.name, flag: seatFlag(seat), active: seat === activeSeat }))}
+          banners={PLAYERS.map((p, seat) => ({ seat, name: p.name, flag: seatFlag(seat), active: seat === activeSeat, you: seat === mySeat }))}
           // Practice cosmetics: my theme + my pawn skin; the bots stay classic.
           themeId={boardTheme}
           tokenPatterns={{ [mySeat]: tokenSkinById(tokenSkin).pattern }}

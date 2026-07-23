@@ -212,6 +212,7 @@ export function Game4OnlineScreen({
         name: seat === mySeat ? p.name || t('you') : p.name,
         flag: p.flag,
         active: seat === activeTurn,
+        you: seat === mySeat,
       })),
     [players, mySeat, activeTurn],
   );

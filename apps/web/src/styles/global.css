@@ -374,7 +374,16 @@ a.btn {
   display: flex; align-items: center; justify-content: center;
 }
 /* candy stake tiles: white 3D chips, selected turns gold and lifts */
-.gstakes { display: flex; gap: 7px; justify-content: center; }
+.gstakes { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; }
+/* NET-payout disclosure under the stake tiers (rake already deducted). */
+.gstakes__rakenote {
+  flex-basis: 100%;
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--muted);
+  text-align: center;
+}
 .gstake {
   flex: 1 1 0;
   min-width: 60px;
@@ -1340,6 +1349,8 @@ small.muted { font-size: 12px; }
 .fairnote--links a, .fairnote--links .linklike { white-space: nowrap; }
 .help__card { max-height: 82dvh; display: flex; flex-direction: column; }
 .help__scroll { overflow-y: auto; margin: 4px 0 12px; text-align: left; }
+/* How-to-play sheet: stacked CTAs (practice first on a fresh install). */
+.howto__actions { display: grid; gap: 9px; }
 .help__sec { margin-bottom: 14px; }
 .help__sec h4 { font-family: var(--font-display); font-size: 14.5px; margin-bottom: 4px; color: var(--txt); }
 .help__sec p { font-size: 13px; line-height: 1.55; color: var(--txt); }
@@ -1826,6 +1837,11 @@ small.muted { font-size: 12px; }
   .dicebtn .die, .dicebtn--rolling .die, .huddie--rolling .die, .ring--low { animation: none !important; }
 }
 .gamemsg { flex: 1; font-size: 15px; line-height: 1.35; color: #ffffff; text-shadow: 0 1px 0 rgba(23, 43, 99, 0.3); }
+/* ≤5s on MY clock: the message becomes an amber pulsing countdown that names
+   the auto-play consequence (the rule that surprised every MiniPay tester). */
+.gamemsg--rush span { color: #ffe27a; font-weight: 800; animation: rushpulse 0.8s ease-in-out infinite; display: inline-block; }
+@keyframes rushpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .gamemsg--rush span { animation: none; } }
 .gamemsg small { display: block; color: rgba(255, 255, 255, 0.75); font-size: 11px; margin-top: 3px; }
 .gamemsg small a { color: #ffe27a; cursor: pointer; text-decoration: underline; }
 
@@ -2645,6 +2661,22 @@ small.muted { font-size: 12px; }
   pointer-events: none;
 }
 .plabel--active { text-shadow: 0 0 9px rgba(255, 255, 255, 0.7), 0 1px 3px rgba(0, 0, 0, 0.45); }
+/* Gold "YOU" chip after the local player's name — MiniPay testers couldn't
+   tell which side was theirs, and on a 15s clock that hesitation costs turns. */
+.plabel__you {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffd94d, #f5b301);
+  color: #4a3400;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-shadow: none;
+  vertical-align: 1.5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
 .plabel--q0 { left: 25%; top: 96.6%; }
 .plabel--q1 { left: 25%; top: 3.4%; }
 .plabel--q2 { left: 75%; top: 3.4%; }
