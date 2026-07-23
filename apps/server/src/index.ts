@@ -880,6 +880,9 @@ function wireRoom(room: Room): void {
         eloDelta: result.eloDelta,
         fairnessCommit: result.fairness.commit,
         serverSeed: result.fairness.serverSeed,
+        // Integrity tag: either seat being the operator house bot marks the whole
+        // game as house-generated, so audits/PoS reporting can exclude it.
+        isHouseBot: !!(pa.isHouseBot || pb.isHouseBot),
       })
       .then(() => Promise.all([store.updateElo(idA, pa.elo), store.updateElo(idB, pb.elo)]))
       .then(() => store.deleteRoom(result.gameId))
@@ -906,7 +909,12 @@ function wireRoom(room: Room): void {
     // Race Week leaderboard: a STAKED game between two event participants scores
     // (win + participation), anti-wash-traded inside scoreEventGame. Only while
     // the event is armed (raceFaucet != null). Fire-and-forget.
-    if (raceFaucet && result.stakeCents > 0 && pa.wallet && pb.wallet) {
+    // HOUSE BOT: a game touching the operator bot NEVER scores and NEVER draws
+    // the player-subsidy faucet. The bot holds no race:grant so scoreEventGame
+    // would return 0 regardless, but this also skips the JIT top-up below — the
+    // faucet must never fund the bot, and the human's own next-stake drip is
+    // handled by their real games, not this honeypot one.
+    if (raceFaucet && result.stakeCents > 0 && pa.wallet && pb.wallet && !pa.isHouseBot && !pb.isHouseBot) {
       const winW = result.winner === 0 ? pa.wallet : pb.wallet;
       const winN = result.winner === 0 ? pa.name : pb.name;
       const loseW = result.winner === 0 ? pb.wallet : pa.wallet;

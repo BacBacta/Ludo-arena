@@ -124,6 +124,11 @@ export interface GameRecord {
   eloDelta: number;
   fairnessCommit: string;
   serverSeed: string;
+  /** One seat was the operator HOUSE BOT (Race matchmaking fill / farmer
+   *  honeypot). Integrity anchor: lets an audit ALWAYS separate human-only
+   *  activity from house-generated volume (never present bot tx as organic).
+   *  Absent/false on every ordinary player-vs-player game. */
+  isHouseBot?: boolean;
 }
 
 /** Durable on-chain settlement job (E3.3): survives restarts, retried until mined. */

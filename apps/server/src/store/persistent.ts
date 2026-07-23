@@ -133,6 +133,10 @@ CREATE TABLE IF NOT EXISTS games (
 
 CREATE INDEX IF NOT EXISTS games_player_a_idx ON games(player_a);
 CREATE INDEX IF NOT EXISTS games_player_b_idx ON games(player_b);
+-- Race house bot (matchmaking fill / farmer honeypot): tag games where one seat
+-- was the operator bot, so an audit can always split human-only vs house volume.
+-- Added via ALTER so existing databases migrate; false for every prior game.
+ALTER TABLE games ADD COLUMN IF NOT EXISTS is_house_bot BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS settlements (
   game_id TEXT PRIMARY KEY,
@@ -351,8 +355,8 @@ export class PersistentStore implements Store {
   async recordGame(rec: GameRecord): Promise<void> {
     await this.pool.query(
       `INSERT INTO games (id, stake_cents, player_a, player_b, winner_seat, reason,
-                          payout_cents, rake_cents, elo_delta, fairness_commit, server_seed)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                          payout_cents, rake_cents, elo_delta, fairness_commit, server_seed, is_house_bot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT (id) DO NOTHING`,
       [
         rec.gameId,
@@ -366,6 +370,7 @@ export class PersistentStore implements Store {
         rec.eloDelta,
         rec.fairnessCommit,
         rec.serverSeed,
+        rec.isHouseBot ?? false,
       ],
     );
   }
