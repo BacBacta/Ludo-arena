@@ -21,6 +21,7 @@ import { ChallengeOfferModal, CollectionSheet, ComebackModal, DiceModal, DocModa
 import { SeasonSheet } from './components/SeasonSheet';
 import { RaceSheet } from './components/RaceSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
+import { HowToPlayModal, howToSeen } from './components/HowToPlay';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
 import { getBurnerWallet, restoreBurnerWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
@@ -149,6 +150,18 @@ export default function App() {
     if (state.screen === 'lobby' && state.soundOn) startMusic();
     else stopMusic();
   }, [state.screen, state.soundOn]);
+
+  // First-run rules primer: our Blitz deviates from the classic Ludo people
+  // know (2 pawns, 15s clock, auto-play, timeout forfeit) and the MiniPay test
+  // session showed nobody discovers that on their own. Auto-open the "How to
+  // play" sheet ONCE, on the lobby, before the first game ever. Never again
+  // after (howToSeen flips on first close, and veterans have games > 0).
+  useEffect(() => {
+    if (state.screen !== 'lobby' || state.profile.games > 0 || state.howToOpen) return;
+    if (howToSeen()) return;
+    dispatch({ type: 'HOWTO_MODAL', open: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on lobby entry only
+  }, [state.screen]);
 
   useEffect(() => {
     saveRetention({
@@ -1456,6 +1469,9 @@ export default function App() {
       />
       <NoWalletSheet />
       <HelpModal />
+      {/* Rules sheet: auto-opens once on a fresh install; its practice CTA
+          starts the SAME instant local-bot 1v1 the matchmaking fallback uses. */}
+      <HowToPlayModal onPractice={playBotNow} />
       <ComebackModal />
       <ProgressionSheet onViewProfile={onViewProfile} onBuyFreeze={buyFreeze} />
       <SeasonSheet onClaim={claimSeason} onBuyPremium={purchasePremium} />

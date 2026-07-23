@@ -174,6 +174,10 @@ export function GameScreen({
     return () => clearTimeout(id);
   }, [oppRollIndex]);
 
+  // Urgency countdown (hook — must run on EVERY render, before the null guard):
+  // ticks only while it is genuinely my turn to act.
+  const myClockFrac = useCountdown(activeTurn === mySeat && game?.turn === mySeat ? turnDeadlineTs : null);
+
   if (!game || !match) return null;
 
   // The HUD follows activeTurn (deferred until a move finishes animating), while
@@ -189,15 +193,23 @@ export function GameScreen({
   const handoff = myTurn && game.turn !== mySeat;
   const oppRolling = oppTumble !== null;
 
+  // Urgency nudge: with ≤5s left on MY clock, the message counts down and names
+  // the consequence — the auto-play rule surprised every MiniPay tester, and
+  // this teaches it exactly where it bites (nowhere else is it on screen).
+  const secsLeft = Math.ceil((myClockFrac * BLITZ.moveClockMs) / 1000);
+  const rush = myTurn && !handoff && (canRoll || needPick) && secsLeft <= 5;
+
   const message = handoff
     ? '…'
-    : needPick
-      ? `🎲 ${myVal} — ${t('pickToken')}`
-      : myTurn
-        ? t('yourTurn')
-        : oppRolling
-          ? `${match.opponent.name} ${t('oppRolling')}`
-          : `${match.opponent.name} ${t('oppTurn')}`;
+    : rush
+      ? t('hurry').replace('{s}', String(secsLeft))
+      : needPick
+        ? `🎲 ${myVal} — ${t('pickToken')}`
+        : myTurn
+          ? t('yourTurn')
+          : oppRolling
+            ? `${match.opponent.name} ${t('oppRolling')}`
+            : `${match.opponent.name} ${t('oppTurn')}`;
 
   // My label for this game: the server's `youName` wins over the local profile —
   // it is what the OPPONENT's screen shows for me, disambiguated if we both drew
@@ -269,7 +281,7 @@ export function GameScreen({
           // `youName` is the server's label for me (it disambiguates two players
           // who drew the same name); the local profile is only a fallback.
           banners={[
-            { seat: mySeat, name: myLabel.toUpperCase(), flag: profile.flag || '🌍', active: myTurn },
+            { seat: mySeat, name: myLabel.toUpperCase(), flag: profile.flag || '🌍', active: myTurn, you: true },
             { seat: oppSeat, name: match.opponent.name, flag: match.opponent.flag, active: !myTurn },
           ]}
           // Token skins (cosmetics phase 1): mine from local state, the
@@ -312,7 +324,7 @@ export function GameScreen({
               <Die value={myDieVal} rollKey={myRollIndex} skin={skin} spinning={pendingAction === 'roll'} />
             </button>
           </div>
-          <div className="gamemsg">
+          <div className={`gamemsg${rush ? ' gamemsg--rush' : ''}`}>
             <span>{message}</span>
             {lastDice && (
               <small>

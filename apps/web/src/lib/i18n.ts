@@ -350,6 +350,26 @@ const en = {
   skinHintTicket: 'Complete a daily challenge',
   skinHintLeague: 'Reach Gold League',
   skinSoon: 'Coming soon',
+  // "How to play" rules sheet — the ACTUAL Blitz rules (they differ from the
+  // classic Ludo the testers know: 2 pawns, 15s clock, auto-play, forfeit).
+  howToTitle: 'How to play',
+  htPawns: 'Your pawns',
+  htPawnsBody: 'Blitz Ludo: 2 pawns each (not 4). Yours sit at the BOTTOM of the board, under your name. First to bring both pawns to the centre wins.',
+  htDice: 'The die',
+  htDiceBody: 'Roll a 6 to bring a pawn out of base. A 6, a capture, or bringing a pawn home gives you another roll — but three 6s in a row lose the turn.',
+  htCapture: 'Captures & safe cells',
+  htCaptureBody: 'Land on a lone enemy pawn and it goes back to base. Star cells are safe, and two pawns of a colour on the same cell protect each other.',
+  htFinish: 'Reaching the centre',
+  htFinishBody: 'The final step needs the EXACT roll — no overshooting. Plan your last moves.',
+  htClock: 'The 15-second clock',
+  htClockBody: 'Every turn has 15 seconds. When it runs out the game plays a sensible move FOR you — and 3 missed turns in a row forfeit the match. In staked games that forfeit hands your stake to the opponent, so stay sharp!',
+  htPractice: 'Try a free practice game',
+  htGotIt: "Got it — let's play",
+  footRules: 'How to play',
+  // Turn-clock urgency nudge (teaches the auto-play rule where it bites).
+  hurry: '⏱ {s}s — play now or the turn plays itself!',
+  // Stake sheet: the payouts shown are NET (potCents already subtracts the rake).
+  rakeNote: 'Amounts shown are what the winner receives — the house fee is already deducted.',
 } as const;
 
 export type TKey = keyof typeof en;
@@ -706,6 +726,22 @@ const fr: Dict = {
   skinHintTicket: 'Réussis un défi du jour',
   skinHintLeague: 'Atteins la Ligue Gold',
   skinSoon: 'Bientôt',
+  howToTitle: 'Comment jouer',
+  htPawns: 'Tes pions',
+  htPawnsBody: 'Ludo Blitz : 2 pions chacun (pas 4). Les tiens sont EN BAS du plateau, sous ton nom. Le premier qui amène ses deux pions au centre gagne.',
+  htDice: 'Le dé',
+  htDiceBody: 'Fais un 6 pour sortir un pion de la base. Un 6, une capture ou un pion rentré te donnent un lancer de plus — mais trois 6 d’affilée font perdre le tour.',
+  htCapture: 'Captures et cases sûres',
+  htCaptureBody: 'Atterris sur un pion adverse seul et il retourne à sa base. Les cases étoilées sont sûres, et deux pions de la même couleur sur une case se protègent.',
+  htFinish: 'Atteindre le centre',
+  htFinishBody: 'Le dernier pas exige le lancer EXACT — pas de dépassement. Anticipe tes derniers coups.',
+  htClock: 'Le chrono de 15 secondes',
+  htClockBody: 'Chaque tour dure 15 secondes. À zéro, le jeu joue un coup sensé À TA PLACE — et 3 tours manqués d’affilée font perdre la partie par forfait. En partie misée, ce forfait donne ta mise à l’adversaire : reste attentif !',
+  htPractice: 'Essayer une partie d’entraînement',
+  htGotIt: 'Compris — on joue',
+  footRules: 'Comment jouer',
+  hurry: '⏱ {s}s — joue maintenant ou le tour se joue tout seul !',
+  rakeNote: 'Les montants affichés sont ce que le gagnant reçoit — les frais sont déjà déduits.',
 };
 
 const pt: Dict = {
@@ -1059,6 +1095,22 @@ const pt: Dict = {
   skinHintTicket: 'Complete um desafio diário',
   skinHintLeague: 'Alcance a Liga Gold',
   skinSoon: 'Em breve',
+  howToTitle: 'Como jogar',
+  htPawns: 'Seus peões',
+  htPawnsBody: 'Ludo Blitz: 2 peões cada (não 4). Os seus ficam EMBAIXO no tabuleiro, sob o seu nome. Quem levar os dois peões ao centro primeiro vence.',
+  htDice: 'O dado',
+  htDiceBody: 'Tire um 6 para sair da base. Um 6, uma captura ou um peão que chega em casa dão outra jogada — mas três 6 seguidos perdem a vez.',
+  htCapture: 'Capturas e casas seguras',
+  htCaptureBody: 'Caia sobre um peão inimigo sozinho e ele volta para a base. Casas com estrela são seguras, e dois peões da mesma cor na mesma casa se protegem.',
+  htFinish: 'Chegando ao centro',
+  htFinishBody: 'O passo final exige o número EXATO — sem ultrapassar. Planeje as últimas jogadas.',
+  htClock: 'O relógio de 15 segundos',
+  htClockBody: 'Cada turno tem 15 segundos. No fim, o jogo faz uma jogada POR você — e 3 turnos perdidos seguidos entregam a partida. Em jogos com aposta, esse W.O. dá sua aposta ao adversário: fique atento!',
+  htPractice: 'Jogar uma partida de treino',
+  htGotIt: 'Entendi — vamos jogar',
+  footRules: 'Como jogar',
+  hurry: '⏱ {s}s — jogue agora ou a vez joga sozinha!',
+  rakeNote: 'Os valores mostrados são o que o vencedor recebe — a taxa já está descontada.',
 };
 
 const es: Dict = {
@@ -1412,6 +1464,22 @@ const es: Dict = {
   skinHintTicket: 'Completa un reto diario',
   skinHintLeague: 'Alcanza la Liga Gold',
   skinSoon: 'Muy pronto',
+  howToTitle: 'Cómo jugar',
+  htPawns: 'Tus fichas',
+  htPawnsBody: 'Ludo Blitz: 2 fichas cada uno (no 4). Las tuyas están ABAJO en el tablero, bajo tu nombre. Gana quien lleve primero sus dos fichas al centro.',
+  htDice: 'El dado',
+  htDiceBody: 'Saca un 6 para salir de la base. Un 6, una captura o una ficha que llega a casa dan otra tirada — pero tres 6 seguidos pierden el turno.',
+  htCapture: 'Capturas y casillas seguras',
+  htCaptureBody: 'Cae sobre una ficha rival sola y vuelve a su base. Las casillas con estrella son seguras, y dos fichas del mismo color en una casilla se protegen.',
+  htFinish: 'Llegar al centro',
+  htFinishBody: 'El último paso exige la tirada EXACTA — sin pasarse. Planifica tus últimos movimientos.',
+  htClock: 'El reloj de 15 segundos',
+  htClockBody: 'Cada turno dura 15 segundos. Al agotarse, el juego mueve POR ti — y 3 turnos perdidos seguidos entregan la partida. En partidas con apuesta, ese abandono da tu apuesta al rival: ¡mantente atento!',
+  htPractice: 'Probar una partida de práctica',
+  htGotIt: 'Entendido — a jugar',
+  footRules: 'Cómo jugar',
+  hurry: '⏱ {s}s — ¡juega ya o el turno se juega solo!',
+  rakeNote: 'Los importes mostrados son lo que recibe el ganador — la comisión ya está descontada.',
 };
 
 const sw: Dict = {
@@ -1765,6 +1833,22 @@ const sw: Dict = {
   skinHintTicket: 'Kamilisha changamoto ya siku',
   skinHintLeague: 'Fikia Ligi ya Gold',
   skinSoon: 'Inakuja hivi karibuni',
+  howToTitle: 'Jinsi ya kucheza',
+  htPawns: 'Vibao vyako',
+  htPawnsBody: 'Ludo Blitz: vibao 2 kila mmoja (si 4). Vyako viko CHINI ya ubao, chini ya jina lako. Wa kwanza kufikisha vibao vyake viwili katikati ndiye mshindi.',
+  htDice: 'Dadu',
+  htDiceBody: 'Pata 6 ili kutoa kibao nje ya nyumba. 6, kukamata, au kibao kufika nyumbani hukupa mruko mwingine — lakini 6 tatu mfululizo hupoteza zamu.',
+  htCapture: 'Kukamata na visanduku salama',
+  htCaptureBody: 'Tua juu ya kibao cha adui kilicho peke yake na kinarudi nyumbani kwake. Visanduku vya nyota ni salama, na vibao viwili vya rangi moja kwenye kisanduku kimoja vinalindana.',
+  htFinish: 'Kufika katikati',
+  htFinishBody: 'Hatua ya mwisho inahitaji dadu KAMILI — hakuna kupita. Panga mienendo yako ya mwisho.',
+  htClock: 'Saa ya sekunde 15',
+  htClockBody: 'Kila zamu ina sekunde 15. Ikimalizika, mchezo unacheza KWA niaba yako — na zamu 3 zilizokoswa mfululizo zinapoteza mchezo. Kwenye mchezo wa dau, kushindwa huko kunampa mpinzani dau lako: kaa macho!',
+  htPractice: 'Jaribu mchezo wa mazoezi',
+  htGotIt: 'Nimeelewa — tucheze',
+  footRules: 'Jinsi ya kucheza',
+  hurry: '⏱ {s}s — cheza sasa au zamu itajichezea!',
+  rakeNote: 'Kiasi kinachoonyeshwa ni anachopokea mshindi — ada tayari imetolewa.',
 };
 
 const dict = { en, fr, pt, es, sw } as const;

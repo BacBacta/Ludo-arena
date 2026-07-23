@@ -260,6 +260,11 @@ export interface AppState {
   noWalletOpen: boolean;
   /** "How it works" help sheet (tickets, freeroll, league, fair dice, support). */
   helpOpen: boolean;
+  /** "How to play" rules sheet (the Blitz rules: 2 pawns, 15s clock, auto-play).
+   *  Auto-opens once on a fresh install — the MiniPay testers' #1 feedback was
+   *  "I don't understand how gameplay works", and in a REAL-MONEY game a rule
+   *  you never learned (auto-play, timeout forfeit) reads as theft. */
+  howToOpen: boolean;
   /** Read-only Terms/Privacy viewer (outside the staking consent gate). */
   legalDoc: 'tos' | 'privacy' | null;
   profileEditOpen: boolean;
@@ -348,6 +353,7 @@ export const initialState: AppState = {
   table4Open: false,
   noWalletOpen: false,
   helpOpen: false,
+  howToOpen: false,
   legalDoc: null,
   profileEditOpen: false,
   soundOn: soundEnabled(),
@@ -393,6 +399,7 @@ export type Action =
   | { type: 'LEAGUE_UPDATE'; league: LeagueState }
   | { type: 'NOWALLET'; open: boolean }
   | { type: 'HELP_MODAL'; open: boolean }
+  | { type: 'HOWTO_MODAL'; open: boolean }
   | { type: 'LEGAL_DOC'; doc: 'tos' | 'privacy' | null }
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
@@ -544,6 +551,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, noWalletOpen: a.open };
     case 'HELP_MODAL':
       return { ...s, helpOpen: a.open };
+    case 'HOWTO_MODAL':
+      return { ...s, howToOpen: a.open };
     case 'LEGAL_DOC':
       return { ...s, legalDoc: a.doc };
     case 'TABLE_CREATED':

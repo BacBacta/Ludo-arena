@@ -261,6 +261,9 @@ export function Lobby({
               </button>
             );
           })}
+          {/* The amounts above are NET (potCents subtracts the rake) — say so,
+              or a player doing 2×stake mental math reads the gap as skimming. */}
+          <small className="gstakes__rakenote">{t('rakeNote')}</small>
         </div>
       )}
       {walletBacked && limits.stakedTodayCents > 0 && (
@@ -718,6 +721,8 @@ export function Lobby({
       {/* info & legal: the landing said nothing about tickets/freeroll/league,
           and Terms/Privacy/Support had no entry point outside the staking gate. */}
       <div className="fairnote fairnote--links">
+        <button type="button" className="linklike" onClick={() => { playTap(); dispatch({ type: 'HOWTO_MODAL', open: true }); }}>{t('footRules')}</button>
+        {' · '}
         <button type="button" className="linklike" onClick={() => { playTap(); dispatch({ type: 'HELP_MODAL', open: true }); }}>{t('footHelp')}</button>
         {' · '}
         <a href={`mailto:${SUPPORT_EMAIL}`}>{t('footSupport')}</a>

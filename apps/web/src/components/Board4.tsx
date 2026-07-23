@@ -11,6 +11,7 @@ import type { TokenPattern } from '../lib/tokenSkins';
 import { boardThemeById, type BoardTheme } from '../lib/boardThemes';
 import { PegPattern } from './Board';
 import { playHop } from '../lib/sound';
+import { t } from '../lib/i18n';
 
 /* True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — saturated,
    not washed. The base [1] is the real flat panel colour. */
@@ -41,6 +42,8 @@ export interface PlayerBanner4 {
   name: string;
   flag: string;
   active: boolean;
+  /** The local player's banner — renders the gold "YOU" chip (see Board). */
+  you?: boolean;
 }
 
 function homeCenter(qx: number, qy: number): [number, number] {
@@ -453,6 +456,7 @@ export function Board4({ game, mySeat, onTokenTap, banners, themeId, tokenPatter
       {banners?.map((b) => (
         <div key={b.seat} className={`plabel plabel--q${shownQuad(b.seat)}${b.active ? ' plabel--active' : ''}`}>
           {b.name}
+          {b.you && <span className="plabel__you">{t('you').toUpperCase()}</span>}
         </div>
       ))}
     </div>
