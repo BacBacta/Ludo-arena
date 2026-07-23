@@ -35,7 +35,13 @@ RACE_WEEK_ACTIVE=true RACE_JIT_FUNDING=true \
 RACE_FAUCET_PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d \
 RACE_QUOTA_CENTS=10 RACE_PER_GAME_CENTS=2 RACE_POOL_CENTS=3000 \
 RACE_SEED_CENTS=10 RACE_PRIZE_POOL_CENTS=3000 \
-SETTLEMENT_RPC=http://127.0.0.1:8545 PORT=8787 npx tsx src/index.ts &
+SETTLEMENT_RPC=http://127.0.0.1:8545 PORT=8787 \
+`# Phase F (house bot): arm it + fast fallback + full-speed bot moves. The bot`\
+`# wallet is hardhat #3, pre-funded by armChain (cUSD mint + ETH), NOT the faucet.`\
+RACE_HOUSE_BOT_ENABLED=true \
+RACE_HOUSE_BOT_PRIVATE_KEY=0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6 \
+RACE_BOT_FALLBACK_MS=2000 BOT_THINK_MS=0 DIE_SETTLE_MS=0 \
+npx tsx src/index.ts &
 
 # 4. la campagne (~10-15 min : plusieurs parties complètes + délais de grâce)
 node e2e/race/sim-race.mjs
