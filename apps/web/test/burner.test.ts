@@ -113,3 +113,31 @@ describe('gas currency invariant (the "asked for CELO" incident)', () => {
     expect(restored?.payGasInStable).toBe(true);
   });
 });
+
+describe('wallet-mode preference (the "I cannot connect another wallet" report)', () => {
+  beforeEach(() => localStorage.clear());
+
+  // Once connectWalletCta always returned the burner outside MiniPay, the
+  // disconnect button became a no-op: it cleared state, then the next connect
+  // re-derived the SAME burner from its persisted key. The preference is what
+  // lets the switch actually reach the player's own wallet — and it must
+  // survive a reload, or the choice silently reverts on the next visit.
+  it('defaults to the app burner and flips both ways', async () => {
+    const { prefersExternalWallet, setPrefersExternalWallet } = await import('../src/lib/burner');
+    expect(prefersExternalWallet()).toBe(false); // burner is the default
+    setPrefersExternalWallet(true);
+    expect(prefersExternalWallet()).toBe(true);
+    setPrefersExternalWallet(false);
+    expect(prefersExternalWallet()).toBe(false);
+  });
+
+  it('is independent of the burner key — switching away never destroys the burner', async () => {
+    const { getBurnerWallet, hasBurner, prefersExternalWallet, setPrefersExternalWallet } = await import('../src/lib/burner');
+    const addr = getBurnerWallet().address;
+    setPrefersExternalWallet(true); // player pairs their own wallet…
+    expect(hasBurner()).toBe(true); // …the burner (and its funds) stay put
+    setPrefersExternalWallet(false);
+    expect(getBurnerWallet().address).toBe(addr); // and it comes back identical
+    expect(prefersExternalWallet()).toBe(false);
+  });
+});

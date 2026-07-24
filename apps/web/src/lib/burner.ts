@@ -105,3 +105,30 @@ export function clearBurner(): void {
     /* nothing to clear */
   }
 }
+
+/** Wallet-mode preference (non-MiniPay only). The app burner is the DEFAULT play
+ *  wallet — it pays gas in the stablecoin, so a player never needs CELO. But a
+ *  player who wants to stake their OWN funds must be able to pair their own
+ *  wallet, and once connectWalletCta always returned the burner the disconnect
+ *  button had nothing left to do (reconnect handed back the same burner) — the
+ *  "I can't connect a different wallet" report. This flag is what the TopBar
+ *  switch flips; it survives reloads so the choice sticks. */
+const WALLET_MODE_KEY = 'ludo.walletExternal';
+
+/** True when the player explicitly chose THEIR OWN wallet over the app burner. */
+export function prefersExternalWallet(): boolean {
+  try {
+    return localStorage.getItem(WALLET_MODE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setPrefersExternalWallet(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(WALLET_MODE_KEY, '1');
+    else localStorage.removeItem(WALLET_MODE_KEY);
+  } catch {
+    /* storage unavailable — the choice just won't survive a reload */
+  }
+}

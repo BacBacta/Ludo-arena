@@ -23,7 +23,7 @@ import { RaceSheet } from './components/RaceSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
 import { HowToPlayModal, howToSeen } from './components/HowToPlay';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
-import { getBurnerWallet, restoreBurnerWallet } from './lib/burner';
+import { getBurnerWallet, prefersExternalWallet, restoreBurnerWallet, setPrefersExternalWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
 import { needsPreLockSeed } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
@@ -209,7 +209,11 @@ export default function App() {
       // voids a game whose on-chain depositor isn't the wallet announced in the
       // hello (sameDepositors / the [stake-gate] abort), so the wallet can never
       // be swapped later in the flow.
-      if (!isMiniPay()) {
+      // …UNLESS the player explicitly asked for their OWN wallet (the TopBar
+      // switch). Staking from it needs native CELO — that is the informed
+      // trade-off they opted into — but without this escape the disconnect
+      // button was a no-op: every reconnect handed back the same burner.
+      if (!isMiniPay() && !prefersExternalWallet()) {
         const burner = getBurnerWallet(); // reuses the persisted key; mints once
         walletRef.current = burner;
         dispatch({ type: 'SET_WALLET_ADDRESS', address: burner.address });
@@ -229,6 +233,19 @@ export default function App() {
         // WalletConnect — open the actionable MiniPay sheet instead. A
         // present-but-refusing injected provider (rejected prompt), or a
         // dismissed WalletConnect modal, keeps the simple toast.
+        // Outside MiniPay the app burner is always a working fallback, so a
+        // refused/absent external wallet must never strand the player: drop the
+        // preference and hand back the burner rather than leaving them unable
+        // to play at all.
+        if (!isMiniPay()) {
+          setPrefersExternalWallet(false);
+          const burner = getBurnerWallet();
+          walletRef.current = burner;
+          dispatch({ type: 'SET_WALLET_ADDRESS', address: burner.address });
+          void refreshBalance(burner);
+          if (!silent) dispatch({ type: 'TOAST', message: t('walletAppRestored') });
+          return true;
+        }
         if (!silent) {
           if (!hasInjectedWallet() && !walletConnectAvailable()) dispatch({ type: 'NOWALLET', open: true });
           else dispatch({ type: 'TOAST', message: t('noWallet') });
@@ -248,11 +265,29 @@ export default function App() {
    *  client + closes any WalletConnect session so the next connect starts fresh
    *  and re-prompts the account picker. */
   const disconnectWallet = useCallback(async (): Promise<void> => {
+    // A two-way SWITCH, not a dead-end disconnect. Outside MiniPay the burner is
+    // the default play wallet, so simply clearing state changed nothing — the
+    // next connect re-derived the SAME burner from its persisted key and the
+    // player could never pair a different wallet. Flip the preference instead:
+    //   on the burner  → switch to THEIR wallet and open the picker now
+    //   on their wallet → drop it (and the WalletConnect session) → back to the burner
+    const goExternal = !prefersExternalWallet();
     walletRef.current = null;
     dispatch({ type: 'WALLET_DISCONNECT' });
     await disconnectWalletConnect().catch(() => undefined);
-    dispatch({ type: 'TOAST', message: t('walletDisconnected') });
-  }, [dispatch]);
+    setPrefersExternalWallet(goExternal);
+    if (goExternal) {
+      // Opens the injected prompt / WalletConnect modal straight away — the tap
+      // WAS the intent to pair, so making them hunt for a second button is noise.
+      const ok = await connectWalletCta();
+      // Staking from an external wallet pays gas in native CELO (it cannot sign
+      // CIP-64), so say it once, up front, instead of at the first failed stake.
+      if (ok && prefersExternalWallet()) dispatch({ type: 'TOAST', message: t('walletExternalGas') });
+      return;
+    }
+    dispatch({ type: 'TOAST', message: t('walletAppRestored') });
+    void connectWalletCta(true); // silently re-install the burner
+  }, [dispatch, connectWalletCta]);
 
   // Inside MiniPay the wallet is ambient — connect silently on launch so the
   // header shows the real balance and the staked tiers are playable at once.
