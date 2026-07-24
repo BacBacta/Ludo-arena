@@ -1620,9 +1620,15 @@ wss.on('connection', (ws, req) => {
         // faces the non-scoring bot instead, and the partner goes back in queue.
         // Kills the reciprocal farm at the exact pairing moment.
         if (houseBot && msg.stake === RACE_STAKE_CENTS && (await raceCollusionSuspect(pair[0].session, pair[1].session))) {
-          matchmaker.join(msg.stake, pair[0]); // re-insert the waiter (may re-pair with someone else)
-          await summonHouseBotFor(session);
-          break;
+          // Summon FIRST: the bot declines when it cannot fund the lock, and the
+          // seeker is no longer in the queue at this point — re-inserting the
+          // partner before knowing would strand the seeker on "searching…".
+          // Bot unavailable ⇒ fall through to the normal pairing (denying the
+          // farm matters less than leaving a player with no game at all).
+          if (await summonHouseBotFor(session)) {
+            matchmaker.join(msg.stake, pair[0]); // re-insert the waiter (may re-pair with someone else)
+            break;
+          }
         }
         await store.queueRemove(pair[0].session.id);
         await startGame(msg.stake, pair[0].session, pair[1].session);
@@ -2967,13 +2973,42 @@ async function raceCollusionSuspect(a: Session, b: Session): Promise<boolean> {
   }
 }
 
+/** Rate limiter for the "bot is broke" alert: the summon path runs on every Race
+ *  seeker, and a dry wallet would otherwise page ops once per second. */
+let lastBotFundsAlert = 0;
+const BOT_FUNDS_ALERT_EVERY_MS = 10 * 60_000;
+
+/** The bot cannot fund a lock — say so ONCE per window, on the ops channel. This
+ *  is the line that was missing: an unfunded bot used to disappear from
+ *  matchmaking with no log, no alert, and players blaming "stake lock failed". */
+function alertBotOutOfFunds(aff: { balanceWei: bigint; requiredWei: bigint; reason?: string }): void {
+  const now = Date.now();
+  if (now - lastBotFundsAlert < BOT_FUNDS_ALERT_EVERY_MS) return;
+  lastBotFundsAlert = now;
+  const msg = `[house-bot][ALERT] cannot fund a Race lock — NOT filling matchmaking. ${aff.reason ?? ''} Fund ${houseBot?.address ?? '(bot wallet)'} with the stake token to restore bot fills.`;
+  console.error(msg);
+  postOpsAlert(msg);
+}
+
 /** Pair a real Race seeker against the house bot (fallback fill or farmer
  *  intercept). No-op unless the bot is armed and the seeker is a wallet-backed,
  *  non-busy human on the Race tier. Leaves the queue exactly as startGame's
- *  busy-seat guard expects (caller removed the seeker from the matchmaker). */
-async function summonHouseBotFor(human: Session): Promise<void> {
-  if (!houseBot || !human.wallet || human.room || human.pendingGameId) return;
+ *  busy-seat guard expects (caller removed the seeker from the matchmaker).
+ *
+ *  SOLVENCY GATE: a bot that cannot cover stake + gas reservation must NOT be
+ *  paired. Historically it was: the lock then failed on funds, the match aborted
+ *  and refunded, and the player read it as a broken game. Refusing here leaves
+ *  the seeker queued for a real human instead — degraded, but never a doomed
+ *  match — and pages ops so the wallet gets refilled. */
+async function summonHouseBotFor(human: Session): Promise<boolean> {
+  if (!houseBot || !human.wallet || human.room || human.pendingGameId) return false;
+  const aff = await houseBot.affordability(RACE_STAKE_CENTS);
+  if (!aff.ok) {
+    alertBotOutOfFunds(aff);
+    return false;
+  }
   await startGame(RACE_STAKE_CENTS as StakeCents, human, makeHouseBotSession());
+  return true;
 }
 
 async function startGame(stake: StakeCents, a: Session, b: Session, freeroll = false, fromTable = false): Promise<void> {
@@ -3194,7 +3229,12 @@ function maybeStartPending(p: PendingReveal): void {
     const botSeat: Seat | null = p.a.isHouseBot ? 0 : p.b.isHouseBot ? 1 : null;
     if (botSeat !== null) {
       void houseBot.lockStake(p.gameId, p.stake, p.commit).catch((e) => {
+        // PAGE OPS: this cost a real player their match. It used to die in a log,
+        // so a bot that had stopped locking (dry wallet, cap rejected, RPC down)
+        // was only ever discovered through player complaints.
+        const cause = e instanceof Error ? e.message : String(e);
         console.error(`[house-bot] lockStake failed for ${p.gameId} — aborting + refunding the human`, e);
+        postOpsAlert(`[house-bot][ALERT] stake lock FAILED for game ${p.gameId} — the player's match was cancelled + refunded. Cause: ${cause}`);
         abortPendingStaked(p, 'Match cancelled — any locked stake is refunded shortly.');
       });
     }
@@ -3594,15 +3634,23 @@ setInterval(() => {
     // Same farmer intercept as queue.join: a wash-trading Race pair is split —
     // the seeker faces the bot, the partner returns to queue.
     if (houseBot && stake === RACE_STAKE_CENTS) {
-      void raceCollusionSuspect(pair[0].session, pair[1].session).then((suspect) => {
-        if (suspect) {
-          matchmaker.join(stake, pair[1]);
-          return store.queueRemove(pair[0].session.id).then(() => summonHouseBotFor(pair[0].session));
-        }
-        return Promise.all([store.queueRemove(pair[0].session.id), store.queueRemove(pair[1].session.id)]).then(() =>
-          startGame(stake, pair[0].session, pair[1].session),
-        );
-      }).catch((e) => console.error('[ludo-server] sweep startGame', e));
+      void raceCollusionSuspect(pair[0].session, pair[1].session)
+        .then(async (suspect) => {
+          if (suspect) {
+            await store.queueRemove(pair[0].session.id);
+            // Both seats are already out of the matchmaker (sweep spliced them),
+            // so a bot that declines for lack of funds would leave the seeker
+            // with no game AND no queue entry. Only re-queue the partner once the
+            // bot game actually started; otherwise pair them normally.
+            if (await summonHouseBotFor(pair[0].session)) {
+              matchmaker.join(stake, pair[1]);
+              return;
+            }
+          }
+          await Promise.all([store.queueRemove(pair[0].session.id), store.queueRemove(pair[1].session.id)]);
+          await startGame(stake, pair[0].session, pair[1].session);
+        })
+        .catch((e) => console.error('[ludo-server] sweep startGame', e));
       continue;
     }
     Promise.all([store.queueRemove(pair[0].session.id), store.queueRemove(pair[1].session.id)])
@@ -3614,17 +3662,71 @@ setInterval(() => {
   // pairing pass so a fresh human is always preferred over the bot.
   if (houseBot) {
     const cutoff = Date.now() - RACE_BOT_FALLBACK_MS;
-    for (const e of matchmaker.waitersOlderThan(RACE_STAKE_CENTS as StakeCents, cutoff)) {
-      const human = e.session;
-      if (!human.wallet || human.room || human.pendingGameId) continue;
-      matchmaker.leave(RACE_STAKE_CENTS as StakeCents, human);
-      void store.queueRemove(human.id).then(() => summonHouseBotFor(human)).catch((err) => console.error('[house-bot] fallback summon', err));
+    const waiters = matchmaker
+      .waitersOlderThan(RACE_STAKE_CENTS as StakeCents, cutoff)
+      .filter((e) => e.session.wallet && !e.session.room && !e.session.pendingGameId);
+    // SOLVENCY FIRST: this path REMOVES the seeker from the queue before pairing,
+    // so an unaffordable bot would strand them outside matchmaking entirely. Ask
+    // once per sweep (not per waiter) and skip the whole pass while the bot is
+    // broke — everyone simply stays queued for a human.
+    if (waiters.length > 0) {
+      void houseBot
+        .affordability(RACE_STAKE_CENTS)
+        .then((aff) => {
+          if (!aff.ok) {
+            alertBotOutOfFunds(aff);
+            return;
+          }
+          for (const e of waiters) {
+            const human = e.session;
+            if (!human.wallet || human.room || human.pendingGameId) continue;
+            matchmaker.leave(RACE_STAKE_CENTS as StakeCents, human);
+            void store
+              .queueRemove(human.id)
+              .then(() => summonHouseBotFor(human))
+              .catch((err) => console.error('[house-bot] fallback summon', err));
+          }
+        })
+        .catch((err) => console.error('[house-bot] fallback affordability', err));
     }
   }
   for (const { pair } of freerollMatchmaker.sweep()) {
     startFreeroll(pair[0].session, pair[1].session).catch((e) => console.error('[ludo-server] sweep freeroll', e));
   }
 }, 1_000);
+
+// HOUSE-BOT RUNWAY WATCHDOG. The bot's wallet drains a gas fee per game and its
+// exhaustion is INVISIBLE from the outside: it simply stops being offered, and
+// (before the solvency gate above) every Race match it was pulled into aborted.
+// Poll the runway and page ops while it is thin, so the wallet is refilled BEFORE
+// it strands anyone. Read-only, never blocks play, and unref'd so it can't hold
+// the process open.
+const BOT_RUNWAY_WARN_LOCKS = Number(process.env.RACE_BOT_RUNWAY_WARN ?? 25);
+if (houseBot) {
+  const bot = houseBot;
+  let lastRunwayWarn = 0;
+  const checkBotRunway = async (): Promise<void> => {
+    try {
+      const aff = await bot.affordability(RACE_STAKE_CENTS);
+      if (aff.locksLeft < 0) return; // the check itself failed — already logged
+      if (!aff.ok) {
+        alertBotOutOfFunds(aff);
+        return;
+      }
+      const now = Date.now();
+      if (aff.locksLeft <= BOT_RUNWAY_WARN_LOCKS && now - lastRunwayWarn >= BOT_FUNDS_ALERT_EVERY_MS) {
+        lastRunwayWarn = now;
+        const msg = `[house-bot][WARN] Race bot runway is thin — about ${aff.locksLeft} lock(s) left (balance ${aff.balanceWei}, ${aff.requiredWei} per lock incl. gas reservation). Top up ${bot.address} before it stops filling matchmaking.`;
+        console.warn(msg);
+        postOpsAlert(msg);
+      }
+    } catch {
+      /* a watchdog must never throw into the event loop */
+    }
+  };
+  setTimeout(() => void checkBotRunway(), 30_000).unref?.();
+  setInterval(() => void checkBotRunway(), 10 * 60_000).unref?.();
+}
 
 http.listen(PORT, () => {
   console.log(`[ludo-server] ws://localhost:${PORT} (health: http://localhost:${PORT}/health)`);
