@@ -33,6 +33,7 @@ import {
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { DiceSkin, DieMaterial } from '../lib/diceSkins';
+import { DIE_TUMBLE_MS } from '../lib/pacing';
 
 const PIPS: Record<number, Array<[number, number]>> = {
   1: [[0.5, 0.5]],
@@ -142,11 +143,24 @@ function disposeMaterials(mats: Material[] | Material): void {
 
 export interface DieEngine {
   roll(value: number, tumble: boolean): void;
+  /** Optimistic in-flight spin (online RTT): tumble continuously from the tap
+   *  until the server value lands via roll(). Mirrors Die3D's `spinning` prop. */
+  setSpinning(on: boolean): void;
   setSkin(skin: DiceSkin): void;
   dispose(): void;
 }
 
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+
+/** Quick, decisive settle straight out of a spin — mirrors .die3d--landing
+ *  (0.32s): the die already tumbled through the RTT, so the server value just
+ *  snaps onto the face and the number reads almost at once. A full tumble
+ *  stacked on top of the spin left the result visible for only ~150ms before
+ *  the auto-move fired and the turn passed (the reported instability). */
+const LAND_MS = 320;
+/** Continuous spin rate (rad/s) — unequal X/Y so it reads as a somersault. */
+const SPIN_X = 5.5;
+const SPIN_Y = 4.2;
 
 /** Build a WebGL die inside `host`. Throws if WebGL is unavailable (caller falls
  *  back to the CSS die). Renders on-demand: it draws while tumbling, then rests. */
@@ -192,36 +206,98 @@ export function createDieEngine(host: HTMLElement, skin: DiceSkin, value: number
   seat(value);
 
   let raf = 0;
-  let anim: { from: Euler; toX: number; toY: number; toZ: number; end: [number, number]; start: number } | null = null;
+  let anim: { from: Euler; toX: number; toY: number; toZ: number; end: [number, number]; start: number; dur: number } | null = null;
+  let spinning = false; // optimistic in-flight spin (no value yet)
+  let justSpun = false; // the next roll follows a spin → short landing, not a fresh tumble
+  let lastSpinTs = 0;
+  let lastValue = value; // last seated/landed value (fallback settle target)
   const renderOnce = (): void => renderer.render(scene, camera);
   renderOnce();
 
   const loop = (): void => {
-    if (!anim) { raf = 0; return; }
-    const p = Math.min((performance.now() - anim.start) / 850, 1);
-    const e = easeOutCubic(p);
-    die.rotation.x = anim.from.x + (anim.toX - anim.from.x) * e;
-    die.rotation.y = anim.from.y + (anim.toY - anim.from.y) * e;
-    die.rotation.z = anim.from.z + (anim.toZ - anim.from.z) * e;
-    renderOnce();
-    if (p >= 1) { die.rotation.set(anim.end[0], anim.end[1], 0); renderOnce(); anim = null; raf = 0; return; }
+    const now = performance.now();
+    if (anim) {
+      const p = Math.min((now - anim.start) / anim.dur, 1);
+      const e = easeOutCubic(p);
+      die.rotation.x = anim.from.x + (anim.toX - anim.from.x) * e;
+      die.rotation.y = anim.from.y + (anim.toY - anim.from.y) * e;
+      die.rotation.z = anim.from.z + (anim.toZ - anim.from.z) * e;
+      renderOnce();
+      if (p >= 1) {
+        die.rotation.set(anim.end[0], anim.end[1], 0);
+        renderOnce();
+        anim = null;
+        if (!spinning) { raf = 0; return; }
+        lastSpinTs = now; // an in-flight spin resumes seamlessly after the anim
+      }
+    } else if (spinning) {
+      // Constant forward winding through the RTT (clamped dt so a background
+      // tab doesn't fast-forward into a violent jump on return).
+      const dt = Math.min((now - lastSpinTs) / 1000, 0.05);
+      lastSpinTs = now;
+      die.rotation.x += SPIN_X * dt;
+      die.rotation.y += SPIN_Y * dt;
+      renderOnce();
+    } else { raf = 0; return; }
     raf = requestAnimationFrame(loop);
+  };
+  const kick = (): void => { if (!raf) raf = requestAnimationFrame(loop); };
+
+  /** Next rest orientation strictly FORWARD of the current rotation (never
+   *  rewinds — same rule as Die3D's wound-up frame settle). */
+  const forwardRest = (v: number): { toX: number; toY: number; end: [number, number] } => {
+    const [rx, ry] = rest(v);
+    const TAU = Math.PI * 2;
+    const toX = rx + TAU * (Math.floor((die.rotation.x - rx) / TAU) + 1);
+    const toY = ry + TAU * (Math.floor((die.rotation.y - ry) / TAU) + 1);
+    return { toX, toY, end: [rx, ry] };
   };
 
   return {
     roll(v, tumble) {
+      spinning = false; // a roll always resolves the in-flight spin
+      lastValue = v;
       const [rx, ry] = rest(v);
-      if (!tumble) { seat(v); renderOnce(); return; }
+      if (!tumble) { anim = null; seat(v); renderOnce(); return; }
       const from = die.rotation.clone();
-      anim = {
-        from,
-        toX: rx + Math.PI * 2 * (2 + Math.floor(Math.random() * 2)),
-        toY: ry + Math.PI * 2 * (3 + Math.floor(Math.random() * 2)),
-        toZ: Math.PI * (Math.random() * 1.2 - 0.6),
-        end: [rx, ry],
-        start: performance.now(),
-      };
-      if (!raf) raf = requestAnimationFrame(loop);
+      if (justSpun) {
+        // Landing out of an optimistic spin: snap forward onto the face in
+        // LAND_MS — the die already tumbled through the RTT (mirrors Die3D).
+        justSpun = false;
+        const f = forwardRest(v);
+        anim = { from, toX: f.toX, toY: f.toY, toZ: 0, end: f.end, start: performance.now(), dur: LAND_MS };
+      } else {
+        anim = {
+          from,
+          toX: rx + Math.PI * 2 * (2 + Math.floor(Math.random() * 2)),
+          toY: ry + Math.PI * 2 * (3 + Math.floor(Math.random() * 2)),
+          toZ: Math.PI * (Math.random() * 1.2 - 0.6),
+          end: [rx, ry],
+          start: performance.now(),
+          dur: DIE_TUMBLE_MS,
+        };
+      }
+      kick();
+    },
+    setSpinning(on) {
+      if (on === spinning) return;
+      spinning = on;
+      if (on) {
+        justSpun = true;
+        lastSpinTs = performance.now();
+        kick();
+        return;
+      }
+      // Spin ended WITHOUT a roll in the same commit (server error / cleared
+      // intent): settle softly onto the last value instead of freezing mid-air.
+      // The normal path (roll() in the same React commit) replaces this anim
+      // immediately, so it never shows.
+      if (justSpun && !anim) {
+        justSpun = false;
+        const f = forwardRest(lastValue);
+        anim = { from: die.rotation.clone(), toX: f.toX, toY: f.toY, toZ: 0, end: f.end, start: performance.now(), dur: LAND_MS };
+        kick();
+      }
     },
     setSkin(next) {
       disposeMaterials(materials);
