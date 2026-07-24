@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img">
+  <circle cx="256" cy="256" r="248" fill="#F4EFE6"/>
+  <circle cx="256" cy="256" r="238" fill="none" stroke="#F5B301" stroke-width="14" opacity="0.28"/>
+
+  <path d="M256 44 L312 172 L450 186 L346 278 L378 414 L256 342 L134 414 L166 278 L62 186 L200 172 Z" fill="#F5B301" stroke="#B87E00" stroke-width="9" stroke-linejoin="round"/>
+  <path d="M256 44 L312 172 L450 186 L346 278 L256 254 L166 278 L62 186 L200 172 Z" fill="#fff" opacity="0.12"/>
+  
+  <circle cx="227.65" cy="216" r="17.85" fill="#fff"/>
+  <circle cx="284.35" cy="216" r="17.85" fill="#fff"/>
+  <circle cx="231.85" cy="220.2" r="8.925" fill="#16211C"/>
+  <circle cx="288.55" cy="220.2" r="8.925" fill="#16211C"/>
+  <circle cx="235" cy="216" r="3.1500000000000004" fill="#fff"/>
+  <circle cx="291.7" cy="216" r="3.1500000000000004" fill="#fff"/>
+  <path d="M226.6 249.6 Q256 270.6 285.4 249.6" fill="none" stroke="#16211C" stroke-width="9.450000000000001" stroke-linecap="round"/>
+  <circle cx="201.4" cy="241.2" r="10.5" fill="#FF9D76" opacity="0.45"/>
+  <circle cx="310.6" cy="241.2" r="10.5" fill="#FF9D76" opacity="0.45"/>
+</svg>

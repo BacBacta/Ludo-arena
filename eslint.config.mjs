@@ -15,6 +15,7 @@ export default tseslint.config(
       '**/*.d.ts',
       'packages/contracts/**', // Solidity + forge, not JS/TS-linted here
       'apps/web/scripts/**', // one-off screenshot tooling
+      'apps/web/art/**', // brand-asset generators (plain-node, emit static SVG/PNG — not app code)
       'e2e/**', // standalone audit harness (mixed browser/node globals, run via node/playwright — not app code)
       'simulation/**', // standalone bot-sim harness (Phase 4, run via node/tsx — not app code)
       'apps/server/scripts/*.cjs', // ops probes shipped raw over ssh (plain-node CJS, not app code)

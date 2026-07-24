@@ -424,6 +424,12 @@ export function isAvatarFrame(id: string): id is AvatarFrame {
  */
 export const AVATARS = [
   'none',
+  // Ludo Arena ORIGINALS — first-party mascots (100% project-owned art, drawn
+  // from the brand palette; masters in apps/web/art/avatars). The exclusive set
+  // no other app has — shown first in the picker.
+  'ludo_blue', 'ludo_green', 'ludo_orange', 'ludo_gold',
+  'ludo_king', 'ludo_queen', 'ludo_racer', 'ludo_wizard',
+  'ludo_dice', 'ludo_champion', 'ludo_star', 'ludo_pirate',
   // Person · Man · Woman, each across 6 skin tones (default + light→dark)
   'person_default', 'person_light', 'person_medium-light', 'person_medium', 'person_medium-dark', 'person_dark',
   'man_default', 'man_light', 'man_medium-light', 'man_medium', 'man_medium-dark', 'man_dark',

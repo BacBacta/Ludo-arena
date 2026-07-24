@@ -11,7 +11,7 @@ import { TOKEN_SKINS, ENTRANCE_FX, VICTORY_FX, tokenSkinById, entranceFxById, vi
 import { BOARD_THEMES, boardThemeById } from '../lib/boardThemes';
 import { toastDurationMs } from '../lib/toast';
 import { TokenPreview, BoardThemePreview } from './Board';
-import { avatarSrc, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
+import { avatarSrc, AVATAR_ORIGINALS, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
 import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
 import { devUnlockCosmetics } from '../lib/devUnlock';
 import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
@@ -968,7 +968,7 @@ export function ProfileEditor({ onSave }: { onSave(name: string, flag: string, a
           >
             <span aria-hidden="true">{flag}</span>
           </button>
-          {[...AVATAR_FACES, ...AVATAR_CHARACTERS].map((id) => (
+          {[...AVATAR_ORIGINALS, ...AVATAR_FACES, ...AVATAR_CHARACTERS].map((id) => (
             <button
               key={id}
               className={`pe__avbtn${avatar === id ? ' pe__avbtn--on' : ''}`}

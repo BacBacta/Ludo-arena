@@ -1,5 +1,14 @@
 Profile avatars (av_*.png)
 ==========================
+
+Ludo Arena ORIGINALS (av_ludo_*.png)
+------------------------------------
+First-party brand mascots, 100% original work owned by the Ludo Arena project.
+Drawn from the brand palette (icon.svg / global.css); SVG masters + generator:
+apps/web/art/avatars (generate.mjs → render.mjs). All rights reserved.
+
+Fluent set (all other av_*.png)
+-------------------------------
 Source: Microsoft Fluent Emoji — https://github.com/microsoft/fluentui-emoji
 Licence: MIT (commercial use permitted, no attribution required; this notice is
 kept as good practice).
