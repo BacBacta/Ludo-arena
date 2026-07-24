@@ -96,3 +96,28 @@ describe('pre-lock seed top-up decision (the balance-erosion safety net)', () =>
     expect(needsPreLockSeed(null)).toBe(false); // never block the lock on a read failure
   });
 });
+
+// The live mainnet failure this rung exists for: "the fee cap (maxFeePerGas =
+// 58.2567582 gwei) cannot be lower than the block base fee" — which is exactly
+// 4 x 13.8141895 + 3 gwei, i.e. the OLD HIGH_CAP had already run and still came
+// in under the base fee at inclusion. The rung must clear a much bigger spike
+// while its up-front reservation still fits the Race burner's 10c gas seed.
+describe('HIGH_CAP spike headroom vs the 10c gas seed', () => {
+  const GWEI = 1_000_000_000n;
+  const CALM_FLOOR = 13_814_189_500n; // the floor the failing lock actually read
+  const cents = (wei: bigint): number => Number((wei * 100_000n) / 10n ** 18n) / 1000;
+
+  it('clears a 10x base-fee spike (the old 4x did not)', () => {
+    const cap = planCapWei(HIGH_CAP, CALM_FLOOR);
+    expect(cap).toBeGreaterThan(CALM_FLOOR * 10n); // survives a 10x spike
+    expect(cap).toBeGreaterThan(58_256_758_200n); // strictly above the cap that failed
+  });
+
+  it('its reservation still fits the burner: join + stake stays under the seed', () => {
+    const cap = planCapWei(HIGH_CAP, CALM_FLOOR);
+    const joinReserve = cents(cap * planGasLimit(HIGH_CAP, 250_000n)); // escrow join
+    const approveReserve = cents(cap * planGasLimit(HIGH_CAP, 50_000n));
+    expect(joinReserve + 1).toBeLessThan(10); // + the 1c stake, inside the 10c seed
+    expect(approveReserve).toBeLessThan(10);
+  });
+});

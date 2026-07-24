@@ -189,7 +189,7 @@ export default function App() {
    *  Staked play REQUIRES this — there is no simulated demo money. Returns true
    *  when connected; toasts (unless silent) when no wallet is available. */
   const connectWalletCta = useCallback(
-    async (silent = false): Promise<boolean> => {
+    async (silent = false, pickDifferent = false): Promise<boolean> => {
       // Already connected: re-read the balance so a transient first-fetch failure
       // self-heals on retry (else walletBacked could stay false forever and the
       // staked gate — which reads walletBacked — could never be passed).
@@ -220,14 +220,27 @@ export default function App() {
         void refreshBalance(burner);
         return true;
       }
-      let wallet = await connectWallet().catch(() => null);
-      // No injected provider (plain mobile browser, outside MiniPay): if
-      // WalletConnect is configured, open its modal so the user can pair Valora /
-      // MetaMask mobile / any WC wallet. Never on the silent launch probe — a QR
-      // modal must only ever open from an explicit connect tap.
-      if (!wallet && !hasInjectedWallet() && !silent && walletConnectAvailable()) {
+      // WHICH provider first? An INJECTED wallet always hands back the account
+      // it currently has selected: a dapp cannot make it switch, and there is no
+      // way to "disconnect" it from our side. So when the player explicitly asked
+      // for a DIFFERENT wallet, trying the injected provider first just returns
+      // the same account and the switch looks broken — the "I can't connect a new
+      // wallet" report. WalletConnect is the only path that actually lets them
+      // CHOOSE, so it goes first for an explicit switch; the normal connect keeps
+      // injected-first (fastest, no modal).
+      const wcFirst = pickDifferent && !silent && walletConnectAvailable();
+      let wallet = wcFirst ? await connectViaWalletConnect().catch(() => null) : null;
+      if (!wallet && !wcFirst) wallet = await connectWallet().catch(() => null);
+      // Fallback the other way: WalletConnect is also reachable when an injected
+      // provider EXISTS but yielded nothing (prompt refused, locked wallet). The
+      // old `!hasInjectedWallet()` gate made WC unreachable for those browsers —
+      // the one mechanism that could have offered a different wallet.
+      if (!wallet && !silent && walletConnectAvailable() && !wcFirst) {
         wallet = await connectViaWalletConnect().catch(() => null);
       }
+      // Explicit switch whose WalletConnect attempt failed → still try injected,
+      // so a dismissed modal doesn't leave the player with nothing.
+      if (!wallet && wcFirst) wallet = await connectWallet().catch(() => null);
       if (!wallet) {
         // Still nothing: a toast is a dead end when there's no provider AND no
         // WalletConnect — open the actionable MiniPay sheet instead. A
@@ -289,7 +302,7 @@ export default function App() {
     if (goExternal) {
       // Opens the injected prompt / WalletConnect modal straight away — the tap
       // WAS the intent to pair, so making them hunt for a second button is noise.
-      const ok = await connectWalletCta();
+      const ok = await connectWalletCta(false, true); // WalletConnect first: let them CHOOSE
       // Staking from an external wallet pays gas in native CELO (it cannot sign
       // CIP-64), so say it once, up front, instead of at the first failed stake.
       if (ok && prefersExternalWallet()) dispatch({ type: 'TOAST', message: t('walletExternalGas') });

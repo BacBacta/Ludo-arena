@@ -41,8 +41,23 @@ export interface FeePlan {
 /** Opening plan: enough spike margin for normal conditions, reservation small
  *  enough for a ~10¢ wallet at typical base fees. */
 export const BALANCED: FeePlan = { name: 'balanced', capMultiplier: 2n, priorityWei: 2n * GWEI, gasPadPercent: 130n, gasHeadroom: 100_000n };
-/** After a cap-too-low reject: the base fee is spiking — pay for certainty. */
-export const HIGH_CAP: FeePlan = { name: 'high-cap', capMultiplier: 4n, priorityWei: 3n * GWEI, gasPadPercent: 130n, gasHeadroom: 100_000n };
+/** After a cap-too-low reject: the base fee is spiking — pay for certainty.
+ *
+ *  10x, not 4x. A live mainnet lock died with "the fee cap (maxFeePerGas =
+ *  58.2567582 gwei) cannot be lower than the block base fee" — and that number is
+ *  EXACTLY 4 x 13.8141895 + 3 gwei, i.e. this rung already ran and still came in
+ *  under the base fee at inclusion. Celo moves the base fee 12.5% per 1s block,
+ *  so a tx that waits a few seconds in the pool can face several times the floor
+ *  we read.
+ *
+ *  Raising the multiplier is close to free: EIP-1559 refunds the difference (the
+ *  tx pays base+tip, never the cap), so a fat cap costs only a bigger UP-FRONT
+ *  RESERVATION. That is the real budget here — the Race burner holds a 10c gas
+ *  seed. Measured at the calm floor: 10x reserves 6.0c for the join and 2.4c for
+ *  the approve, so the peak (join + the 1c stake) is ~7c — inside the seed with
+ *  room to spare, while surviving a 10x base-fee spike instead of a 4x one. 16x
+ *  would already reserve 10.6c and price the burner out of its own lock. */
+export const HIGH_CAP: FeePlan = { name: 'high-cap', capMultiplier: 10n, priorityWei: 4n * GWEI, gasPadPercent: 130n, gasHeadroom: 100_000n };
 /** After an exceeds-balance reject: the cheapest tx that can still mine now. */
 export const THRIFTY: FeePlan = { name: 'thrifty', capMultiplier: 15n, priorityWei: 1n * GWEI, gasPadPercent: 115n, gasHeadroom: 60_000n };
 /** THRIFTY's multiplier is in TENTHS (1.5×) — bigint can't carry 1.5. */
