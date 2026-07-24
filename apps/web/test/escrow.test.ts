@@ -267,19 +267,33 @@ describe('stakeInEscrow (1v1)', () => {
     // feeCurrency tx must pay out of its OWN gas limit — without the headroom the
     // mined tx ran out of gas mid-execution ('approve reverted' incident).
     expect(join.gas).toBe(425_000n);
-    // The cap base is the fee-currency-denominated base FLOOR from the
-    // FeeCurrencyDirectory — the value the node validates a CIP-64 tx against.
-    // With the rate's den/num = 14 (CELO ≫ 1 cUSD), floor = 25 gwei × 14 = 350
-    // gwei-cUSD; BALANCED ×2 + 2 gwei priority = 702 gwei. The earlier
-    // `eth_gasPrice([token])` source returned the INVERSE (~1.8 gwei) and its ×2
-    // cap (22 gwei) sat far BELOW the 350 gwei floor — the reject that stranded
-    // every burner lock (and the human's co-lock in a house-bot game).
-    expect(join.maxFeePerGas).toBe(702_000_000_000n);
+    // The cap base is the fee-currency-denominated base FLOOR, and WHICH of the
+    // directory's two conversion directions is the real one is decided by the
+    // node's own eth_gasPrice([token]) quote (10 gwei in this mock). Taking the
+    // larger direction unconditionally (25 × 14 = 350 → ×2 = 702 gwei) reserves
+    // gasLimit × cap up front: on mainnet that is ~215× the truth and it starved
+    // the 10c-seeded burner at its Race Pass mint ("insufficient funds", ~150c
+    // reserved for a sub-1c fee). Measured on Celo mainnet: base 200 gwei, the
+    // cheap direction 13.65 gwei, the node's quote 13.82 gwei — they agree, and
+    // the faucet mines cUSD-gas transfers with viem's own ~14 gwei estimate,
+    // which a 2930 gwei floor would make impossible. So: pick the direction the
+    // node agrees with, never below its quote → 10 × 2 + 2 = 22 gwei.
+    expect(join.maxFeePerGas).toBe(22_000_000_000n);
     expect(estimates.length).toBeGreaterThan(0);
     for (const e of estimates) {
       expect(e.maxFeePerGas).toBeUndefined(); // NO fee fields in the estimate…
       expect(e.feeCurrency).toBeUndefined(); // …so no balance-based allowance cap
     }
+  });
+
+  it('without a node quote it stays CONSERVATIVE (larger direction) — cap-too-low is the worse failure', async () => {
+    // A node without Celo's eth_gasPrice extension can't disambiguate the rate,
+    // so the cap keeps the old MAX-of-both-directions behaviour: over-reserving
+    // only hurts a thin wallet, while under-capping fails outright.
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, noTokenGasPrice: true, localSigner: true });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
+    const join = writes.find((w) => w.functionName === 'join')!;
+    expect(join.maxFeePerGas).toBe(702_000_000_000n); // 25 gwei × 14 × 2 + 2 gwei
   });
 
   it('falls back to the NATIVE base fee when the FeeCurrencyDirectory is unreadable', async () => {

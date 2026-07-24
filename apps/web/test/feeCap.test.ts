@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseFloorInFeeCurrency, feeCapWei } from '../src/lib/escrow';
+import { baseFloorInFeeCurrency, calibratedBaseFloor, feeCapWei } from '../src/lib/escrow';
 
 // Staking failed with "the fee cap (maxFeePerGas gwei) cannot be lower than the
 // block base fee" even after raising the chain baseFeeMultiplier — viem's
@@ -63,5 +63,44 @@ describe('baseFloorInFeeCurrency (CIP-64 fee-cap base, both rate directions)', (
   it('degrades to the native base fee on a degenerate/zero rate', () => {
     expect(baseFloorInFeeCurrency(base, 0n, den)).toBe(base);
     expect(baseFloorInFeeCurrency(0n, num, den)).toBe(0n);
+  });
+});
+
+// The entry-mint blocker (campaign incident): the MAX of both rate directions is
+// safe for a rich wallet (EIP-1559 refunds — the tx pays base+tip, never the cap)
+// but the node RESERVES gasLimit x maxFeePerGas up front. On mainnet the wrong
+// orientation is ~215x the right one, so a Race Pass mint reserved ~150c against
+// a 10c gas seed and every new player was refused "insufficient funds" — while the
+// real fee stayed under 1c. eth_gasPrice([token]) is the node's own quote, so it
+// disambiguates the orientation.
+describe('calibratedBaseFloor (node-quote-disambiguated CIP-64 floor)', () => {
+  // Measured on Celo mainnet: base 200 gwei, cUSD rate num/den = 0.068247…
+  const GWEI = 1_000_000_000n;
+  const right = 13_649_464_000n; // (base * num) / den — matches the node
+  const wrong = 2_930_518_004_223n; // (base * den) / num — 215x too high
+  const nodeQuote = 13_820_082_300n; // eth_gasPrice([cUSD])
+
+  it('picks the direction the NODE agrees with, not the larger one', () => {
+    expect(calibratedBaseFloor(right, wrong, nodeQuote)).toBe(nodeQuote);
+    // …and the same holds when the orientation is flipped (other tokens).
+    expect(calibratedBaseFloor(wrong, right, nodeQuote)).toBe(nodeQuote);
+  });
+
+  it('never caps BELOW the node quote (that is the "cap < base fee" reject)', () => {
+    const under = 5n * GWEI; // a direction cheaper than what the node charges
+    expect(calibratedBaseFloor(under, wrong, nodeQuote)).toBe(nodeQuote);
+  });
+
+  it('keeps the conservative MAX when the node cannot quote the token', () => {
+    expect(calibratedBaseFloor(right, wrong, null)).toBe(wrong);
+    expect(calibratedBaseFloor(right, wrong, 0n)).toBe(wrong);
+  });
+
+  it('the calibrated floor keeps a mint affordable on a 10c seed', () => {
+    // BALANCED: cap = floor*2 + 2 gwei, gasLimit = 120k*1.3 + 100k = 256k.
+    const cap = calibratedBaseFloor(right, wrong, nodeQuote) * 2n + 2n * GWEI;
+    const reservationWei = cap * 256_000n;
+    const cents = Number((reservationWei * 100_000n) / 10n ** 18n) / 1000;
+    expect(cents).toBeLessThan(2); // was ~150c with the MAX — above the 10c seed
   });
 });

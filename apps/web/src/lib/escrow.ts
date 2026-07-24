@@ -161,6 +161,46 @@ export function baseFloorInFeeCurrency(baseFeePerGas: bigint, num: bigint, den: 
 }
 
 /**
+ * Pick the conversion direction the NODE actually agrees with.
+ *
+ * Taking the MAX of both directions (baseFloorInFeeCurrency) is safe for a rich
+ * wallet — EIP-1559 refunds the difference, the tx only ever pays base+tip — but
+ * the node RESERVES gasLimit × maxFeePerGas up front, and on mainnet the wrong
+ * orientation is ~215× the right one (measured: cUSD rate num/den ⇒ 13.6 gwei
+ * vs 2930 gwei at a 200 gwei native base fee). That turned a Race Pass mint into
+ * a ~150¢ reservation against a 10¢ gas seed: "insufficient funds", every new
+ * player blocked at the entry mint, with the actual fee still under 1¢.
+ *
+ * `eth_gasPrice([token])` is the node's OWN token-denominated quote — the
+ * authority on what it charges — so it disambiguates the orientation. Pick the
+ * direction nearest that quote, and never cap BELOW the quote itself (that would
+ * reintroduce "max fee per gas less than block base fee"). No quote (node without
+ * the Celo extension) → keep the conservative MAX. Pure, so the choice is
+ * unit-testable without a chain.
+ */
+export function calibratedBaseFloor(a: bigint, b: bigint, nodePrice: bigint | null): bigint {
+  const hi = a > b ? a : b;
+  if (nodePrice === null || nodePrice <= 0n) return hi;
+  const da = a > nodePrice ? a - nodePrice : nodePrice - a;
+  const db = b > nodePrice ? b - nodePrice : nodePrice - b;
+  const near = da <= db ? a : b;
+  return near > nodePrice ? near : nodePrice;
+}
+
+/** The node's gas price DENOMINATED IN `feeCurrency` (Celo's eth_gasPrice
+ *  extension), or null when the node doesn't support it. */
+async function tokenGasPrice(publicClient: PublicClient, feeCurrency: Address): Promise<bigint | null> {
+  try {
+    const hex = await (publicClient as unknown as { request: (a: { method: string; params?: unknown[] }) => Promise<string> })
+      .request({ method: 'eth_gasPrice', params: [feeCurrency] });
+    const v = BigInt(hex);
+    return v > 0n ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The fee-currency base-fee floor a CIP-64 tx's cap MUST clear, read live from
  * the FeeCurrencyDirectory + the head block. Returns null on any read failure so
  * the caller can fall back to the native base fee. This is the exact derivation
@@ -174,13 +214,19 @@ export async function feeCurrencyBaseFloor(publicClient: PublicClient, feeCurren
     if (!cachedDirectory) {
       cachedDirectory = (await publicClient.readContract({ address: CELO_REGISTRY, abi: REGISTRY_ABI, functionName: 'getAddressForString', args: ['FeeCurrencyDirectory'] })) as Address;
     }
-    const [block, rate] = await Promise.all([
+    const [block, rate, nodePrice] = await Promise.all([
       publicClient.getBlock({ blockTag: 'latest' }),
       publicClient.readContract({ address: cachedDirectory, abi: DIRECTORY_ABI, functionName: 'getExchangeRate', args: [feeCurrency] }) as Promise<readonly [bigint, bigint]>,
+      tokenGasPrice(publicClient, feeCurrency),
     ]);
     const base = block.baseFeePerGas ?? 0n;
     if (base <= 0n) return null;
-    const floor = baseFloorInFeeCurrency(base, rate[0], rate[1]);
+    const num = rate[0];
+    const den = rate[1];
+    if (num <= 0n || den <= 0n) return nodePrice;
+    // Both conversion directions, disambiguated by the node's own quote — the
+    // wrong one over-reserves ~215× and starves a freshly-seeded burner.
+    const floor = calibratedBaseFloor((base * num) / den, (base * den) / num, nodePrice);
     return floor > 0n ? floor : null;
   } catch {
     return null;
