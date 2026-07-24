@@ -65,6 +65,15 @@ const ERC20_ABI = [
   { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
   { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ type: 'uint256' }] },
 ] as const;
+// Celo registry (fixed address on every Celo network) → FeeCurrencyDirectory,
+// the contract the NODE itself uses to validate CIP-64 fee caps.
+const CELO_REGISTRY = '0x000000000000000000000000000000000000ce10' as Address;
+const REGISTRY_ABI = [
+  { type: 'function', name: 'getAddressForString', stateMutability: 'view', inputs: [{ name: 'identifier', type: 'string' }], outputs: [{ type: 'address' }] },
+] as const;
+const DIRECTORY_ABI = [
+  { type: 'function', name: 'getExchangeRate', stateMutability: 'view', inputs: [{ name: 'token', type: 'address' }], outputs: [{ name: 'numerator', type: 'uint256' }, { name: 'denominator', type: 'uint256' }] },
+] as const;
 const ESCROW_JOIN_ABI = [
   { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }, { name: 'fairnessCommit', type: 'bytes32' }], outputs: [] },
 ] as const;
@@ -92,6 +101,7 @@ export class HouseBot {
   readonly decimals: number;
   private readonly feeCurrency?: Address;
   private nonceChain: Promise<unknown> = Promise.resolve();
+  private directory?: Address; // FeeCurrencyDirectory, resolved once via the registry
 
   constructor(privateKey: Hex, chain: Chain, escrow: Address, stablecoin: Address, decimals: number, rpc?: string, feeCurrency?: Address) {
     this.account = privateKeyToAccount(privateKey);
@@ -121,6 +131,51 @@ export class HouseBot {
     return next;
   }
 
+  /**
+   * CIP-64 fee override, derived from the CURRENT block base fee and the
+   * FeeCurrencyDirectory rate — the exact inputs the node uses to VALIDATE the
+   * cap. Verified live on mainnet (probe-fees, 2026-07-24): forno's
+   * `eth_gasPrice [feeCurrency]` quote applies the directory rate in the WRONG
+   * direction (base 200 gwei native → quoted 14.2 gwei-cUSD, while validation
+   * demands base × den/num ≈ 2 850 gwei-cUSD), so every estimation routed
+   * through the node quote under-caps ~200× and is rejected with "fee cap
+   * cannot be lower than block base fee" — the house bot could never lock.
+   * Direction guard: take the MAX of both conversions, so a future node-side
+   * fix (or an inverted rate) can only OVER-cap — harmless under EIP-1559 (the
+   * tx pays base+tip, never the cap). Re-derived before EVERY tx: Celo has 1s
+   * blocks and the base fee moves.
+   */
+  private async cip64Fees(): Promise<{ feeCurrency: Address; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | Record<string, never>> {
+    if (!this.feeCurrency) return {};
+    try {
+      if (!this.directory) {
+        this.directory = (await this.publicClient.readContract({
+          address: CELO_REGISTRY, abi: REGISTRY_ABI, functionName: 'getAddressForString', args: ['FeeCurrencyDirectory'],
+        })) as Address;
+      }
+      const [block, rate, tipHex] = await Promise.all([
+        this.publicClient.getBlock(),
+        this.publicClient.readContract({ address: this.directory, abi: DIRECTORY_ABI, functionName: 'getExchangeRate', args: [this.feeCurrency] }) as Promise<readonly [bigint, bigint]>,
+        (this.publicClient.request as (a: never) => Promise<string>)({ method: 'eth_maxPriorityFeePerGas', params: [this.feeCurrency] } as never).catch(() => '0x0'),
+      ]);
+      const base = block.baseFeePerGas;
+      if (base == null || base <= 0n) throw new Error('no baseFeePerGas on the head block');
+      const [num, den] = rate;
+      if (num <= 0n || den <= 0n) throw new Error('degenerate directory rate');
+      const a = (base * num) / den;
+      const b = (base * den) / num;
+      const baseInToken = a > b ? a : b;
+      const tip = BigInt(tipHex);
+      return { feeCurrency: this.feeCurrency, maxFeePerGas: 3n * baseInToken + tip, maxPriorityFeePerGas: tip };
+    } catch (e) {
+      // Fail OPEN to the node estimation (pre-fix behaviour): a directory
+      // hiccup must not turn into a guaranteed-abort — the attempt may still
+      // clear when the base fee sits at the floor the quote is computed from.
+      console.warn('[house-bot] CIP-64 fee derivation failed — falling back to node estimation:', e instanceof Error ? e.message : e);
+      return { feeCurrency: this.feeCurrency } as never;
+    }
+  }
+
   /** The client-shaped stake lock: approve + escrow.join, the exact tuple a human
    *  client sends (apps/web/src/lib/escrow.ts). Resolves once BOTH tx are mined,
    *  so the caller's pollStakeLock can then see the escrow go Active. Gas paid in
@@ -129,15 +184,16 @@ export class HouseBot {
     const units = this.units(stakeCents);
     const gameId32 = gameIdToBytes32(gameId);
     const commit32 = `0x${fairnessCommit.replace(/^0x/, '')}` as Hex;
-    const feeExtra = this.feeCurrency ? { feeCurrency: this.feeCurrency } : {};
     return this.serialize(async () => {
+      // Fees re-derived per tx (1s blocks): see cip64Fees for why the node's
+      // own quote cannot be trusted on the feeCurrency path.
       const approveHash = await this.walletClient.writeContract({
-        account: this.account, chain: this.chain, address: this.stablecoin, abi: ERC20_ABI, functionName: 'approve', args: [this.escrow, units], ...feeExtra,
+        account: this.account, chain: this.chain, address: this.stablecoin, abi: ERC20_ABI, functionName: 'approve', args: [this.escrow, units], ...(await this.cip64Fees()),
       } as never);
       const ar = await this.publicClient.waitForTransactionReceipt({ hash: approveHash });
       if (ar.status !== 'success') throw new Error(`house-bot approve reverted (tx ${approveHash})`);
       const joinHash = await this.walletClient.writeContract({
-        account: this.account, chain: this.chain, address: this.escrow, abi: ESCROW_JOIN_ABI, functionName: 'join', args: [gameId32, this.stablecoin, units, commit32], ...feeExtra,
+        account: this.account, chain: this.chain, address: this.escrow, abi: ESCROW_JOIN_ABI, functionName: 'join', args: [gameId32, this.stablecoin, units, commit32], ...(await this.cip64Fees()),
       } as never);
       const jr = await this.publicClient.waitForTransactionReceipt({ hash: joinHash });
       if (jr.status !== 'success') throw new Error(`house-bot join reverted (tx ${joinHash})`);
