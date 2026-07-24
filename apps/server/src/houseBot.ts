@@ -33,13 +33,54 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPublicClient, createWalletClient, http, type Address, type Chain, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { calibratedBaseFloor, feeCurrencyDirections } from '@ludo/shared';
+import { calibratedBaseFloor, feeCurrencyDirections, feeReservationWei } from '@ludo/shared';
 import { CHAINS } from './settlement.js';
 
 /** Cap multiplier on the CALIBRATED fee floor. Generous on purpose: the bot has
  *  no adaptive retry ladder, so one cap-too-low reject aborts a human's game —
  *  and on the calibrated floor even 6x reserves ~2c per lock (vs ~176c before). */
 const HOUSE_BOT_CAP_MULT = 6n;
+
+/** Gas limit used to SIZE the node's fee reservation for one bot tx (approve or
+ *  join). The real limit is estimated per tx; this is a deliberate upper bound so
+ *  the affordability preflight errs on the side of declining a game it might not
+ *  be able to pay for, never on the side of stranding a human mid-lock. */
+const LOCK_GAS_LIMIT = 250_000n;
+
+/** What one stake lock costs the bot's balance at `capWei`: the stake it hands
+ *  to the escrow PLUS the fee the node RESERVES up front (gasLimit × cap, not
+ *  the fee actually paid — EIP-1559 refunds the difference, but the reservation
+ *  is what a thin balance is checked against). `capWei` null = gas is paid in the
+ *  native coin, so only the stake comes out of the stablecoin balance.
+ *  Pure, so the runway arithmetic is unit-testable without a chain. */
+export function botLockRequirement(stakeWei: bigint, gasLimit: bigint, capWei: bigint | null): bigint {
+  return capWei === null ? stakeWei : stakeWei + feeReservationWei(gasLimit, capWei);
+}
+
+/** How many further locks a balance covers at that requirement (0 = the bot must
+ *  stop filling matchmaking). */
+export function locksAffordable(balanceWei: bigint, requiredWei: bigint): number {
+  if (requiredWei <= 0n) return Number.MAX_SAFE_INTEGER;
+  if (balanceWei < requiredWei) return 0;
+  return Number(balanceWei / requiredWei);
+}
+
+/** Solvency snapshot for one prospective lock — the gate the matchmaker consults
+ *  BEFORE pairing a human with the bot. */
+export interface BotAffordability {
+  /** Can the bot fund a stake + its gas reservation right now? */
+  ok: boolean;
+  balanceWei: bigint;
+  stakeWei: bigint;
+  /** gasLimit × cap the node holds per tx (0 when gas is paid in the native coin). */
+  reservationWei: bigint;
+  requiredWei: bigint;
+  /** Remaining locks at this price — the runway the low-balance watchdog alerts on. */
+  locksLeft: number;
+  capWei: bigint | null;
+  /** Human-readable cause when !ok (or when the check itself could not run). */
+  reason?: string;
+}
 
 // The bot rides the SAME chain definitions as the arbiter/faucet (settlement.ts):
 // viem's real `celo` chain, which carries the CIP-64 serializers (so a
@@ -151,10 +192,12 @@ export class HouseBot {
    * demands base × den/num ≈ 2 850 gwei-cUSD), so every estimation routed
    * through the node quote under-caps ~200× and is rejected with "fee cap
    * cannot be lower than block base fee" — the house bot could never lock.
-   * Direction guard: take the MAX of both conversions, so a future node-side
-   * fix (or an inverted rate) can only OVER-cap — harmless under EIP-1559 (the
-   * tx pays base+tip, never the cap). Re-derived before EVERY tx: Celo has 1s
-   * blocks and the base fee moves.
+   * Direction guard: `calibratedBaseFloor` (@ludo/shared) picks the conversion
+   * direction the NODE's own quote agrees with and never caps below it. The
+   * earlier unconditional MAX-of-both-directions over-capped ~215×, which the tx
+   * never PAID (EIP-1559 refunds) but the node RESERVED — ~176c per join, i.e.
+   * under three locks of runway. Re-derived before EVERY tx: Celo has 1s blocks
+   * and the base fee moves.
    */
   private async cip64Fees(): Promise<{ feeCurrency: Address; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | Record<string, never>> {
     if (!this.feeCurrency) return {};
@@ -227,6 +270,49 @@ export class HouseBot {
    *  wallet can no longer cover a 1¢ stake + gas. */
   async balance(): Promise<bigint> {
     return this.publicClient.readContract({ address: this.stablecoin, abi: ERC20_ABI, functionName: 'balanceOf', args: [this.address] }) as Promise<bigint>;
+  }
+
+  /**
+   * Can the bot fund ONE more lock right now (stake + the node's fee
+   * reservation)? This is the gate that turns the historical SILENT failure into
+   * a refusal: when the wallet ran dry the bot was still paired with humans, its
+   * lock was rejected on funds, and the match aborted + refunded — the player
+   * saw "stake lock failed" and the operator saw nothing. Declining to be
+   * summoned instead leaves the seeker in the queue for a real human.
+   *
+   * Read live (no caching): the balance moves with every game and a stale
+   * "affordable" is exactly the state that strands a player. One RPC on a path
+   * that already does several, and only on the Race tier.
+   */
+  async affordability(stakeCents: number): Promise<BotAffordability> {
+    const stakeWei = this.units(stakeCents);
+    try {
+      const fees = await this.cip64Fees();
+      // No feeCurrency (native-gas chains) or a failed derivation that fell back
+      // to node estimation ⇒ no token-denominated cap to reserve against; only
+      // the stake leaves the stablecoin balance.
+      const capWei = 'maxFeePerGas' in fees ? (fees.maxFeePerGas as bigint) : null;
+      const balanceWei = await this.balance();
+      const requiredWei = botLockRequirement(stakeWei, LOCK_GAS_LIMIT, capWei);
+      const reservationWei = capWei === null ? 0n : feeReservationWei(LOCK_GAS_LIMIT, capWei);
+      const locksLeft = locksAffordable(balanceWei, requiredWei);
+      return {
+        ok: balanceWei >= requiredWei,
+        balanceWei,
+        stakeWei,
+        reservationWei,
+        requiredWei,
+        locksLeft,
+        capWei,
+        reason: balanceWei >= requiredWei ? undefined : `balance ${balanceWei} < required ${requiredWei} (stake ${stakeWei} + reservation ${reservationWei})`,
+      };
+    } catch (e) {
+      // The check itself failed (RPC hiccup). Fail OPEN — a transient read must
+      // not take the bot out of matchmaking — but say so loudly enough to trace.
+      const reason = `affordability check failed: ${e instanceof Error ? e.message : String(e)}`;
+      console.warn(`[house-bot] ${reason} — allowing the summon (fail-open)`);
+      return { ok: true, balanceWei: 0n, stakeWei, reservationWei: 0n, requiredWei: 0n, locksLeft: -1, capWei: null, reason };
+    }
   }
 }
 
