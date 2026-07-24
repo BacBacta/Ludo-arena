@@ -158,9 +158,12 @@ const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
  *  stacked on top of the spin left the result visible for only ~150ms before
  *  the auto-move fired and the turn passed (the reported instability). */
 const LAND_MS = 320;
-/** Continuous spin rate (rad/s) — unequal X/Y so it reads as a somersault. */
-const SPIN_X = 5.5;
-const SPIN_Y = 4.2;
+/** Continuous spin rate (rad/s) — matched to the CSS die's optimistic spin
+ *  (Die3D winds +4 X / +3 Y whole turns per 0.7s transition), so a premium
+ *  WebGL die tumbles with the SAME energy as the default die. The first cut
+ *  used 5.5/4.2 (~0.9 turns/s) — visibly sluggish next to the bot's die. */
+const SPIN_X = (Math.PI * 2 * 4) / 0.7;
+const SPIN_Y = (Math.PI * 2 * 3) / 0.7;
 
 /** Build a WebGL die inside `host`. Throws if WebGL is unavailable (caller falls
  *  back to the CSS die). Renders on-demand: it draws while tumbling, then rests. */
@@ -243,13 +246,15 @@ export function createDieEngine(host: HTMLElement, skin: DiceSkin, value: number
   };
   const kick = (): void => { if (!raf) raf = requestAnimationFrame(loop); };
 
-  /** Next rest orientation strictly FORWARD of the current rotation (never
-   *  rewinds — same rule as Die3D's wound-up frame settle). */
+  /** Rest orientation FORWARD of the current rotation, one extra whole turn out
+   *  (never rewinds — same rule as Die3D's wound-up settle, which lands with a
+   *  full +1-turn somersault). A bare next-rest target made the landing a limp
+   *  fraction-of-a-turn snap. */
   const forwardRest = (v: number): { toX: number; toY: number; end: [number, number] } => {
     const [rx, ry] = rest(v);
     const TAU = Math.PI * 2;
-    const toX = rx + TAU * (Math.floor((die.rotation.x - rx) / TAU) + 1);
-    const toY = ry + TAU * (Math.floor((die.rotation.y - ry) / TAU) + 1);
+    const toX = rx + TAU * (Math.floor((die.rotation.x - rx) / TAU) + 2);
+    const toY = ry + TAU * (Math.floor((die.rotation.y - ry) / TAU) + 2);
     return { toX, toY, end: [rx, ry] };
   };
 
@@ -267,10 +272,12 @@ export function createDieEngine(host: HTMLElement, skin: DiceSkin, value: number
         const f = forwardRest(v);
         anim = { from, toX: f.toX, toY: f.toY, toZ: 0, end: f.end, start: performance.now(), dur: LAND_MS };
       } else {
+        // Same winding as the CSS die's fresh tumble (+4 X / +3 Y whole turns
+        // over DIE_TUMBLE_MS) — the premium die rolls with the bot-die energy.
         anim = {
           from,
-          toX: rx + Math.PI * 2 * (2 + Math.floor(Math.random() * 2)),
-          toY: ry + Math.PI * 2 * (3 + Math.floor(Math.random() * 2)),
+          toX: rx + Math.PI * 2 * 4,
+          toY: ry + Math.PI * 2 * 3,
           toZ: Math.PI * (Math.random() * 1.2 - 0.6),
           end: [rx, ry],
           start: performance.now(),

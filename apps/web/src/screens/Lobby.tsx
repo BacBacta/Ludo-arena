@@ -219,7 +219,9 @@ export function Lobby({
   // it tumbles with the real roll sound. The product demos itself.
   const [heroDie, setHeroDie] = useState<{ value: number; key: number }>({ value: 6, key: 0 });
   const rollHeroDie = (): void => {
-    playDice();
+    // The hero die WEARS the equipped skin — roll with its material sound too
+    // (a premium die that throws the generic plastic sound reads as broken).
+    playDice(skinById(diceSkin).sound);
     setHeroDie((d) => ({ value: 1 + Math.floor(Math.random() * 6), key: d.key + 1 }));
   };
 
