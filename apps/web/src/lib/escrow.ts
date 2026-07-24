@@ -5,6 +5,7 @@
  * MiniPay, pass `feeCurrency` to pay gas in cUSD with a legacy tx.
  */
 import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
+import { calibratedBaseFloor, feeCurrencyDirections } from '@ludo/shared';
 import { BALANCED, classifyTxFailure, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
 
 export const ERC20_ABI = [
@@ -160,33 +161,6 @@ export function baseFloorInFeeCurrency(baseFeePerGas: bigint, num: bigint, den: 
   return a > b ? a : b;
 }
 
-/**
- * Pick the conversion direction the NODE actually agrees with.
- *
- * Taking the MAX of both directions (baseFloorInFeeCurrency) is safe for a rich
- * wallet — EIP-1559 refunds the difference, the tx only ever pays base+tip — but
- * the node RESERVES gasLimit × maxFeePerGas up front, and on mainnet the wrong
- * orientation is ~215× the right one (measured: cUSD rate num/den ⇒ 13.6 gwei
- * vs 2930 gwei at a 200 gwei native base fee). That turned a Race Pass mint into
- * a ~150¢ reservation against a 10¢ gas seed: "insufficient funds", every new
- * player blocked at the entry mint, with the actual fee still under 1¢.
- *
- * `eth_gasPrice([token])` is the node's OWN token-denominated quote — the
- * authority on what it charges — so it disambiguates the orientation. Pick the
- * direction nearest that quote, and never cap BELOW the quote itself (that would
- * reintroduce "max fee per gas less than block base fee"). No quote (node without
- * the Celo extension) → keep the conservative MAX. Pure, so the choice is
- * unit-testable without a chain.
- */
-export function calibratedBaseFloor(a: bigint, b: bigint, nodePrice: bigint | null): bigint {
-  const hi = a > b ? a : b;
-  if (nodePrice === null || nodePrice <= 0n) return hi;
-  const da = a > nodePrice ? a - nodePrice : nodePrice - a;
-  const db = b > nodePrice ? b - nodePrice : nodePrice - b;
-  const near = da <= db ? a : b;
-  return near > nodePrice ? near : nodePrice;
-}
-
 /** The node's gas price DENOMINATED IN `feeCurrency` (Celo's eth_gasPrice
  *  extension), or null when the node doesn't support it. */
 async function tokenGasPrice(publicClient: PublicClient, feeCurrency: Address): Promise<bigint | null> {
@@ -226,7 +200,8 @@ export async function feeCurrencyBaseFloor(publicClient: PublicClient, feeCurren
     if (num <= 0n || den <= 0n) return nodePrice;
     // Both conversion directions, disambiguated by the node's own quote — the
     // wrong one over-reserves ~215× and starves a freshly-seeded burner.
-    const floor = calibratedBaseFloor((base * num) / den, (base * den) / num, nodePrice);
+    const [dirA, dirB] = feeCurrencyDirections(base, num, den);
+    const floor = calibratedBaseFloor(dirA, dirB, nodePrice);
     return floor > 0n ? floor : null;
   } catch {
     return null;
