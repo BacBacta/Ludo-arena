@@ -70,7 +70,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitDripCents, poolLeftCents, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitDripCents, poolLeftCents, SEED_FP_LIFETIME_MULT, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -2182,18 +2182,21 @@ wss.on('connection', (ws, req) => {
         const fpPriorRaw = seedFpKey ? await store.getMeta(seedFpKey) : null;
         const fpDrawn = seedFpDrawCents(fpPriorRaw, raceFaucet.seedCents);
         const seedCap = raceFaucet.seedCents * SEED_LIFETIME_MULT;
+        // Device-COHORT cap, deliberately looser than the wallet cap: the client
+        // fingerprint collides across same-model phones (see SEED_FP_LIFETIME_MULT).
+        const fpCap = raceFaucet.seedCents * SEED_FP_LIFETIME_MULT;
         // Gas is the SEED dimension: bound it by the TOTAL budget left (prize +
         // gas) so it can't overrun the faucet, but track it in its OWN counter so
         // it never ticks down the player-facing prize pool.
         const { seed: seedSpent, total: spentTotal } = await raceSpend(store);
         const topUpCents = Math.min(
           seedGrantCents(seedDeficit, priorCents, seedCap, spentTotal, raceFaucet.poolCents),
-          Math.max(0, seedCap - fpDrawn),
+          Math.max(0, fpCap - fpDrawn),
         );
         if (topUpCents <= 0) {
           // Deficit is real but nothing can be granted: wallet or device at its
           // lifetime cap, or the pool is dry.
-          const capped = priorCents >= seedCap || fpDrawn >= seedCap;
+          const capped = priorCents >= seedCap || fpDrawn >= fpCap;
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: capped ? 'This device already used its gas-seed allowance.' : 'Race Week funding pool is exhausted.' });
           break;
         }
@@ -2262,7 +2265,7 @@ wss.on('connection', (ws, req) => {
         // soulbound Pass, the JIT drip and the pool cap carry the weight).
         const fpPriorRaw = fpKey ? await store.getMeta(fpKey) : null;
         const fpWallets = claimFpWallets(fpPriorRaw);
-        if (fpWallets.length >= SEED_LIFETIME_MULT && !fpWallets.includes(rWallet.toLowerCase())) {
+        if (fpWallets.length >= SEED_FP_LIFETIME_MULT && !fpWallets.includes(rWallet.toLowerCase())) {
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'This device already claimed its Race Week bonus.' });
           break;
         }

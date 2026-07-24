@@ -77,6 +77,19 @@ export function jitDripCents(perGameCents: number, funded: number, quotaCents: n
  *  the pool cap is the global backstop). 3 = the initial seed + two rescues. */
 export const SEED_LIFETIME_MULT = 3;
 
+/** Per-FINGERPRINT lifetime cap multiple (seed draws AND claim wallets). The
+ *  client fingerprint is UA + language + screen + timezone + cores — two phones
+ *  of the SAME popular model in the same region hash IDENTICALLY, so an
+ *  "fingerprint" is really a device-model COHORT, not one device. When this cap
+ *  equalled the per-wallet ×3, the first 3 players of a cohort consumed the
+ *  allowance and every later new player on that phone model was refused the gas
+ *  seed ("This device already used its gas-seed allowance") — their mint then
+ *  died on funds (the campaign-launch incident). ×30 admits ~30 players per
+ *  cohort; scripted abuse of one fingerprint stays bounded (seedCents × 30 =
+ *  $3 lifetime) and the pool budget remains the global backstop. Env-tunable
+ *  (RACE_SEED_FP_MULT) so ops can tighten/loosen without a deploy. */
+export const SEED_FP_LIFETIME_MULT = Math.max(1, Number(process.env.RACE_SEED_FP_MULT ?? '30'));
+
 /** How many cents the wallet is MISSING to reach the seed target, given its live
  *  on-chain balance. This — not "was the target ever granted" — must drive the
  *  seed: a failed mint attempt still burns its cUSD gas, so a wallet that drew

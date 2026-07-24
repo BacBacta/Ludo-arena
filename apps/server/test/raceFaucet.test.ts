@@ -85,3 +85,29 @@ describe('faucet failure message (what the player sees in the toast)', () => {
     expect(m.length).toBeLessThan(200);
   });
 });
+
+describe('device-cohort seed cap (the campaign-launch "no gas seed" incident)', () => {
+  // The client fingerprint (UA + screen + lang + tz + cores) COLLIDES across
+  // phones of the same popular model, so one fingerprint is a device-model
+  // COHORT. When the per-fingerprint cap equalled the per-wallet ×3, the first
+  // 3 players of a cohort consumed it and every later NEW player on that phone
+  // model was refused the gas seed — their Pass mint then died on funds.
+  it('the cohort cap is decoupled from (and much looser than) the wallet cap', async () => {
+    const { SEED_FP_LIFETIME_MULT, SEED_LIFETIME_MULT } = await import('../src/race.js');
+    expect(SEED_LIFETIME_MULT).toBe(3); // wallet: initial seed + two rescues, unchanged
+    expect(SEED_FP_LIFETIME_MULT).toBeGreaterThanOrEqual(30); // cohort: ~30 players per phone model
+  });
+
+  it('a 4th fresh wallet on an already-served fingerprint still draws its seed', async () => {
+    const { SEED_FP_LIFETIME_MULT, seedGrantCents } = await import('../src/race.js');
+    const seedCents = 10;
+    const walletCap = seedCents * 3;
+    const fpCap = seedCents * SEED_FP_LIFETIME_MULT;
+    const fpDrawn = 3 * seedCents; // three cohort players already seeded (the old lockout point)
+    const grant = Math.min(
+      seedGrantCents(seedCents, 0, walletCap, 670, 3000), // fresh wallet, live budget numbers
+      Math.max(0, fpCap - fpDrawn),
+    );
+    expect(grant).toBe(seedCents); // was 0 under the old shared ×3 cap
+  });
+});
