@@ -61,6 +61,21 @@ function DiePremium3D({ value, rollKey, skin, spinning }: Die3DProps) {
     engineRef.current.roll(value, tumble);
   }, [rollKey, value, ready]);
 
+  // Optimistic in-flight spin (online RTT): the WebGL die used to IGNORE
+  // `spinning` — it sat frozen through the round-trip, then stacked a full
+  // tumble on top when the value landed, leaving the number readable for only
+  // ~150ms before the auto-move pulled the turn away. Now it winds through the
+  // RTT like the CSS die and roll() lands with the short settle instead.
+  // Declared AFTER the roll effect: on the commit where the value arrives
+  // (spinning→false + rollKey bump together), roll() consumes the spin first
+  // and this call becomes a no-op — the engine's fallback settle only fires
+  // when a spin ends with NO roll (cleared intent / server error).
+  useEffect(() => {
+    if (!ready || !engineRef.current) return;
+    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    engineRef.current.setSpinning(!!spinning && !reduce);
+  }, [spinning, ready]);
+
   // Re-material on skin swap (keyed on the stable id, not the object identity).
   useEffect(() => {
     if (ready) engineRef.current?.setSkin(skin);
