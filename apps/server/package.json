@@ -15,6 +15,7 @@
     "friends-test": "tsx scripts/friendsTest.ts",
     "settle-verify": "tsx scripts/settleVerify.ts",
     "reset-race-board": "tsx scripts/resetRaceBoard.ts",
+    "prune-race-board": "tsx scripts/pruneRaceBoard.ts",
     "race-audit": "tsx scripts/raceAudit.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
