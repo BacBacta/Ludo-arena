@@ -750,7 +750,7 @@ export default function App() {
    *  server's friends.update reply refreshes both lobby lists. */
   const addFriend = useCallback(
     async (pid: string): Promise<boolean> => {
-      const lists = await sendFriendAction(SERVER_URL, { t: 'friend.add', pid }, walletRef.current?.address);
+      const lists = await sendFriendAction(SERVER_URL, { t: 'friend.add', pid }, walletRef.current?.address, makeAuth().signMessage);
       if (!lists) {
         dispatch({ type: 'TOAST', message: t('friendActionFailed') });
         return false;
@@ -759,7 +759,7 @@ export default function App() {
       dispatch({ type: 'TOAST', message: `➕ ${t('friendRequestSent')}` });
       return true;
     },
-    [dispatch],
+    [dispatch, makeAuth],
   );
 
   /** friend.remove serves the WHOLE removal lifecycle — withdraw a SENT
@@ -767,14 +767,14 @@ export default function App() {
    *  tears down both directional edges. Silent for the other side by design. */
   const removeFriendEdge = useCallback(
     async (pid: string): Promise<void> => {
-      const lists = await sendFriendAction(SERVER_URL, { t: 'friend.remove', pid }, walletRef.current?.address);
+      const lists = await sendFriendAction(SERVER_URL, { t: 'friend.remove', pid }, walletRef.current?.address, makeAuth().signMessage);
       if (!lists) {
         dispatch({ type: 'TOAST', message: t('friendActionFailed') });
         return;
       }
       dispatch({ type: 'FRIENDS', friends: lists.friends, requests: lists.requests, outgoing: lists.outgoing });
     },
-    [dispatch],
+    [dispatch, makeAuth],
   );
 
   /** friend.gift over a one-shot socket (cosmetics phase 2): pay MY tickets,

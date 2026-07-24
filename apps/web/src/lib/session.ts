@@ -497,6 +497,7 @@ export function sendFriendAction(
   serverUrl: string,
   action: { t: 'friend.add' | 'friend.remove'; pid: string },
   walletAddress?: string,
+  signMessage?: (message: string) => Promise<string>,
 ): Promise<{ friends: FriendInfo[]; requests: FriendInfo[]; outgoing?: FriendInfo[] } | null> {
   return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
@@ -506,19 +507,34 @@ export function sendFriendAction(
       resolve(null);
       return;
     }
+    // The server gates friend.add/remove on a PROVEN wallet. A browser wallet
+    // (non-MiniPay) is unproven at hello — it must answer the SIWE nonce with
+    // wallet.prove FIRST, else the action is silently rejected ("couldn't accept
+    // the request"). So we no longer fire the action inside onopen; we send it
+    // only AFTER the wallet is proven (MiniPay auto-proves at hello → no nonce →
+    // act at once). Same prove-then-act machinery as sendRaceSeed.
+    let actionSent = false;
+    let proveFallback: ReturnType<typeof setTimeout> | null = null;
     const done = (v: { friends: FriendInfo[]; requests: FriendInfo[]; outgoing?: FriendInfo[] } | null): void => {
       resolve(v);
+      if (proveFallback) clearTimeout(proveFallback);
       try {
         ws.close();
       } catch {
         /* already closing */
       }
     };
-    // 10 s (was 4 s): on the target audience's slow mobile links, a fresh WS
-    // handshake + hello + friend.add + friends.update round-trip legitimately
-    // took >4 s, so the accept/add would spuriously report failure ("impossible
+    // 10 s: on the target audience's slow mobile links, a fresh WS handshake +
+    // hello + (prove) + friend.add + friends.update round-trip legitimately took
+    // >4 s, so a shorter budget spuriously reported failure ("impossible
     // d'accepter") even though the edge was created server-side.
     const timer = setTimeout(() => done(null), 10_000);
+    const sendAction = (): void => {
+      if (actionSent) return;
+      actionSent = true;
+      if (proveFallback) clearTimeout(proveFallback);
+      ws.send(JSON.stringify(action));
+    };
     const entropy = (() => {
       const b = new Uint8Array(16);
       crypto.getRandomValues(b);
@@ -532,7 +548,6 @@ export function sendFriendAction(
     }
     ws.onopen = () => {
       ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
-      ws.send(JSON.stringify(action));
     };
     ws.onmessage = (e) => {
       let msg: ServerMsg;
@@ -541,9 +556,29 @@ export function sendFriendAction(
       } catch {
         return;
       }
-      if (msg.t === 'friends.update') {
-        clearTimeout(timer);
-        done({ friends: msg.friends, requests: msg.requests, outgoing: msg.outgoing });
+      if (msg.t === 'hello.ok') {
+        // Unproven browser wallet (nonce present + we can sign): prove ownership
+        // first, then act on the server's post-prove friends.update push (or the
+        // fallback). Already-proven / MiniPay (no nonce) → act immediately.
+        if (msg.walletNonce && signMessage && !isMiniPay()) {
+          signMessage(walletProofMessage(msg.walletNonce))
+            .then((signature) => {
+              ws.send(JSON.stringify({ t: 'wallet.prove', signature }));
+              proveFallback = setTimeout(sendAction, 4000);
+            })
+            .catch(() => done(null));
+        } else {
+          sendAction();
+        }
+      } else if (msg.t === 'friends.update') {
+        // Two friends.update messages can arrive: the post-prove push (before the
+        // action) and the action's own result. Send the action on the first, and
+        // resolve on the one that follows it.
+        if (!actionSent) sendAction();
+        else {
+          clearTimeout(timer);
+          done({ friends: msg.friends, requests: msg.requests, outgoing: msg.outgoing });
+        }
       }
     };
     ws.onerror = () => {

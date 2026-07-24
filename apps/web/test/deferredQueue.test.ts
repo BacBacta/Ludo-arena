@@ -40,7 +40,7 @@ vi.hoisted(() => {
   (globalThis as unknown as Record<string, unknown>).WebSocket = FakeWS;
 });
 
-import { RemoteSession, syncLobby } from '../src/lib/session';
+import { RemoteSession, syncLobby, sendFriendAction } from '../src/lib/session';
 
 type FakeWSType = { instances: Array<{ url: string; sent: string[]; onopen: (() => void) | null; onmessage: ((e: { data: string }) => void) | null }> };
 const FakeWS = (globalThis as unknown as { WebSocket: FakeWSType }).WebSocket;
@@ -279,6 +279,10 @@ describe('one-shot syncs stand down while a session is alive (token takeover gua
       if (FakeWS.instances.length === before) throw new Error('sync did not run');
     });
     expect(FakeWS.instances.length).toBe(before + 1); // free again once no session lives
+    // Drain this one-shot so the module-level queueOneShot chain doesn't stay
+    // pending and stall later one-shot tests. syncLobby completes on ONCLOSE
+    // (its single completion signal); the fake's close() is a no-op, so fire it.
+    (FakeWS.instances[before] as unknown as { onclose: (() => void) | null }).onclose?.();
   });
 });
 
@@ -341,5 +345,49 @@ describe('pollRematch (reliable rematch offer — pull recovers a missed push)',
     ws.onmessage?.({ data: JSON.stringify({ t: 'rematch.offer', name: 'Rival' }) });
     expect(offered).toBe('Rival');
     session.dispose();
+  });
+});
+
+describe('sendFriendAction (browser wallet proves BEFORE the friend action)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('an UNPROVEN browser wallet: signs the nonce, sends wallet.prove, and only THEN friend.add', async () => {
+    // Regression — accepting a friend request errored in a plain mobile browser:
+    // the server gates friend.add on a PROVEN wallet, but the one-shot fired the
+    // action at hello (before SIWE) → silent reject → "couldn't accept".
+    FakeWS.instances.length = 0;
+    const signMessage = vi.fn(async () => '0xsignature');
+    const p = sendFriendAction('ws://test', { t: 'friend.add', pid: 'pidX' }, '0x00000000000000000000000000000000000000aa', signMessage);
+    await vi.waitFor(() => { if (FakeWS.instances.length === 0) throw new Error('no ws'); });
+    const ws = FakeWS.instances[0]!;
+    ws.onopen?.();
+    // Unproven session → hello.ok carries a walletNonce.
+    ws.onmessage?.({ data: JSON.stringify({ ...HELLO_OK_BASE, walletNonce: 'nonce1' }) });
+    // The proof goes out; the action must NOT (the server would reject it unproven).
+    await vi.waitFor(() => { if (!sentTypes(ws).includes('wallet.prove')) throw new Error('no prove'); });
+    expect(sentTypes(ws)).not.toContain('friend.add');
+    expect(signMessage).toHaveBeenCalledTimes(1);
+    // The server's post-prove friends.update push → now the action is sent.
+    ws.onmessage?.({ data: JSON.stringify({ t: 'friends.update', friends: [], requests: [{ pid: 'pidX', name: 'X', flag: '' }], outgoing: [] }) });
+    await vi.waitFor(() => { if (!sentTypes(ws).includes('friend.add')) throw new Error('no add'); });
+    // The action's own friends.update resolves the call with the new lists.
+    ws.onmessage?.({ data: JSON.stringify({ t: 'friends.update', friends: [{ pid: 'pidX', name: 'X', flag: '' }], requests: [], outgoing: [] }) });
+    const lists = await p;
+    expect(lists?.friends.map((f) => f.pid)).toEqual(['pidX']);
+  });
+
+  it('an already-proven session (hello.ok WITHOUT a nonce) sends the action immediately', async () => {
+    FakeWS.instances.length = 0;
+    const signMessage = vi.fn(async () => '0xsignature');
+    const p = sendFriendAction('ws://test', { t: 'friend.add', pid: 'pidY' }, '0x00000000000000000000000000000000000000aa', signMessage);
+    await vi.waitFor(() => { if (FakeWS.instances.length === 0) throw new Error('no ws'); });
+    const ws = FakeWS.instances[0]!;
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify(HELLO_OK_BASE) }); // no walletNonce → proven
+    await vi.waitFor(() => { if (!sentTypes(ws).includes('friend.add')) throw new Error('no add'); });
+    expect(sentTypes(ws)).not.toContain('wallet.prove');
+    expect(signMessage).not.toHaveBeenCalled();
+    ws.onmessage?.({ data: JSON.stringify({ t: 'friends.update', friends: [], requests: [], outgoing: [] }) });
+    expect(await p).toBeTruthy();
   });
 });
