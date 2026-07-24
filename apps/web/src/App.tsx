@@ -272,6 +272,16 @@ export default function App() {
     //   on the burner  → switch to THEIR wallet and open the picker now
     //   on their wallet → drop it (and the WalletConnect session) → back to the burner
     const goExternal = !prefersExternalWallet();
+    // Refuse to flip when this browser has NO external-wallet path at all: no
+    // injected provider AND no WalletConnect project id configured
+    // (VITE_WC_PROJECT_ID). Flipping anyway looked like the button was broken —
+    // it dropped the burner, found nothing to pair, silently restored the burner
+    // and flashed a toast, so tapping it appeared to do nothing at all. Say why
+    // instead, and leave the working wallet exactly where it is.
+    if (goExternal && !hasInjectedWallet() && !walletConnectAvailable()) {
+      dispatch({ type: 'TOAST', message: t('walletNoExternal') });
+      return;
+    }
     walletRef.current = null;
     dispatch({ type: 'WALLET_DISCONNECT' });
     await disconnectWalletConnect().catch(() => undefined);
