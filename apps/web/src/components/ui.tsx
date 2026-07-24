@@ -18,7 +18,7 @@ import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
 import { COSMETIC_SETS, DIVISIONS, FEATURED_SET_MULTIPLIER, PREMIUM_COSMETICS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticById, cosmeticCents, featuredSetIdFor, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
 import { isMiniPay } from '../lib/minipay';
-import { playTap } from '../lib/sound';
+import { playDice, playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
 
 /** The "(tap to close)" hint at the bottom of a modal card. It MUST be a real
@@ -581,7 +581,13 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
             // progression/season tiles keep their unlock hints.
             const purchasable = canBuyTickets || cusdBuyable;
             const onClick = unlocked
-              ? () => dispatch({ type: 'SET_DICE_SKIN', id: s.id })
+              ? () => {
+                  // Equip = hear it: each die answers with its own material roll
+                  // sound (gold=coins, crystal=chime…), so the cosmetic's audio
+                  // identity is discoverable right in the shop.
+                  playDice(s.sound);
+                  dispatch({ type: 'SET_DICE_SKIN', id: s.id });
+                }
               : purchasable
                 ? () => setBuyingId(s.id)
                 : undefined;

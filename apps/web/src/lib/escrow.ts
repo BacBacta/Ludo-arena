@@ -133,6 +133,60 @@ export function feeCapWei(baseFeePerGas: bigint, multiplier: bigint, priorityWei
   return baseFeePerGas * multiplier + priorityWei;
 }
 
+// Celo registry (fixed address on every Celo network) → FeeCurrencyDirectory,
+// the contract the NODE itself uses to convert the base fee into the fee
+// currency for the CIP-64 fee-cap check.
+const CELO_REGISTRY = '0x000000000000000000000000000000000000ce10' as Address;
+const REGISTRY_ABI = [
+  { type: 'function', name: 'getAddressForString', stateMutability: 'view', inputs: [{ name: 'i', type: 'string' }], outputs: [{ type: 'address' }] },
+] as const;
+const DIRECTORY_ABI = [
+  { type: 'function', name: 'getExchangeRate', stateMutability: 'view', inputs: [{ name: 't', type: 'address' }], outputs: [{ name: 'n', type: 'uint256' }, { name: 'd', type: 'uint256' }] },
+] as const;
+let cachedDirectory: Address | undefined;
+
+/** The largest of the two directions the FeeCurrencyDirectory rate can convert a
+ *  native base fee into the fee currency. Pure/testable. The node validates a
+ *  CIP-64 tx's maxFeePerGas against the base fee CONVERTED into the fee currency;
+ *  with CELO worth ~N cUSD that is N× the native number, while the WRONG direction
+ *  (what `eth_gasPrice([token])` returns) is ~1/N of it. Taking the MAX clears the
+ *  check whichever way the rate is oriented — over-capping is refunded by EIP-1559
+ *  (the tx pays base+priority, never the cap), so it only costs a larger C4
+ *  reservation, never a larger actual fee. */
+export function baseFloorInFeeCurrency(baseFeePerGas: bigint, num: bigint, den: bigint): bigint {
+  if (baseFeePerGas <= 0n || num <= 0n || den <= 0n) return baseFeePerGas;
+  const a = (baseFeePerGas * num) / den;
+  const b = (baseFeePerGas * den) / num;
+  return a > b ? a : b;
+}
+
+/**
+ * The fee-currency base-fee floor a CIP-64 tx's cap MUST clear, read live from
+ * the FeeCurrencyDirectory + the head block. Returns null on any read failure so
+ * the caller can fall back to the native base fee. This is the exact derivation
+ * the house bot uses (verified on mainnet): the earlier `eth_gasPrice([token])`
+ * source returns the INVERSE conversion and under-caps ~N² during a base-fee
+ * regime where CELO ≠ 1 cUSD — every burner lock was then rejected with "fee cap
+ * cannot be lower than block base fee".
+ */
+export async function feeCurrencyBaseFloor(publicClient: PublicClient, feeCurrency: Address): Promise<bigint | null> {
+  try {
+    if (!cachedDirectory) {
+      cachedDirectory = (await publicClient.readContract({ address: CELO_REGISTRY, abi: REGISTRY_ABI, functionName: 'getAddressForString', args: ['FeeCurrencyDirectory'] })) as Address;
+    }
+    const [block, rate] = await Promise.all([
+      publicClient.getBlock({ blockTag: 'latest' }),
+      publicClient.readContract({ address: cachedDirectory, abi: DIRECTORY_ABI, functionName: 'getExchangeRate', args: [feeCurrency] }) as Promise<readonly [bigint, bigint]>,
+    ]);
+    const base = block.baseFeePerGas ?? 0n;
+    if (base <= 0n) return null;
+    const floor = baseFloorInFeeCurrency(base, rate[0], rate[1]);
+    return floor > 0n ? floor : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Base-fee margin + priority floor for the explicit cap. 3× absorbs a sharp
  *  Celo base-fee spike between estimate and mine; EIP-1559 still charges only
  *  (base + priority) and refunds the rest of the cap, so a wide cap never
@@ -166,8 +220,16 @@ export async function feeCurrencyExtra(
   // refuses it ("User rejected transaction"). Caps are for a LOCAL signer only.
   if (!walletClient.account) return { feeCurrency };
   try {
-    const block = await publicClient.getBlock({ blockTag: 'latest' });
-    const baseFee = block.baseFeePerGas ?? 0n;
+    // Cap base = the fee-currency-denominated base floor (FeeCurrencyDirectory),
+    // NOT the raw native base fee: the node validates the cap in fee-currency
+    // units, so a native-derived cap under-clears when CELO ≠ 1 cUSD. Fall back
+    // to the native base fee only if the directory can't be read.
+    const floor = await feeCurrencyBaseFloor(publicClient, feeCurrency);
+    let baseFee = floor;
+    if (baseFee === null) {
+      const block = await publicClient.getBlock({ blockTag: 'latest' });
+      baseFee = block.baseFeePerGas ?? 0n;
+    }
     return {
       feeCurrency,
       maxFeePerGas: feeCapWei(baseFee, FEE_MULTIPLIER, PRIORITY_FEE_WEI),
@@ -218,28 +280,22 @@ export async function planFeeExtras(
   // (this runs twice per lock, approve + join; every serial roundtrip here is
   // dead time the paired opponent spends staring at "locking your stake").
   const priceP = (async () => {
+    // CIP-64 fee-cap base: the fee-currency-denominated base fee floor the NODE
+    // validates against, read from the FeeCurrencyDirectory (baseFloorInFeeCurrency).
+    // The earlier source — `eth_gasPrice([token])` — returns the INVERSE
+    // conversion; with CELO ≠ 1 cUSD it under-caps ~N² and EVERY burner lock was
+    // rejected ("fee cap … cannot be lower than the block base fee"), aborting
+    // the match (incl. every house-bot game the human had to co-lock). The
+    // house bot uses this exact derivation and its joins now mine.
+    const floor = await feeCurrencyBaseFloor(publicClient, feeCurrency);
+    if (floor !== null) return floor;
+    // Directory unreadable → fall back to the NATIVE base fee (>= the check on a
+    // 1:1-priced currency; the ladder's rungs still clear a spike).
     try {
-      // CIP-64 UNITS: a feeCurrency tx's fee fields are denominated IN THE FEE
-      // CURRENCY. Celo's fee-abstraction RPC `eth_gasPrice([token])` returns the
-      // current suggested price in TOKEN units — the right base for the cap. The
-      // native base fee is the WRONG unit: with CELO ≈ ⅓ of a cUSD, a
-      // native-derived cap over-reserves ~3× and blew C4 on a 12¢ wallet ("total
-      // cost … exceeds the balance" with money actually there).
-      const priced = (await (publicClient as unknown as { request: (a: { method: string; params: unknown[] }) => Promise<unknown> }).request({
-        method: 'eth_gasPrice',
-        params: [feeCurrency],
-      })) as string;
-      return BigInt(priced);
+      const block = await publicClient.getBlock({ blockTag: 'latest' });
+      return block.baseFeePerGas ?? 0n;
     } catch {
-      // Node without the extension: fall back to the NATIVE base fee — an
-      // over-margined cap (clears C1 with room) that the ladder's THRIFTY rung
-      // shrinks if it trips C4.
-      try {
-        const block = await publicClient.getBlock({ blockTag: 'latest' });
-        return block.baseFeePerGas ?? 0n;
-      } catch {
-        return null; // both reads failed → let viem estimate the fees
-      }
+      return null; // all reads failed → let viem estimate the fees
     }
   })();
   const gasP = (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> })

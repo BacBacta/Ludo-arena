@@ -3259,9 +3259,14 @@ function pollStakeLock(p: PendingReveal, attempt: number): void {
         return;
       }
       if (attempt >= MAX_LOCK_POLLS) {
-        // Stakes never both locked. Abort + auto-refund whoever DID lock.
+        // Stakes never both locked. Abort + auto-refund whoever DID lock. Log the
+        // FINAL on-chain depositors vs the expected pair so a stuck lock is
+        // diagnosable: an empty slot names which side (human or house bot) never
+        // deposited in time — the difference between a client fee-cap reject and
+        // a bot-lock failure.
+        const botSide = p.a.isHouseBot ? 'A=bot' : p.b.isHouseBot ? 'B=bot' : 'no-bot';
         abortPendingStaked(p, 'Stakes were not locked in time — match cancelled. Any locked stake is refunded shortly.');
-        console.warn(`[stake-gate] ${p.gameId} aborted: stakes not Active after ${attempt} polls`);
+        console.warn(`[stake-gate] ${p.gameId} aborted: not Active after ${attempt} polls — status=${status} onchain=[${playerA}, ${playerB}] expected=[${p.a.wallet}, ${p.b.wallet}] (${botSide})`);
         return;
       }
       setTimeout(() => pollStakeLock(p, attempt + 1), LOCK_POLL_MS);

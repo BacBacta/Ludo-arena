@@ -70,6 +70,7 @@ on:
           - prune-race-board
           - server-logs
           - probe-fees
+          - probe-lock
       confirm:
         description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT · prune-race-board: PRUNE-BOARD'
         required: false
@@ -183,6 +184,23 @@ jobs:
           fi
           B64=$(base64 -w0 apps/server/scripts/probeFees.cjs)
           flyctl ssh console -a ludo-arena -C "sh -lc 'echo $B64 | base64 -d > /tmp/probe.cjs && node /tmp/probe.cjs'"
+      # probe-lock: READ-ONLY — reproduces the house bot's stake-lock fee path
+      # in-machine (prod env + prod key, address only ever printed) WITHOUT
+      # sending a tx: wallet nonce/balance, cip64Fees() success-or-throw, and the
+      # maxFeePerGas viem actually attaches via prepareTransactionRequest. Ships
+      # from this checkout over ssh; no deploy needed.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'probe-lock' }}
+      - name: probe-lock (reproduce the stake-lock fee path, in-machine)
+        if: ${{ inputs.operation == 'probe-lock' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN secret is not configured"; exit 1
+          fi
+          B64=$(base64 -w0 apps/server/scripts/probeLock.cjs)
+          flyctl ssh console -a ludo-arena -C "sh -lc 'echo $B64 | base64 -d > /tmp/probelock.cjs && node /tmp/probelock.cjs'"
       # wallet-status: READ-ONLY — prints an arbitrary wallet's cUSD + CELO balance
       # (e.g. the house-bot wallet, to confirm it is funded). No tx; runs on the
       # runner against Celo RPC. Honours RACE_FEE_IN_STABLE so the "gas mode" line
