@@ -34,6 +34,12 @@ interface Over {
   rejectWriteOnce?: unknown;
   /** Node without eth_gasPrice(feeCurrency) → the native-base-fee fallback. */
   noTokenGasPrice?: boolean;
+  /** FeeCurrencyDirectory getExchangeRate(num, den). Default models the live
+   *  mainnet regime (CELO ≫ 1 cUSD ⇒ den/num ≈ 14), so the cUSD-denominated base
+   *  floor is ~14× the native number — the value the node validates against. */
+  feeDirectoryRate?: readonly [bigint, bigint];
+  /** Registry/directory unreadable → planFeeExtras falls back to the NATIVE base fee. */
+  noFeeDirectory?: boolean;
   /** Local signer (the app burner: walletClient.account SET) — gets the explicit
    *  fee caps + gas limit (viem builds the whole tx). Default (undefined) models an
    *  INJECTED wallet (MiniPay), which mandates LEGACY txs and gets ONLY feeCurrency. */
@@ -60,6 +66,16 @@ function fakeClients(over: Over = {}) {
       }
       if (functionName === 'allowance') return over.allowance ?? 0n;
       if (functionName === 'seatsOf') return over.seats ?? [];
+      // FeeCurrencyDirectory resolution (CIP-64 cap base). Throw when
+      // over.noFeeDirectory to model a chain/node where it can't be read.
+      if (functionName === 'getAddressForString') {
+        if (over.noFeeDirectory) throw new Error('registry read failed');
+        return '0x00000000000000000000000000000000000000dd' as Address;
+      }
+      if (functionName === 'getExchangeRate') {
+        if (over.noFeeDirectory) throw new Error('directory read failed');
+        return over.feeDirectoryRate ?? [1n, 14n];
+      }
       throw new Error(`unexpected read ${functionName}`);
     },
     waitForTransactionReceipt: async () => {
@@ -251,12 +267,14 @@ describe('stakeInEscrow (1v1)', () => {
     // feeCurrency tx must pay out of its OWN gas limit — without the headroom the
     // mined tx ran out of gas mid-execution ('approve reverted' incident).
     expect(join.gas).toBe(425_000n);
-    // The cap is priced in FEE-CURRENCY units (CIP-64): the 'total cost exceeds
-    // the balance' incident happened at 12¢ of balance because the cap was
-    // derived from the NATIVE base fee — ~3× the cUSD-denominated price (CELO
-    // ≈ $0.35) — inflating the reservation past a few-cent wallet. Token price
-    // 10 gwei × 2 + 2 gwei priority = 22 gwei, NOT native 25×2+2.
-    expect(join.maxFeePerGas).toBe(22_000_000_000n);
+    // The cap base is the fee-currency-denominated base FLOOR from the
+    // FeeCurrencyDirectory — the value the node validates a CIP-64 tx against.
+    // With the rate's den/num = 14 (CELO ≫ 1 cUSD), floor = 25 gwei × 14 = 350
+    // gwei-cUSD; BALANCED ×2 + 2 gwei priority = 702 gwei. The earlier
+    // `eth_gasPrice([token])` source returned the INVERSE (~1.8 gwei) and its ×2
+    // cap (22 gwei) sat far BELOW the 350 gwei floor — the reject that stranded
+    // every burner lock (and the human's co-lock in a house-bot game).
+    expect(join.maxFeePerGas).toBe(702_000_000_000n);
     expect(estimates.length).toBeGreaterThan(0);
     for (const e of estimates) {
       expect(e.maxFeePerGas).toBeUndefined(); // NO fee fields in the estimate…
@@ -264,11 +282,11 @@ describe('stakeInEscrow (1v1)', () => {
     }
   });
 
-  it('falls back to the NATIVE base fee when the node lacks the fee-currency gasPrice extension', async () => {
-    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, noTokenGasPrice: true, localSigner: true });
+  it('falls back to the NATIVE base fee when the FeeCurrencyDirectory is unreadable', async () => {
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, noFeeDirectory: true, localSigner: true });
     await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
     const join = writes.find((w) => w.functionName === 'join')!;
-    expect(join.maxFeePerGas).toBe(52_000_000_000n); // native 25 × 2 + 2 gwei (over-margined but safe)
+    expect(join.maxFeePerGas).toBe(52_000_000_000n); // native 25 × 2 + 2 gwei (best-effort when the directory can't be read)
   });
 
   it('native-coin txs are untouched (no explicit gas or fee overrides)', async () => {
