@@ -12,26 +12,45 @@
  * runs under an in-process mutex so concurrent finishes can't lose an update
  * (single Fly process → an async chain is enough, no cross-node coordination).
  */
+import type { GameOverReason } from '@ludo/shared';
 import type { Store } from './store/types.js';
 
+/** A game the LOSER gave up (resign / timeout-forfeit) rather than a real
+ *  finish. Wash-traders throw games this way, so an abandon-win scores less and
+ *  a thrown loss earns no participation point. */
+function isAbandon(reason: GameOverReason): boolean {
+  return reason === 'resign' || reason === 'timeout-forfeit';
+}
+
 export interface RaceScoreConfig {
-  winPoints: number; // points for winning an event game
+  winPoints: number; // points for winning a genuinely-FINISHED event game
+  /** Points for a win the opponent handed over by abandoning (resign/timeout).
+   *  Lower than winPoints so a farmer whose accomplice throws games earns less;
+   *  0 = an abandon-win scores nothing. */
+  abandonWinPoints: number;
   playPoints: number; // participation points for the loser
+  /** When true, the loser earns participation points ONLY on a genuine finish —
+   *  a player who resigns/times out (throws the game) earns nothing. Kills the
+   *  "lose on purpose for the +1" farm. */
+  participationRequiresFinish: boolean;
   /** Games vs the SAME opponent that still score in a day. 0 = UNLIMITED. */
   maxVsSamePerDay: number;
   /** Total scored games per player per day. 0 = UNLIMITED. */
   maxScoredPerDay: number;
 }
 
-/** Defaults from env. A light anti wash-trading guard: only the first 5 wins vs
- *  the SAME opponent per day score (so a single accomplice can't be farmed
- *  endlessly), while the total scored games per player stays UNLIMITED (0) — the
- *  event still optimises for raw on-chain volume. Both are env-tunable (0 = no
- *  cap) so the guard can be loosened or tightened with no code change. */
+/** Defaults from env. Anti wash-trading guards (hardened after the launch audit
+ *  found reciprocal-farming clusters): a win only scores full points on a REAL
+ *  finish (an abandon-win is discounted), participation points require a genuine
+ *  finish (no reward for throwing a game), only the first 2 wins vs the SAME
+ *  opponent per day score, and the total scored games per day stays uncapped by
+ *  default. All env-tunable so the guards can be re-balanced with no code change. */
 export const DEFAULT_RACE_SCORE: RaceScoreConfig = {
   winPoints: Number(process.env.RACE_WIN_POINTS ?? '3'),
+  abandonWinPoints: Number(process.env.RACE_ABANDON_WIN_POINTS ?? '1'),
   playPoints: Number(process.env.RACE_PLAY_POINTS ?? '1'),
-  maxVsSamePerDay: Number(process.env.RACE_MAX_VS_SAME_PER_DAY ?? '5'),
+  participationRequiresFinish: (process.env.RACE_PARTICIPATION_REQUIRES_FINISH ?? 'true').trim() !== 'false',
+  maxVsSamePerDay: Number(process.env.RACE_MAX_VS_SAME_PER_DAY ?? '2'),
   maxScoredPerDay: Number(process.env.RACE_MAX_SCORED_PER_DAY ?? '0'),
 };
 
@@ -89,6 +108,9 @@ export interface ScoreInput {
   winnerName: string;
   loserWallet: string;
   loserName: string;
+  /** How the game ended — 'finish' scores full; an abandon (resign/timeout)
+   *  discounts the win and denies the loser participation points. */
+  reason: GameOverReason;
   day: string; // utcToday()
 }
 
@@ -110,9 +132,16 @@ export async function scoreEventGame(store: Store, input: ScoreInput, cfg: RaceS
     const wVs = await readCounter(store, `race:vs:${w}:${l}:${input.day}`);
     const lDaily = await readCounter(store, `race:daily:${l}:${input.day}`);
 
-    const winnerScores = underCap(wVs, cfg.maxVsSamePerDay) && underCap(wDaily, cfg.maxScoredPerDay);
-    const loserScores = underCap(lDaily, cfg.maxScoredPerDay);
-    const winnerGained = winnerScores ? cfg.winPoints : 0;
+    const abandon = isAbandon(input.reason);
+    // An abandon-win scores the (lower) abandonWinPoints; a real finish the full
+    // winPoints. Still subject to the per-opponent + per-day caps.
+    const winValue = abandon ? cfg.abandonWinPoints : cfg.winPoints;
+    const winnerScores = winValue > 0 && underCap(wVs, cfg.maxVsSamePerDay) && underCap(wDaily, cfg.maxScoredPerDay);
+    // The loser earns participation ONLY on a genuine finish (when configured) —
+    // throwing a game (resign/timeout) is worth nothing.
+    const loserEligible = !(cfg.participationRequiresFinish && abandon);
+    const loserScores = loserEligible && cfg.playPoints > 0 && underCap(lDaily, cfg.maxScoredPerDay);
+    const winnerGained = winnerScores ? winValue : 0;
     const loserGained = loserScores ? cfg.playPoints : 0;
     if (winnerGained === 0 && loserGained === 0) return { winnerGained: 0, loserGained: 0 };
 

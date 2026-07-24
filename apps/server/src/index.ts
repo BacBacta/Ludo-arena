@@ -926,7 +926,7 @@ function wireRoom(room: Room): void {
       const winN = result.winner === 0 ? pa.name : pb.name;
       const loseW = result.winner === 0 ? pb.wallet : pa.wallet;
       const loseN = result.winner === 0 ? pb.name : pa.name;
-      void scoreEventGame(store, { winnerWallet: winW, winnerName: winN, loserWallet: loseW, loserName: loseN, day: utcToday() }).catch((e) =>
+      void scoreEventGame(store, { winnerWallet: winW, winnerName: winN, loserWallet: loseW, loserName: loseN, reason: result.reason, day: utcToday() }).catch((e) =>
         console.error('[race] score', e),
       );
       // JIT top-up (mainnet anti-fund-and-run): a player is funded ONE stake at a

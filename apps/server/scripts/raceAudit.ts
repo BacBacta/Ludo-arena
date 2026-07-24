@@ -33,12 +33,15 @@ if (!DB) {
 }
 const NAME = process.env.NAME?.trim().toLowerCase() || '';
 const TOP = Number(process.env.TOP ?? '15'); // how many ranks to deep-audit
+// FULL=1 prints untruncated wallet addresses (so a flagged farmer's exact
+// address can be copied into PRUNE_WALLETS for prune-race-board).
+const FULL = (process.env.FULL ?? '').trim() === '1';
 const ABANDON = new Set(['timeout-forfeit', 'resign']); // loser gave up
 
 const pool = new pg.Pool({ connectionString: DB });
 const q = <T extends pg.QueryResultRow>(sql: string, params: unknown[] = []): Promise<T[]> => pool.query<T>(sql, params).then((r) => r.rows);
 
-const short = (w: string): string => (w.startsWith('anon:') ? w : `${w.slice(0, 6)}…${w.slice(-4)}`);
+const short = (w: string): string => (FULL || w.startsWith('anon:') ? w : `${w.slice(0, 6)}…${w.slice(-4)}`);
 const pct = (n: number, d: number): string => (d === 0 ? '—' : `${Math.round((100 * n) / d)}%`);
 const fmtGap = (ms: number): string => (ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${(ms / 60_000).toFixed(1)}m`);
 

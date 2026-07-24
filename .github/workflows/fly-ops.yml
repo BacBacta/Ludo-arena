@@ -64,10 +64,12 @@ on:
           - race-status
           - onchain-activity
           - race-audit
+          - wallet-status
           - arm-house-bot
           - reset-race-board
+          - prune-race-board
       confirm:
-        description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT'
+        description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT · prune-race-board: PRUNE-BOARD'
         required: false
         type: string
       reset_full:
@@ -95,6 +97,19 @@ on:
         type: string
       race_audit_name:
         description: 'race-audit only: spotlight players whose name contains this text (case-insensitive). Blank = spotlight the top 3.'
+        required: false
+        type: string
+      wallet_address:
+        description: 'wallet-status only: the address to probe (cUSD + CELO balance). e.g. the house-bot wallet.'
+        required: false
+        type: string
+      race_audit_full:
+        description: 'race-audit only: print UNTRUNCATED wallet addresses (to copy a farmer into prune-race-board).'
+        required: false
+        default: false
+        type: boolean
+      prune_wallets:
+        description: 'prune-race-board only: comma/space-separated wallet addresses to REMOVE from the leaderboard.'
         required: false
         type: string
 
@@ -130,6 +145,26 @@ jobs:
           fi
           npm ci
           npm run set-tier-rake -w packages/contracts
+      # wallet-status: READ-ONLY — prints an arbitrary wallet's cUSD + CELO balance
+      # (e.g. the house-bot wallet, to confirm it is funded). No tx; runs on the
+      # runner against Celo RPC. Honours RACE_FEE_IN_STABLE so the "gas mode" line
+      # tells you whether the wallet needs native CELO.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'wallet-status' }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.operation == 'wallet-status' }}
+        with:
+          node-version: 22
+      - name: wallet-status (cUSD + CELO balance of an address)
+        if: ${{ inputs.operation == 'wallet-status' }}
+        env:
+          NETWORK: celo
+          RACE_FEE_IN_STABLE: 'true'
+          WALLET_ADDRESS: ${{ inputs.wallet_address }}
+        run: |
+          if [ -z "$WALLET_ADDRESS" ]; then echo "::error::set wallet_address (the address to probe)"; exit 1; fi
+          npm ci
+          npm run wallet-status -w packages/contracts
       # race-status: READ-ONLY — prints the faucet's live cUSD balance + how many
       # players it can still fund. No tx, no Fly change; the runner reaches Celo
       # RPC (the dev sandbox can't). Derives the faucet address from the standing
@@ -307,6 +342,27 @@ jobs:
           if [ "${RESET_FULL:-false}" = "true" ]; then ARG="full"; fi
           echo "Resetting the Race Week leaderboard on ludo-arena (full=${RESET_FULL:-false})…"
           flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && npm run reset-race-board -w apps/server -- $ARG'"
+      # prune-race-board: TARGETED removal of specific (farmed) wallets from the
+      # leaderboard before prize distribution — unlike reset-race-board it leaves
+      # every legitimate player intact. Runs INSIDE the machine (store access).
+      # Confirm-gated (PRUNE-BOARD). PRUNE_WALLETS is sanitized to 0x-hex + commas
+      # so it can't break out of the ssh command.
+      - name: prune Race Week leaderboard (targeted)
+        if: ${{ inputs.operation == 'prune-race-board' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          CONFIRM: ${{ inputs.confirm }}
+          PRUNE_WALLETS: ${{ inputs.prune_wallets }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          if [ "${CONFIRM:-}" != "PRUNE-BOARD" ]; then
+            echo "::error::type PRUNE-BOARD in the 'confirm' box to proceed (guards against an accidental run)"; exit 1
+          fi
+          SAFE=$(printf '%s' "${PRUNE_WALLETS:-}" | tr -cd '[:xdigit:]xX, ')
+          if [ -z "$SAFE" ]; then echo "::error::set prune_wallets to the addresses to remove"; exit 1; fi
+          echo "Pruning wallets from the Race Week leaderboard on ludo-arena: $SAFE"
+          flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && PRUNE_WALLETS=\"$SAFE\" npm run prune-race-board -w apps/server'"
       # race-audit: READ-ONLY leaderboard forensics — reconstructs the real match
       # history behind each player's points to surface wash-trading / farming.
       # Runs INSIDE the machine (via ssh) because the prod store (Postgres) is
@@ -317,14 +373,16 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           AUDIT_NAME: ${{ inputs.race_audit_name }}
+          AUDIT_FULL: ${{ inputs.race_audit_full }}
         run: |
           set -eu
           if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
           # NAME is passed through the remote env; single-quoted to survive the ssh
           # shell. Only [a-zA-Z0-9 _-] are kept so it can't break out of the command.
           SAFE=$(printf '%s' "${AUDIT_NAME:-}" | tr -cd '[:alnum:] _-')
-          echo "Auditing the Race Week leaderboard on ludo-arena (name filter: '${SAFE:-<top 3>}')…"
-          flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && NAME=\"$SAFE\" npm run race-audit -w apps/server'"
+          FULL=$([ "${AUDIT_FULL:-false}" = "true" ] && echo 1 || echo 0)
+          echo "Auditing the Race Week leaderboard on ludo-arena (name filter: '${SAFE:-<top 3>}', full=$FULL)…"
+          flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && NAME=\"$SAFE\" FULL=\"$FULL\" npm run race-audit -w apps/server'"
       # arm-house-bot: turn ON the Race house bot on the running server in one
       # atomic secrets import (single restart). RACE_HOUSE_BOT_PRIVATE_KEY is read
       # from a GitHub REPO SECRET (never an input), so the key never appears in the

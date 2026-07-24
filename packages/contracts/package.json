@@ -15,7 +15,8 @@
     "set-mint-open": "tsx script/setMintOpen.ts",
     "set-tier-rake": "tsx script/setTierRake.ts",
     "race-status": "tsx script/raceStatus.ts",
-    "onchain-activity": "tsx script/onchainActivity.ts"
+    "onchain-activity": "tsx script/onchainActivity.ts",
+    "wallet-status": "tsx script/walletStatus.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
