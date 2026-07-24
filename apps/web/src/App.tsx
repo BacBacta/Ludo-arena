@@ -197,6 +197,25 @@ export default function App() {
         void refreshBalance(walletRef.current);
         return true;
       }
+      // OUTSIDE MiniPay the play wallet is ALWAYS the app-minted BURNER (B1).
+      // An injected/WalletConnect wallet (MetaMask…) cannot sign a CIP-64 tx, so
+      // it can't pay Celo gas in the stablecoin — `payGasInStable` is false for
+      // it and every stake tx then asks for NATIVE CELO, which the player doesn't
+      // have and which the event promises they never need. Letting the injected
+      // provider win here is exactly what made a first-time visitor (MetaMask
+      // installed, no burner yet) get a "you need CELO" prompt on their first
+      // staked game. The burner builds its own txs → gas in cUSD, funded by the
+      // faucet. Chosen HERE — before any session is opened — because the server
+      // voids a game whose on-chain depositor isn't the wallet announced in the
+      // hello (sameDepositors / the [stake-gate] abort), so the wallet can never
+      // be swapped later in the flow.
+      if (!isMiniPay()) {
+        const burner = getBurnerWallet(); // reuses the persisted key; mints once
+        walletRef.current = burner;
+        dispatch({ type: 'SET_WALLET_ADDRESS', address: burner.address });
+        void refreshBalance(burner);
+        return true;
+      }
       let wallet = await connectWallet().catch(() => null);
       // No injected provider (plain mobile browser, outside MiniPay): if
       // WalletConnect is configured, open its modal so the user can pair Valora /
@@ -1361,7 +1380,15 @@ export default function App() {
         : needGas
           ? // A gas shortfall right after a REFUSED seed is the seed refusal
             // (device allowance, pool dry…) — the server's words name it.
-            (seedError ?? t('raceNeedGas').replace('{chain}', activeChain.name))
+            // Otherwise: this wallet pays gas in the STABLECOIN (the burner, and
+            // MiniPay), so a shortfall means the app's own funding hasn't landed
+            // — NOT that the player needs CELO. Telling them to buy CELO sent
+            // them shopping for a coin the event never requires; only a wallet
+            // paying NATIVE gas gets that message.
+            (seedError ??
+              (walletRef.current?.payGasInStable === false
+                ? t('raceNeedGas').replace('{chain}', activeChain.name)
+                : t('raceFundingPending')))
           : t('raceClaimFailed');
       dispatch({ type: 'TOAST', message: msg });
     } finally {
