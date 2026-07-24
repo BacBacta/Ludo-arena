@@ -78,4 +78,28 @@ const ERC20_ABI = [
       console.log(`[probe-lock] prepare ${label}: ERROR ${e && e.shortMessage ? e.shortMessage : (e && e.message ? e.message.slice(0, 200) : e)}`);
     }
   }
+
+  // --- ON-CHAIN TRUTH: the bot's recent txs (method + success/revert + reason).
+  // Distinguishes "bot locks then match aborts" (joins succeed) from "bot join
+  // reverts every time" (e.g. CommitMismatch / BadStake). Explorer, no key.
+  const hosts = ['https://celo.blockscout.com', 'https://explorer.celo.org/mainnet'];
+  for (const host of hosts) {
+    try {
+      const r = await fetch(`${host}/api/v2/addresses/${account.address}/transactions?filter=from`, { headers: { accept: 'application/json' } });
+      if (!r.ok) { console.log(`[probe-lock] explorer ${host}: HTTP ${r.status}`); continue; }
+      const j = await r.json();
+      const items = (j.items || []).slice(0, 10);
+      console.log(`[probe-lock] recent bot txs (${host}): ${items.length}`);
+      for (const it of items) {
+        const method = it.method || (it.decoded_input && it.decoded_input.method_call) || it.raw_input?.slice(0, 10) || '?';
+        const status = it.status || it.result || '?';
+        const revert = it.revert_reason ? (typeof it.revert_reason === 'string' ? it.revert_reason : JSON.stringify(it.revert_reason)) : '';
+        const to = (it.to && (it.to.hash || it.to)) || '?';
+        console.log(`[probe-lock]   ${it.timestamp || ''} method=${method} to=${to} status=${status} ${revert ? 'REVERT=' + revert : ''}`);
+      }
+      break;
+    } catch (e) {
+      console.log(`[probe-lock] explorer ${host}: ${e && e.message ? e.message.slice(0, 120) : e}`);
+    }
+  }
 })().catch((e) => { console.error('[probe-lock] FAILED:', e && e.message ? e.message : e); process.exit(1); });
