@@ -98,6 +98,9 @@ interface Deployment {
   chainId: number;
   escrow: Address;
   stablecoin?: Address;
+  /** CIP-64 gas fee-currency adapter (18-dec) for a non-18-dec stake token
+   *  (USD₮). Absent for cUSD, which is its own fee currency. */
+  feeCurrencyAdapter?: Address;
 }
 
 /**
@@ -278,7 +281,10 @@ export function createArbiter(env: NodeJS.ProcessEnv = process.env): Arbiter | n
       const deploymentsPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'contracts', 'deployments.json');
       try {
         const deployments = JSON.parse(readFileSync(deploymentsPath, 'utf8')) as Record<string, Deployment>;
-        feeCurrency = Object.values(deployments).find((d) => d.chainId === chain.id)?.stablecoin;
+        const d = Object.values(deployments).find((x) => x.chainId === chain.id);
+        // Gas token = the 18-dec fee-currency ADAPTER when the stake token isn't
+        // 18-dec (USD₮), else the stake token itself (cUSD is its own fee currency).
+        feeCurrency = d?.feeCurrencyAdapter ?? d?.stablecoin;
       } catch {
         /* no deployments file bundled */
       }
