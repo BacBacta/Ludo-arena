@@ -31,14 +31,17 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createPublicClient, createWalletClient, defineChain, http, type Address, type Chain, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, http, type Address, type Chain, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { CHAINS } from './settlement.js';
 
-const CHAINS: Record<string, Chain> = {
-  localhost: defineChain({ id: 31_337, name: 'Localhost', nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: ['http://127.0.0.1:8545'] } } }),
-  'celo-sepolia': defineChain({ id: 11_142_220, name: 'Celo Sepolia', nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 }, rpcUrls: { default: { http: ['https://forno.celo-sepolia.celo-testnet.org'] } } }),
-  celo: defineChain({ id: 42_220, name: 'Celo', nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 }, rpcUrls: { default: { http: ['https://forno.celo.org'] } } }),
-};
+// The bot rides the SAME chain definitions as the arbiter/faucet (settlement.ts):
+// viem's real `celo` chain, which carries the CIP-64 serializers (so a
+// `feeCurrency` tx is encoded as a type-0x7b Celo tx, gas payable in cUSD) AND a
+// widened base-fee multiplier (so approve/join clear Celo's spiky base fee). A
+// hand-rolled `defineChain` here had NEITHER — invisible on hardhat (no CIP-64),
+// but on mainnet it broke the bot's stake lock: the `feeCurrency` field could not
+// be serialized / the tx was rejected under base-fee spikes, aborting the match.
 
 interface Deployment {
   chainId: number;
