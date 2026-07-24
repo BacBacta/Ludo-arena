@@ -71,6 +71,7 @@ on:
           - server-logs
           - probe-fees
           - probe-lock
+          - probe-feecurrencies
       confirm:
         description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT · prune-race-board: PRUNE-BOARD'
         required: false
@@ -201,6 +202,22 @@ jobs:
           fi
           B64=$(base64 -w0 apps/server/scripts/probeLock.cjs)
           flyctl ssh console -a ludo-arena -C "sh -lc 'echo $B64 | base64 -d > /tmp/probelock.cjs && node /tmp/probelock.cjs'"
+      # probe-feecurrencies: READ-ONLY — enumerates the FeeCurrencyDirectory and
+      # resolves each registered fee currency's underlying token, to find the USD₮
+      # gas ADAPTER address (distinct from the raw 6-dec USDT staking token) for
+      # the cUSD→USDT migration. In-machine (mainnet RPC), no tx.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'probe-feecurrencies' }}
+      - name: probe-feecurrencies (USDT gas adapter discovery, in-machine)
+        if: ${{ inputs.operation == 'probe-feecurrencies' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN secret is not configured"; exit 1
+          fi
+          B64=$(base64 -w0 apps/server/scripts/probeFeeCurrencies.cjs)
+          flyctl ssh console -a ludo-arena -C "sh -lc 'echo $B64 | base64 -d > /tmp/probefc.cjs && node /tmp/probefc.cjs'"
       # wallet-status: READ-ONLY — prints an arbitrary wallet's cUSD + CELO balance
       # (e.g. the house-bot wallet, to confirm it is funded). No tx; runs on the
       # runner against Celo RPC. Honours RACE_FEE_IN_STABLE so the "gas mode" line
