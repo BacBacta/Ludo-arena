@@ -176,9 +176,13 @@ export function createHouseBot(env: NodeJS.ProcessEnv = process.env): HouseBot |
     return null;
   }
   const decimals = Number(dep?.stablecoinDecimals ?? 18);
-  // Pay gas in the stablecoin (CIP-64) when FEE_IN_STABLE — same switch the
-  // arbiter uses, so the bot wallet needs no native CELO on mainnet.
-  const feeCurrency = (env.FEE_IN_STABLE ?? '').trim() === 'true' ? stablecoin : undefined;
+  // Pay gas in the stablecoin (CIP-64) so the bot wallet needs NO native CELO.
+  // Honour EITHER switch: FEE_IN_STABLE (the arbiter's) OR RACE_FEE_IN_STABLE
+  // (the Race faucet's, race.ts) — mainnet sets the latter, and the house bot
+  // rides the Race tier, so without this the bot silently fell back to native
+  // CELO gas and would strand on a cUSD-only wallet.
+  const feeInStable = (env.FEE_IN_STABLE ?? '').trim() === 'true' || (env.RACE_FEE_IN_STABLE ?? '').trim() === 'true';
+  const feeCurrency = feeInStable ? stablecoin : undefined;
   const pk = (raw.startsWith('0x') ? raw : `0x${raw}`) as Hex;
   const bot = new HouseBot(pk, chain, escrow, stablecoin, decimals, env.SETTLEMENT_RPC?.trim() || undefined, feeCurrency);
   console.log(`[house-bot] ARMED on ${chainName} (${bot.address}) — fills matchmaking + absorbs flagged farmers; games score ZERO and are tagged is_house_bot.`);
