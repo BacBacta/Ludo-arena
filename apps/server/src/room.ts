@@ -36,6 +36,11 @@ export interface Client {
   entranceFx?: string;
   /** Equipped victory effect; shown to BOTH players when this player wins. */
   victoryFx?: string;
+  /** Operator house bot (Race matchmaking fill / farmer honeypot). The Room
+   *  DRIVES this seat itself (roll + pickAutoMove) instead of waiting on a human
+   *  client, so a bot game plays at human pace without any ws round-trip. Purely
+   *  a play-driving flag — scoring/settlement exclusion lives in index.ts. */
+  isHouseBot?: boolean;
 }
 
 export interface RoomResult {
@@ -63,6 +68,11 @@ const DIE_SETTLE_MS = Number(process.env.DIE_SETTLE_MS ?? 900);
  *  patience. */
 const WATCHDOG_GRACE_MS = 10_000;
 
+/** How long the house bot "thinks" before it rolls / picks a token — a human-
+ *  like beat so a bot game doesn't feel robotically instant. Env-tunable (0 for
+ *  the accelerated sim/load bench). */
+const BOT_THINK_MS = Number(process.env.BOT_THINK_MS ?? 700);
+
 export class Room {
   readonly gameId: string;
   readonly stakeCents: StakeCents;
@@ -80,6 +90,10 @@ export class Room {
   private lastGiftAt: [number, number] = [0, 0]; // per-seat gift throttle
   private deadlineTs = 0;
   private over = false;
+  /** Seat driven by the operator house bot, or null for a normal 2-human game.
+   *  Derived from the clients at construction (isHouseBot flag). */
+  private readonly botSeat: Seat | null;
+  private botTimer: ReturnType<typeof setTimeout> | null = null;
   /** Ticket-gated freeroll game (entry already paid; winner gets the ticket prize). */
   freeroll = false;
   onEnd?: (room: Room) => void;
@@ -96,6 +110,10 @@ export class Room {
     this.clients = [a, b];
     this.fairness = fairness;
     this.state = newGame();
+    // At most ONE seat is ever a bot (the matchmaker never pairs bot-vs-bot);
+    // if both were somehow flagged we still drive only seat 0, and seat 1 falls
+    // back to the normal 15s auto-play — never two self-driving seats.
+    this.botSeat = a.isHouseBot ? 0 : b.isHouseBot ? 1 : null;
   }
 
   /** Rebuild a room from a store snapshot (server restart). */
@@ -125,8 +143,55 @@ export class Room {
 
   start(): void {
     this.broadcast({ t: 'game.state', state: this.state });
-    this.announceTurn(true); // state just went out above — don't duplicate it
+    this.announceTurn(true); // state just went out above — don't duplicate it (also arms the bot if it opens)
     this.onChange?.(this);
+  }
+
+  // ---------- house bot seat driver ----------
+
+  /** If it's the bot's turn, schedule its next action after a human-like beat.
+   *  Idempotent (clears any pending action first); a no-op for human turns and
+   *  for normal 2-human rooms (botSeat === null). Called wherever the turn can
+   *  become the bot's: announceTurn (turn hand-off / bot extra turn) and start. */
+  private maybeDriveBot(): void {
+    if (this.over || this.botSeat === null || this.state.turn !== this.botSeat) return;
+    if (this.botTimer) clearTimeout(this.botTimer);
+    this.botTimer = setTimeout(() => {
+      this.botTimer = null;
+      this.botAct();
+    }, BOT_THINK_MS);
+  }
+
+  /** One atomic bot step. Rolls when awaiting-roll; picks (pickAutoMove) only
+   *  when there's a genuine CHOICE — a single legal move is already auto-played
+   *  by doRoll's own settle timer, so touching it here would double-play/race.
+   *  Every path funnels back through announceTurn → maybeDriveBot, which drives
+   *  the next step (extra turn, or the post-roll pick). Never throws out: on any
+   *  error the normal 15s clock still auto-plays the seat, so a bot can't freeze
+   *  the game any more than a disconnected human can. */
+  private botAct(): void {
+    if (this.over || this.botSeat === null || this.state.turn !== this.botSeat) return;
+    const seat = this.botSeat;
+    try {
+      if (this.state.phase === 'awaiting-roll') {
+        this.roll(seat);
+        // roll() reassigns this.state — re-read it (a fresh local, so TS doesn't
+        // carry the outer 'awaiting-roll' narrowing). A multi-choice roll leaves
+        // the turn here WITHOUT an announceTurn, so schedule the pick ourselves;
+        // single-move / no-move / extra-turn all go through announceTurn (which
+        // re-arms us).
+        const after: GameState = this.state;
+        if (!this.over && after.turn === seat && after.phase === 'awaiting-move' && after.legal.length > 1) {
+          this.maybeDriveBot();
+        }
+      } else if (this.state.phase === 'awaiting-move' && this.state.legal.length > 1) {
+        const die = this.state.dice ?? 1;
+        const token = pickAutoMove(this.state, seat, die) ?? this.state.legal[0]!;
+        this.move(seat, token);
+      }
+    } catch (e) {
+      console.error(`[room] ${this.gameId} house-bot action failed — falling back to the auto-play clock`, e);
+    }
   }
 
   /** Re-announce the turn after a restore (fresh clock, both clients resync). */
@@ -214,7 +279,7 @@ export class Room {
 
   private playerMeta(seat: Seat): RoomSnapshot['players'][number] {
     const c = this.clients[seat];
-    return { sessionId: c.id, wallet: c.wallet, name: c.name, flag: c.flag, elo: c.elo };
+    return { sessionId: c.id, wallet: c.wallet, name: c.name, flag: c.flag, elo: c.elo, isHouseBot: c.isHouseBot };
   }
 
   private doRoll(): void {
@@ -299,6 +364,9 @@ export class Room {
     if (!stateAlreadySent) this.broadcast({ t: 'game.state', state: this.state });
     this.broadcast({ t: 'game.turn', seat: this.state.turn, deadlineTs: this.deadlineTs });
     this.armClock();
+    // If the turn is now the bot's (hand-off after the human's move, or the bot's
+    // own extra turn), drive it. The 15s clock armed above is the safety net.
+    this.maybeDriveBot();
   }
 
   private armClock(): void {
@@ -416,6 +484,11 @@ export class Room {
     if (this.clock) {
       clearTimeout(this.clock);
       this.clock = null;
+    }
+    // A finished/suspended room must never fire a stale bot action.
+    if (this.botTimer) {
+      clearTimeout(this.botTimer);
+      this.botTimer = null;
     }
   }
 

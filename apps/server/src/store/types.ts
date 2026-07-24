@@ -55,6 +55,11 @@ export interface RoomPlayer {
   name: string;
   flag: string;
   elo: number;
+  /** This seat is the operator house bot. Persisted so a server restart restores
+   *  the bot seat (Room keeps driving it) AND the terminal game stays non-scoring
+   *  + is_house_bot-tagged — without it, a restored bot game would re-enable
+   *  scoring/faucet and mis-tag as human. */
+  isHouseBot?: boolean;
 }
 
 /** Full state needed to rebuild a Room after a restart. */
@@ -124,6 +129,11 @@ export interface GameRecord {
   eloDelta: number;
   fairnessCommit: string;
   serverSeed: string;
+  /** One seat was the operator HOUSE BOT (Race matchmaking fill / farmer
+   *  honeypot). Integrity anchor: lets an audit ALWAYS separate human-only
+   *  activity from house-generated volume (never present bot tx as organic).
+   *  Absent/false on every ordinary player-vs-player game. */
+  isHouseBot?: boolean;
 }
 
 /** Durable on-chain settlement job (E3.3): survives restarts, retried until mined. */

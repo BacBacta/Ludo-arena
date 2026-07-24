@@ -64,13 +64,19 @@ const prows = await q<{ id: string; name: string; elo: number; games_played: num
 const players = new Map(prows.map((p) => [p.id, p]));
 
 // ---- all games touching a participant ----
-const games = await q<{ id: string; stake_cents: number; player_a: string; player_b: string; winner_seat: number; reason: string; ended_at: string }>(
-  `SELECT id, stake_cents, player_a, player_b, winner_seat, reason, ended_at
+const allGames = await q<{ id: string; stake_cents: number; player_a: string; player_b: string; winner_seat: number; reason: string; ended_at: string; is_house_bot: boolean }>(
+  `SELECT id, stake_cents, player_a, player_b, winner_seat, reason, ended_at, is_house_bot
      FROM games
     WHERE player_a = ANY($1) OR player_b = ANY($1)
     ORDER BY ended_at ASC`,
   [[...participants]],
 );
+// House-bot games NEVER score and are operator-generated — exclude them from the
+// farming analysis entirely (a participant routed to the bot is being POLICED,
+// not colluding). They're reported separately so house volume stays visible but
+// never contaminates the human-vs-human wash-trade signals.
+const botGames = allGames.filter((g) => g.is_house_bot);
+const games = allGames.filter((g) => !g.is_house_bot);
 
 interface Stat {
   games: number; // event games (both are participants)
@@ -131,7 +137,11 @@ const ageDays = (w: string): number | null => {
 };
 
 // ---- 2. leaderboard + audit table ----
-console.log(`\n[race-audit] ${ranked.length} participant(s) · ${games.filter((g) => participants.has(g.player_a.toLowerCase()) && participants.has(g.player_b.toLowerCase())).length} scored event game(s)\n`);
+console.log(`\n[race-audit] ${ranked.length} participant(s) · ${games.filter((g) => participants.has(g.player_a.toLowerCase()) && participants.has(g.player_b.toLowerCase())).length} scored event game(s)`);
+if (botGames.length) {
+  console.log(`  house bot: ${botGames.length} game(s) tagged is_house_bot — EXCLUDED from the farm analysis (non-scoring, operator-generated; report human-only volume to Proof of Ship).`);
+}
+console.log('');
 console.log('  rank  pts  name                 games  W-L    opps  topOpp%  abWon%  minGap  age    wallet');
 console.log('  ' + '─'.repeat(104));
 ranked.forEach((r, i) => {

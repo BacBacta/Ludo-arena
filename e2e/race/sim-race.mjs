@@ -18,8 +18,9 @@
  *
  * Run: node e2e/race/sim-race.mjs   (stack: see e2e/race/README.md)
  */
+import pg from 'pg';
 import { tally } from '../lib/common.mjs';
-import { RaceBot, armChain, balanceCents, balanceUnits, centsToUnits, deployments, playStakedGame, sleep, walletFor, DEPLOYER_PK, publicClient } from './lib.mjs';
+import { RaceBot, armChain, balanceCents, balanceUnits, centsToUnits, deployments, playStakedGame, playStakedVsHouse, sleep, walletFor, DEPLOYER_PK, publicClient, HOUSE_BOT_ADDR } from './lib.mjs';
 
 const t = tally('sim-race');
 const dep = deployments();
@@ -283,6 +284,65 @@ const [overK] = await Promise.all([playK2, playL, playK.catch(() => null)]);
 t.check('E the interrupted game still completes for both', !!(overK ?? K.over) && !!L.over, `winner=${(overK ?? K.over)?.winner}`);
 K.close();
 L.close();
+
+// ================================================================= PHASE F
+// Real player vs the SERVER-SIDE house bot. Requires the server booted with
+// RACE_HOUSE_BOT_ENABLED=true + RACE_HOUSE_BOT_PRIVATE_KEY (the hardhat #3 key)
+// and a LOW RACE_BOT_FALLBACK_MS so the lone seeker is filled fast. Proves: the
+// bot stakes its OWN 1c and plays, the game settles, it is tagged is_house_bot,
+// it scored ZERO for the (fully-claimed) human, and the faucet was NOT drawn.
+console.log('\n————— PHASE F · real player vs SERVER-SIDE house bot —————');
+if ((process.env.RACE_HOUSE_BOT_ENABLED ?? '') !== 'true') {
+  console.log('  (skipped — set RACE_HOUSE_BOT_ENABLED=true + RACE_HOUSE_BOT_PRIVATE_KEY on the server to run Phase F)');
+} else {
+  const H = new RaceBot('SimHouseFoe');
+  await H.fuel();
+  await H.open();
+  await H.seed();
+  await H.mintPass();
+  await sleep(3200); // shared seed/claim anti-spam clock
+  const claimed = await H.claim();
+  t.check('F human is a CLAIMED participant (makes the zero-score check meaningful)', claimed?.t === 'race.claimed', claimed?.t);
+
+  // Capture faucet + bot balances AFTER the human's legitimate seed/claim draws,
+  // immediately before the bot game.
+  const faucetBefore = await balanceUnits(faucetAddr);
+  const botBefore = await balanceUnits(HOUSE_BOT_ADDR);
+
+  const mk = H.mark();
+  H.send({ t: 'queue.join', stake: 1 });
+  // No human opponent → the fallback sweep summons the bot (RACE_BOT_FALLBACK_MS).
+  const found = await H.awaitFrom(mk, (m) => m.t === 'match.found', 30_000, 'match.found vs house bot (summon hook — fails here = task #16 not wired)');
+  t.check('F house-bot match found for a lone Race seeker', !!found && !!H.match?.gameId, `gameId=${H.match?.gameId}`);
+  const over = await playStakedVsHouse(H, { maxMs: 180_000 });
+  t.check('F house-bot game reached game.over for the human', !!(over ?? H.over), `winner=${(over ?? H.over)?.winner}`);
+  const settled = await H.await((m) => m.t === 'game.settled' && m.gameId === H.match.gameId, 90_000).catch(() => null);
+  t.check('F house-bot game settled on-chain', !!settled, settled ? 'settled' : 'no game.settled');
+
+  // (1) integrity tag — query the same Postgres the server wrote to.
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const { rows } = await pool.query('SELECT is_house_bot FROM games WHERE id = $1', [H.match.gameId]);
+    t.check('F game is tagged is_house_bot in the DB', rows[0]?.is_house_bot === true, JSON.stringify(rows[0] ?? null));
+  } finally {
+    await pool.end();
+  }
+
+  // (2) scored ZERO for the human (fully claimed → would otherwise score).
+  const mk2 = H.mark();
+  H.send({ t: 'race.leaderboard' });
+  const board = await H.awaitFrom(mk2, (m) => m.t === 'race.board', 8_000, 'race.board');
+  t.check('F house-bot game scored ZERO for the human', board?.myPoints === 0 && board?.myRank === 0, `pts=${board?.myPoints} rank=${board?.myRank}`);
+
+  // (3) faucet NOT drawn (wait past the JIT window), and the bot staked from its OWN wallet.
+  await sleep(8_000);
+  const faucetAfter = await balanceUnits(faucetAddr);
+  t.check('F faucet UNCHANGED by the house-bot game', faucetAfter === faucetBefore, `before=${faucetBefore} after=${faucetAfter}`);
+  const botAfter = await balanceUnits(HOUSE_BOT_ADDR);
+  t.check('F bot staked from its OWN wallet (balance moved)', botAfter !== botBefore, `before=${botBefore} after=${botAfter}`);
+  t.check('F bot wallet != faucet wallet', HOUSE_BOT_ADDR.toLowerCase() !== faucetAddr.toLowerCase(), `${HOUSE_BOT_ADDR} vs ${faucetAddr}`);
+  H.close();
+}
 
 t.done();
 process.exit(process.exitCode ?? 0);

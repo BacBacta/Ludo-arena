@@ -138,6 +138,15 @@ export class Matchmaker<T> {
     return q.findIndex((e) => e.session === session) + 1;
   }
 
+  /** Entries on `stake` that have waited since at or before `cutoff` (enqueuedAt
+   *  <= cutoff), oldest first. Used by the house-bot fallback: a Race seeker who
+   *  has waited past the window with no human is handed the bot. Read-only. */
+  waitersOlderThan(stake: StakeCents, cutoff: number): QueueEntry<T>[] {
+    return (this.queues.get(stake) ?? [])
+      .filter((e) => e.enqueuedAt <= cutoff)
+      .sort((a, b) => a.enqueuedAt - b.enqueuedAt);
+  }
+
   /** Is this session waiting in ANY stake's queue? Queue membership must be
    *  single-slot: the responsible-gaming daily-stake check runs at join time but
    *  the counter is only debited when a game starts, so a session sitting in
