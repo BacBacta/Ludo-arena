@@ -51,6 +51,39 @@ const CUSD = '0x765DE816845861e75A25fCA122bb6898B8B1282a';
       }
     }
   }
+
+  // --- FeeCurrencyDirectory: the node's OWN conversion source. Resolve it via
+  // the Celo registry (0x...ce10, stable across networks) and print the cUSD
+  // exchange rate BOTH ways vs the live base fee, so the fix can hard-code the
+  // verified direction. Read-only calls.
+  try {
+    const REGISTRY = '0x000000000000000000000000000000000000ce10';
+    const dir = await client.readContract({
+      address: REGISTRY,
+      abi: [{ type: 'function', name: 'getAddressForString', stateMutability: 'view', inputs: [{ name: 'identifier', type: 'string' }], outputs: [{ type: 'address' }] }],
+      functionName: 'getAddressForString',
+      args: ['FeeCurrencyDirectory'],
+    });
+    console.log(`[probe-fees] FeeCurrencyDirectory: ${dir}`);
+    const [numerator, denominator] = await client.readContract({
+      address: dir,
+      abi: [{ type: 'function', name: 'getExchangeRate', stateMutability: 'view', inputs: [{ name: 'token', type: 'address' }], outputs: [{ name: 'numerator', type: 'uint256' }, { name: 'denominator', type: 'uint256' }] }],
+      functionName: 'getExchangeRate',
+      args: [CUSD],
+    });
+    console.log(`[probe-fees] rate numerator  : ${numerator}`);
+    console.log(`[probe-fees] rate denominator: ${denominator}`);
+    if (block.baseFeePerGas) {
+      const b = block.baseFeePerGas;
+      const dirA = (b * numerator) / denominator; // token = native * num/den
+      const dirB = (b * denominator) / numerator; // token = native * den/num
+      console.log(`[probe-fees] baseFee -> cUSD (num/den): ${dirA}`);
+      console.log(`[probe-fees] baseFee -> cUSD (den/num): ${dirB}`);
+      console.log(`[probe-fees] node cUSD floor quote     : ${gasCusd} (the plausible direction should sit ABOVE this when base > floor)`);
+    }
+  } catch (e) {
+    console.log(`[probe-fees] directory probe failed: ${e && e.message ? e.message.slice(0, 200) : e}`);
+  }
 })().catch((e) => {
   console.error('[probe-fees] FAILED:', e && e.message ? e.message : e);
   process.exit(1);
