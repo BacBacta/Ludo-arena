@@ -28,6 +28,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { CHAINS } from './settlement.js';
+import { createCip64FeeResolver, type Cip64Override } from './cip64Fees.js';
 
 /** topic0 of Minted(address indexed holder, uint256 indexed tokenId). */
 const MINTED_TOPIC = keccak256(toBytes('Minted(address,uint256)')).toLowerCase();
@@ -229,6 +230,8 @@ export class RaceFaucet {
   private readonly publicClient: ReturnType<typeof createPublicClient>;
   private readonly walletClient: ReturnType<typeof createWalletClient>;
   private decimalsCache: number | null = null;
+  /** Explicit CIP-64 cap for every faucet transfer (seed / grant / JIT drip). */
+  private readonly cip64Fees: () => Promise<Cip64Override>;
 
   constructor(chain: Chain, racePass: Address, stablecoin: Address, faucetKey: Hex, cfg: RaceConfig, rpc?: string, feeCurrency?: Address) {
     this.chainId = chain.id;
@@ -250,6 +253,10 @@ export class RaceFaucet {
     // transfer (gas seed, entry grant, JIT drip) read as UI lag to the player.
     this.publicClient = createPublicClient({ chain, transport, pollingInterval: 1_000 });
     this.walletClient = createWalletClient({ account: this.account, chain, transport });
+    // 3x headroom: the faucet is a plain ERC-20 transfer (~100k gas), so even a
+    // generous cap reserves a fraction of a cent — cheap insurance against a
+    // base-fee spike between estimate and mine, which is what stranded the seed.
+    this.cip64Fees = createCip64FeeResolver(this.publicClient as never, this.feeCurrency, 3n, 'race-faucet');
   }
 
   get address(): Address {
@@ -315,7 +322,12 @@ export class RaceFaucet {
     // the faucet wallet never needs native CELO (B1). `feeCurrency` is a Celo
     // (CIP-64) field — only set when configured, and viem carries it through on a
     // Celo chain. The cast keeps the generic Chain type quiet, same as settlement.
-    const feeExtra = this.feeInStable ? { feeCurrency: this.feeCurrency } : {};
+    // EXPLICIT CIP-64 cap (not viem's estimate). A bare `{ feeCurrency }` let the
+    // node reject the transfer with "the fee cap cannot be lower than the block
+    // base fee" — which players saw as "Gas seed failed — try again in a moment"
+    // and which then stranded every Race stake lock, because the burner never
+    // received the gas it needed to approve+join. See ./cip64Fees.
+    const feeExtra = this.feeInStable ? await this.cip64Fees() : {};
     const send = (): Promise<Hex> =>
       this.walletClient.writeContract({
         account: this.account,

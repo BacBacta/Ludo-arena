@@ -33,8 +33,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPublicClient, createWalletClient, http, type Address, type Chain, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { calibratedBaseFloor, feeCurrencyDirections, feeReservationWei } from '@ludo/shared';
+import { feeReservationWei } from '@ludo/shared';
 import { CHAINS } from './settlement.js';
+import { createCip64FeeResolver, type Cip64Override } from './cip64Fees.js';
 
 /** Cap multiplier on the CALIBRATED fee floor. Generous on purpose: the bot has
  *  no adaptive retry ladder, so one cap-too-low reject aborts a human's game —
@@ -117,15 +118,6 @@ const ERC20_ABI = [
   { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
   { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ type: 'uint256' }] },
 ] as const;
-// Celo registry (fixed address on every Celo network) → FeeCurrencyDirectory,
-// the contract the NODE itself uses to validate CIP-64 fee caps.
-const CELO_REGISTRY = '0x000000000000000000000000000000000000ce10' as Address;
-const REGISTRY_ABI = [
-  { type: 'function', name: 'getAddressForString', stateMutability: 'view', inputs: [{ name: 'identifier', type: 'string' }], outputs: [{ type: 'address' }] },
-] as const;
-const DIRECTORY_ABI = [
-  { type: 'function', name: 'getExchangeRate', stateMutability: 'view', inputs: [{ name: 'token', type: 'address' }], outputs: [{ name: 'numerator', type: 'uint256' }, { name: 'denominator', type: 'uint256' }] },
-] as const;
 const ESCROW_JOIN_ABI = [
   { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }, { name: 'fairnessCommit', type: 'bytes32' }], outputs: [] },
 ] as const;
@@ -153,7 +145,8 @@ export class HouseBot {
   readonly decimals: number;
   private readonly feeCurrency?: Address;
   private nonceChain: Promise<unknown> = Promise.resolve();
-  private directory?: Address; // FeeCurrencyDirectory, resolved once via the registry
+  /** Shared CIP-64 cap derivation (same module the Race faucet uses). */
+  private readonly feeResolver: () => Promise<Cip64Override>;
 
   constructor(privateKey: Hex, chain: Chain, escrow: Address, stablecoin: Address, decimals: number, rpc?: string, feeCurrency?: Address) {
     this.account = privateKeyToAccount(privateKey);
@@ -165,6 +158,7 @@ export class HouseBot {
     const transport = http(rpc);
     this.publicClient = createPublicClient({ chain, transport, pollingInterval: 1_000 });
     this.walletClient = createWalletClient({ account: this.account, chain, transport });
+    this.feeResolver = createCip64FeeResolver(this.publicClient as never, this.feeCurrency, HOUSE_BOT_CAP_MULT, 'house-bot');
   }
 
   get address(): Address {
@@ -199,46 +193,8 @@ export class HouseBot {
    * under three locks of runway. Re-derived before EVERY tx: Celo has 1s blocks
    * and the base fee moves.
    */
-  private async cip64Fees(): Promise<{ feeCurrency: Address; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | Record<string, never>> {
-    if (!this.feeCurrency) return {};
-    try {
-      if (!this.directory) {
-        this.directory = (await this.publicClient.readContract({
-          address: CELO_REGISTRY, abi: REGISTRY_ABI, functionName: 'getAddressForString', args: ['FeeCurrencyDirectory'],
-        })) as Address;
-      }
-      const [block, rate, tipHex, gasPriceHex] = await Promise.all([
-        this.publicClient.getBlock(),
-        this.publicClient.readContract({ address: this.directory, abi: DIRECTORY_ABI, functionName: 'getExchangeRate', args: [this.feeCurrency] }) as Promise<readonly [bigint, bigint]>,
-        (this.publicClient.request as (a: never) => Promise<string>)({ method: 'eth_maxPriorityFeePerGas', params: [this.feeCurrency] } as never).catch(() => '0x0'),
-        // The node's OWN token-denominated quote — the authority that says WHICH
-        // direction of the directory rate is real (see @ludo/shared/cip64).
-        (this.publicClient.request as (a: never) => Promise<string>)({ method: 'eth_gasPrice', params: [this.feeCurrency] } as never).catch(() => null),
-      ]);
-      const base = block.baseFeePerGas;
-      if (base == null || base <= 0n) throw new Error('no baseFeePerGas on the head block');
-      const [num, den] = rate;
-      if (num <= 0n || den <= 0n) throw new Error('degenerate directory rate');
-      const [dirA, dirB] = feeCurrencyDirections(base, num, den);
-      const nodePrice = gasPriceHex === null ? null : BigInt(gasPriceHex);
-      // Taking the MAX of both directions over-caps ~215x on mainnet. The tx only
-      // ever PAYS base+tip, but the node RESERVES gasLimit x maxFeePerGas: at
-      // 8794 gwei the bot held ~176c per join out of a ~480c balance, i.e. under
-      // three locks of runway before it would silently stop filling matchmaking
-      // (every Race game then aborts + refunds). Calibrated, the same balance
-      // covers hundreds. HOUSE_BOT_CAP_MULT is deliberately generous (6x vs the
-      // client's 2x) because the bot has NO adaptive retry ladder: one rejected
-      // cap aborts the human's game, so it buys spike headroom it can now afford.
-      const baseInToken = calibratedBaseFloor(dirA, dirB, nodePrice);
-      const tip = BigInt(tipHex);
-      return { feeCurrency: this.feeCurrency, maxFeePerGas: HOUSE_BOT_CAP_MULT * baseInToken + tip, maxPriorityFeePerGas: tip };
-    } catch (e) {
-      // Fail OPEN to the node estimation (pre-fix behaviour): a directory
-      // hiccup must not turn into a guaranteed-abort — the attempt may still
-      // clear when the base fee sits at the floor the quote is computed from.
-      console.warn('[house-bot] CIP-64 fee derivation failed — falling back to node estimation:', e instanceof Error ? e.message : e);
-      return { feeCurrency: this.feeCurrency } as never;
-    }
+  private cip64Fees(): Promise<Cip64Override> {
+    return this.feeResolver();
   }
 
   /** The client-shaped stake lock: approve + escrow.join, the exact tuple a human
