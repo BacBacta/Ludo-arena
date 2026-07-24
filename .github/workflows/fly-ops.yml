@@ -68,6 +68,7 @@ on:
           - arm-house-bot
           - reset-race-board
           - prune-race-board
+          - server-logs
       confirm:
         description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT · prune-race-board: PRUNE-BOARD'
         required: false
@@ -145,6 +146,25 @@ jobs:
           fi
           npm ci
           npm run set-tier-rake -w packages/contracts
+      # server-logs: READ-ONLY — fetches the recent Fly machine logs and prints
+      # ONLY the operationally relevant lines (house-bot / stake-gate / settlement
+      # / boot warnings), so a mainnet stake-lock failure can be diagnosed from
+      # the REAL error instead of guesses. No tx, no Fly change, no free-form
+      # input — the grep pattern is fixed in this file.
+      - name: server-logs (house-bot / stake-gate diagnostics)
+        if: ${{ inputs.operation == 'server-logs' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN secret is not configured"; exit 1
+          fi
+          flyctl logs -a ludo-arena --no-tail > /tmp/fly.log || true
+          echo "== total lines fetched: $(wc -l < /tmp/fly.log) =="
+          echo "== house-bot / stake-gate / settlement / race lines =="
+          grep -aE "house-bot|stake-gate|settlement|\[race\]|MATCH_ABORTED|aborting|refund" /tmp/fly.log | tail -120 || echo "(no matching lines in the retained window)"
+          echo "== boot / subsystem lines =="
+          grep -aE "ARMED|DISABLED|boot|listening|\[store\]" /tmp/fly.log | tail -40 || true
       # wallet-status: READ-ONLY — prints an arbitrary wallet's cUSD + CELO balance
       # (e.g. the house-bot wallet, to confirm it is funded). No tx; runs on the
       # runner against Celo RPC. Honours RACE_FEE_IN_STABLE so the "gas mode" line
