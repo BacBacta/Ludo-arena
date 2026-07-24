@@ -14,6 +14,7 @@
     "deploy-racepass": "tsx script/deployRacePass.ts",
     "set-mint-open": "tsx script/setMintOpen.ts",
     "set-tier-rake": "tsx script/setTierRake.ts",
+    "allow-token": "tsx script/allowToken.ts",
     "race-status": "tsx script/raceStatus.ts",
     "onchain-activity": "tsx script/onchainActivity.ts",
     "wallet-status": "tsx script/walletStatus.ts"

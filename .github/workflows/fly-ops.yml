@@ -61,6 +61,7 @@ on:
           - unset-staking-allowed-countries
           - arm-mainnet
           - set-tier-rake
+          - allow-token
           - race-status
           - onchain-activity
           - race-audit
@@ -101,6 +102,10 @@ on:
         type: string
       race_audit_name:
         description: 'race-audit only: spotlight players whose name contains this text (case-insensitive). Blank = spotlight the top 3.'
+        required: false
+        type: string
+      token_address:
+        description: 'allow-token only: the 0x stake token to whitelist on the escrows (e.g. USD₮ 0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e).'
         required: false
         type: string
       wallet_address:
@@ -149,6 +154,31 @@ jobs:
           fi
           npm ci
           npm run set-tier-rake -w packages/contracts
+      # allow-token: on-chain OWNER call — whitelist a stake token on the DEPLOYED
+      # escrows (setTokenAllowed). FIRST cutover step of the cUSD→USD₮ migration:
+      # additive + idempotent, the current token stays allowed so cUSD play keeps
+      # working. TOKEN_ADDRESS is sanitized to a 0x-hex address. Owner key from
+      # repo secrets (same as set-tier-rake), never from inputs.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'allow-token' }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.operation == 'allow-token' }}
+        with:
+          node-version: 22
+      - name: allow-token (whitelist a stake token on the DEPLOYED escrows)
+        if: ${{ inputs.operation == 'allow-token' }}
+        env:
+          NETWORK: celo
+          RAW_TOKEN: ${{ inputs.token_address }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
+        run: |
+          if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
+            echo "::error::No owner key configured — add ESCROW_OWNER_PRIVATE_KEY / TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY (must be the escrow owner)."; exit 1
+          fi
+          TOKEN=$(printf '%s' "$RAW_TOKEN" | grep -oiE '0x[0-9a-f]{40}' | head -n1)
+          if [ -z "$TOKEN" ]; then echo "::error::set token_address to the 0x stake token to whitelist"; exit 1; fi
+          npm ci
+          TOKEN_ADDRESS="$TOKEN" npm run allow-token -w packages/contracts
       # server-logs: READ-ONLY — fetches the recent Fly machine logs and prints
       # ONLY the operationally relevant lines (house-bot / stake-gate / settlement
       # / boot warnings), so a mainnet stake-lock failure can be diagnosed from

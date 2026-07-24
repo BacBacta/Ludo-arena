@@ -48,6 +48,11 @@ interface Deployment {
   escrow?: Address;
   stablecoin?: Address;
   stablecoinDecimals?: number;
+  /** CIP-64 gas fee-currency ADAPTER, distinct from `stablecoin` when the stake
+   *  token isn't 18-decimals (e.g. USD₮ = 6 dec ⇒ gas must use its 18-dec
+   *  adapter, NOT the raw token). Absent for cUSD, where the token IS its own
+   *  fee currency. See docs/DEPLOY.md §stablecoin-migration. */
+  feeCurrencyAdapter?: Address;
 }
 
 function loadDeployment(chainId: number): Deployment | undefined {
@@ -229,7 +234,11 @@ export function createHouseBot(env: NodeJS.ProcessEnv = process.env): HouseBot |
   }
   const dep = loadDeployment(chain.id);
   const escrow = (env.ESCROW_ADDRESS?.trim() as Address | undefined) ?? dep?.escrow;
-  const stablecoin = (env.FEE_CURRENCY?.trim() as Address | undefined) ?? dep?.stablecoin;
+  // STAKE TOKEN — the raw ERC-20 the bot approves + joins with (balances too).
+  // RACE_STABLECOIN_ADDRESS overrides the deployment. NOT FEE_CURRENCY: that is
+  // the GAS token, which for a 6-dec stake token (USD₮) is a DIFFERENT address
+  // (its 18-dec adapter). Conflating them made the bot try to stake the adapter.
+  const stablecoin = (env.RACE_STABLECOIN_ADDRESS?.trim() as Address | undefined) ?? dep?.stablecoin;
   if (!escrow || !stablecoin) {
     console.error(`[house-bot] no escrow/stablecoin for chain ${chain.id} — house bot DISABLED (server stays up).`);
     return null;
@@ -241,7 +250,12 @@ export function createHouseBot(env: NodeJS.ProcessEnv = process.env): HouseBot |
   // rides the Race tier, so without this the bot silently fell back to native
   // CELO gas and would strand on a cUSD-only wallet.
   const feeInStable = (env.FEE_IN_STABLE ?? '').trim() === 'true' || (env.RACE_FEE_IN_STABLE ?? '').trim() === 'true';
-  const feeCurrency = feeInStable ? stablecoin : undefined;
+  // GAS fee-currency = FEE_CURRENCY ?? the deployment's adapter ?? the stake token
+  // itself (correct for 18-dec cUSD, which is its own fee currency). For USD₮ this
+  // resolves to the 18-dec adapter while the stake stays the raw 6-dec token.
+  const feeCurrency = feeInStable
+    ? ((env.FEE_CURRENCY?.trim() as Address | undefined) ?? dep?.feeCurrencyAdapter ?? stablecoin)
+    : undefined;
   const pk = (raw.startsWith('0x') ? raw : `0x${raw}`) as Hex;
   const bot = new HouseBot(pk, chain, escrow, stablecoin, decimals, env.SETTLEMENT_RPC?.trim() || undefined, feeCurrency);
   console.log(`[house-bot] ARMED on ${chainName} (${bot.address}) — fills matchmaking + absorbs flagged farmers; games score ZERO and are tagged is_house_bot.`);

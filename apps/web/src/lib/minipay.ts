@@ -13,7 +13,7 @@ import {
   type WalletClient,
 } from 'viem';
 import { activeChain } from './chains';
-import { deploymentForChain, racePassFor } from './deployments';
+import { deploymentForChain, feeCurrencyFor, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
 import { buyCosmeticCusd, planFeeExtras, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
 import { BALANCED } from './feePlan';
@@ -117,8 +117,9 @@ export async function lockStake(
     gameId,
     stakeCents,
     fairnessCommit,
-    // MiniPay pays gas in cUSD; on Celo Sepolia the stake token doubles as gas token
-    feeCurrency: wallet.payGasInStable ? dep.stablecoin : undefined,
+    // Gas paid in stable (MiniPay / burner): the fee-currency ADAPTER for a 6-dec
+    // stake token (USD₮), or the stake token itself when it's 18-dec (cUSD).
+    feeCurrency: wallet.payGasInStable ? feeCurrencyFor(dep) : undefined,
     onStatus,
   });
 }
@@ -150,7 +151,7 @@ export async function lockStake4(
     stakeCents,
     fairnessCommit,
     seatCount: 4,
-    feeCurrency: wallet.payGasInStable ? dep.stablecoin : undefined,
+    feeCurrency: wallet.payGasInStable ? feeCurrencyFor(dep) : undefined,
     onStatus,
   });
 }
@@ -178,7 +179,7 @@ export async function buyCosmetic(
     token: dep.stablecoin,
     id,
     priceCents,
-    feeCurrency: wallet.payGasInStable ? dep.stablecoin : undefined,
+    feeCurrency: wallet.payGasInStable ? feeCurrencyFor(dep) : undefined,
     onStatus,
   });
 }
@@ -243,7 +244,7 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
   // fee + explicit gas from a FEE-LESS estimate — fee fields in the estimation
   // request made the node apply a NATIVE-balance affordability cap, 0 for a
   // burner ("gas required exceeds allowance (0)").
-  const feeCurrency = wallet.payGasInStable && dep ? dep.stablecoin : undefined;
+  const feeCurrency = wallet.payGasInStable && dep ? feeCurrencyFor(dep) : undefined;
   const extras = await planFeeExtras(wallet.publicClient, feeCurrency, BALANCED, {
     address: racePass,
     abi: RACE_PASS_ABI,

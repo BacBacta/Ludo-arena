@@ -202,6 +202,8 @@ export class RaceFaucet {
   readonly chainId: number;
   readonly racePass: Address;
   readonly stablecoin: Address;
+  /** CIP-64 gas token (adapter for a 6-dec stake token; == stablecoin for cUSD). */
+  readonly feeCurrency: Address;
   readonly quotaCents: number;
   readonly poolCents: number;
   readonly endsAt?: string;
@@ -215,11 +217,13 @@ export class RaceFaucet {
   private readonly walletClient: ReturnType<typeof createWalletClient>;
   private decimalsCache: number | null = null;
 
-  constructor(chain: Chain, racePass: Address, stablecoin: Address, faucetKey: Hex, cfg: RaceConfig, rpc?: string) {
+  constructor(chain: Chain, racePass: Address, stablecoin: Address, faucetKey: Hex, cfg: RaceConfig, rpc?: string, feeCurrency?: Address) {
     this.chainId = chain.id;
     this.chain = chain;
     this.racePass = getAddress(racePass);
     this.stablecoin = getAddress(stablecoin);
+    // Gas token: the adapter when given, else the stake token itself (cUSD case).
+    this.feeCurrency = feeCurrency ? getAddress(feeCurrency) : this.stablecoin;
     this.quotaCents = cfg.quotaCents;
     this.poolCents = cfg.poolCents;
     this.endsAt = cfg.endsAt;
@@ -298,7 +302,7 @@ export class RaceFaucet {
     // the faucet wallet never needs native CELO (B1). `feeCurrency` is a Celo
     // (CIP-64) field — only set when configured, and viem carries it through on a
     // Celo chain. The cast keeps the generic Chain type quiet, same as settlement.
-    const feeExtra = this.feeInStable ? { feeCurrency: this.stablecoin } : {};
+    const feeExtra = this.feeInStable ? { feeCurrency: this.feeCurrency } : {};
     const send = (): Promise<Hex> =>
       this.walletClient.writeContract({
         account: this.account,
@@ -336,6 +340,9 @@ interface DeploymentR {
   chainId: number;
   racePass?: Address;
   stablecoin?: Address;
+  /** CIP-64 gas fee-currency adapter, distinct from `stablecoin` when the token
+   *  isn't 18-dec (USD₮). Absent for cUSD (its own fee currency). */
+  feeCurrencyAdapter?: Address;
 }
 
 /** Build the faucet from env + deployments.json, or null when Race Week isn't
@@ -376,5 +383,8 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   const seedCents = Math.max(0, Number(env.RACE_SEED_CENTS ?? '0'));
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
-  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable, seedCents }, rpc);
+  // Gas fee-currency = FEE_CURRENCY ?? the deployment's adapter ?? the stake token
+  // (correct for 18-dec cUSD; the 18-dec adapter for a 6-dec USD₮ stake token).
+  const feeCurrency = (env.FEE_CURRENCY?.trim() as Address | undefined) ?? dep?.feeCurrencyAdapter ?? stablecoin;
+  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable, seedCents }, rpc, feeCurrency);
 }

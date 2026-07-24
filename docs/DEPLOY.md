@@ -288,3 +288,56 @@ flyctl secrets unset RACE_WEEK_ACTIVE -a ludo-arena   # restarts; race.claim goe
 The KV counters (`race:pool:spent`, `race:funded:<wallet>`, `race:grant:<wallet>`,
 the board) persist in Redis — re-arming resumes from where it left off. To run a
 FRESH event, clear those keys first (or use a new pool cap).
+
+## Stablecoin migration (cUSD → USD₮)
+
+The stake token is **not** hard-coded — the server + client resolve it from
+`deployments.json` (and env overrides). Migrating from cUSD (18 dec) to native
+USD₮ (6 dec) is a config + owner-call cutover, no contract redeploy.
+
+**The key subtlety — staking token ≠ gas token.** Celo prices gas in 18 decimals,
+so a 6-dec token like USD₮ cannot be a `feeCurrency` directly; you use its 18-dec
+**fee-currency adapter**. cUSD is 18-dec, so it is its own fee currency (why the
+two were the same address until now). The code now separates them:
+
+- **stake token** = `RACE_STABLECOIN_ADDRESS` ?? `deployments.stablecoin` (raw ERC-20; approve/join/balances)
+- **gas feeCurrency** = `FEE_CURRENCY` ?? `deployments.feeCurrencyAdapter` ?? stake token (adapter for USD₮)
+
+Verified Celo **mainnet** addresses (via `FeeCurrencyDirectory.getCurrencies()`,
+fly-ops `probe-feecurrencies`):
+
+| role | address | dec |
+| --- | --- | --- |
+| USD₮ stake token | `0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e` | 6 |
+| USD₮ gas adapter (`feeCurrency`) | `0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72` | 18 |
+
+Directory rate for the adapter == cUSD's (0.06914), so the CIP-64 fee-cap logic
+(`baseFloorInFeeCurrency`) needs no change.
+
+### Cutover order (do NOT reorder — each step guards the next)
+
+0. **Confirm Race Week is finished** (leaderboard sanitized + cUSD prize paid).
+   Migrating mid-event strands the cUSD pool/faucet and changes decimals under a
+   live board.
+1. **Whitelist the token** on both escrows (additive; cUSD still works):
+   `fly-ops → allow-token`, `token_address = 0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e`.
+2. **Fund the wallets in USD₮** (operator — no key on the server side): send USD₮
+   to the **faucet** and the **house-bot** wallet. They pay gas via the adapter,
+   so they hold only USD₮ — no CELO needed. Size the faucet for the pool; the bot
+   for ~a few $ of 1¢ stakes + gas.
+3. **Flip `deployments.json[celo]`** (both `packages/contracts/` and the vendored
+   `apps/web/src/` copy): `stablecoin → 0x48065fbB…`, `stablecoinDecimals → 6`,
+   add `"feeCurrencyAdapter": "0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72"`.
+   Commit → merge → server (Fly) + client (Vercel) redeploy together.
+4. **Seed the 1¢ tier rake** for the new (token, stake) key (else it falls back to
+   900 bps): `fly-ops → set-tier-rake` (reads the now-USD₮ token from deployments).
+5. **Cosmetics** (only if you also sell cosmetics in USD₮): the CosmeticsStore
+   holds its own `token` + prices; run the store re-point + 6-dec re-seed
+   (`switchStablecoin` mainnet path) or cUSD cosmetic buys will fail "could not
+   verify". Staking works without this step.
+6. **Verify**: `wallet-status` (faucet + bot hold USD₮), `probe-lock` (bot joins
+   mine on the USD₮ token), a real 1¢ Race match locks + settles.
+
+Env alternative to editing `deployments.json`: set the Fly secrets
+`RACE_STABLECOIN_ADDRESS=0x48065fbB…` + `FEE_CURRENCY=0x0E2A3e05…` (client still
+needs the `deployments.json` flip to show/stake USD₮).
