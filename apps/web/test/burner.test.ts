@@ -92,3 +92,24 @@ describe('restoreBurnerWallet (boot-time restore)', () => {
     expect(restored!.payGasInStable).toBe(true); // still the feeCurrency wallet
   });
 });
+
+describe('gas currency invariant (the "asked for CELO" incident)', () => {
+  beforeEach(() => clearBurner());
+
+  // A first-time visitor in a plain mobile browser WITH MetaMask installed used
+  // to have the injected provider win the connect race. An injected wallet can't
+  // sign a CIP-64 tx, so payGasInStable is false → every stake tx billed gas in
+  // NATIVE CELO and the wallet prompted for a coin the event promises is never
+  // needed. Outside MiniPay the burner must be the play wallet: it builds its
+  // own txs, so gas is paid in the stablecoin (feeCurrency) from faucet funds.
+  it('the burner ALWAYS pays gas in the stablecoin — never native CELO', () => {
+    expect(getBurnerWallet().payGasInStable).toBe(true);
+  });
+
+  it('a restored burner keeps paying gas in the stablecoin (reload must not regress it)', () => {
+    const minted = getBurnerWallet();
+    const restored = restoreBurnerWallet();
+    expect(restored?.address).toBe(minted.address);
+    expect(restored?.payGasInStable).toBe(true);
+  });
+});
