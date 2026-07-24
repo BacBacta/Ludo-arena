@@ -17,6 +17,7 @@
     "reset-race-board": "tsx scripts/resetRaceBoard.ts",
     "prune-race-board": "tsx scripts/pruneRaceBoard.ts",
     "race-audit": "tsx scripts/raceAudit.ts",
+    "race-budget": "tsx scripts/raceBudget.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
