@@ -18,6 +18,9 @@ const COMMIT = 'b'.repeat(64); // sha256(serverSeed) hex (32 bytes)
 interface Over {
   decimals?: number;
   allowance?: bigint;
+  /** feeCurrency balanceOf(account) — the fee-cap budget clamp reads it on the
+   *  burner path. Default is PLENTIFUL so cap assertions stay unclamped. */
+  balance?: bigint;
   games?: readonly unknown[];
   /** Sequenced `games` reads (one per call, last repeats) — models a retry that
    *  re-checks the escrow and finds the previous attempt's deposit landed. */
@@ -65,6 +68,7 @@ function fakeClients(over: Over = {}) {
         return over.games ?? [TOKEN, 0n, ZERO, ZERO, 0, 0, 0];
       }
       if (functionName === 'allowance') return over.allowance ?? 0n;
+      if (functionName === 'balanceOf') return over.balance ?? 10n ** 18n;
       if (functionName === 'seatsOf') return over.seats ?? [];
       // FeeCurrencyDirectory resolution (CIP-64 cap base). Throw when
       // over.noFeeDirectory to model a chain/node where it can't be read.
@@ -284,6 +288,25 @@ describe('stakeInEscrow (1v1)', () => {
       expect(e.maxFeePerGas).toBeUndefined(); // NO fee fields in the estimate…
       expect(e.feeCurrency).toBeUndefined(); // …so no balance-based allowance cap
     }
+  });
+
+  it('a THIN burner is CLAMPED into its balance — the native gate must not starve the stake path', async () => {
+    // The adversarial review of the native gate caught this: the stake path
+    // passed NO budget to planFeeExtras, so under the gated floor (native base)
+    // the plan's cap reserved more than the seed holds — BALANCED ~17c and even
+    // THRIFTY ~10.5c against a 10c wallet at the measured 200 gwei regime. The
+    // lock kept failing, just on funds instead of cap-too-low. With the budget
+    // wired, the clamp descends to what the balance affords while still
+    // clearing the native gate (hard floor: gated floorLo + tip).
+    // Mock regime: native 25 gwei (gated floor), BALANCED wants 52 gwei; a
+    // 0.015-token balance affords only ~35 gwei at the 425k padded gas.
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, localSigner: true, balance: 15n * 10n ** 15n });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
+    const join = writes.find((w) => w.functionName === 'join')!;
+    expect(join.maxFeePerGas!).toBeLessThan(52_000_000_000n); // clamped below the plan's cap…
+    expect(join.maxFeePerGas!).toBeGreaterThanOrEqual(25_000_000_000n); // …but never below the native gate
+    // C4 holds: the reservation fits the balance the clamp was given.
+    expect(join.gas! * join.maxFeePerGas!).toBeLessThanOrEqual(15n * 10n ** 15n);
   });
 
   it('without a node quote it stays CONSERVATIVE (larger direction) — cap-too-low is the worse failure', async () => {

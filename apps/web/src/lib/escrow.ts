@@ -338,7 +338,8 @@ export async function planFeeExtras(
    * anything the tx itself moves. When supplied, the cap is clamped so the
    * RESERVATION (gasLimit × cap) fits, and an impossible tx throws
    * `InsufficientGasBudgetError` instead of being broadcast to die on funds.
-   * Omit (the staking call sites do) to keep the previous unclamped behaviour.
+   * All burner call sites (mint AND staking) now pass it — an unclamped cap
+   * under the native gate reserves more than a thin wallet holds.
    */
   budgetWei?: bigint | null,
 ): Promise<Record<string, unknown>> {
@@ -484,6 +485,18 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
         return { gameId32, stake, approveTx, joinTx: '0x' as Hex };
       }
 
+      // BUDGET for the fee-cap clamp (C4), re-read each attempt. The stake path
+      // used to omit it, which the NATIVE GATE turned from harmless into fatal:
+      // with the cap floor at the native base fee (200 gwei measured), BALANCED
+      // reserves ~17c and even THRIFTY ~10.5c against a 10c-seeded burner — the
+      // lock kept failing, just on funds instead of cap-too-low. The clamp
+      // descends to what the balance affords (hard floor: gated floorLo + tip),
+      // which at 200 gwei is ~7c for the join — inside the seed. The stake the
+      // join itself moves is subtracted when it is paid in the fee currency.
+      const balance = feeCurrency && walletClient.account ? await feeCurrencyBudgetWei(publicClient, feeCurrency, account) : null;
+      const budgetRaw = balance === null ? null : token.toLowerCase() === feeCurrency!.toLowerCase() ? balance - stake : balance;
+      const budgetWei = budgetRaw !== null && budgetRaw < 0n ? 0n : budgetRaw; // < stake → 0 budget → honest refusal, not an unclamped doomed tx
+
       if (allowance < stake) {
         onStatus?.('approving');
         // EXACT-amount approve, every game (incl. the Race 1¢ tier). The allowance
@@ -492,14 +505,14 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
         // a player's on-chain approve count, and the Proof of Ship tx-volume metric
         // rewards keeping it. The four other staking speedups (parallel reads,
         // decimals cache, faster receipt polling) cost no transactions and stay.
-        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account);
+        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account, budgetWei);
         approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...approveExtras });
         const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
         if (r.status !== 'success') throw new Error('approve reverted');
       }
 
       onStatus?.('joining');
-      const joinExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], account: signer }, !!walletClient.account);
+      const joinExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], account: signer }, !!walletClient.account, budgetWei);
       const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], ...joinExtras });
       const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
       if (r.status !== 'success') throw new Error('join reverted');
@@ -547,16 +560,22 @@ export async function stakeInEscrowN(params: StakeParams & { seatCount: number }
       }
 
       const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
+      // Same budget clamp as stakeInEscrow — see the comment there. Without it
+      // the native-gated cap floor (200 gwei measured) reserves more than a
+      // thin wallet holds and the deposit dies on funds instead of mining.
+      const balance = feeCurrency && walletClient.account ? await feeCurrencyBudgetWei(publicClient, feeCurrency, account) : null;
+      const budgetRaw = balance === null ? null : token.toLowerCase() === feeCurrency!.toLowerCase() ? balance - stake : balance;
+      const budgetWei = budgetRaw !== null && budgetRaw < 0n ? 0n : budgetRaw; // < stake → 0 budget → honest refusal, not an unclamped doomed tx
       if (allowance < stake) {
         onStatus?.('approving');
-        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account);
+        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account, budgetWei);
         approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...approveExtras });
         const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
         if (r.status !== 'success') throw new Error('approve reverted');
       }
 
       onStatus?.('joining');
-      const joinExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], account: signer }, !!walletClient.account);
+      const joinExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], account: signer }, !!walletClient.account, budgetWei);
       const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], ...joinExtras });
       const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
       if (r.status !== 'success') throw new Error('join reverted');
