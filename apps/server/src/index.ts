@@ -66,6 +66,7 @@ import { createFairness, createFairness4, createSeed4Commit, createSeedCommit, f
 import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { sameDepositors } from './depositors.js';
 import { countryOf as geoCountryOf, isGeoBlocked as geoIsBlocked } from './geo.js';
+import { clientIpOf, sameNetwork } from './clientIp.js';
 import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
@@ -1184,7 +1185,10 @@ setInterval(() => {
 let connSeq = 0;
 
 wss.on('connection', (ws, req) => {
-  const ip = req.socket.remoteAddress ?? 'unknown';
+  // NOT req.socket.remoteAddress: behind Fly's http_service proxy that is the
+  // PROXY's address — identical for every player, which made every same-IP
+  // check fire on every pair (see clientIp.ts).
+  const ip = clientIpOf(req.headers, req.socket.remoteAddress, TRUSTED_EDGE_SECRET);
   const country = countryOf(req.headers);
   // WS Origin (browsers set it and forbid JS from overriding it) → whether a
   // MiniPay auto-prove may be trusted on this connection (R-AUTH-1 defence).
@@ -2713,7 +2717,7 @@ async function collusionBlock(a: Session, b: Session, stake: StakeCents): Promis
   // staked pairing between two sockets on the same IP. This only blocks pairing
   // the two of them together — each still matches other opponents — so shared-NAT
   // false positives cost nothing, while same-network chip-dumping is stopped.
-  if (a.ip && a.ip !== 'unknown' && a.ip === b.ip) return 'Same-network play is not allowed for staked games.';
+  if (sameNetwork(a.ip, b.ip)) return 'Same-network play is not allowed for staked games.';
   // Repeated-opponent cap is wallet-scoped (anon rows are ephemeral).
   if (a.wallet && b.wallet) {
     const played = await store.pairGamesToday(playerId(a.wallet, a.id), playerId(b.wallet, b.id), utcToday());
@@ -2948,6 +2952,10 @@ const RACE_BOT_HARD_FALLBACK_MS = Number(process.env.RACE_BOT_HARD_FALLBACK_MS ?
  *  pairing between them is treated as wash-trading — the seeker is routed to the
  *  bot instead (denies the reciprocal farm). 0 disables the intercept. */
 const RACE_COLLUSION_PAIR_CAP = Number(process.env.RACE_COLLUSION_PAIR_CAP ?? 3);
+/** Same-network pair cap — tighter than the open-internet one, but NOT zero:
+ *  carrier-grade NAT (mobile Africa, this event's core audience) shares one
+ *  address between thousands of unrelated players. 0 disables the tightening. */
+const RACE_COLLUSION_SAME_IP_PAIR_CAP = Number(process.env.RACE_COLLUSION_SAME_IP_PAIR_CAP ?? 2);
 
 // Believable, indistinguishable opponent identities (operator disclosure choice).
 const BOT_NAMES = ['Kwame', 'Amara', 'Tunde', 'Zola', 'Kofi', 'Nadia', 'Sipho', 'Ama', 'Jabari', 'Imani', 'Chidi', 'Aya'];
@@ -2986,11 +2994,21 @@ function makeHouseBotSession(): Session {
  *  intercept a proposed human↔human Race pairing and route the seeker to the bot. */
 async function raceCollusionSuspect(a: Session, b: Session): Promise<boolean> {
   if (!a.wallet || !b.wallet) return false;
-  if (a.ip && b.ip && a.ip === b.ip) return true;
   if (RACE_COLLUSION_PAIR_CAP <= 0) return false;
+  // Same network TIGHTENS the leash; it does not condemn on sight. Carrier-grade
+  // NAT puts thousands of unrelated mobile players — this event's core audience —
+  // behind a single address, so "same IP" alone is a false-positive machine. It
+  // used to return true immediately, which (with the proxy address standing in
+  // for every player, see clientIp.ts) sent EVERY Race seeker to the house bot
+  // and made a human-vs-human event game impossible.
+  // Repeat pairings are the real signal: behaviour, not network topology. The
+  // scoring layer caps the same pair again (RACE_MAX_VS_SAME_PER_DAY), so this is
+  // defence in depth, not the only guard.
+  const cap = sameNetwork(a.ip, b.ip) ? RACE_COLLUSION_SAME_IP_PAIR_CAP : RACE_COLLUSION_PAIR_CAP;
+  if (cap <= 0) return false;
   try {
     const n = await store.pairGamesToday(playerId(a.wallet, a.id), playerId(b.wallet, b.id), utcToday());
-    return n >= RACE_COLLUSION_PAIR_CAP;
+    return n >= cap;
   } catch {
     return false; // never let a store hiccup block matchmaking
   }
