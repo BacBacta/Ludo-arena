@@ -56,9 +56,15 @@ export function createCip64FeeResolver(
   feeCurrency: Address | undefined,
   capMultiplier: bigint,
   label: string,
-): () => Promise<Cip64Override> {
+): (multOverride?: bigint) => Promise<Cip64Override> {
   let directory: Address | undefined;
-  return async (): Promise<Cip64Override> => {
+  // `multOverride` lets a caller ESCALATE for one attempt (the house bot's retry
+  // ladder) without building a second resolver: a cap-too-low reject means the
+  // base fee outran the floor we read, and the answer is a fatter cap on the
+  // very next try — re-derived from a FRESH floor, since the spike may also have
+  // passed. Omitted → the wallet's configured multiplier.
+  return async (multOverride?: bigint): Promise<Cip64Override> => {
+    const mult = multOverride && multOverride > 0n ? multOverride : capMultiplier;
     if (!feeCurrency) return {};
     try {
       if (!directory) {
@@ -82,7 +88,7 @@ export function createCip64FeeResolver(
       const nodePrice = gasPriceHex === null ? null : BigInt(gasPriceHex);
       const baseInToken = calibratedBaseFloor(dirA, dirB, nodePrice);
       const tip = BigInt(tipHex);
-      return { feeCurrency, maxFeePerGas: capMultiplier * baseInToken + tip, maxPriorityFeePerGas: tip };
+      return { feeCurrency, maxFeePerGas: mult * baseInToken + tip, maxPriorityFeePerGas: tip };
     } catch (e) {
       console.warn(`[${label}] CIP-64 fee derivation failed — falling back to node estimation:`, e instanceof Error ? e.message : e);
       return { feeCurrency };

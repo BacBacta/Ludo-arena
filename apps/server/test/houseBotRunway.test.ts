@@ -57,3 +57,28 @@ describe('locksAffordable (the runway the watchdog alerts on)', () => {
     expect(locksAffordable(required, required)).toBe(1);
   });
 });
+
+// A match needs BOTH seats locked. The bot used to fire ONE attempt at one
+// multiplier while the web client retried and escalated to 10x, so a base-fee
+// spike rejected the bot's tx and aborted the human's game — only ~1 staked
+// match in 3 was landing. The ladder must escalate, and it must stay affordable.
+describe('house-bot cap ladder (the "1 in 3 matches stake" incident)', () => {
+  it('escalates strictly, starting at the standing multiplier', async () => {
+    const src = await import('node:fs').then((fs) =>
+      fs.readFileSync(new URL('../src/houseBot.ts', import.meta.url), 'utf8'));
+    const ladder = /const HOUSE_BOT_CAP_LADDER = \[([^\]]+)\]/.exec(src)?.[1] ?? '';
+    const rungs = ladder.split(',').map((r) => r.trim()).filter(Boolean);
+    expect(rungs.length).toBeGreaterThanOrEqual(3); // one shot was the bug
+    expect(rungs[0]).toBe('HOUSE_BOT_CAP_MULT'); // first try stays cheap
+    const nums = rungs.slice(1).map((r) => BigInt(r.replace('n', '')));
+    for (let i = 1; i < nums.length; i++) expect(nums[i]!).toBeGreaterThan(nums[i - 1]!);
+    expect(nums[nums.length - 1]!).toBeGreaterThanOrEqual(20n); // real spike headroom
+  });
+
+  it('the top rung is still trivial for a funded bot wallet', () => {
+    // Calm mainnet floor 13.8 gwei, join ~250k gas, bot holds ~4.8 cUSD.
+    const cap = 60n * 13_814_189_500n;
+    const reserveCents = Number((cap * 250_000n * 100_000n) / 10n ** 18n) / 1000;
+    expect(reserveCents).toBeLessThan(50); // « 480c balance
+  });
+});

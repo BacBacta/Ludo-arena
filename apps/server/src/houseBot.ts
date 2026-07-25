@@ -42,6 +42,16 @@ import { createCip64FeeResolver, type Cip64Override } from './cip64Fees.js';
  *  and on the calibrated floor even 6x reserves ~2c per lock (vs ~176c before). */
 const HOUSE_BOT_CAP_MULT = 6n;
 
+/** Cap multipliers tried in order when a lock is rejected. Start at the standing
+ *  multiplier (cheap reservation), then pay for certainty: Celo moves the base
+ *  fee 12.5% per 1s block, so a tx that waits in the pool can face several times
+ *  the floor we read — that is what a cap-too-low reject means. The tx only ever
+ *  PAYS base+tip (EIP-1559 refunds the rest), so escalating costs the bot
+ *  reservation headroom, not fees, and it holds dollars rather than the burner's
+ *  10c seed. At the calm mainnet floor 60x still reserves well under 1% of its
+ *  balance. */
+const HOUSE_BOT_CAP_LADDER = [HOUSE_BOT_CAP_MULT, 20n, 60n] as const;
+
 /** Gas limit used to SIZE the node's fee reservation for one bot tx (approve or
  *  join). The real limit is estimated per tx; this is a deliberate upper bound so
  *  the affordability preflight errs on the side of declining a game it might not
@@ -120,6 +130,20 @@ const ERC20_ABI = [
 ] as const;
 const ESCROW_JOIN_ABI = [
   { type: 'function', name: 'join', stateMutability: 'nonpayable', inputs: [{ name: 'gameId', type: 'bytes32' }, { name: 'token', type: 'address' }, { name: 'stake', type: 'uint96' }, { name: 'fairnessCommit', type: 'bytes32' }], outputs: [] },
+  // Read back the seats: what makes a RETRY safe. A join whose receipt was lost
+  // (or that mined after we gave up) must not be re-sent — it would revert and
+  // turn a SUCCESSFUL lock into an aborted match.
+  {
+    type: 'function', name: 'games', stateMutability: 'view', inputs: [{ name: '', type: 'bytes32' }],
+    outputs: [
+      { name: 'token', type: 'address' },
+      { name: 'stake', type: 'uint96' },
+      { name: 'playerA', type: 'address' },
+      { name: 'playerB', type: 'address' },
+      { name: 'createdAt', type: 'uint40' },
+      { name: 'status', type: 'uint8' },
+    ],
+  },
 ] as const;
 
 /** Canonical server gameId (16 bytes hex) → bytes32 — must match web/escrow.ts
@@ -146,7 +170,7 @@ export class HouseBot {
   private readonly feeCurrency?: Address;
   private nonceChain: Promise<unknown> = Promise.resolve();
   /** Shared CIP-64 cap derivation (same module the Race faucet uses). */
-  private readonly feeResolver: () => Promise<Cip64Override>;
+  private readonly feeResolver: (multOverride?: bigint) => Promise<Cip64Override>;
 
   constructor(privateKey: Hex, chain: Chain, escrow: Address, stablecoin: Address, decimals: number, rpc?: string, feeCurrency?: Address) {
     this.account = privateKeyToAccount(privateKey);
@@ -193,8 +217,24 @@ export class HouseBot {
    * under three locks of runway. Re-derived before EVERY tx: Celo has 1s blocks
    * and the base fee moves.
    */
-  private cip64Fees(): Promise<Cip64Override> {
-    return this.feeResolver();
+  private cip64Fees(multOverride?: bigint): Promise<Cip64Override> {
+    return this.feeResolver(multOverride);
+  }
+
+  /** Has this bot ALREADY deposited into `gameId`? Read before every lock attempt
+   *  so a retry can never double-join (the join would revert and abort a match
+   *  that was in fact already funded). Fails OPEN: an unreadable escrow returns
+   *  false and the attempt proceeds, exactly as before this guard existed. */
+  private async alreadyJoined(gameId32: Hex): Promise<boolean> {
+    try {
+      const g = (await this.publicClient.readContract({
+        address: this.escrow, abi: ESCROW_JOIN_ABI, functionName: 'games', args: [gameId32],
+      })) as readonly [Address, bigint, Address, Address, number, number];
+      const me = this.address.toLowerCase();
+      return g[2].toLowerCase() === me || g[3].toLowerCase() === me;
+    } catch {
+      return false;
+    }
   }
 
   /** The client-shaped stake lock: approve + escrow.join, the exact tuple a human
@@ -206,19 +246,41 @@ export class HouseBot {
     const gameId32 = gameIdToBytes32(gameId);
     const commit32 = `0x${fairnessCommit.replace(/^0x/, '')}` as Hex;
     return this.serialize(async () => {
-      // Fees re-derived per tx (1s blocks): see cip64Fees for why the node's
-      // own quote cannot be trusted on the feeCurrency path.
-      const approveHash = await this.walletClient.writeContract({
-        account: this.account, chain: this.chain, address: this.stablecoin, abi: ERC20_ABI, functionName: 'approve', args: [this.escrow, units], ...(await this.cip64Fees()),
-      } as never);
-      const ar = await this.publicClient.waitForTransactionReceipt({ hash: approveHash });
-      if (ar.status !== 'success') throw new Error(`house-bot approve reverted (tx ${approveHash})`);
-      const joinHash = await this.walletClient.writeContract({
-        account: this.account, chain: this.chain, address: this.escrow, abi: ESCROW_JOIN_ABI, functionName: 'join', args: [gameId32, this.stablecoin, units, commit32], ...(await this.cip64Fees()),
-      } as never);
-      const jr = await this.publicClient.waitForTransactionReceipt({ hash: joinHash });
-      if (jr.status !== 'success') throw new Error(`house-bot join reverted (tx ${joinHash})`);
-      return joinHash;
+      // ADAPTIVE LADDER. The bot used to fire a single attempt at one multiplier,
+      // and a match needs BOTH seats locked — so one cap-too-low reject on the
+      // bot's side aborted the human's game. Meanwhile the web client retries and
+      // escalates to 10x, which left the bot as the weak seat (players saw only
+      // ~1 staked match in 3 land during base-fee spikes). Same answer as the
+      // client: re-derive from a FRESH floor each attempt and pay for certainty
+      // on the retry. The bot is a FUNDED wallet, so a fat cap costs it only
+      // reservation headroom — the burner's 10c ceiling does not apply here.
+      let lastError: unknown;
+      for (let attempt = 0; attempt < HOUSE_BOT_CAP_LADDER.length; attempt++) {
+        const mult = HOUSE_BOT_CAP_LADDER[attempt]!;
+        try {
+          // Idempotency FIRST, on every attempt: a previous attempt's join may
+          // have mined after we stopped waiting. Re-sending it would revert and
+          // abort a game that is in fact already funded.
+          if (await this.alreadyJoined(gameId32)) return '0x' as Hex;
+          const approveHash = await this.walletClient.writeContract({
+            account: this.account, chain: this.chain, address: this.stablecoin, abi: ERC20_ABI, functionName: 'approve', args: [this.escrow, units], ...(await this.cip64Fees(mult)),
+          } as never);
+          const ar = await this.publicClient.waitForTransactionReceipt({ hash: approveHash });
+          if (ar.status !== 'success') throw new Error(`house-bot approve reverted (tx ${approveHash})`);
+          const joinHash = await this.walletClient.writeContract({
+            account: this.account, chain: this.chain, address: this.escrow, abi: ESCROW_JOIN_ABI, functionName: 'join', args: [gameId32, this.stablecoin, units, commit32], ...(await this.cip64Fees(mult)),
+          } as never);
+          const jr = await this.publicClient.waitForTransactionReceipt({ hash: joinHash });
+          if (jr.status !== 'success') throw new Error(`house-bot join reverted (tx ${joinHash})`);
+          return joinHash;
+        } catch (e) {
+          lastError = e;
+          if (attempt < HOUSE_BOT_CAP_LADDER.length - 1) {
+            console.warn(`[house-bot] lock attempt ${attempt + 1} failed at ${mult}x — escalating:`, e instanceof Error ? e.message : e);
+          }
+        }
+      }
+      throw lastError;
     });
   }
 
