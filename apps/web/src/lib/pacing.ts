@@ -28,3 +28,25 @@ export const DIE_HOLD_MS = DIE_TUMBLE_MS + DIE_SETTLE_MS;
 export const BOT_MOVE_MS = DIE_SETTLE_MS;
 /** Pause before an only-legal move auto-plays, so the roll is read first. */
 export const FORCED_MOVE_MS = DIE_SETTLE_MS;
+
+/* ------------------------------------------------- Race Week podium freshness */
+
+/** How long the lobby podium preview may reuse a fetched leaderboard.
+ *  Short enough that finishing a game and walking back shows the new standings;
+ *  long enough that a re-render storm can't hammer the endpoint. */
+export const RACE_BOARD_TTL_MS = 30_000;
+
+/**
+ * May the lobby podium re-read the leaderboard?
+ *
+ * THE BUG THIS REPLACES: the podium fetched ONCE per app mount (a `useRef(false)`
+ * latch). Whatever standings a player saw on open, they kept for the entire
+ * session — score a win, return to the lobby, and the card still showed the old
+ * podium. A TTL makes "re-entering the lobby" a refresh point, which is what a
+ * player reads it as.
+ *
+ * `lastAt = 0` (never fetched) is always stale, so the first read always runs.
+ */
+export function boardIsStale(now: number, lastAt: number, ttlMs: number = RACE_BOARD_TTL_MS): boolean {
+  return now - lastAt >= ttlMs;
+}

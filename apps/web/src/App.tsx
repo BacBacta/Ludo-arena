@@ -30,7 +30,7 @@ import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
 import { activeChain } from './lib/chains';
-import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
+import { WALK_STEP_MS, WALK_TWEEN_MS, boardIsStale } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
 import { recordGameResult, skinById, skinSound } from './lib/diceSkins';
@@ -1516,22 +1516,30 @@ export default function App() {
     }
   }, [dispatch, connectWalletCta, refreshBalance, syncLobbyNow]);
 
-  // Podium preview data for the lobby event card: fetch the board once when an
-  // active event is on screen (kept in the store afterwards; openRaceBoard
-  // refreshes it whenever the sheet is opened).
-  const raceBoardFetched = useRef(false);
+  // Podium preview data for the lobby event card.
+  //
+  // THE STALENESS BUG: this used to fetch ONCE per app mount — a `useRef(false)`
+  // latch plus a `state.raceBoard` guard — so the podium a player saw when they
+  // opened the app was the podium they kept for the whole session. Finish a
+  // scoring game, walk back to the lobby, and the card still showed the old
+  // standings; only opening the full sheet ever refreshed it. Re-read whenever
+  // the lobby is (re-)entered, throttled so a re-render storm can't hammer the
+  // endpoint — returning from a game is always well past the TTL.
+  const raceBoardAt = useRef(0);
   useEffect(() => {
-    if (state.screen !== 'lobby' || !state.race?.active || state.raceBoard || raceBoardFetched.current) return;
-    raceBoardFetched.current = true;
+    if (state.screen !== 'lobby' || !state.race?.active) return;
+    if (!boardIsStale(Date.now(), raceBoardAt.current)) return;
+    raceBoardAt.current = Date.now();
     void fetchRaceLeaderboard(SERVER_URL, walletRef.current?.address).then((board) => {
       if (board) dispatch({ type: 'RACE_BOARD', board });
     });
-  }, [state.screen, state.race, state.raceBoard, dispatch]);
+  }, [state.screen, state.race, dispatch]);
 
   /** Open the Race Week leaderboard sheet and (re)fetch the standings. */
   const openRaceBoard = useCallback(async () => {
     dispatch({ type: 'RACE_MODAL', open: true });
     const board = await fetchRaceLeaderboard(SERVER_URL, walletRef.current?.address);
+    raceBoardAt.current = Date.now(); // the podium shares this read — don't refetch behind the sheet
     dispatch({ type: 'RACE_BOARD', board });
   }, [dispatch]);
 
