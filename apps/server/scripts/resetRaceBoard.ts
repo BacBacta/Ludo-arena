@@ -19,6 +19,10 @@ import { createStore } from '../src/store/index.js';
 const BOARD_KEY = 'race:board';
 const POOL_SPENT_KEY = 'race:pool:spent';
 const SEED_SPENT_KEY = 'race:seed:spent';
+/** Instant the CURRENT board started counting from. Stamped here so
+ *  void-race-games can replay only the games this board was built from —
+ *  without it a replay would resurrect points earned before the reset. */
+const EPOCH_KEY = 'race:epoch';
 
 const full = process.argv.includes('full') || process.env.FULL === '1';
 
@@ -32,7 +36,9 @@ try {
   entries = 0;
 }
 await store.setMeta(BOARD_KEY, '{}');
-console.log(`[reset-race-board] race:board cleared (${entries} player(s) removed).`);
+const epoch = new Date().toISOString();
+await store.setMeta(EPOCH_KEY, epoch);
+console.log(`[reset-race-board] race:board cleared (${entries} player(s) removed); race:epoch = ${epoch}.`);
 
 if (full) {
   const poolBefore = await store.getMeta(POOL_SPENT_KEY);
