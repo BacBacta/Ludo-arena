@@ -1357,10 +1357,16 @@ export default function App() {
       if (held === null || held === 0n) {
         // About to mint — but a fresh burner has NO gas. Ask the server for a tiny
         // cUSD gas seed FIRST (idempotent, pool-capped); it resolves once the cUSD
-        // is mined, so the mint can then pay its fee in cUSD. MiniPay already has
-        // gas, so it skips this. Seed errors are non-fatal: the mint's own catch
-        // surfaces "need gas" if the seed truly didn't land.
-        if (!isMiniPay()) {
+        // is mined, so the mint can then pay its fee in cUSD. This includes
+        // MiniPay: the old "MiniPay already has gas" assumption is FALSE for the
+        // exact audience the event targets — a brand-new MiniPay user holds 0
+        // cUSD, and nothing else ever funds that wallet, so skipping the seed
+        // made their entry silently paid ("top up and try again" on a free
+        // event). The server is address-agnostic and MiniPay sessions auto-prove
+        // (issueWalletNonce), so the same allowances apply: wallet ×3, device ×3,
+        // pool cap, and a rich wallet draws NOTHING (deficit-aware top-up).
+        // Seed errors are non-fatal: the mint's own catch surfaces the cause.
+        {
           // A rate-limited seed sends NOTHING but acks with 0 cents — reading that
           // as "funded" is what made the mint run on an empty burner and fail with
           // "your entry is still being funded". Wait out the server's own window
@@ -1391,17 +1397,6 @@ export default function App() {
           if (balCents !== null && balCents < MIN_MINT_GAS_CENTS) {
             console.error('[race] aborting mint: burner has %sc, needs >= %sc (seed did not land)', balCents, MIN_MINT_GAS_CENTS);
             dispatch({ type: 'TOAST', message: seedError ?? t('raceSeedStalled') });
-            return;
-          }
-        } else {
-          // MiniPay pays gas from the PLAYER'S OWN stablecoin — no faucet ever
-          // tops it up, so "your entry is still being funded" is a lie here: the
-          // only cure is the player adding cUSD. Say that, before burning 15s on
-          // a doomed tx.
-          const balCents = await walletBalanceCents(wallet).catch(() => null);
-          console.log('[race] MiniPay stablecoin balance before mint: %s cents', balCents);
-          if (balCents !== null && balCents < MIN_MINT_GAS_CENTS) {
-            dispatch({ type: 'TOAST', message: t('raceNeedStableGas') });
             return;
           }
         }

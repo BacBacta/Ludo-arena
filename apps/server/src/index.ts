@@ -2126,11 +2126,14 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'race.seed': {
-        // B1 gas-seed: a burner has a PROVEN wallet but no gas. Send a tiny cUSD
-        // amount so it can pay its own mint + join fees (in cUSD via feeCurrency),
-        // BEFORE it mints the Pass. Kept small (a few cents of gas) and gated:
-        // proven wallet, one seed per WALLET + per DEVICE, pool-capped. Dormant
-        // unless seedCents > 0 (only a non-MiniPay burner launch provisions it).
+        // B1 gas-seed: a PROVEN wallet with no gas. Send a tiny cUSD amount so it
+        // can pay its own mint + join fees (in cUSD via feeCurrency), BEFORE it
+        // mints the Pass. Serves burners AND MiniPay wallets (auto-proven on a
+        // trusted origin — a brand-new MiniPay user holds 0 cUSD, so "MiniPay
+        // already has gas" was false for exactly the users the event targets).
+        // Kept small (a few cents of gas) and gated: proven wallet, lifetime
+        // allowance per WALLET + per DEVICE, pool-capped, deficit-aware (a wallet
+        // already at the target draws nothing).
         if (!raceFaucet || raceFaucet.seedCents <= 0) {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Race Week gas seed is not available.' });
           break;

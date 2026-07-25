@@ -22,10 +22,6 @@ describe('mintFailureToast — the evidence-anchored triage', () => {
     expect(mintFailureToast({ ...base, payGasInStable: false })).toEqual({ kind: 'key', key: 'raceNeedGas' });
   });
 
-  it("MiniPay is the player's own money — nothing ever 'funds' it, so say top up", () => {
-    expect(mintFailureToast({ ...base, miniPay: true })).toEqual({ kind: 'key', key: 'raceNeedStableGas' });
-  });
-
   it('balance AT/ABOVE the floor proves funding landed → the failure is the node, retry is honest', () => {
     expect(mintFailureToast({ ...base, balCents: 10 })).toEqual({ kind: 'key', key: 'raceRpcBusy' });
     expect(mintFailureToast({ ...base, balCents: 4 })).toEqual({ kind: 'key', key: 'raceRpcBusy' });
@@ -36,14 +32,19 @@ describe('mintFailureToast — the evidence-anchored triage', () => {
     expect(mintFailureToast({ ...base, balCents: 3 })).toEqual({ kind: 'key', key: 'raceSeedStalled' });
   });
 
-  it('ONLY an unreadable balance may still say "being funded" — the genuinely unknowable case', () => {
-    expect(mintFailureToast({ ...base, balCents: null })).toEqual({ kind: 'key', key: 'raceFundingPending' });
+  it('MiniPay shares the evidence branches — it is seeded like a burner now', () => {
+    expect(mintFailureToast({ ...base, miniPay: true, balCents: 10 })).toEqual({ kind: 'key', key: 'raceRpcBusy' });
+    expect(mintFailureToast({ ...base, miniPay: true, balCents: 0 })).toEqual({ kind: 'key', key: 'raceSeedStalled' });
   });
 
-  it('precedence: server words > native-gas > MiniPay > balance evidence', () => {
+  it('the unreadable-balance fallback: MiniPay can self-serve (top up), a burner cannot', () => {
+    expect(mintFailureToast({ ...base, balCents: null })).toEqual({ kind: 'key', key: 'raceFundingPending' });
+    expect(mintFailureToast({ ...base, miniPay: true, balCents: null })).toEqual({ kind: 'key', key: 'raceNeedStableGas' });
+  });
+
+  it('precedence: server words > native-gas > balance evidence', () => {
     expect(mintFailureToast({ ...base, seedError: 'pool dry', miniPay: true, balCents: 10 }).kind).toBe('server-words');
     expect(mintFailureToast({ ...base, payGasInStable: false, miniPay: true })).toEqual({ kind: 'key', key: 'raceNeedGas' });
-    expect(mintFailureToast({ ...base, miniPay: true, balCents: 10 })).toEqual({ kind: 'key', key: 'raceNeedStableGas' });
   });
 });
 
