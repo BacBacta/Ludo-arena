@@ -18,6 +18,7 @@
     "prune-race-board": "tsx scripts/pruneRaceBoard.ts",
     "void-race-games": "tsx scripts/voidRaceGames.ts",
     "race-audit": "tsx scripts/raceAudit.ts",
+    "race-forensics": "tsx scripts/raceForensics.ts",
     "race-budget": "tsx scripts/raceBudget.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
