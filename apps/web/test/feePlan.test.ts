@@ -9,6 +9,10 @@ import {
   planCapWei,
   planGasLimit,
   planReservationWei,
+  estimateFailureReason,
+  GasEstimateUnavailableError,
+  RPC_BUSY_SENTINEL,
+  ESTIMATE_REVERTED_SENTINEL,
 } from '../src/lib/feePlan';
 
 // The constraint system a burner lock tx must satisfy AT ONCE (C1..C4 in the
@@ -119,5 +123,58 @@ describe('HIGH_CAP spike headroom vs the 10c gas seed', () => {
     const approveReserve = cents(cap * planGasLimit(HIGH_CAP, 50_000n));
     expect(joinReserve + 1).toBeLessThan(10); // + the 1c stake, inside the 10c seed
     expect(approveReserve).toBeLessThan(10);
+  });
+});
+
+describe('estimateFailureReason — a busy node is not a revert', () => {
+  it('returns null for the failures RPC_BUSY is actually for', () => {
+    // No cause at all, and the transport-level failures of a node under load.
+    expect(estimateFailureReason(undefined)).toBeNull();
+    expect(estimateFailureReason(null)).toBeNull();
+    expect(estimateFailureReason(new Error('request timed out'))).toBeNull();
+    expect(estimateFailureReason(new Error('HTTP request failed. Status: 429'))).toBeNull();
+    expect(estimateFailureReason(new Error('fetch failed'))).toBeNull();
+  });
+
+  it('names the escrow custom error viem decoded (the diagnosable case)', () => {
+    // viem shape: ContractFunctionExecutionError → ContractFunctionRevertedError,
+    // whose `data.errorName` is the Solidity custom error.
+    const revert = { name: 'ContractFunctionRevertedError', data: { errorName: 'CommitMismatch' } };
+    expect(estimateFailureReason({ name: 'ContractFunctionExecutionError', cause: revert })).toBe('CommitMismatch');
+    expect(estimateFailureReason({ cause: { cause: { data: { errorName: 'BadStake' } } } })).toBe('BadStake');
+  });
+
+  it('falls back to a revert string when no custom error was decoded', () => {
+    expect(estimateFailureReason(new Error('execution reverted: ERC20: insufficient allowance')))
+      .toContain('reverted');
+  });
+
+  it('does not chase a cause chain forever', () => {
+    const loop: { cause?: unknown } = {};
+    loop.cause = loop; // self-referential
+    expect(estimateFailureReason(loop)).toBeNull();
+  });
+});
+
+describe('GasEstimateUnavailableError — the message must match the evidence', () => {
+  it('says "busy node" ONLY when the node genuinely did not answer', () => {
+    const busy = new GasEstimateUnavailableError(new Error('HTTP request failed. Status: 429'));
+    expect(busy.message).toContain(RPC_BUSY_SENTINEL);
+    expect(busy.message).not.toContain(ESTIMATE_REVERTED_SENTINEL);
+    expect(new GasEstimateUnavailableError().message).toContain(RPC_BUSY_SENTINEL);
+  });
+
+  it('reports a REVERT as a revert, and names it', () => {
+    // The regression: a deterministic CommitMismatch used to be reported as a
+    // busy node, so the player was told to retry something that can never work.
+    const e = new GasEstimateUnavailableError({ cause: { data: { errorName: 'CommitMismatch' } } });
+    expect(e.message).toContain(ESTIMATE_REVERTED_SENTINEL);
+    expect(e.message).toContain('CommitMismatch');
+    expect(e.message).not.toContain(RPC_BUSY_SENTINEL);
+  });
+
+  it('keeps the cause for the report', () => {
+    const cause = new Error('execution reverted');
+    expect(new GasEstimateUnavailableError(cause).cause).toBe(cause);
   });
 });

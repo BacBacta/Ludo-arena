@@ -364,10 +364,19 @@ export async function planFeeExtras(
       return null; // all reads failed → let viem estimate the fees
     }
   })();
+  // KEEP the failure, never `.catch(() => null)`. An estimate fails either
+  // because the node was unreachable OR because it simulated the call and the
+  // call REVERTED — two opposite diagnoses. Discarding the cause reported every
+  // deterministic revert (CommitMismatch, BadStake, AlreadyJoined…) as "the node
+  // did not answer", which is both false and unactionable.
+  let estimateError: unknown = null;
   const estimateOnce = () =>
     (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> })
       .estimateContractGas(estimateRequest)
-      .catch(() => null);
+      .catch((e: unknown) => {
+        estimateError = e;
+        return null;
+      });
   const [bounds, firstEstimate] = await Promise.all([priceP, estimateOnce()]);
   let estimated = firstEstimate;
   if (estimated === null) {
@@ -383,8 +392,9 @@ export async function planFeeExtras(
     // "gas required exceeds allowance (0)": a fake gas-shortfall that the UI
     // used to read as "your entry is still being funded". Throwing (typed,
     // retriable) lets the caller's ladder retry with fresh reads and, failing
-    // that, tell the player the node is busy — the truth.
-    throw new GasEstimateUnavailableError();
+    // that, tell the player what actually happened — a busy node, or the revert
+    // the node named.
+    throw new GasEstimateUnavailableError(estimateError);
   }
   if (bounds !== null) {
     out.maxFeePerGas = planCapWei(plan, bounds.floor);
