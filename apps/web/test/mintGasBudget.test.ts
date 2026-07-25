@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { affordableCapWei, budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei } from '@ludo/shared';
 import { BALANCED, HIGH_CAP, THRIFTY, GAS_BUDGET_SENTINEL, InsufficientGasBudgetError, feeWeiToCents, planCapWei, planGasLimit } from '../src/lib/feePlan';
+import { feeCurrencyFloorBounds, planFeeExtras } from '../src/lib/escrow';
 
 // THE BUG. The Race Pass mint is the FIRST tx a new player sends, from the
 // THINNEST wallet in the app: a burner holding a 10c gas seed. Its fee cap is
@@ -124,6 +125,78 @@ describe('when nothing can work, refuse instead of broadcasting', () => {
     const floorLo = planCapWei(BALANCED, NODE_QUOTE);
     const exact = feeReservationWei(gasLimit, floorLo);
     expect(budgetedCapWei(floorLo, gasLimit, exact, floorLo).feasible).toBe(true);
+  });
+});
+
+// DEGRADATION PATH (iii), the subtlest of the three: a node that ACCEPTS
+// eth_gasPrice([token]) but IGNORES the token, answering with the NATIVE price.
+// The quote then looks valid, so `calibratedBaseFloor`'s "never cap below the
+// node's own quote" rule pins the floor at the native value — ~14x too high for
+// cUSD — and there is no error anywhere to notice. Taking the quote as the
+// clamp's low bound too would leave it nowhere to descend to, and the mint would
+// be REFUSED on a wallet that can in fact afford it.
+const CUSD = '0x765DE816845861e75A25fCA122bb6898B8B1282a' as const;
+
+/** Minimal viem-shaped client: directory + block always answer; the eth_gasPrice
+ *  extension behaves per `quote` ('native' = ignores the token param). */
+function fakeClient(quote: bigint | 'native' | 'throw', estimate = MINT_ESTIMATE) {
+  return {
+    readContract: async (r: { functionName: string }) => {
+      if (r.functionName === 'getAddressForString') return CUSD;
+      if (r.functionName === 'getExchangeRate') return [RATE_NUM, RATE_DEN];
+      throw new Error(`unexpected read ${r.functionName}`);
+    },
+    getBlock: async () => ({ baseFeePerGas: NATIVE_BASE }),
+    request: async (a: { method: string }) => {
+      if (a.method !== 'eth_gasPrice') throw new Error(`unexpected ${a.method}`);
+      if (quote === 'throw') throw new Error('method not supported');
+      return `0x${(quote === 'native' ? NATIVE_BASE : quote).toString(16)}`;
+    },
+    estimateContractGas: async () => estimate,
+  } as never;
+}
+
+const mintRequest = { address: CUSD, abi: [], functionName: 'mint', args: [], account: CUSD } as never;
+
+describe('degradation path (iii): the node ignores the feeCurrency param', () => {
+  it('the floor is pinned at the native price — 14x the truth, with no error to notice', async () => {
+    const bounds = await feeCurrencyFloorBounds(fakeClient('native'), CUSD);
+    expect(bounds?.floor).toBe(NATIVE_BASE);
+  });
+
+  it('but floorLo follows the DIRECTORY, not the lying quote', async () => {
+    const bounds = await feeCurrencyFloorBounds(fakeClient('native'), CUSD);
+    expect(bounds?.floorLo).toBe(DIR_A); // ~13.65 gwei — the clamp has room again
+  });
+
+  it('so the mint is CLAMPED and sent, not refused', async () => {
+    const extras = await planFeeExtras(fakeClient('native'), CUSD, BALANCED, mintRequest, true, SEED_WEI);
+    const reservation = feeReservationWei(extras.gas as bigint, extras.maxFeePerGas as bigint);
+    expect(reservation).toBeLessThanOrEqual(SEED_WEI);
+    expect(extras.maxFeePerGas as bigint).toBeGreaterThan(DIR_A * 10n); // still clears the real floor
+  });
+});
+
+describe('planFeeExtras end to end', () => {
+  it('an honest node needs no clamp at all', async () => {
+    const extras = await planFeeExtras(fakeClient(NODE_QUOTE), CUSD, BALANCED, mintRequest, true, SEED_WEI);
+    expect(extras.maxFeePerGas).toBe(planCapWei(BALANCED, NODE_QUOTE));
+    expect(feeReservationWei(extras.gas as bigint, extras.maxFeePerGas as bigint)).toBeLessThan(SEED_WEI);
+  });
+
+  it('a node without the extension (path i) is clamped into the seed', async () => {
+    const extras = await planFeeExtras(fakeClient('throw'), CUSD, BALANCED, mintRequest, true, SEED_WEI);
+    expect(feeReservationWei(extras.gas as bigint, extras.maxFeePerGas as bigint)).toBeLessThanOrEqual(SEED_WEI);
+  });
+
+  it('an EMPTY wallet is refused before broadcast, with the numbers', async () => {
+    await expect(planFeeExtras(fakeClient(NODE_QUOTE), CUSD, BALANCED, mintRequest, true, 0n))
+      .rejects.toBeInstanceOf(InsufficientGasBudgetError);
+  });
+
+  it('omitting the budget keeps the previous unclamped behaviour (staking is untouched)', async () => {
+    const extras = await planFeeExtras(fakeClient('throw'), CUSD, BALANCED, mintRequest, true);
+    expect(extras.maxFeePerGas).toBe(planCapWei(BALANCED, DIR_B)); // the old, conservative cap
   });
 });
 

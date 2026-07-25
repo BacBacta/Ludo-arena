@@ -5,7 +5,7 @@
  * MiniPay, pass `feeCurrency` to pay gas in cUSD with a legacy tx.
  */
 import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
-import { budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei } from '@ludo/shared';
+import { budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei, nearestDirection } from '@ludo/shared';
 import { BALANCED, classifyTxFailure, InsufficientGasBudgetError, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
 
 export const ERC20_ABI = [
@@ -225,9 +225,17 @@ export async function feeCurrencyFloorBounds(publicClient: PublicClient, feeCurr
     const [dirA, dirB] = feeCurrencyDirections(base, num, den);
     const floor = calibratedBaseFloor(dirA, dirB, nodePrice);
     if (floor <= 0n) return null;
-    // With a quote, the node itself told us the price — that IS the low bound.
-    // Without one, the lower direction is the least we could still believe.
-    const lo = nodePrice !== null && nodePrice > 0n ? nodePrice : (dirA < dirB ? dirA : dirB);
+    // The low bound is the NEAREST DIRECTION, not the quote itself — and never
+    // above it. A node that ignores the feeCurrency param on eth_gasPrice answers
+    // with the NATIVE price; `calibratedBaseFloor`'s "never cap below the quote"
+    // rule then pins the floor at that native value (~14x too high for cUSD), and
+    // taking the quote as the low bound too would leave the budget clamp nowhere
+    // to descend to — the mint gets refused on a wallet that could well afford it.
+    // The nearest direction is derived from the DIRECTORY, so it survives a node
+    // that lies; when the quote is genuine the two agree and this changes nothing.
+    const lo = nodePrice !== null && nodePrice > 0n
+      ? nearestDirection(dirA, dirB, nodePrice)
+      : (dirA < dirB ? dirA : dirB);
     return { floor, floorLo: lo > 0n && lo <= floor ? lo : floor };
   } catch {
     return null;

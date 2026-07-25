@@ -48,10 +48,17 @@ export function feeCurrencyDirections(baseFeePerGas: bigint, num: bigint, den: b
 export function calibratedBaseFloor(a: bigint, b: bigint, nodePrice: bigint | null): bigint {
   const hi = a > b ? a : b;
   if (nodePrice === null || nodePrice <= 0n) return hi; // no oracle → stay conservative
+  const near = nearestDirection(a, b, nodePrice);
+  return near > nodePrice ? near : nodePrice;
+}
+
+/** Whichever conversion direction the node's quote sits closest to — our best
+ *  guess at the REAL orientation, independent of the "never cap below the quote"
+ *  rule that `calibratedBaseFloor` layers on top. */
+export function nearestDirection(a: bigint, b: bigint, nodePrice: bigint): bigint {
   const da = a > nodePrice ? a - nodePrice : nodePrice - a;
   const db = b > nodePrice ? b - nodePrice : nodePrice - b;
-  const near = da <= db ? a : b;
-  return near > nodePrice ? near : nodePrice;
+  return da <= db ? a : b;
 }
 
 /** What the node RESERVES for a tx (fee part), in fee-currency wei. The quantity
