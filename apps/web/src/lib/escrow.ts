@@ -6,7 +6,7 @@
  */
 import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
 import { budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei, nearestDirection } from '@ludo/shared';
-import { BALANCED, classifyTxFailure, InsufficientGasBudgetError, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
+import { BALANCED, classifyTxFailure, GasEstimateUnavailableError, InsufficientGasBudgetError, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
 
 export const ERC20_ABI = [
   { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
@@ -364,15 +364,33 @@ export async function planFeeExtras(
       return null; // all reads failed → let viem estimate the fees
     }
   })();
-  const gasP = (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> })
-    .estimateContractGas(estimateRequest)
-    .catch(() => null); // estimate refused (lagging node) → let the send path estimate
-  const [bounds, estimated] = await Promise.all([priceP, gasP]);
+  const estimateOnce = () =>
+    (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> })
+      .estimateContractGas(estimateRequest)
+      .catch(() => null);
+  const [bounds, firstEstimate] = await Promise.all([priceP, estimateOnce()]);
+  let estimated = firstEstimate;
+  if (estimated === null) {
+    // One in-call retry: the estimate usually fails on the same 429 burst that
+    // degrades the fee reads, and a beat later the node answers again.
+    await new Promise((r) => setTimeout(r, 400));
+    estimated = await estimateOnce();
+  }
+  if (estimated === null) {
+    // NEVER emit fee caps without an explicit gas limit. viem would then
+    // re-estimate WITH the fee fields, and the node applies its affordability
+    // cap against the NATIVE balance — 0 for a burner — so the tx dies with
+    // "gas required exceeds allowance (0)": a fake gas-shortfall that the UI
+    // used to read as "your entry is still being funded". Throwing (typed,
+    // retriable) lets the caller's ladder retry with fresh reads and, failing
+    // that, tell the player the node is busy — the truth.
+    throw new GasEstimateUnavailableError();
+  }
   if (bounds !== null) {
     out.maxFeePerGas = planCapWei(plan, bounds.floor);
     out.maxPriorityFeePerGas = plan.priorityWei;
   }
-  if (estimated !== null) out.gas = planGasLimit(plan, estimated);
+  out.gas = planGasLimit(plan, estimated);
   // C4, enforced BEFORE broadcast when the balance is known. Without this a
   // degraded floor read (no node quote → the conservative 215× direction; or no
   // directory → the native base fee) builds a cap whose reservation dwarfs a 10c

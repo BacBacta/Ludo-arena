@@ -25,7 +25,7 @@ import { HowToPlayModal, howToSeen } from './components/HowToPlay';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
 import { getBurnerWallet, prefersExternalWallet, restoreBurnerWallet, setPrefersExternalWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
-import { needsPreLockSeed, GAS_BUDGET_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
+import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
@@ -1393,6 +1393,17 @@ export default function App() {
             dispatch({ type: 'TOAST', message: seedError ?? t('raceSeedStalled') });
             return;
           }
+        } else {
+          // MiniPay pays gas from the PLAYER'S OWN stablecoin — no faucet ever
+          // tops it up, so "your entry is still being funded" is a lie here: the
+          // only cure is the player adding cUSD. Say that, before burning 15s on
+          // a doomed tx.
+          const balCents = await walletBalanceCents(wallet).catch(() => null);
+          console.log('[race] MiniPay stablecoin balance before mint: %s cents', balCents);
+          if (balCents !== null && balCents < MIN_MINT_GAS_CENTS) {
+            dispatch({ type: 'TOAST', message: t('raceNeedStableGas') });
+            return;
+          }
         }
         // No Pass yet → mint one (free, soulbound). Persist the tx for reproof.
         console.log('[race] minting RacePass…');
@@ -1468,24 +1479,42 @@ export default function App() {
         });
         return;
       }
+      // The node never answered the gas estimate (429 burst) — the tx was
+      // REFUSED before broadcast rather than sent into the C2 trap ("gas
+      // required exceeds allowance (0)", a fake shortfall). Retrying is honest.
+      if (raw.includes(RPC_BUSY_SENTINEL)) {
+        dispatch({ type: 'TOAST', message: t('raceRpcBusy') });
+        return;
+      }
       const needGas =
         m.includes('insufficient') || m.includes('funds for gas') || m.includes('exceeds the balance') ||
         m.includes('exceeds allowance') || m.includes('gas required exceeds') || m.includes('max fee per gas less than');
-      const msg = wrongNet
-        ? t('raceWrongNetwork').replace('{chain}', activeChain.name)
-        : needGas
-          ? // A gas shortfall right after a REFUSED seed is the seed refusal
-            // (device allowance, pool dry…) — the server's words name it.
-            // Otherwise: this wallet pays gas in the STABLECOIN (the burner, and
-            // MiniPay), so a shortfall means the app's own funding hasn't landed
-            // — NOT that the player needs CELO. Telling them to buy CELO sent
-            // them shopping for a coin the event never requires; only a wallet
-            // paying NATIVE gas gets that message.
-            (seedError ??
-              (walletRef.current?.payGasInStable === false
-                ? t('raceNeedGas').replace('{chain}', activeChain.name)
-                : t('raceFundingPending')))
-          : t('raceClaimFailed');
+      if (wrongNet) {
+        dispatch({ type: 'TOAST', message: t('raceWrongNetwork').replace('{chain}', activeChain.name) });
+        return;
+      }
+      // Gas-shortfall triage — the ONE rule: never claim "still being funded"
+      // unless that is the single thing we could not disprove. A balance re-read
+      // AFTER the failure is the evidence: at/above the floor proves the funding
+      // landed (the failure is fees/RPC → retry is honest); below it proves the
+      // seed did not land; only an unreadable balance leaves the old message.
+      // The mapping itself is pure and pinned by tests (mintFailureToast).
+      const balAfter = needGas && wallet ? await walletBalanceCents(wallet).catch(() => null) : null;
+      const decision = mintFailureToast({
+        needGas,
+        seedError,
+        payGasInStable: walletRef.current?.payGasInStable !== false,
+        miniPay: isMiniPay(),
+        balCents: balAfter,
+        minCents: MIN_MINT_GAS_CENTS,
+      });
+      console.error('[joinRaceWeek] toast decision:', JSON.stringify(decision), 'balAfter:', balAfter);
+      const msg =
+        decision.kind === 'server-words'
+          ? decision.text
+          : decision.key === 'raceNeedGas'
+            ? t('raceNeedGas').replace('{chain}', activeChain.name)
+            : t(decision.key);
       dispatch({ type: 'TOAST', message: msg });
     } finally {
       dispatch({ type: 'RACE_JOINING', joining: false });
