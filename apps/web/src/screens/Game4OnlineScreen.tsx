@@ -17,7 +17,7 @@ import type { WalletAuth } from '../lib/session';
 import type { StakeStatus } from '../lib/escrow';
 import { playCapture, playDice, playWin } from '../lib/sound';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
-import { skinById } from '../lib/diceSkins';
+import { skinById, skinSound } from '../lib/diceSkins';
 import { tokenSkinById, type TokenPattern } from '../lib/tokenSkins';
 import { EntranceFxOverlay, VictoryFxOverlay } from '../components/CosmeticFx';
 import { t } from '../lib/i18n';
@@ -137,7 +137,7 @@ export function Game4OnlineScreen({
           setShown({ seat, value, key: index });
           setRolling(false);
           // the rolling seat's own die sound (premium dice relayed per seat)
-          if (seat !== mySeatRef.current) playDice(skinById(playersRef.current[seat]?.diceSkin ?? 'classic').sound);
+          if (seat !== mySeatRef.current) playDice(skinSound(skinById(playersRef.current[seat]?.diceSkin ?? 'classic')));
         },
         onMoved: (_seat, _token, capture, state) => {
           if (capture) playCapture();
@@ -194,7 +194,7 @@ export function Game4OnlineScreen({
   function doRoll(): void {
     if (!canRoll) return;
     setRolling(true);
-    playDice(mySkin.sound); // own roll: my die's own sound, immediately (no RTT lag)
+    playDice(skinSound(mySkin)); // own roll: my die's own sound, immediately (no RTT lag)
     remoteRef.current?.roll();
   }
   function doMove(token: number): void {

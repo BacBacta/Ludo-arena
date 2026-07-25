@@ -9,7 +9,7 @@ import { Die } from '../components/DiePremium';
 import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFlight } from '../components/Emote';
 import { DIE_HOLD_MS } from '../lib/pacing';
-import { skinById, type DiceSkin } from '../lib/diceSkins';
+import { skinById, skinSound, type DiceSkin } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
 import { PremiumFrame } from '../components/PremiumFrame';
@@ -316,7 +316,7 @@ export function GameScreen({
               aria-hidden={!((myTurn && !handoff) || myRolling)}
               tabIndex={(myTurn && !handoff) || myRolling ? undefined : -1}
               onClick={() => {
-                playDice(skin.sound); // my equipped die's own material sound (premium)
+                playDice(skinSound(skin)); // my equipped die's own material sound (premium)
                 onRoll();
               }}
               aria-label={`${t('you')} die`}

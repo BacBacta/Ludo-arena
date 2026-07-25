@@ -33,7 +33,7 @@ import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
-import { recordGameResult, skinById } from './lib/diceSkins';
+import { recordGameResult, skinById, skinSound } from './lib/diceSkins';
 import { t } from './lib/i18n';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
@@ -463,7 +463,7 @@ export default function App() {
         clearFreeFallback(); // a real opponent paired — cancel the bot fallback
         clearRematchWait(); // …and the staked-rematch giving-up timer
         matchSeatRef.current = match.seat;
-        oppDiceSoundRef.current = skinById(match.opponent.diceSkin ?? 'classic').sound;
+        oppDiceSoundRef.current = skinSound(skinById(match.opponent.diceSkin ?? 'classic'));
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };
@@ -635,7 +635,7 @@ export default function App() {
       onReconnecting: () => dispatch({ type: 'RECONNECTING' }),
       onResumed: (match, game) => {
         matchSeatRef.current = match.seat;
-        oppDiceSoundRef.current = skinById(match.opponent.diceSkin ?? 'classic').sound;
+        oppDiceSoundRef.current = skinSound(skinById(match.opponent.diceSkin ?? 'classic'));
         lastDiceRef.current = null;
         movedSinceDiceRef.current = true;
         sixRunRef.current = { seat: -1, run: 0 };

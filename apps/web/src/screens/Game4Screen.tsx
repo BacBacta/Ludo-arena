@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Board4 } from '../components/Board4';
 import { Die } from '../components/DiePremium';
 import { SeatAvatar, SeatDie } from '../components/Seat4';
-import { skinById } from '../lib/diceSkins';
+import { skinById, skinSound } from '../lib/diceSkins';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFlight, type GiftTarget } from '../components/Emote';
 import { IconMenu } from '../components/icons';
 import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
@@ -78,7 +78,7 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
     if (g.phase !== 'awaiting-roll' || g.turn !== seat) return; // guard stale/dup calls
     const value = die6();
     setRoll({ seat, value, key: Date.now() });
-    playDice(seat === mySeat ? mySkin.sound : undefined); // my roll = my die's own sound
+    playDice(seat === mySeat ? skinSound(mySkin) : undefined); // my roll = my die's own sound
     const legal = legalMoves4(g, seat, value);
     if (legal.length === 0) {
       // No move: SHOW the roll on this seat for a beat, THEN pass the turn — so it
