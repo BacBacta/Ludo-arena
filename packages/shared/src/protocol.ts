@@ -864,7 +864,11 @@ export type ServerMsg =
   // anti-spam window and nothing was sent — retry shortly. The server always
   // REPLIES to race.seed: a silent drop left honest clients hanging to their
   // timeout and reporting "Gas seed failed" when nothing had failed.
-  | { t: 'race.seeded'; seedCents: number; alreadySeeded: boolean; txHash?: string; rateLimited?: boolean }
+  // `retryInMs` (with `rateLimited`) = how long until the window reopens, so the
+  // client can wait EXACTLY that long and retry instead of guessing — or worse,
+  // treating a 0-cent rate-limit ack as a successful seed and minting on an
+  // empty wallet (which failed with "your entry is still being funded").
+  | { t: 'race.seeded'; seedCents: number; alreadySeeded: boolean; txHash?: string; rateLimited?: boolean; retryInMs?: number }
   // Race Week leaderboard: `top` = highest-scoring players (name + points +
   // 1-indexed rank), `myRank`/`myPoints` locate the caller (rank 0 = unranked).
   | { t: 'race.board'; top: Array<{ name: string; points: number; rank: number }>; myRank: number; myPoints: number }

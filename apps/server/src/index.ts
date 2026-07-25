@@ -2140,11 +2140,21 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const sNow = Date.now();
-        if (sNow - (session.lastRaceAt ?? 0) < 3000) {
+        const sinceLastRace = sNow - (session.lastRaceAt ?? 0);
+        if (sinceLastRace < RACE_ACTION_WINDOW_MS) {
           // Anti-spam window (it sends a tx) — but ALWAYS reply: a silent drop
           // left honest clients (double-tap, quick pre-lock retry) hanging to
           // their own timeout and reporting "Gas seed failed" out of thin air.
-          session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: false, rateLimited: true });
+          // `retryInMs` tells the client exactly when the window reopens: NOTHING
+          // was sent here, and a client that mistook this ack for a funded wallet
+          // went on to mint with no gas ("your entry is still being funded").
+          session.send({
+            t: 'race.seeded',
+            seedCents: 0,
+            alreadySeeded: false,
+            rateLimited: true,
+            retryInMs: Math.max(0, RACE_ACTION_WINDOW_MS - sinceLastRace),
+          });
           break;
         }
         session.lastRaceAt = sNow;
@@ -2248,7 +2258,7 @@ wss.on('connection', (ws, req) => {
           break;
         }
         const rNow = Date.now();
-        if (rNow - (session.lastRaceAt ?? 0) < 3000) {
+        if (rNow - (session.lastRaceAt ?? 0) < RACE_ACTION_WINDOW_MS) {
           // Same always-reply contract as race.seed: a silent drop reads as a hang.
           session.send({ t: 'error', code: 'LIMIT_REACHED', message: 'One moment — please try again.' });
           break;
@@ -2920,6 +2930,10 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
 // ---------- Race house bot: summon + anti-collusion ----------
 
 /** How long a lone Race seeker waits for a human before the house bot fills in. */
+/** Anti-spam window shared by race.seed and race.claim (both send a tx). The
+ *  seed ack reports the REMAINING time as `retryInMs` so a client can wait
+ *  exactly that long instead of minting on a wallet that was never funded. */
+const RACE_ACTION_WINDOW_MS = 3000;
 const RACE_BOT_FALLBACK_MS = Number(process.env.RACE_BOT_FALLBACK_MS ?? 12_000);
 /** Games already played today between the SAME two Race wallets before a fresh
  *  pairing between them is treated as wash-trading — the seeker is routed to the
