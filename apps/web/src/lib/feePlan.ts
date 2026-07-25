@@ -157,20 +157,21 @@ export type MintFailureToast =
 /**
  * THE RULE: never tell a player their entry "is still being funded" unless that
  * is the one thing we could not disprove. Each branch is anchored to evidence:
- * the server's words beat guesses; a MiniPay wallet is the player's own money
- * (nothing will ever "fund" it); a balance at/above the floor PROVES the funding
- * landed (the failure is fees/RPC, so retrying is honest); a balance below it
- * proves the seed did not land. Only an UNREADABLE balance leaves the old
- * message, because there the claim is genuinely unknowable.
+ * the server's words beat guesses; a balance at/above the floor PROVES the
+ * funding landed (the failure is fees/RPC, so retrying is honest); a balance
+ * below it proves the seed did not land. MiniPay wallets are seeded like
+ * burners now, so they share the evidence branches — MiniPay only decides the
+ * UNREADABLE-balance fallback: "top up a few cents" self-serves the player out
+ * of the dead end (their wallet can be funded by hand; a burner cannot), where
+ * the burner's honest fallback stays "being funded" — genuinely unknowable.
  */
 export function mintFailureToast(ctx: MintFailureContext): MintFailureToast {
   if (!ctx.needGas) return { kind: 'key', key: 'raceClaimFailed' };
   if (ctx.seedError) return { kind: 'server-words', text: ctx.seedError };
   if (!ctx.payGasInStable) return { kind: 'key', key: 'raceNeedGas' };
-  if (ctx.miniPay) return { kind: 'key', key: 'raceNeedStableGas' };
   if (ctx.balCents !== null && ctx.balCents >= ctx.minCents) return { kind: 'key', key: 'raceRpcBusy' };
   if (ctx.balCents !== null) return { kind: 'key', key: 'raceSeedStalled' };
-  return { kind: 'key', key: 'raceFundingPending' };
+  return { kind: 'key', key: ctx.miniPay ? 'raceNeedStableGas' : 'raceFundingPending' };
 }
 
 export type TxFailure = 'cap-too-low' | 'exceeds-balance' | 'oog' | 'rejected' | 'other';
