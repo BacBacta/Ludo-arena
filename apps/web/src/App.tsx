@@ -63,6 +63,11 @@ function walkSteps(prev: number[][], next: number[][]): number {
 }
 /** Responsible-gaming reality check cadence — remind an actively-staking player. */
 const REALITY_CHECK_MS = 20 * 60_000;
+/** Minimum burner balance (cents of the stablecoin) to even ATTEMPT the Race
+ *  Pass mint. Below this the mint is certain to die on funds, so the flow says
+ *  the gas seed did not land instead of burning ~15s on a doomed attempt. */
+const MIN_MINT_GAS_CENTS = 4;
+
 /** Free 1v1: LAST-RESORT wait before auto-falling back to a bot. Kept long so the
  *  player actually STAYS in the queue and can meet others who arrive — an 8s
  *  fallback pulled everyone out before they could pair (→ "always the bot"). An
@@ -1356,18 +1361,38 @@ export default function App() {
         // gas, so it skips this. Seed errors are non-fatal: the mint's own catch
         // surfaces "need gas" if the seed truly didn't land.
         if (!isMiniPay()) {
-          const seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch((e) => { console.error('[race] seed threw:', e); return null; });
+          // A rate-limited seed sends NOTHING but acks with 0 cents — reading that
+          // as "funded" is what made the mint run on an empty burner and fail with
+          // "your entry is still being funded". Wait out the server's own window
+          // and ask again instead of minting blind.
+          let seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch((e) => { console.error('[race] seed threw:', e); return null; });
           console.log('[race] seed result:', JSON.stringify(seedRes));
+          for (let tries = 0; tries < 2 && seedRes && !('error' in seedRes) && seedRes.rateLimited; tries++) {
+            const waitMs = Math.min(5000, Math.max(500, seedRes.retryInMs ?? 3200)) + 250;
+            console.log('[race] seed rate-limited — retrying in %sms', waitMs);
+            await new Promise((r) => setTimeout(r, waitMs));
+            seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch((e) => { console.error('[race] seed retry threw:', e); return null; });
+            console.log('[race] seed retry result:', JSON.stringify(seedRes));
+          }
           if (seedRes && 'error' in seedRes) seedError = seedRes.error;
           // Log the burner's on-chain cUSD balance right before minting — the
           // single most diagnostic number ("need gas" == this is below the mint's
           // gas reservation). Re-read a few times for load-balanced RPC lag.
           let balCents = await walletBalanceCents(wallet).catch(() => null);
-          for (let i = 0; i < 5 && (balCents ?? 0) < 4; i++) {
+          for (let i = 0; i < 5 && (balCents ?? 0) < MIN_MINT_GAS_CENTS; i++) {
             await new Promise((r) => setTimeout(r, 1500));
             balCents = await walletBalanceCents(wallet).catch(() => null);
           }
           console.log('[race] burner cUSD balance before mint: %s cents', balCents);
+          // Do NOT mint on a wallet we KNOW cannot pay: the tx dies on funds and
+          // the player gets the vaguest toast in the app ("still being funded")
+          // with no idea whether to wait, retry, or give up. A null balance is a
+          // failed READ, not an empty wallet — fail OPEN there and let the mint try.
+          if (balCents !== null && balCents < MIN_MINT_GAS_CENTS) {
+            console.error('[race] aborting mint: burner has %sc, needs >= %sc (seed did not land)', balCents, MIN_MINT_GAS_CENTS);
+            dispatch({ type: 'TOAST', message: seedError ?? t('raceSeedStalled') });
+            return;
+          }
         }
         // No Pass yet → mint one (free, soulbound). Persist the tx for reproof.
         console.log('[race] minting RacePass…');

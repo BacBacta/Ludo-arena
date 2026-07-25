@@ -1321,7 +1321,13 @@ export function sendRaceClaim(
   }));
 }
 
-export type RaceSeedResult = { seedCents: number; alreadySeeded: boolean; txHash?: string } | { error: string };
+/** `rateLimited` means the request hit the server's anti-spam window and
+ *  NOTHING was sent — it must NOT be read as a funded wallet (that is what
+ *  made the Pass mint run on an empty burner and fail "still being funded").
+ *  `retryInMs` = when the window reopens. */
+export type RaceSeedResult =
+  | { seedCents: number; alreadySeeded: boolean; txHash?: string; rateLimited?: boolean; retryInMs?: number }
+  | { error: string };
 
 /**
  * One-shot Race Week GAS SEED (B1, burner onboarding): before minting the Pass, a
@@ -1397,7 +1403,7 @@ export function sendRaceSeed(
         sendSeed();
       } else if (msg.t === 'race.seeded') {
         clearTimeout(timer);
-        done({ seedCents: msg.seedCents, alreadySeeded: msg.alreadySeeded, txHash: msg.txHash });
+        done({ seedCents: msg.seedCents, alreadySeeded: msg.alreadySeeded, txHash: msg.txHash, rateLimited: msg.rateLimited, retryInMs: msg.retryInMs });
       } else if (msg.t === 'error') {
         clearTimeout(timer);
         done({ error: msg.message });
@@ -1952,7 +1958,7 @@ export class RemoteSession implements GameSession {
         // Answer to a requestRaceSeed sent over this live socket (pre-lock seed).
         const seedDone = this.seedResolve;
         this.seedResolve = null;
-        seedDone?.({ seedCents: msg.seedCents, alreadySeeded: msg.alreadySeeded, txHash: msg.txHash });
+        seedDone?.({ seedCents: msg.seedCents, alreadySeeded: msg.alreadySeeded, txHash: msg.txHash, rateLimited: msg.rateLimited, retryInMs: msg.retryInMs });
         break;
       }
       case 'rematch.offer':
