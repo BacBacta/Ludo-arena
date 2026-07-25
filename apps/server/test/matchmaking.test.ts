@@ -242,3 +242,61 @@ describe('race-stake (1¢) walletBacked parity', () => {
     expect(pair).not.toBeNull();
   });
 });
+
+describe('park — a denied pairing goes back in the queue, not to the bot', () => {
+  it('does NOT re-pair the two entries the caller just split', () => {
+    const m = new Matchmaker<string>();
+    const a = entry('farmer', 1000, T0, true);
+    const b = entry('accomplice', 1000, T0, true);
+    expect(m.join(1, a, T0)).toBeNull();
+    const pair = m.join(1, b, T0);
+    expect(pair).not.toBeNull(); // they matched — anti-collusion then denies it
+
+    // join() would hand them straight back to each other; park() must not.
+    m.park(1, pair![0]);
+    m.park(1, pair![1]);
+    expect(m.isQueued('farmer')).toBe(true);
+    expect(m.isQueued('accomplice')).toBe(true);
+  });
+
+  it('keeps the original enqueuedAt, so a split costs no place in line', () => {
+    const m = new Matchmaker<string>();
+    m.park(1, entry('waited-ages', 1000, T0, true));
+    m.park(1, entry('just-arrived', 1000, T0 + 60_000, true));
+    // The long-waiting player is still the oldest — parking did not reset them.
+    expect(m.waitersOlderThan(1, T0 + 30_000).map((e) => e.session)).toEqual(['waited-ages']);
+  });
+
+  it('is idempotent — a repeated split cannot duplicate a queue entry', () => {
+    const m = new Matchmaker<string>();
+    const e = entry('solo', 1000, T0, true);
+    m.park(1, e);
+    m.park(1, e);
+    expect(m.position(1, 'solo')).toBe(1);
+    expect(m.waitersOlderThan(1, T0).length).toBe(1);
+  });
+
+  it('a parked pair stays available to a THIRD player', () => {
+    const m = new Matchmaker<string>();
+    const first = m.join(1, entry('farmer', 1000, T0, true), T0);
+    expect(first).toBeNull();
+    const denied = m.join(1, entry('accomplice', 1000, T0, true), T0)!;
+    m.park(1, denied[0]);
+    m.park(1, denied[1]);
+    // A newcomer pairs with one of them — the split isolates them from EACH
+    // OTHER, it does not take them off the market.
+    const third = m.join(1, entry('honest', 1000, T0, true), T0);
+    expect(third).not.toBeNull();
+    expect(['farmer', 'accomplice']).toContain(third![0].session);
+  });
+
+  it('two parked players are not structurally starved — the bot must not take them', () => {
+    // starvedWaiters is what the house-bot fallback consults. A split pair is
+    // structurally pairable (they are only kept apart by a policy decision), so
+    // neither counts as starved and the bot stays out.
+    const m = new Matchmaker<string>();
+    m.park(1, entry('farmer', 1000, T0, true));
+    m.park(1, entry('accomplice', 1000, T0, true));
+    expect(m.starvedWaiters(1, T0 + 30_000, () => true)).toEqual([]);
+  });
+});

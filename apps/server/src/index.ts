@@ -1619,20 +1619,26 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'queue.ok', position: matchmaker.position(msg.stake, session) });
           break;
         }
-        // HOUSE-BOT FARMER INTERCEPT: a Race pairing between two wash-trading
-        // wallets (same IP, or already many games today) is DENIED — the seeker
-        // faces the non-scoring bot instead, and the partner goes back in queue.
-        // Kills the reciprocal farm at the exact pairing moment.
-        if (houseBot && msg.stake === RACE_STAKE_CENTS && (await raceCollusionSuspect(pair[0].session, pair[1].session))) {
-          // Summon FIRST: the bot declines when it cannot fund the lock, and the
-          // seeker is no longer in the queue at this point — re-inserting the
-          // partner before knowing would strand the seeker on "searching…".
-          // Bot unavailable ⇒ fall through to the normal pairing (denying the
-          // farm matters less than leaving a player with no game at all).
-          if (await summonHouseBotFor(session)) {
-            matchmaker.join(msg.stake, pair[0]); // re-insert the waiter (may re-pair with someone else)
-            break;
-          }
+        // FARMER INTERCEPT: a Race pairing between two wash-trading wallets (too
+        // many games between them already) is DENIED — both go back in the queue
+        // and wait for somebody else. Kills the reciprocal farm at the pairing
+        // moment without inventing a game.
+        //
+        // The bot is NOT summoned here, and that is the point: two players are
+        // demonstrably online at this instant, which is exactly when the bot must
+        // stay out of matchmaking. Handing the seeker to the bot also let the
+        // farm's own pace decide how much house volume existed — the opposite of
+        // what the honeypot was for. The bot's single remaining door is the
+        // starved-seeker fallback in the sweep.
+        //
+        // `park` re-queues without matching, so the two are not immediately
+        // re-paired on the way back in; a third player can still take either.
+        if (msg.stake === RACE_STAKE_CENTS && (await raceCollusionSuspect(pair[0].session, pair[1].session))) {
+          matchmaker.park(msg.stake, pair[0]);
+          matchmaker.park(msg.stake, pair[1]);
+          await store.queuePush(msg.stake, session.id);
+          session.send({ t: 'queue.ok', position: matchmaker.position(msg.stake, session) });
+          break;
         }
         await store.queueRemove(pair[0].session.id);
         await startGame(msg.stake, pair[0].session, pair[1].session);
@@ -3031,10 +3037,13 @@ function alertBotOutOfFunds(aff: { balanceWei: bigint; requiredWei: bigint; reas
   postOpsAlert(msg);
 }
 
-/** Pair a real Race seeker against the house bot (fallback fill or farmer
- *  intercept). No-op unless the bot is armed and the seeker is a wallet-backed,
- *  non-busy human on the Race tier. Leaves the queue exactly as startGame's
- *  busy-seat guard expects (caller removed the seeker from the matchmaker).
+/** Pair a real Race seeker against the house bot. ONE caller: the starved-seeker
+ *  fallback in the sweep. The farmer intercept used to summon the bot too, which
+ *  put it into matchmaking while another player was queued — it now parks both
+ *  players instead, so this is the bot's only door. No-op unless the bot is armed
+ *  and the seeker is a wallet-backed, non-busy human on the Race tier. Leaves the
+ *  queue exactly as startGame's busy-seat guard expects (caller removed the
+ *  seeker from the matchmaker).
  *
  *  SOLVENCY GATE: a bot that cannot cover stake + gas reservation must NOT be
  *  paired. Historically it was: the lock then failed on funds, the match aborted
@@ -3672,21 +3681,17 @@ function scheduleRefundUnfilled4(gameId: string, humans: Session[]): void {
 // ELO windows widen while players wait: re-check the queues every second.
 setInterval(() => {
   for (const { stake, pair } of matchmaker.sweep()) {
-    // Same farmer intercept as queue.join: a wash-trading Race pair is split —
-    // the seeker faces the bot, the partner returns to queue.
-    if (houseBot && stake === RACE_STAKE_CENTS) {
+    // Same farmer intercept as queue.join: a wash-trading Race pair is split and
+    // BOTH are parked back in the queue (sweep already spliced them out). No bot
+    // here either — two players are online, which is precisely when it must stay
+    // away. They keep their enqueuedAt, so the split costs them no waiting time.
+    if (stake === RACE_STAKE_CENTS) {
       void raceCollusionSuspect(pair[0].session, pair[1].session)
         .then(async (suspect) => {
           if (suspect) {
-            await store.queueRemove(pair[0].session.id);
-            // Both seats are already out of the matchmaker (sweep spliced them),
-            // so a bot that declines for lack of funds would leave the seeker
-            // with no game AND no queue entry. Only re-queue the partner once the
-            // bot game actually started; otherwise pair them normally.
-            if (await summonHouseBotFor(pair[0].session)) {
-              matchmaker.join(stake, pair[1]);
-              return;
-            }
+            matchmaker.park(stake, pair[0]);
+            matchmaker.park(stake, pair[1]);
+            return;
           }
           await Promise.all([store.queueRemove(pair[0].session.id), store.queueRemove(pair[1].session.id)]);
           await startGame(stake, pair[0].session, pair[1].session);
