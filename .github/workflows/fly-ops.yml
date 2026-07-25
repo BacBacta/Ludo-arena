@@ -70,12 +70,13 @@ on:
           - reset-race-board
           - race-budget
           - prune-race-board
+          - void-race-games
           - server-logs
           - probe-fees
           - probe-lock
           - probe-feecurrencies
       confirm:
-        description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT · prune-race-board: PRUNE-BOARD'
+        description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT · prune-race-board: PRUNE-BOARD · void-race-games (APPLY only): VOID-GAMES'
         required: false
         type: string
       reset_full:
@@ -122,6 +123,24 @@ on:
         description: 'prune-race-board only: comma/space-separated wallet addresses to REMOVE from the leaderboard.'
         required: false
         type: string
+      void_games:
+        description: 'void-race-games only: comma/space-separated game ids to INVALIDATE (from race-audit). The board is rebuilt without them.'
+        required: false
+        type: string
+      void_pair:
+        description: 'void-race-games only: two 0x wallets — voids EVERY head-to-head game between them (collusion ring).'
+        required: false
+        type: string
+      void_apply:
+        description: 'void-race-games only: WRITE the rebuilt board (unchecked = dry run that just prints the diff). Needs confirm=VOID-GAMES.'
+        required: false
+        default: false
+        type: boolean
+      void_undo:
+        description: 'void-race-games only: UN-void the listed games instead (reverses a wrong call).'
+        required: false
+        default: false
+        type: boolean
 
 concurrency: fly-ops
 
@@ -482,6 +501,39 @@ jobs:
           if [ -z "$SAFE" ]; then echo "::error::set prune_wallets to the addresses to remove"; exit 1; fi
           echo "Pruning wallets from the Race Week leaderboard on ludo-arena: $SAFE"
           flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && PRUNE_WALLETS=\"$SAFE\" npm run prune-race-board -w apps/server'"
+      # void-race-games: SURGICAL invalidation of the specific games race-audit
+      # flagged as farming. Unlike prune-race-board (which deletes a whole wallet,
+      # honest games included), this rebuilds the board from the durable game
+      # history with the voided games removed — so a farmer loses exactly the
+      # points they farmed and keeps the ones they earned. DRY RUN by default:
+      # it prints the before/after diff and writes nothing unless void_apply is
+      # ticked AND confirm is VOID-GAMES. Inputs are sanitized to hex + commas.
+      - name: void farmed Race Week games (rebuild leaderboard)
+        if: ${{ inputs.operation == 'void-race-games' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          CONFIRM: ${{ inputs.confirm }}
+          VOID_GAMES: ${{ inputs.void_games }}
+          VOID_PAIR: ${{ inputs.void_pair }}
+          VOID_APPLY: ${{ inputs.void_apply }}
+          VOID_UNDO: ${{ inputs.void_undo }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          # Game ids are 32-hex; wallets are 0x-hex. Keep hex + separators only so
+          # neither input can break out of the ssh command.
+          IDS=$(printf '%s' "${VOID_GAMES:-}" | tr -cd '[:xdigit:]xX, ')
+          PAIR=$(printf '%s' "${VOID_PAIR:-}" | tr -cd '[:xdigit:]xX, ')
+          if [ -z "$IDS" ] && [ -z "$PAIR" ]; then
+            echo "::error::set void_games (game ids) and/or void_pair (two wallets) — run race-audit with race_audit_full to get them"; exit 1
+          fi
+          APPLY=$([ "${VOID_APPLY:-false}" = "true" ] && echo 1 || echo 0)
+          UNVOID=$([ "${VOID_UNDO:-false}" = "true" ] && echo 1 || echo 0)
+          if [ "$APPLY" = "1" ] && [ "${CONFIRM:-}" != "VOID-GAMES" ]; then
+            echo "::error::type VOID-GAMES in the 'confirm' box to WRITE the rebuilt board (leave void_apply unticked for a dry run)"; exit 1
+          fi
+          echo "void-race-games on ludo-arena (apply=$APPLY, unvoid=$UNVOID, ids='$IDS', pair='$PAIR')…"
+          flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && VOID_GAMES=\"$IDS\" VOID_PAIR=\"$PAIR\" APPLY=\"$APPLY\" UNVOID=\"$UNVOID\" npm run void-race-games -w apps/server'"
       # race-audit: READ-ONLY leaderboard forensics — reconstructs the real match
       # history behind each player's points to surface wash-trading / farming.
       # Runs INSIDE the machine (via ssh) because the prod store (Postgres) is

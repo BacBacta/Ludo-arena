@@ -103,6 +103,35 @@ function serialize<T>(run: () => Promise<T>): Promise<T> {
   return next;
 }
 
+/** Counters a single award decision depends on (all for the game's OWN day). */
+export interface AwardCounters {
+  /** Games the winner has already SCORED today. */
+  winnerDaily: number;
+  /** Games the winner has already scored today AGAINST THIS opponent. */
+  winnerVsLoser: number;
+  /** Games the loser has already scored today. */
+  loserDaily: number;
+}
+
+/**
+ * The award rule for ONE finished event game — PURE, so the live path and the
+ * replay (void-race-games) can never drift apart. Extracted from scoreEventGame:
+ * an operator voiding a farmed game must recompute the board with EXACTLY the
+ * rules that produced it, caps included, or the correction is itself wrong.
+ */
+export function awardForGame(reason: GameOverReason, counters: AwardCounters, cfg: RaceScoreConfig = DEFAULT_RACE_SCORE): { winnerGained: number; loserGained: number } {
+  const abandon = isAbandon(reason);
+  // An abandon-win scores the (lower) abandonWinPoints; a real finish the full
+  // winPoints. Still subject to the per-opponent + per-day caps.
+  const winValue = abandon ? cfg.abandonWinPoints : cfg.winPoints;
+  const winnerScores = winValue > 0 && underCap(counters.winnerVsLoser, cfg.maxVsSamePerDay) && underCap(counters.winnerDaily, cfg.maxScoredPerDay);
+  // The loser earns participation ONLY on a genuine finish (when configured) —
+  // throwing a game (resign/timeout) is worth nothing.
+  const loserEligible = !(cfg.participationRequiresFinish && abandon);
+  const loserScores = loserEligible && cfg.playPoints > 0 && underCap(counters.loserDaily, cfg.maxScoredPerDay);
+  return { winnerGained: winnerScores ? winValue : 0, loserGained: loserScores ? cfg.playPoints : 0 };
+}
+
 export interface ScoreInput {
   winnerWallet: string;
   winnerName: string;
@@ -132,17 +161,7 @@ export async function scoreEventGame(store: Store, input: ScoreInput, cfg: RaceS
     const wVs = await readCounter(store, `race:vs:${w}:${l}:${input.day}`);
     const lDaily = await readCounter(store, `race:daily:${l}:${input.day}`);
 
-    const abandon = isAbandon(input.reason);
-    // An abandon-win scores the (lower) abandonWinPoints; a real finish the full
-    // winPoints. Still subject to the per-opponent + per-day caps.
-    const winValue = abandon ? cfg.abandonWinPoints : cfg.winPoints;
-    const winnerScores = winValue > 0 && underCap(wVs, cfg.maxVsSamePerDay) && underCap(wDaily, cfg.maxScoredPerDay);
-    // The loser earns participation ONLY on a genuine finish (when configured) —
-    // throwing a game (resign/timeout) is worth nothing.
-    const loserEligible = !(cfg.participationRequiresFinish && abandon);
-    const loserScores = loserEligible && cfg.playPoints > 0 && underCap(lDaily, cfg.maxScoredPerDay);
-    const winnerGained = winnerScores ? winValue : 0;
-    const loserGained = loserScores ? cfg.playPoints : 0;
+    const { winnerGained, loserGained } = awardForGame(input.reason, { winnerDaily: wDaily, winnerVsLoser: wVs, loserDaily: lDaily }, cfg);
     if (winnerGained === 0 && loserGained === 0) return { winnerGained: 0, loserGained: 0 };
 
     const board = await readBoard(store);
@@ -179,4 +198,67 @@ export async function raceLeaderboard(
     myRank: myIndex >= 0 ? myIndex + 1 : 0,
     myPoints: myIndex >= 0 ? sorted[myIndex]!.points : 0,
   };
+}
+
+/** One finished event game, as the replay consumes it (chronological order). */
+export interface ReplayGame {
+  /** Durable game id — what an operator voids. */
+  id: string;
+  winnerWallet: string;
+  winnerName: string;
+  loserWallet: string;
+  loserName: string;
+  reason: GameOverReason;
+  /** UTC day key (YYYY-MM-DD) of ended_at — the caps are per-day. */
+  day: string;
+}
+
+/**
+ * Rebuild the leaderboard from the durable game history, SKIPPING voided games.
+ *
+ * Why rebuild rather than subtract: the board stores only totals, and the award
+ * rule is stateful (per-day and per-opponent caps). Subtracting a farmed game's
+ * points would leave the caps it consumed still spent, so a legitimate game that
+ * was capped out BEHIND the farm would stay unrewarded — the correction would
+ * punish the honest player twice. Replaying in chronological order with the
+ * voided games removed gives the board the event would have had if those games
+ * had never been played, which is exactly what "invalidate" should mean.
+ *
+ * Pure and deterministic (same games + same voided set ⇒ same board), so an
+ * operator can dry-run it, inspect the diff, and re-run it safely. Uses the same
+ * awardForGame rule as live scoring, so the two cannot drift.
+ */
+export function replayRaceBoard(
+  games: readonly ReplayGame[],
+  voided: ReadonlySet<string>,
+  cfg: RaceScoreConfig = DEFAULT_RACE_SCORE,
+): { board: BoardBlob; daily: Map<string, number>; vs: Map<string, number> } {
+  const board: BoardBlob = {};
+  const daily = new Map<string, number>(); // `${wallet}:${day}`
+  const vs = new Map<string, number>(); // `${winner}:${loser}:${day}`
+  const get = (m: Map<string, number>, k: string): number => m.get(k) ?? 0;
+
+  for (const g of games) {
+    if (voided.has(g.id)) continue; // the farmed game never happened
+    const w = g.winnerWallet.toLowerCase();
+    const l = g.loserWallet.toLowerCase();
+    const wDailyKey = `${w}:${g.day}`;
+    const lDailyKey = `${l}:${g.day}`;
+    const vsKey = `${w}:${l}:${g.day}`;
+    const { winnerGained, loserGained } = awardForGame(
+      g.reason,
+      { winnerDaily: get(daily, wDailyKey), winnerVsLoser: get(vs, vsKey), loserDaily: get(daily, lDailyKey) },
+      cfg,
+    );
+    if (winnerGained > 0) {
+      board[w] = { name: g.winnerName, points: (board[w]?.points ?? 0) + winnerGained };
+      daily.set(wDailyKey, get(daily, wDailyKey) + 1);
+      vs.set(vsKey, get(vs, vsKey) + 1);
+    }
+    if (loserGained > 0) {
+      board[l] = { name: g.loserName, points: (board[l]?.points ?? 0) + loserGained };
+      daily.set(lDailyKey, get(daily, lDailyKey) + 1);
+    }
+  }
+  return { board, daily, vs };
 }

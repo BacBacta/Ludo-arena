@@ -16,6 +16,7 @@
     "settle-verify": "tsx scripts/settleVerify.ts",
     "reset-race-board": "tsx scripts/resetRaceBoard.ts",
     "prune-race-board": "tsx scripts/pruneRaceBoard.ts",
+    "void-race-games": "tsx scripts/voidRaceGames.ts",
     "race-audit": "tsx scripts/raceAudit.ts",
     "race-budget": "tsx scripts/raceBudget.ts",
     "test": "vitest run",
