@@ -7,7 +7,7 @@ import { IconShield, IconTicket, IconTrophy, IconUsers } from '../components/ico
 import { HeroPeg, PEG_COLORS } from '../components/Board';
 import { Die3D } from '../components/Die3D';
 import { DieFace } from '../components/Die';
-import { DICE_SKINS, skinById } from '../lib/diceSkins';
+import { DICE_SKINS, skinById, skinSound } from '../lib/diceSkins';
 import { isMiniPay } from '../lib/minipay';
 import { playDice, playTap } from '../lib/sound';
 import { frameClass } from '../lib/avatarFrames';
@@ -221,7 +221,7 @@ export function Lobby({
   const rollHeroDie = (): void => {
     // The hero die WEARS the equipped skin — roll with its material sound too
     // (a premium die that throws the generic plastic sound reads as broken).
-    playDice(skinById(diceSkin).sound);
+    playDice(skinSound(skinById(diceSkin)));
     setHeroDie((d) => ({ value: 1 + Math.floor(Math.random() * 6), key: d.key + 1 }));
   };
 

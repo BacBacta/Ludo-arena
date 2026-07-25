@@ -5,7 +5,7 @@ import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
 import { IconSoundOff, IconSoundOn } from './icons';
 import { DieFace } from './Die';
-import { DICE_SKINS, loadStats } from '../lib/diceSkins';
+import { DICE_SKINS, loadStats, skinSound } from '../lib/diceSkins';
 import { FRAMES, frameById, frameClass } from '../lib/avatarFrames';
 import { TOKEN_SKINS, ENTRANCE_FX, VICTORY_FX, tokenSkinById, entranceFxById, victoryFxById } from '../lib/tokenSkins';
 import { BOARD_THEMES, boardThemeById } from '../lib/boardThemes';
@@ -585,7 +585,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                   // Equip = hear it: each die answers with its own material roll
                   // sound (gold=coins, crystal=chime…), so the cosmetic's audio
                   // identity is discoverable right in the shop.
-                  playDice(s.sound);
+                  playDice(skinSound(s));
                   dispatch({ type: 'SET_DICE_SKIN', id: s.id });
                 }
               : purchasable

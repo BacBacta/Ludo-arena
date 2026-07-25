@@ -207,10 +207,15 @@ function playSample(name: string, o: PlayOpts = {}): void {
 /* ------------------------------------------------- public API (unchanged names) */
 
 export function playDice(soundKey?: string): void {
-  // Premium dice carry their own material roll sound (☕ gold=coins, crystal=chime,
-  // ember=impact…), capped so it stays snappy. Only my own equipped skin passes one.
-  if (soundKey && DICE_SOUND_GAIN[soundKey]) {
-    playSample(`dice_${soundKey}`, { gain: DICE_SOUND_GAIN[soundKey], maxDur: 2.6 });
+  // Premium dice carry their own material roll sound (gold=coins, crystal=chime,
+  // ember=impact…), capped so it stays snappy.
+  // The guard keys off the SAMPLE existing, not off the gain table: gating on the
+  // gain table meant a key present in FILES but missing a hand-tuned level fell
+  // through to the generic plastic throw — a silent revert to "sounds broken",
+  // exactly the failure mode that hid the missing season-die sounds. A sample
+  // with no tuned level plays at the shared default instead.
+  if (soundKey && FILES[`dice_${soundKey}`]) {
+    playSample(`dice_${soundKey}`, { gain: DICE_SOUND_GAIN[soundKey] ?? 0.85, maxDur: 2.6 });
     return;
   }
   // Default: a fuller, louder throw + a soft low wooden "landing" thud for weight.

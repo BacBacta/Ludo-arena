@@ -183,6 +183,38 @@ export function skinById(id: string): DiceSkin {
   return DICE_SKINS.find((s) => s.id === id) ?? DICE_SKINS[0]!;
 }
 
+/**
+ * The roll sound each 3D MATERIAL answers with. The six premium samples are
+ * material sounds, not skin sounds — metal clinks, glass rings, molten thuds —
+ * so any die sharing a material shares its voice.
+ */
+const MATERIAL_SOUND: Record<DieMaterial, string> = {
+  metal: 'gold',
+  glass: 'obsidian',
+  gem: 'crystal',
+  irid: 'aurora',
+  cyber: 'neon',
+  molten: 'ember',
+};
+
+/**
+ * The sound a die actually throws with — ALWAYS use this, never `skin.sound`.
+ *
+ * THE BUG THIS FIXES. `sound` was set by hand on the six original premium dice,
+ * so the eight season dice added later — real WebGL dice with real materials —
+ * silently fell through to the generic plastic throw. A premium die answering
+ * with the default sound reads as broken, and it was invisible in review because
+ * every call site looked correct: the gap was in the DATA, not the wiring.
+ *
+ * Deriving from `material` closes it for every future skin too: a new season die
+ * gets the right voice from its material alone, with no audio step to forget.
+ * An explicit `sound` still wins (a bespoke sample for a specific die), and a
+ * flat CSS die (no material) correctly keeps the default throw.
+ */
+export function skinSound(skin: DiceSkin): string | undefined {
+  return skin.sound ?? (skin.material ? MATERIAL_SOUND[skin.material] : undefined);
+}
+
 const SKIN_KEY = 'ludo.diceSkin';
 const STATS_KEY = 'ludo.stats';
 
