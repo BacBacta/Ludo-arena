@@ -113,6 +113,66 @@ export class InsufficientGasBudgetError extends Error {
   }
 }
 
+/** Stable sentinel for "the RPC could not even estimate the tx" — retriable. */
+export const RPC_BUSY_SENTINEL = 'RACE_RPC_BUSY';
+
+/**
+ * The gas estimate is unavailable, so the tx MUST NOT be broadcast with explicit
+ * fee caps: caps without an explicit gas limit make viem re-estimate WITH the fee
+ * fields, and the node then applies its affordability cap against the NATIVE
+ * balance — 0 for a burner — yielding "gas required exceeds allowance (0)", which
+ * the toast classifier reads as a gas shortfall ("still being funded") when the
+ * wallet is in fact funded and the node merely busy. Thrown instead, the ladder
+ * retries with fresh reads and the player gets an honest "network busy" message.
+ */
+export class GasEstimateUnavailableError extends Error {
+  constructor() {
+    super(`${RPC_BUSY_SENTINEL}: the node did not answer the gas estimate`);
+    this.name = 'GasEstimateUnavailableError';
+  }
+}
+
+/** Everything the mint-failure toast decision depends on — kept as a pure
+ *  function so the mapping is testable without React. Returns an i18n key
+ *  (or the server's own words when it refused the seed). */
+export interface MintFailureContext {
+  /** The error text matched the gas-shortfall family. */
+  needGas: boolean;
+  /** The server's refusal message for the gas seed, if it sent one. */
+  seedError: string | null;
+  /** False only for a plain external wallet paying NATIVE gas. */
+  payGasInStable: boolean;
+  /** Injected MiniPay wallet — ITS OWN stablecoin pays the gas; no faucet ever tops it up. */
+  miniPay: boolean;
+  /** Stablecoin balance in cents re-read AFTER the failure, null = read failed. */
+  balCents: number | null;
+  /** The pre-flight floor (MIN_MINT_GAS_CENTS). */
+  minCents: number;
+}
+
+export type MintFailureToast =
+  | { kind: 'server-words'; text: string }
+  | { kind: 'key'; key: 'raceNeedGas' | 'raceNeedStableGas' | 'raceRpcBusy' | 'raceSeedStalled' | 'raceFundingPending' | 'raceClaimFailed' };
+
+/**
+ * THE RULE: never tell a player their entry "is still being funded" unless that
+ * is the one thing we could not disprove. Each branch is anchored to evidence:
+ * the server's words beat guesses; a MiniPay wallet is the player's own money
+ * (nothing will ever "fund" it); a balance at/above the floor PROVES the funding
+ * landed (the failure is fees/RPC, so retrying is honest); a balance below it
+ * proves the seed did not land. Only an UNREADABLE balance leaves the old
+ * message, because there the claim is genuinely unknowable.
+ */
+export function mintFailureToast(ctx: MintFailureContext): MintFailureToast {
+  if (!ctx.needGas) return { kind: 'key', key: 'raceClaimFailed' };
+  if (ctx.seedError) return { kind: 'server-words', text: ctx.seedError };
+  if (!ctx.payGasInStable) return { kind: 'key', key: 'raceNeedGas' };
+  if (ctx.miniPay) return { kind: 'key', key: 'raceNeedStableGas' };
+  if (ctx.balCents !== null && ctx.balCents >= ctx.minCents) return { kind: 'key', key: 'raceRpcBusy' };
+  if (ctx.balCents !== null) return { kind: 'key', key: 'raceSeedStalled' };
+  return { kind: 'key', key: 'raceFundingPending' };
+}
+
 export type TxFailure = 'cap-too-low' | 'exceeds-balance' | 'oog' | 'rejected' | 'other';
 
 /** Classify a lock failure from the raw error text — the four REAL incident
