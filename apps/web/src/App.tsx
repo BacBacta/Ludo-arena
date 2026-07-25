@@ -25,7 +25,7 @@ import { HowToPlayModal, howToSeen } from './components/HowToPlay';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
 import { getBurnerWallet, prefersExternalWallet, restoreBurnerWallet, setPrefersExternalWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
-import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
+import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, ESTIMATE_REVERTED_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
@@ -1479,6 +1479,14 @@ export default function App() {
       // required exceeds allowance (0)", a fake shortfall). Retrying is honest.
       if (raw.includes(RPC_BUSY_SENTINEL)) {
         dispatch({ type: 'TOAST', message: t('raceRpcBusy') });
+        return;
+      }
+      // The node DID answer — it simulated the call and it reverts. Telling the
+      // player the network is busy would be a lie, and "try again" is advice
+      // that cannot work: the chain refuses this call deterministically. The
+      // revert reason rides along in `raw` for the report.
+      if (raw.includes(ESTIMATE_REVERTED_SENTINEL)) {
+        dispatch({ type: 'TOAST', message: `${t('raceTxRefused')} (${describeTxError(e, 60)})` });
         return;
       }
       const needGas =

@@ -126,10 +126,60 @@ export const RPC_BUSY_SENTINEL = 'RACE_RPC_BUSY';
  * retries with fresh reads and the player gets an honest "network busy" message.
  */
 export class GasEstimateUnavailableError extends Error {
-  constructor() {
-    super(`${RPC_BUSY_SENTINEL}: the node did not answer the gas estimate`);
+  /** viem's cause for the LAST failed estimate, when there was one. Without it
+   *  the sentinel claims "the node did not answer" for a node that answered
+   *  perfectly well — with a revert. See `estimateFailureReason`. */
+  readonly cause?: unknown;
+  constructor(cause?: unknown) {
+    const reason = estimateFailureReason(cause);
+    super(
+      reason === null
+        ? `${RPC_BUSY_SENTINEL}: the node did not answer the gas estimate`
+        : `${ESTIMATE_REVERTED_SENTINEL}: the transaction would revert (${reason})`,
+    );
     this.name = 'GasEstimateUnavailableError';
+    this.cause = cause;
   }
+}
+
+/** Stable sentinel for "the node answered, and said the tx reverts" — NOT
+ *  retriable in the way a busy node is, and the player must not be told the
+ *  network is congested when the chain has just refused the call outright. */
+export const ESTIMATE_REVERTED_SENTINEL = 'RACE_TX_REVERT';
+
+/**
+ * The revert reason behind a failed gas estimate, or null when the failure is
+ * not a revert (timeout, 429, transport error — a genuinely busy node).
+ *
+ * WHY THIS MATTERS. `estimateContractGas` fails for two very different reasons:
+ * the node was unreachable, or the node simulated the call and it REVERTED. The
+ * estimate used to be swallowed with `.catch(() => null)`, so both surfaced as
+ * "the node did not answer the gas estimate" — and a deterministic revert then
+ * looked like congestion, survived all three ladder attempts unchanged (the
+ * sentinel classifies as 'other' → same plan, retried), and was reported to the
+ * player as bad luck they should retry. LudoEscrow.join can revert for reasons a
+ * retry will NEVER fix: CommitMismatch (the two clients attested different
+ * fairness commits), BadStake (mismatched token/stake), AlreadyJoined, BadStatus,
+ * TokenNotAllowed. Naming them is the difference between a diagnosable report and
+ * "it says the network is busy".
+ *
+ * viem decodes the escrow's custom errors when the ABI is passed to the estimate,
+ * so the error NAME is usually available; fall back to the revert string.
+ */
+export function estimateFailureReason(e: unknown): string | null {
+  if (e == null) return null;
+  // viem nests causes: ContractFunctionExecutionError → ContractFunctionRevertedError.
+  for (let cur: unknown = e, depth = 0; cur != null && depth < 6; depth += 1) {
+    const named = (cur as { data?: { errorName?: string } })?.data?.errorName;
+    if (typeof named === 'string' && named) return named;
+    const reason = (cur as { reason?: string })?.reason;
+    if (typeof reason === 'string' && reason) return reason;
+    cur = (cur as { cause?: unknown })?.cause;
+  }
+  const m = String((e as { shortMessage?: string })?.shortMessage ?? (e as Error)?.message ?? e);
+  // Only a revert counts. A timeout / 429 / transport failure is the busy node
+  // the RPC_BUSY sentinel is actually for.
+  return /revert/i.test(m) ? m.slice(0, 120) : null;
 }
 
 /** Everything the mint-failure toast decision depends on — kept as a pure
