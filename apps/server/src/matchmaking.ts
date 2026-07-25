@@ -131,6 +131,22 @@ export class Matchmaker<T> {
     return pairs;
   }
 
+  /**
+   * Put an entry back in the queue WITHOUT trying to pair it.
+   *
+   * `join` would hand the two entries a caller just decided to keep apart
+   * straight back to each other, so a denied pairing (the Race anti-collusion
+   * split) needs a non-matching insert. Keeps the original `enqueuedAt`, so
+   * being split costs a player neither their place in line nor the ELO window
+   * they have already earned by waiting. Idempotent.
+   */
+  park(stake: StakeCents, entry: QueueEntry<T>): void {
+    const q = this.queues.get(stake) ?? [];
+    if (q.some((e) => e.session === entry.session)) return; // already queued
+    q.push(entry);
+    this.queues.set(stake, q);
+  }
+
   leave(stake: StakeCents, session: T): void {
     const q = this.queues.get(stake);
     if (!q) return;
