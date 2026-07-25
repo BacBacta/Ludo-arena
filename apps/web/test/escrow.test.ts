@@ -267,18 +267,18 @@ describe('stakeInEscrow (1v1)', () => {
     // feeCurrency tx must pay out of its OWN gas limit — without the headroom the
     // mined tx ran out of gas mid-execution ('approve reverted' incident).
     expect(join.gas).toBe(425_000n);
-    // The cap base is the fee-currency-denominated base FLOOR, and WHICH of the
-    // directory's two conversion directions is the real one is decided by the
-    // node's own eth_gasPrice([token]) quote (10 gwei in this mock). Taking the
-    // larger direction unconditionally (25 × 14 = 350 → ×2 = 702 gwei) reserves
-    // gasLimit × cap up front: on mainnet that is ~215× the truth and it starved
-    // the 10c-seeded burner at its Race Pass mint ("insufficient funds", ~150c
-    // reserved for a sub-1c fee). Measured on Celo mainnet: base 200 gwei, the
-    // cheap direction 13.65 gwei, the node's quote 13.82 gwei — they agree, and
-    // the faucet mines cUSD-gas transfers with viem's own ~14 gwei estimate,
-    // which a 2930 gwei floor would make impossible. So: pick the direction the
-    // node agrees with, never below its quote → 10 × 2 + 2 = 22 gwei.
-    expect(join.maxFeePerGas).toBe(22_000_000_000n);
+    // The cap base is the fee-currency-denominated base FLOOR — the direction of
+    // the directory rate the node's own eth_gasPrice([token]) quote agrees with
+    // (10 gwei in this mock), never the blind MAX (350 → 702 gwei, the ~215×
+    // over-reservation that starved the 10c burner) — RAISED to the NATIVE base
+    // fee (25 gwei here). The native gate is measured, not theoretical: on
+    // mainnet (native base 200 gwei) a cUSD cap of 82.56 gwei — economically
+    // ~1217 gwei native, far above base — was rejected as "lower than the block
+    // base fee", and the identical lock passed only once the raw number cleared
+    // 200. The check compares numbers across denominations, so the cap must
+    // clear the native NUMBER: max(10, 25) × 2 + 2 = 52 gwei. Cap-side only —
+    // the tx still pays base+tip in the token and refunds the rest.
+    expect(join.maxFeePerGas).toBe(52_000_000_000n);
     expect(estimates.length).toBeGreaterThan(0);
     for (const e of estimates) {
       expect(e.maxFeePerGas).toBeUndefined(); // NO fee fields in the estimate…

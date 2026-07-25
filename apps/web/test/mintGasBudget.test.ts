@@ -164,9 +164,13 @@ describe('degradation path (iii): the node ignores the feeCurrency param', () =>
     expect(bounds?.floor).toBe(NATIVE_BASE);
   });
 
-  it('but floorLo follows the DIRECTORY, not the lying quote', async () => {
+  it('floorLo is NATIVE-GATED: the clamp may never descend below the native base fee', async () => {
+    // The directory says ~13.65 gwei, but a cap below the native base fee NUMBER
+    // is rejected pre-broadcast regardless of denomination (measured: 82.56 gwei
+    // cUSD refused under a 200 gwei native base; passed only >= 200). Descending
+    // to DIR_A would trade "refused on budget" for "broadcast and rejected".
     const bounds = await feeCurrencyFloorBounds(fakeClient('native'), CUSD);
-    expect(bounds?.floorLo).toBe(DIR_A); // ~13.65 gwei — the clamp has room again
+    expect(bounds?.floorLo).toBe(NATIVE_BASE);
   });
 
   it('so the mint is CLAMPED and sent, not refused', async () => {
@@ -178,10 +182,15 @@ describe('degradation path (iii): the node ignores the feeCurrency param', () =>
 });
 
 describe('planFeeExtras end to end', () => {
-  it('an honest node needs no clamp at all', async () => {
+  it('an honest node under a 200-gwei native regime is native-gated and still fits the seed', async () => {
+    // The quote says 13.82 gwei, but the cap must clear the native base fee
+    // NUMBER (200 gwei), so the plan wants 2x200+2 = 402 gwei — a hair over the
+    // 10c seed at the padded mint gas. The clamp descends to what the seed
+    // affords, which still clears the gate: sent, not refused.
     const extras = await planFeeExtras(fakeClient(NODE_QUOTE), CUSD, BALANCED, mintRequest, true, SEED_WEI);
-    expect(extras.maxFeePerGas).toBe(planCapWei(BALANCED, NODE_QUOTE));
-    expect(feeReservationWei(extras.gas as bigint, extras.maxFeePerGas as bigint)).toBeLessThan(SEED_WEI);
+    const cap = extras.maxFeePerGas as bigint;
+    expect(cap).toBeGreaterThanOrEqual(NATIVE_BASE); // clears the native gate
+    expect(feeReservationWei(extras.gas as bigint, cap)).toBeLessThanOrEqual(SEED_WEI); // fits the seed
   });
 
   it('a node without the extension (path i) is clamped into the seed', async () => {

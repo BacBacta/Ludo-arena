@@ -61,6 +61,29 @@ export function nearestDirection(a: bigint, b: bigint, nodePrice: bigint): bigin
   return da <= db ? a : b;
 }
 
+/**
+ * The floor a CIP-64 cap must actually be built from: the token-denominated
+ * floor, raised to the NATIVE base fee when that number is higher.
+ *
+ * WHY (measured, Celo mainnet 2026-07-25, native base fee 200 gwei): the
+ * pre-broadcast "fee cap cannot be lower than the block base fee" check compares
+ * the cap NUMBER against the native base fee NUMBER — it does not convert the
+ * cap into native units first. A cUSD cap of 82.56 gwei (6× the calibrated
+ * 13.76 gwei floor, worth ~1217 gwei native — economically far above base) was
+ * rejected; the identical tx passed only at 275 gwei (20×), i.e. once the raw
+ * number cleared 200. The house bot burned a ladder rung on this every single
+ * lock, and the web client's 10× ceiling (137 gwei) could never clear it at all.
+ *
+ * Raising the floor is CAP-side only: an EIP-1559 tx still pays base+tip in the
+ * fee currency (~14 gwei cUSD here) and refunds the rest, so this costs
+ * reservation headroom, never fees. A thin wallet's reservation is bounded by
+ * the caller's budget clamp (`budgetedCapWei`), whose hard floor must then also
+ * sit at this gated value — a cap clamped below it is guaranteed-rejected.
+ */
+export function nativeGatedCapFloor(tokenFloorWei: bigint, nativeBaseFeeWei: bigint): bigint {
+  return nativeBaseFeeWei > tokenFloorWei ? nativeBaseFeeWei : tokenFloorWei;
+}
+
 /** What the node RESERVES for a tx (fee part), in fee-currency wei. The quantity
  *  that must fit inside a freshly-seeded burner's balance — not the fee paid. */
 export function feeReservationWei(gasLimit: bigint, maxFeePerGas: bigint): bigint {

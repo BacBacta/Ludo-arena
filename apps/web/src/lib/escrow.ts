@@ -5,7 +5,7 @@
  * MiniPay, pass `feeCurrency` to pay gas in cUSD with a legacy tx.
  */
 import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
-import { budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei, nearestDirection } from '@ludo/shared';
+import { budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei, nativeGatedCapFloor, nearestDirection } from '@ludo/shared';
 import { BALANCED, classifyTxFailure, GasEstimateUnavailableError, InsufficientGasBudgetError, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
 
 export const ERC20_ABI = [
@@ -219,7 +219,11 @@ export async function feeCurrencyFloorBounds(publicClient: PublicClient, feeCurr
     if (base <= 0n) return null;
     const num = rate[0];
     const den = rate[1];
-    if (num <= 0n || den <= 0n) return nodePrice === null || nodePrice <= 0n ? null : { floor: nodePrice, floorLo: nodePrice };
+    if (num <= 0n || den <= 0n) {
+      if (nodePrice === null || nodePrice <= 0n) return null;
+      const gated = nativeGatedCapFloor(nodePrice, base);
+      return { floor: gated, floorLo: gated };
+    }
     // Both conversion directions, disambiguated by the node's own quote — the
     // wrong one over-reserves ~215× and starves a freshly-seeded burner.
     const [dirA, dirB] = feeCurrencyDirections(base, num, den);
@@ -236,7 +240,16 @@ export async function feeCurrencyFloorBounds(publicClient: PublicClient, feeCurr
     const lo = nodePrice !== null && nodePrice > 0n
       ? nearestDirection(dirA, dirB, nodePrice)
       : (dirA < dirB ? dirA : dirB);
-    return { floor, floorLo: lo > 0n && lo <= floor ? lo : floor };
+    // NATIVE GATE (measured 2026-07-25, base 200 gwei): the pre-broadcast fee-cap
+    // check compares the cap NUMBER to the NATIVE base fee number — a cUSD cap of
+    // 82.56 gwei (≈1217 gwei native, economically far above base) was rejected as
+    // "lower than the block base fee", and the same tx passed only once the raw
+    // number cleared 200. So BOTH bounds are raised to the native base fee: a cap
+    // (or a budget-clamped cap) below it is guaranteed-rejected, whatever the
+    // token-denominated arithmetic says. Cap-side only — the tx still pays
+    // base+tip in cUSD (~14 gwei) and refunds the rest.
+    const loGuarded = lo > 0n && lo <= floor ? lo : floor;
+    return { floor: nativeGatedCapFloor(floor, base), floorLo: nativeGatedCapFloor(loGuarded, base) };
   } catch {
     return null;
   }
@@ -408,7 +421,13 @@ export async function planFeeExtras(
   if (budgetWei != null && budgetWei >= 0n && bounds !== null && typeof out.gas === 'bigint') {
     const gasLimit = out.gas;
     const wanted = out.maxFeePerGas as bigint;
-    const budgeted = budgetedCapWei(wanted, gasLimit, budgetWei, planCapWei(plan, bounds.floorLo));
+    // The clamp's hard floor is the MINIMUM VIABLE cap (floorLo + tip), not the
+    // plan's multiplied cap: the multiplier is spike HEADROOM, not a validity
+    // requirement, and multiplying the floor here would refuse wallets that can
+    // perfectly afford a mineable tx. With floorLo now native-gated (200 gwei in
+    // the measured regime), HIGH_CAP×floorLo would demand a 2000-gwei reservation
+    // from a 10c seed — an artificial "insufficient budget" on a fundable mint.
+    const budgeted = budgetedCapWei(wanted, gasLimit, budgetWei, bounds.floorLo + plan.priorityWei);
     if (!budgeted.feasible) throw new InsufficientGasBudgetError(feeReservationWei(gasLimit, budgeted.capWei), budgetWei);
     if (budgeted.clamped) {
       console.warn('[fee] cap clamped to budget: %s → %s wei (gas %s, budget %s)', wanted, budgeted.capWei, gasLimit, budgetWei);

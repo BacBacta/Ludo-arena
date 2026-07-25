@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calibratedBaseFloor, feeCurrencyDirections, feeReservationWei } from '../src/cip64';
+import { calibratedBaseFloor, feeCurrencyDirections, feeReservationWei, nativeGatedCapFloor } from '../src/cip64';
 
 // ONE source of truth for the CIP-64 cap arithmetic (client + house bot). The
 // copies used to live in apps/web and apps/server and DRIFTED — a fix to the
@@ -59,5 +59,36 @@ describe('feeCurrencyDirections', () => {
 describe('feeReservationWei (what the node holds, not what the tx pays)', () => {
   it('is gasLimit x cap — the quantity a thin burner must be able to cover', () => {
     expect(feeReservationWei(256_000n, 29_000_000_000n)).toBe(7_424_000_000_000_000n);
+  });
+});
+
+// The 2026-07-25 incident: the pre-broadcast fee-cap check compares the cap
+// NUMBER against the NATIVE base fee number — no denomination conversion. The
+// house bot's 6x rung (82.56 gwei cUSD, economically ~1217 gwei native) was
+// rejected as "lower than the block base fee" under a 200 gwei native base and
+// passed only at 275 gwei; the web ladder's 10x ceiling (137 gwei) could never
+// clear it at all. The cap floor must therefore be raised to the native number.
+describe('nativeGatedCapFloor (the cap must clear the NATIVE base fee number)', () => {
+  const GWEI = 1_000_000_000n;
+
+  it('raises a token floor that sits below the native base fee', () => {
+    // Measured: calibrated cUSD floor 13.76 gwei, native base 200 gwei.
+    expect(nativeGatedCapFloor(13_760_000_000n, 200n * GWEI)).toBe(200n * GWEI);
+  });
+
+  it('leaves a token floor already above the native number untouched (the 215x direction)', () => {
+    expect(nativeGatedCapFloor(2_930n * GWEI, 200n * GWEI)).toBe(2_930n * GWEI);
+  });
+
+  it('pins the measured rejects and passes: 6x fails the gate, 20x clears it', () => {
+    const calibrated = 13_760_000_000n; // the floor both ladders multiplied
+    const gated = nativeGatedCapFloor(calibrated, 200n * GWEI);
+    expect(6n * calibrated).toBeLessThan(gated); // 82.56 gwei — the rejected rung
+    expect(20n * calibrated).toBeGreaterThan(gated); // 275 gwei — the rung that mined
+    expect(6n * gated).toBeGreaterThanOrEqual(200n * GWEI); // gated, rung 1 clears
+  });
+
+  it('is the identity when the native base fee is unavailable (0)', () => {
+    expect(nativeGatedCapFloor(13_760_000_000n, 0n)).toBe(13_760_000_000n);
   });
 });

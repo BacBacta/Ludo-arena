@@ -17,7 +17,7 @@
  * one the node's own `eth_gasPrice([token])` quote agrees with and never caps
  * below it. See @ludo/shared/cip64 for the measured mainnet numbers.
  */
-import { calibratedBaseFloor, feeCurrencyDirections } from '@ludo/shared';
+import { calibratedBaseFloor, feeCurrencyDirections, nativeGatedCapFloor } from '@ludo/shared';
 import type { Address, PublicClient } from 'viem';
 
 /** Celo registry — fixed on every Celo network; resolves the FeeCurrencyDirectory. */
@@ -86,7 +86,14 @@ export function createCip64FeeResolver(
       if (num <= 0n || den <= 0n) throw new Error('degenerate directory rate');
       const [dirA, dirB] = feeCurrencyDirections(base, num, den);
       const nodePrice = gasPriceHex === null ? null : BigInt(gasPriceHex);
-      const baseInToken = calibratedBaseFloor(dirA, dirB, nodePrice);
+      // NATIVE GATE: the pre-broadcast fee-cap check compares the cap NUMBER to
+      // the NATIVE base fee number (measured: the bot's 6×13.76 = 82.5 gwei cUSD
+      // cap was rejected as "lower than the block base fee" under a 200 gwei
+      // native base, and the same lock passed only at 275 gwei). Without this
+      // the bot burned its first ladder rung on EVERY lock — ~60s of the match's
+      // 120s stake window — and the faucet's seeds faced the same reject. Caps
+      // only: the fee actually paid stays base+tip in the token (~14 gwei cUSD).
+      const baseInToken = nativeGatedCapFloor(calibratedBaseFloor(dirA, dirB, nodePrice), base);
       const tip = BigInt(tipHex);
       return { feeCurrency, maxFeePerGas: mult * baseInToken + tip, maxPriorityFeePerGas: tip };
     } catch (e) {
