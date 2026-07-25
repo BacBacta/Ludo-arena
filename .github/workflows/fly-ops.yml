@@ -65,6 +65,7 @@ on:
           - race-status
           - onchain-activity
           - race-audit
+          - race-forensics
           - wallet-status
           - arm-house-bot
           - reset-race-board
@@ -554,6 +555,23 @@ jobs:
           FULL=$([ "${AUDIT_FULL:-false}" = "true" ] && echo 1 || echo 0)
           echo "Auditing the Race Week leaderboard on ludo-arena (name filter: '${SAFE:-<top 3>}', full=$FULL)…"
           flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && NAME=\"$SAFE\" FULL=\"$FULL\" npm run race-audit -w apps/server'"
+      # race-forensics: READ-ONLY deep farming forensics. Closes race-audit's two
+      # blind spots: it separates FREE games (which score nothing and bypass every
+      # anti-collusion gate) from staked ones, and it follows the MONEY — faucet in
+      # vs net cUSD out per wallet, and the direction it flowed inside each pair.
+      # Also checks whether the per-pair daily staked cap actually held, and
+      # clusters wallets by device fingerprint. SELECTs only, no confirm needed.
+      - name: race-forensics (farming deep-dive, read-only)
+        if: ${{ inputs.operation == 'race-forensics' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          AUDIT_FULL: ${{ inputs.race_audit_full }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          FULL=$([ "${AUDIT_FULL:-false}" = "true" ] && echo 1 || echo 0)
+          echo "Running Race Week farming forensics on ludo-arena (full=$FULL)…"
+          flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && FULL=\"$FULL\" npm run race-forensics -w apps/server'"
       # arm-house-bot: turn ON the Race house bot on the running server in one
       # atomic secrets import (single restart). RACE_HOUSE_BOT_PRIVATE_KEY is read
       # from a GitHub REPO SECRET (never an input), so the key never appears in the
