@@ -5,8 +5,8 @@
  * MiniPay, pass `feeCurrency` to pay gas in cUSD with a legacy tx.
  */
 import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
-import { calibratedBaseFloor, feeCurrencyDirections } from '@ludo/shared';
-import { BALANCED, classifyTxFailure, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
+import { budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei } from '@ludo/shared';
+import { BALANCED, classifyTxFailure, InsufficientGasBudgetError, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
 
 export const ERC20_ABI = [
   { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
@@ -184,6 +184,28 @@ async function tokenGasPrice(publicClient: PublicClient, feeCurrency: Address): 
  * cannot be lower than block base fee".
  */
 export async function feeCurrencyBaseFloor(publicClient: PublicClient, feeCurrency: Address): Promise<bigint | null> {
+  return (await feeCurrencyFloorBounds(publicClient, feeCurrency))?.floor ?? null;
+}
+
+/** `floor` = the cap base to build from. `floorLo` = the LOWEST value we still
+ *  believe can clear C1 — the floor a budget clamp may descend to, never past. */
+export interface FeeFloorBounds {
+  readonly floor: bigint;
+  readonly floorLo: bigint;
+}
+
+/**
+ * Both ends of the fee-currency base-fee floor, in one round of reads.
+ *
+ * `floorLo` exists because `floor` is deliberately CONSERVATIVE when the node's
+ * own quote is missing: `calibratedBaseFloor` then keeps the MAX of the two
+ * conversion directions, which on cUSD is ~215× the real one. That is the right
+ * default for a rich wallet (EIP-1559 refunds the difference) and fatal for a
+ * 10c burner, whose reservation is `gasLimit × cap`. `floorLo` — the lower
+ * direction, or the node's quote when we have it — is what a balance-aware
+ * caller may safely clamp down to (see `budgetedCapWei`).
+ */
+export async function feeCurrencyFloorBounds(publicClient: PublicClient, feeCurrency: Address): Promise<FeeFloorBounds | null> {
   try {
     if (!cachedDirectory) {
       cachedDirectory = (await publicClient.readContract({ address: CELO_REGISTRY, abi: REGISTRY_ABI, functionName: 'getAddressForString', args: ['FeeCurrencyDirectory'] })) as Address;
@@ -197,12 +219,16 @@ export async function feeCurrencyBaseFloor(publicClient: PublicClient, feeCurren
     if (base <= 0n) return null;
     const num = rate[0];
     const den = rate[1];
-    if (num <= 0n || den <= 0n) return nodePrice;
+    if (num <= 0n || den <= 0n) return nodePrice === null || nodePrice <= 0n ? null : { floor: nodePrice, floorLo: nodePrice };
     // Both conversion directions, disambiguated by the node's own quote — the
     // wrong one over-reserves ~215× and starves a freshly-seeded burner.
     const [dirA, dirB] = feeCurrencyDirections(base, num, den);
     const floor = calibratedBaseFloor(dirA, dirB, nodePrice);
-    return floor > 0n ? floor : null;
+    if (floor <= 0n) return null;
+    // With a quote, the node itself told us the price — that IS the low bound.
+    // Without one, the lower direction is the least we could still believe.
+    const lo = nodePrice !== null && nodePrice > 0n ? nodePrice : (dirA < dirB ? dirA : dirB);
+    return { floor, floorLo: lo > 0n && lo <= floor ? lo : floor };
   } catch {
     return null;
   }
@@ -286,6 +312,14 @@ export async function planFeeExtras(
   plan: FeePlan,
   estimateRequest: { address: Address; abi: readonly unknown[]; functionName: string; args: readonly unknown[]; account: unknown },
   localSigner: boolean,
+  /**
+   * The fee-currency wei this tx may spend on gas — the wallet's balance, minus
+   * anything the tx itself moves. When supplied, the cap is clamped so the
+   * RESERVATION (gasLimit × cap) fits, and an impossible tx throws
+   * `InsufficientGasBudgetError` instead of being broadcast to die on funds.
+   * Omit (the staking call sites do) to keep the previous unclamped behaviour.
+   */
+  budgetWei?: bigint | null,
 ): Promise<Record<string, unknown>> {
   if (!feeCurrency) return {};
   // Injected wallets (MiniPay) mandate LEGACY txs and price their OWN gas: pass
@@ -308,13 +342,16 @@ export async function planFeeExtras(
     // rejected ("fee cap … cannot be lower than the block base fee"), aborting
     // the match (incl. every house-bot game the human had to co-lock). The
     // house bot uses this exact derivation and its joins now mine.
-    const floor = await feeCurrencyBaseFloor(publicClient, feeCurrency);
-    if (floor !== null) return floor;
-    // Directory unreadable → fall back to the NATIVE base fee (>= the check on a
-    // 1:1-priced currency; the ladder's rungs still clear a spike).
+    const bounds = await feeCurrencyFloorBounds(publicClient, feeCurrency);
+    if (bounds !== null) return bounds;
+    // Directory unreadable → fall back to the NATIVE base fee. This is NOT a
+    // fee-currency quantity (cUSD prices at ~0.068 CELO, so it over-caps ~14×),
+    // but it is the only live number left; the budget clamp below is what keeps
+    // it from pricing a thin burner out of its own tx.
     try {
       const block = await publicClient.getBlock({ blockTag: 'latest' });
-      return block.baseFeePerGas ?? 0n;
+      const native = block.baseFeePerGas ?? 0n;
+      return native > 0n ? { floor: native, floorLo: native } : null;
     } catch {
       return null; // all reads failed → let viem estimate the fees
     }
@@ -322,12 +359,28 @@ export async function planFeeExtras(
   const gasP = (publicClient as unknown as { estimateContractGas: (r: unknown) => Promise<bigint> })
     .estimateContractGas(estimateRequest)
     .catch(() => null); // estimate refused (lagging node) → let the send path estimate
-  const [priceBase, estimated] = await Promise.all([priceP, gasP]);
-  if (priceBase !== null) {
-    out.maxFeePerGas = planCapWei(plan, priceBase);
+  const [bounds, estimated] = await Promise.all([priceP, gasP]);
+  if (bounds !== null) {
+    out.maxFeePerGas = planCapWei(plan, bounds.floor);
     out.maxPriorityFeePerGas = plan.priorityWei;
   }
   if (estimated !== null) out.gas = planGasLimit(plan, estimated);
+  // C4, enforced BEFORE broadcast when the balance is known. Without this a
+  // degraded floor read (no node quote → the conservative 215× direction; or no
+  // directory → the native base fee) builds a cap whose reservation dwarfs a 10c
+  // gas seed, and every attempt dies on funds with no usable diagnosis.
+  if (budgetWei != null && budgetWei >= 0n && bounds !== null && typeof out.gas === 'bigint') {
+    const gasLimit = out.gas;
+    const wanted = out.maxFeePerGas as bigint;
+    const budgeted = budgetedCapWei(wanted, gasLimit, budgetWei, planCapWei(plan, bounds.floorLo));
+    if (!budgeted.feasible) throw new InsufficientGasBudgetError(feeReservationWei(gasLimit, budgeted.capWei), budgetWei);
+    if (budgeted.clamped) {
+      console.warn('[fee] cap clamped to budget: %s → %s wei (gas %s, budget %s)', wanted, budgeted.capWei, gasLimit, budgetWei);
+      out.maxFeePerGas = budgeted.capWei;
+      // The priority fee is part of the cap; a clamp below it would be rejected.
+      if (plan.priorityWei > budgeted.capWei) out.maxPriorityFeePerGas = budgeted.capWei;
+    }
+  }
   return out;
 }
 
@@ -507,6 +560,19 @@ export async function buyCosmeticCusd(params: BuyCosmeticParams): Promise<{ buyT
 
   onStatus?.('locked');
   return { buyTxHash, approveTx };
+}
+
+/**
+ * The wei of `feeCurrency` this account can spend on gas — the quantity the
+ * node's C4 reservation check compares against. Null when the read fails, which
+ * callers must treat as "unknown" (skip the clamp), never as "empty".
+ */
+export async function feeCurrencyBudgetWei(publicClient: PublicClient, feeCurrency: Address, account: Address): Promise<bigint | null> {
+  try {
+    return (await publicClient.readContract({ address: feeCurrency, abi: ERC20_ABI, functionName: 'balanceOf', args: [account] })) as bigint;
+  } catch {
+    return null;
+  }
 }
 
 /** Wallet token balance in USD cents (for the header display). */

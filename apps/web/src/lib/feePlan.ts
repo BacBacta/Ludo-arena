@@ -78,6 +78,41 @@ export function planReservationWei(plan: FeePlan, estimate: bigint, baseFeePerGa
   return planGasLimit(plan, estimate) * planCapWei(plan, baseFeePerGas);
 }
 
+/** Stable sentinel in the message, so the UI can recognise this cause across
+ *  bundling/minification without depending on `instanceof`. */
+export const GAS_BUDGET_SENTINEL = 'RACE_GAS_BUDGET';
+
+/** Every CIP-64 fee currency in use prices gas at 18 decimals (cUSD, and the
+ *  USD₮ gas adapter), so wei → cents is a fixed conversion here. */
+const FEE_WEI_PER_CENT = 10n ** 16n;
+
+export function feeWeiToCents(wei: bigint): number {
+  return Number(wei / FEE_WEI_PER_CENT);
+}
+
+/**
+ * No cap satisfies BOTH C1 and C4: even the lowest floor we believe reserves
+ * more than the wallet holds. Thrown BEFORE broadcast — sending anyway just
+ * burns the wallet on a tx that cannot mine, and yields an error text so vague
+ * ("insufficient funds") that the UI can only shrug.
+ */
+export class InsufficientGasBudgetError extends Error {
+  readonly neededWei: bigint;
+  readonly budgetWei: bigint;
+  readonly neededCents: number;
+  readonly budgetCents: number;
+  constructor(neededWei: bigint, budgetWei: bigint) {
+    const needed = feeWeiToCents(neededWei);
+    const have = feeWeiToCents(budgetWei);
+    super(`${GAS_BUDGET_SENTINEL}: gas reservation needs ~${needed}c but the wallet holds ~${have}c`);
+    this.name = 'InsufficientGasBudgetError';
+    this.neededWei = neededWei;
+    this.budgetWei = budgetWei;
+    this.neededCents = needed;
+    this.budgetCents = have;
+  }
+}
+
 export type TxFailure = 'cap-too-low' | 'exceeds-balance' | 'oog' | 'rejected' | 'other';
 
 /** Classify a lock failure from the raw error text — the four REAL incident

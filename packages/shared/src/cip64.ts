@@ -59,3 +59,52 @@ export function calibratedBaseFloor(a: bigint, b: bigint, nodePrice: bigint | nu
 export function feeReservationWei(gasLimit: bigint, maxFeePerGas: bigint): bigint {
   return gasLimit * maxFeePerGas;
 }
+
+/** The largest cap whose reservation (gasLimit × cap) still fits `budgetWei`. */
+export function affordableCapWei(gasLimit: bigint, budgetWei: bigint): bigint {
+  if (gasLimit <= 0n || budgetWei <= 0n) return 0n;
+  return budgetWei / gasLimit;
+}
+
+export interface BudgetedCap {
+  /** The cap to actually send. */
+  readonly capWei: bigint;
+  /** False when NO cap satisfies both C1 and C4 — the wallet simply cannot pay. */
+  readonly feasible: boolean;
+  /** The largest cap the balance affords (0 when the balance is empty). */
+  readonly affordableWei: bigint;
+  /** True when the plan's cap had to be lowered to fit the balance. */
+  readonly clamped: boolean;
+}
+
+/**
+ * Reconcile the two node checks that pull in opposite directions, for a wallet
+ * whose balance is KNOWN:
+ *
+ *   C1  cap >= the fee-currency base floor        (too low  → "fee cap … lower than base fee")
+ *   C4  gasLimit × cap <= balance                 (too high → "insufficient funds")
+ *
+ * WHY THIS EXISTS. A cap the wallet cannot afford is GUARANTEED to fail; a cap
+ * at the low end of our floor estimate only MIGHT fail. So when the two cannot
+ * both be satisfied by the plan's cap, affordability wins — down to, but never
+ * below, `hardFloorWei` (the floor we are confident about).
+ *
+ * The incident: the Race burner holds a 10c gas seed. When the node's own
+ * `eth_gasPrice([token])` quote is unavailable, `calibratedBaseFloor` keeps the
+ * conservative MAX of the two conversion directions — 2930 gwei instead of the
+ * real 13.65 — and the mint reserved ~150c against that 10c seed. Every attempt
+ * died on funds, and the player was told their "entry is still being funded".
+ * Clamping to what the balance affords turns that permanent failure into a tx
+ * that mines, because the affordable cap (~390 gwei) still clears the real floor
+ * by ~28x.
+ *
+ * When even `hardFloorWei` does not fit, the caller must NOT send: report the
+ * shortfall instead of burning the wallet on a doomed tx.
+ */
+export function budgetedCapWei(capWei: bigint, gasLimit: bigint, budgetWei: bigint, hardFloorWei: bigint): BudgetedCap {
+  const affordableWei = affordableCapWei(gasLimit, budgetWei);
+  if (capWei <= affordableWei) return { capWei, feasible: true, affordableWei, clamped: false };
+  if (affordableWei > 0n && affordableWei >= hardFloorWei) return { capWei: affordableWei, feasible: true, affordableWei, clamped: true };
+  // Nothing works: even the floor we trust reserves more than the wallet holds.
+  return { capWei: hardFloorWei, feasible: false, affordableWei, clamped: false };
+}

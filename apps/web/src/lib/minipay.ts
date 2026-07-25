@@ -15,8 +15,8 @@ import {
 import { activeChain } from './chains';
 import { deploymentForChain, feeCurrencyFor, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
-import { buyCosmeticCusd, planFeeExtras, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
-import { BALANCED } from './feePlan';
+import { buyCosmeticCusd, feeCurrencyBudgetWei, planFeeExtras, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
+import { BALANCED, classifyTxFailure, InsufficientGasBudgetError, nextFeePlan, type FeePlan } from './feePlan';
 import type { Hex } from 'viem';
 
 declare global {
@@ -245,24 +245,64 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
   // request made the node apply a NATIVE-balance affordability cap, 0 for a
   // burner ("gas required exceeds allowance (0)").
   const feeCurrency = wallet.payGasInStable && dep ? feeCurrencyFor(dep) : undefined;
-  const extras = await planFeeExtras(wallet.publicClient, feeCurrency, BALANCED, {
-    address: racePass,
-    abi: RACE_PASS_ABI,
-    functionName: 'mint',
-    args: [],
-    account: signer,
-  }, !!wallet.walletClient.account);
-  const hash = await wallet.walletClient.writeContract({
-    account: signer,
-    chain,
-    address: racePass,
-    abi: RACE_PASS_ABI,
-    functionName: 'mint',
-    ...extras,
-  });
-  const r = await wallet.publicClient.waitForTransactionReceipt({ hash });
-  if (r.status !== 'success') throw new Error('race pass mint reverted');
-  return hash;
+  const localSigner = !!wallet.walletClient.account;
+  // THE BUDGET. This is the FIRST tx a new player ever sends, from the THINNEST
+  // wallet in the app — a burner holding a 10c gas seed and nothing else. Two
+  // silent degradations of the fee-floor read (no eth_gasPrice quote → the
+  // conservative 215x conversion direction; no directory → the native base fee)
+  // build a cap whose RESERVATION is 150c / 10.3c against that seed. Every
+  // attempt then died on funds and the player was told their "entry is still
+  // being funded" — forever, because the failure is deterministic. Handing the
+  // balance to planFeeExtras lets it clamp the cap to what can actually mine,
+  // and refuse outright (with real numbers) when nothing can.
+  // MiniPay prices its own gas, so the budget only applies to a local signer.
+  const budgetWei = feeCurrency && localSigner
+    ? await feeCurrencyBudgetWei(wallet.publicClient, feeCurrency, wallet.address)
+    : null;
+
+  // Same ladder as the escrow lock (feePlan.ts): a single BALANCED attempt has
+  // no answer to a base-fee spike or a degraded floor read, and the mint used to
+  // be the ONE burner tx without it.
+  let plan: FeePlan = BALANCED;
+  let lastError: unknown;
+  let hash: Hex | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // The previous attempt may have MINED while its receipt was lost. The Pass
+      // is soulbound and one-per-wallet, so re-minting would revert: if it
+      // landed, hand back that tx instead of burning the seed again.
+      const minted = await (wallet.publicClient.readContract({ address: racePass, abi: RACE_PASS_ABI, functionName: 'passOf', args: [wallet.address] }) as Promise<bigint>).catch(() => 0n);
+      if (minted > 0n && hash) return hash;
+    }
+    try {
+      const extras = await planFeeExtras(wallet.publicClient, feeCurrency, plan, {
+        address: racePass,
+        abi: RACE_PASS_ABI,
+        functionName: 'mint',
+        args: [],
+        account: signer,
+      }, localSigner, budgetWei);
+      hash = await wallet.walletClient.writeContract({
+        account: signer,
+        chain,
+        address: racePass,
+        abi: RACE_PASS_ABI,
+        functionName: 'mint',
+        ...extras,
+      });
+      const r = await wallet.publicClient.waitForTransactionReceipt({ hash });
+      if (r.status !== 'success') throw new Error('race pass mint reverted');
+      return hash;
+    } catch (e) {
+      // No cap can both clear the base fee and fit the balance — more attempts
+      // only burn what little is left. Surface the numbers instead.
+      if (e instanceof InsufficientGasBudgetError) throw e;
+      lastError = e;
+      plan = nextFeePlan(plan, classifyTxFailure(e));
+    }
+  }
+  throw lastError;
 }
 
 /** The caller's RacePass tokenId on the connected chain (0 = not minted yet), or

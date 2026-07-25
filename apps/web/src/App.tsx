@@ -25,7 +25,7 @@ import { HowToPlayModal, howToSeen } from './components/HowToPlay';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
 import { getBurnerWallet, prefersExternalWallet, restoreBurnerWallet, setPrefersExternalWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
-import { needsPreLockSeed } from './lib/feePlan';
+import { needsPreLockSeed, GAS_BUDGET_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
@@ -1455,6 +1455,19 @@ export default function App() {
       // from activeChain.name so the message names the real target.
       const wrongNet =
         m.includes('wrong_chain') || m.includes('does not match the target chain') || m.includes('unrecognized chain');
+      // The mint refused BEFORE broadcast because no fee cap could both clear the
+      // base fee and fit the wallet — we know the exact shortfall, so say it. This
+      // must be tested before `needGas`: the generic branch would collapse it back
+      // into "still being funded", the very message that taught players to retry
+      // a thing that cannot work.
+      if (raw.includes(GAS_BUDGET_SENTINEL)) {
+        const g = e as InsufficientGasBudgetError;
+        dispatch({
+          type: 'TOAST',
+          message: t('raceGasShort').replace('{need}', String(g.neededCents ?? '?')).replace('{have}', String(g.budgetCents ?? '?')),
+        });
+        return;
+      }
       const needGas =
         m.includes('insufficient') || m.includes('funds for gas') || m.includes('exceeds the balance') ||
         m.includes('exceeds allowance') || m.includes('gas required exceeds') || m.includes('max fee per gas less than');
