@@ -88,7 +88,10 @@ describe('planFeeExtras never arms the C2 trap', () => {
     const extras = await planFeeExtras(client, CUSD, BALANCED, req, true);
     expect(calls()).toBe(2);
     expect(typeof extras.gas).toBe('bigint'); // caps AND gas, or neither
-    expect(extras.maxFeePerGas).toBe(planCapWei(BALANCED, NODE_QUOTE));
+    // Native-gated cap: the quote says 13.82 gwei but the fake's native base is
+    // 200 gwei, and the pre-broadcast check compares the cap NUMBER to the
+    // native number — so the floor is 200, not the quote.
+    expect(extras.maxFeePerGas).toBe(planCapWei(BALANCED, 200n * GWEI));
   });
 
   it('throws typed (retriable) when the estimate keeps failing — no caps-without-gas ever escape', async () => {

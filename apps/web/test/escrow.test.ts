@@ -18,6 +18,9 @@ const COMMIT = 'b'.repeat(64); // sha256(serverSeed) hex (32 bytes)
 interface Over {
   decimals?: number;
   allowance?: bigint;
+  /** feeCurrency balanceOf(account) — the fee-cap budget clamp reads it on the
+   *  burner path. Default is PLENTIFUL so cap assertions stay unclamped. */
+  balance?: bigint;
   games?: readonly unknown[];
   /** Sequenced `games` reads (one per call, last repeats) — models a retry that
    *  re-checks the escrow and finds the previous attempt's deposit landed. */
@@ -65,6 +68,7 @@ function fakeClients(over: Over = {}) {
         return over.games ?? [TOKEN, 0n, ZERO, ZERO, 0, 0, 0];
       }
       if (functionName === 'allowance') return over.allowance ?? 0n;
+      if (functionName === 'balanceOf') return over.balance ?? 10n ** 18n;
       if (functionName === 'seatsOf') return over.seats ?? [];
       // FeeCurrencyDirectory resolution (CIP-64 cap base). Throw when
       // over.noFeeDirectory to model a chain/node where it can't be read.
@@ -267,23 +271,42 @@ describe('stakeInEscrow (1v1)', () => {
     // feeCurrency tx must pay out of its OWN gas limit — without the headroom the
     // mined tx ran out of gas mid-execution ('approve reverted' incident).
     expect(join.gas).toBe(425_000n);
-    // The cap base is the fee-currency-denominated base FLOOR, and WHICH of the
-    // directory's two conversion directions is the real one is decided by the
-    // node's own eth_gasPrice([token]) quote (10 gwei in this mock). Taking the
-    // larger direction unconditionally (25 × 14 = 350 → ×2 = 702 gwei) reserves
-    // gasLimit × cap up front: on mainnet that is ~215× the truth and it starved
-    // the 10c-seeded burner at its Race Pass mint ("insufficient funds", ~150c
-    // reserved for a sub-1c fee). Measured on Celo mainnet: base 200 gwei, the
-    // cheap direction 13.65 gwei, the node's quote 13.82 gwei — they agree, and
-    // the faucet mines cUSD-gas transfers with viem's own ~14 gwei estimate,
-    // which a 2930 gwei floor would make impossible. So: pick the direction the
-    // node agrees with, never below its quote → 10 × 2 + 2 = 22 gwei.
-    expect(join.maxFeePerGas).toBe(22_000_000_000n);
+    // The cap base is the fee-currency-denominated base FLOOR — the direction of
+    // the directory rate the node's own eth_gasPrice([token]) quote agrees with
+    // (10 gwei in this mock), never the blind MAX (350 → 702 gwei, the ~215×
+    // over-reservation that starved the 10c burner) — RAISED to the NATIVE base
+    // fee (25 gwei here). The native gate is measured, not theoretical: on
+    // mainnet (native base 200 gwei) a cUSD cap of 82.56 gwei — economically
+    // ~1217 gwei native, far above base — was rejected as "lower than the block
+    // base fee", and the identical lock passed only once the raw number cleared
+    // 200. The check compares numbers across denominations, so the cap must
+    // clear the native NUMBER: max(10, 25) × 2 + 2 = 52 gwei. Cap-side only —
+    // the tx still pays base+tip in the token and refunds the rest.
+    expect(join.maxFeePerGas).toBe(52_000_000_000n);
     expect(estimates.length).toBeGreaterThan(0);
     for (const e of estimates) {
       expect(e.maxFeePerGas).toBeUndefined(); // NO fee fields in the estimate…
       expect(e.feeCurrency).toBeUndefined(); // …so no balance-based allowance cap
     }
+  });
+
+  it('a THIN burner is CLAMPED into its balance — the native gate must not starve the stake path', async () => {
+    // The adversarial review of the native gate caught this: the stake path
+    // passed NO budget to planFeeExtras, so under the gated floor (native base)
+    // the plan's cap reserved more than the seed holds — BALANCED ~17c and even
+    // THRIFTY ~10.5c against a 10c wallet at the measured 200 gwei regime. The
+    // lock kept failing, just on funds instead of cap-too-low. With the budget
+    // wired, the clamp descends to what the balance affords while still
+    // clearing the native gate (hard floor: gated floorLo + tip).
+    // Mock regime: native 25 gwei (gated floor), BALANCED wants 52 gwei; a
+    // 0.015-token balance affords only ~35 gwei at the 425k padded gas.
+    const { publicClient, walletClient, writes } = fakeClients({ allowance: 10n ** 18n, localSigner: true, balance: 15n * 10n ** 15n });
+    await stakeInEscrow({ walletClient, publicClient, account: ME, escrow: ESCROW, token: TOKEN, gameId: GAME, stakeCents: 25, fairnessCommit: COMMIT, feeCurrency: TOKEN, retryDelayMs: 0 });
+    const join = writes.find((w) => w.functionName === 'join')!;
+    expect(join.maxFeePerGas!).toBeLessThan(52_000_000_000n); // clamped below the plan's cap…
+    expect(join.maxFeePerGas!).toBeGreaterThanOrEqual(25_000_000_000n); // …but never below the native gate
+    // C4 holds: the reservation fits the balance the clamp was given.
+    expect(join.gas! * join.maxFeePerGas!).toBeLessThanOrEqual(15n * 10n ** 15n);
   });
 
   it('without a node quote it stays CONSERVATIVE (larger direction) — cap-too-low is the worse failure', async () => {

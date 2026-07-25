@@ -5,7 +5,7 @@
  * MiniPay, pass `feeCurrency` to pay gas in cUSD with a legacy tx.
  */
 import { keccak256, pad, toBytes, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
-import { budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei, nearestDirection } from '@ludo/shared';
+import { budgetedCapWei, calibratedBaseFloor, feeCurrencyDirections, feeReservationWei, nativeGatedCapFloor, nearestDirection } from '@ludo/shared';
 import { BALANCED, classifyTxFailure, GasEstimateUnavailableError, InsufficientGasBudgetError, nextFeePlan, planCapWei, planGasLimit, type FeePlan } from './feePlan';
 
 export const ERC20_ABI = [
@@ -219,7 +219,11 @@ export async function feeCurrencyFloorBounds(publicClient: PublicClient, feeCurr
     if (base <= 0n) return null;
     const num = rate[0];
     const den = rate[1];
-    if (num <= 0n || den <= 0n) return nodePrice === null || nodePrice <= 0n ? null : { floor: nodePrice, floorLo: nodePrice };
+    if (num <= 0n || den <= 0n) {
+      if (nodePrice === null || nodePrice <= 0n) return null;
+      const gated = nativeGatedCapFloor(nodePrice, base);
+      return { floor: gated, floorLo: gated };
+    }
     // Both conversion directions, disambiguated by the node's own quote — the
     // wrong one over-reserves ~215× and starves a freshly-seeded burner.
     const [dirA, dirB] = feeCurrencyDirections(base, num, den);
@@ -236,7 +240,16 @@ export async function feeCurrencyFloorBounds(publicClient: PublicClient, feeCurr
     const lo = nodePrice !== null && nodePrice > 0n
       ? nearestDirection(dirA, dirB, nodePrice)
       : (dirA < dirB ? dirA : dirB);
-    return { floor, floorLo: lo > 0n && lo <= floor ? lo : floor };
+    // NATIVE GATE (measured 2026-07-25, base 200 gwei): the pre-broadcast fee-cap
+    // check compares the cap NUMBER to the NATIVE base fee number — a cUSD cap of
+    // 82.56 gwei (≈1217 gwei native, economically far above base) was rejected as
+    // "lower than the block base fee", and the same tx passed only once the raw
+    // number cleared 200. So BOTH bounds are raised to the native base fee: a cap
+    // (or a budget-clamped cap) below it is guaranteed-rejected, whatever the
+    // token-denominated arithmetic says. Cap-side only — the tx still pays
+    // base+tip in cUSD (~14 gwei) and refunds the rest.
+    const loGuarded = lo > 0n && lo <= floor ? lo : floor;
+    return { floor: nativeGatedCapFloor(floor, base), floorLo: nativeGatedCapFloor(loGuarded, base) };
   } catch {
     return null;
   }
@@ -325,7 +338,8 @@ export async function planFeeExtras(
    * anything the tx itself moves. When supplied, the cap is clamped so the
    * RESERVATION (gasLimit × cap) fits, and an impossible tx throws
    * `InsufficientGasBudgetError` instead of being broadcast to die on funds.
-   * Omit (the staking call sites do) to keep the previous unclamped behaviour.
+   * All burner call sites (mint AND staking) now pass it — an unclamped cap
+   * under the native gate reserves more than a thin wallet holds.
    */
   budgetWei?: bigint | null,
 ): Promise<Record<string, unknown>> {
@@ -408,7 +422,13 @@ export async function planFeeExtras(
   if (budgetWei != null && budgetWei >= 0n && bounds !== null && typeof out.gas === 'bigint') {
     const gasLimit = out.gas;
     const wanted = out.maxFeePerGas as bigint;
-    const budgeted = budgetedCapWei(wanted, gasLimit, budgetWei, planCapWei(plan, bounds.floorLo));
+    // The clamp's hard floor is the MINIMUM VIABLE cap (floorLo + tip), not the
+    // plan's multiplied cap: the multiplier is spike HEADROOM, not a validity
+    // requirement, and multiplying the floor here would refuse wallets that can
+    // perfectly afford a mineable tx. With floorLo now native-gated (200 gwei in
+    // the measured regime), HIGH_CAP×floorLo would demand a 2000-gwei reservation
+    // from a 10c seed — an artificial "insufficient budget" on a fundable mint.
+    const budgeted = budgetedCapWei(wanted, gasLimit, budgetWei, bounds.floorLo + plan.priorityWei);
     if (!budgeted.feasible) throw new InsufficientGasBudgetError(feeReservationWei(gasLimit, budgeted.capWei), budgetWei);
     if (budgeted.clamped) {
       console.warn('[fee] cap clamped to budget: %s → %s wei (gas %s, budget %s)', wanted, budgeted.capWei, gasLimit, budgetWei);
@@ -465,6 +485,18 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
         return { gameId32, stake, approveTx, joinTx: '0x' as Hex };
       }
 
+      // BUDGET for the fee-cap clamp (C4), re-read each attempt. The stake path
+      // used to omit it, which the NATIVE GATE turned from harmless into fatal:
+      // with the cap floor at the native base fee (200 gwei measured), BALANCED
+      // reserves ~17c and even THRIFTY ~10.5c against a 10c-seeded burner — the
+      // lock kept failing, just on funds instead of cap-too-low. The clamp
+      // descends to what the balance affords (hard floor: gated floorLo + tip),
+      // which at 200 gwei is ~7c for the join — inside the seed. The stake the
+      // join itself moves is subtracted when it is paid in the fee currency.
+      const balance = feeCurrency && walletClient.account ? await feeCurrencyBudgetWei(publicClient, feeCurrency, account) : null;
+      const budgetRaw = balance === null ? null : token.toLowerCase() === feeCurrency!.toLowerCase() ? balance - stake : balance;
+      const budgetWei = budgetRaw !== null && budgetRaw < 0n ? 0n : budgetRaw; // < stake → 0 budget → honest refusal, not an unclamped doomed tx
+
       if (allowance < stake) {
         onStatus?.('approving');
         // EXACT-amount approve, every game (incl. the Race 1¢ tier). The allowance
@@ -473,14 +505,14 @@ export async function stakeInEscrow(params: StakeParams): Promise<StakeReceipt> 
         // a player's on-chain approve count, and the Proof of Ship tx-volume metric
         // rewards keeping it. The four other staking speedups (parallel reads,
         // decimals cache, faster receipt polling) cost no transactions and stay.
-        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account);
+        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account, budgetWei);
         approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...approveExtras });
         const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
         if (r.status !== 'success') throw new Error('approve reverted');
       }
 
       onStatus?.('joining');
-      const joinExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], account: signer }, !!walletClient.account);
+      const joinExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], account: signer }, !!walletClient.account, budgetWei);
       const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_ABI, functionName: 'join', args: [gameId32, token, stake, commit32], ...joinExtras });
       const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
       if (r.status !== 'success') throw new Error('join reverted');
@@ -528,16 +560,22 @@ export async function stakeInEscrowN(params: StakeParams & { seatCount: number }
       }
 
       const allowance = await publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [account, escrow] });
+      // Same budget clamp as stakeInEscrow — see the comment there. Without it
+      // the native-gated cap floor (200 gwei measured) reserves more than a
+      // thin wallet holds and the deposit dies on funds instead of mining.
+      const balance = feeCurrency && walletClient.account ? await feeCurrencyBudgetWei(publicClient, feeCurrency, account) : null;
+      const budgetRaw = balance === null ? null : token.toLowerCase() === feeCurrency!.toLowerCase() ? balance - stake : balance;
+      const budgetWei = budgetRaw !== null && budgetRaw < 0n ? 0n : budgetRaw; // < stake → 0 budget → honest refusal, not an unclamped doomed tx
       if (allowance < stake) {
         onStatus?.('approving');
-        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account);
+        const approveExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], account: signer }, !!walletClient.account, budgetWei);
         approveTx = await walletClient.writeContract({ account: signer, chain, address: token, abi: ERC20_ABI, functionName: 'approve', args: [escrow, stake], ...approveExtras });
         const r = await publicClient.waitForTransactionReceipt({ hash: approveTx });
         if (r.status !== 'success') throw new Error('approve reverted');
       }
 
       onStatus?.('joining');
-      const joinExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], account: signer }, !!walletClient.account);
+      const joinExtras = await planFeeExtras(publicClient, feeCurrency, plan, { address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], account: signer }, !!walletClient.account, budgetWei);
       const joinTx = await walletClient.writeContract({ account: signer, chain, address: escrow, abi: ESCROW_N_ABI, functionName: 'join', args: [gameId32, token, stake, seatCount, commit32], ...joinExtras });
       const r = await publicClient.waitForTransactionReceipt({ hash: joinTx });
       if (r.status !== 'success') throw new Error('join reverted');
