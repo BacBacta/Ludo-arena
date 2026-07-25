@@ -2937,7 +2937,13 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
  *  seed ack reports the REMAINING time as `retryInMs` so a client can wait
  *  exactly that long instead of minting on a wallet that was never funded. */
 const RACE_ACTION_WINDOW_MS = 3000;
+/** How long a Race seeker waits before the bot may fill in — and only if NO
+ *  human in the queue could ever be their opponent (see starvedWaiters). */
 const RACE_BOT_FALLBACK_MS = Number(process.env.RACE_BOT_FALLBACK_MS ?? 12_000);
+/** Hard deadline: past this the bot fills in even with a human queued. Guards
+ *  against a peer that is queued but stuck (dead tab, wedged session) starving a
+ *  seeker forever now that a queued human defers the bot. */
+const RACE_BOT_HARD_FALLBACK_MS = Number(process.env.RACE_BOT_HARD_FALLBACK_MS ?? 90_000);
 /** Games already played today between the SAME two Race wallets before a fresh
  *  pairing between them is treated as wash-trading — the seeker is routed to the
  *  bot instead (denies the reciprocal farm). 0 disables the intercept. */
@@ -3678,10 +3684,33 @@ setInterval(() => {
   // human is handed the bot (real 1c staked game, non-scoring). Runs after the
   // pairing pass so a fresh human is always preferred over the bot.
   if (houseBot) {
-    const cutoff = Date.now() - RACE_BOT_FALLBACK_MS;
-    const waiters = matchmaker
-      .waitersOlderThan(RACE_STAKE_CENTS as StakeCents, cutoff)
-      .filter((e) => e.session.wallet && !e.session.room && !e.session.pendingGameId);
+    const nowMs = Date.now();
+    // Usable as a seeker AND as somebody else's future opponent.
+    const eligible = (e: { session: Session }): boolean =>
+      !!e.session.wallet && !e.session.room && !e.session.pendingGameId;
+    // HUMANS FIRST. Only a seeker with NO structurally-pairable human in the
+    // queue may be handed the bot. Two players whose ELO windows have not met
+    // yet are seconds from pairing — taking them both into non-scoring bot games
+    // (as this did) empties the event of real matches and freezes the standings.
+    const starved = matchmaker.starvedWaiters(
+      RACE_STAKE_CENTS as StakeCents,
+      nowMs - RACE_BOT_FALLBACK_MS,
+      eligible,
+    );
+    // SAFETY VALVE. "A human is queued" must never mean "wait forever": a peer
+    // that is queued but stuck (dead tab the disconnect never cleaned, a session
+    // wedged mid-flow) would otherwise starve this seeker indefinitely. Past the
+    // hard deadline the bot steps in regardless — a non-scoring game still beats
+    // an endless spinner.
+    const overdue = matchmaker
+      .waitersOlderThan(RACE_STAKE_CENTS as StakeCents, nowMs - RACE_BOT_HARD_FALLBACK_MS)
+      .filter(eligible);
+    const seen = new Set<string>();
+    const waiters = [...starved, ...overdue].filter((e) => {
+      if (seen.has(e.session.id)) return false;
+      seen.add(e.session.id);
+      return true;
+    });
     // SOLVENCY FIRST: this path REMOVES the seeker from the queue before pairing,
     // so an unaffordable bot would strand them outside matchmaking entirely. Ask
     // once per sweep (not per waiter) and skip the whole pass while the bot is

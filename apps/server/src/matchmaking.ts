@@ -35,7 +35,18 @@ export function eloWindow(enqueuedAt: number, now: number): number {
   return BASE_WINDOW + WIDEN_STEP * Math.floor(waited / WIDEN_INTERVAL_MS);
 }
 
-export function compatible<T>(a: QueueEntry<T>, b: QueueEntry<T>, now: number, stake: StakeCents = 0): boolean {
+/**
+ * The pairing rules that NO amount of waiting can overcome — everything in
+ * `compatible` except the ELO window, which widens without bound.
+ *
+ * Split out because "is a human opponent coming for this seeker?" is a different
+ * question from "can they pair right now". Two entries blocked only by ELO WILL
+ * pair on a later sweep; two entries blocked structurally NEVER will. The
+ * house-bot fallback has to tell those apart, or it either steals matches from
+ * humans who were seconds away from pairing, or strands a seeker whose only
+ * queue-mate can never be their opponent.
+ */
+export function structurallyPairable<T>(a: QueueEntry<T>, b: QueueEntry<T>, stake: StakeCents = 0): boolean {
   // A session can never be paired with itself (a double queue.join must not
   // self-match — that would run a one-player game / farm freeroll tickets).
   if (a.session === b.session) return false;
@@ -44,6 +55,11 @@ export function compatible<T>(a: QueueEntry<T>, b: QueueEntry<T>, now: number, s
   // Money-mode parity: staked games never mix a real-wallet player with a demo
   // (simulated) player — the real stake would be locked against nothing.
   if (stake > 0 && a.walletBacked !== b.walletBacked) return false;
+  return true;
+}
+
+export function compatible<T>(a: QueueEntry<T>, b: QueueEntry<T>, now: number, stake: StakeCents = 0): boolean {
+  if (!structurallyPairable(a, b, stake)) return false;
   const gap = Math.abs(a.elo - b.elo);
   return gap <= eloWindow(a.enqueuedAt, now) && gap <= eloWindow(b.enqueuedAt, now);
 }
@@ -144,6 +160,36 @@ export class Matchmaker<T> {
   waitersOlderThan(stake: StakeCents, cutoff: number): QueueEntry<T>[] {
     return (this.queues.get(stake) ?? [])
       .filter((e) => e.enqueuedAt <= cutoff)
+      .sort((a, b) => a.enqueuedAt - b.enqueuedAt);
+  }
+
+  /**
+   * Waiters on `stake` (enqueued at/before `cutoff`) for whom NO human opponent
+   * can ever arrive out of this queue — the ONLY seekers the house bot may take.
+   *
+   * WHY THIS EXISTS. The bot used to be handed every waiter past the window, so
+   * two humans whose ELO windows had not yet met were BOTH pulled into bot games
+   * seconds before they would have paired with each other. Bot games are
+   * deliberately non-scoring, so on a thin event that quietly starved the
+   * leaderboard: real players kept playing and the standings never moved.
+   *
+   * A seeker is starved only when every other eligible waiter is structurally
+   * unpairable with them (same identity, QA vs real, wallet vs demo). An ELO gap
+   * never counts — that window widens on its own and the sweep will pair them.
+   *
+   * `eligible` filters entries the CALLER knows are unusable (no wallet, already
+   * in a room…), both as seekers and as candidate opponents — the matchmaker is
+   * generic over the session type and cannot see those itself.
+   */
+  starvedWaiters(
+    stake: StakeCents,
+    cutoff: number,
+    eligible: (e: QueueEntry<T>) => boolean = () => true,
+  ): QueueEntry<T>[] {
+    const q = (this.queues.get(stake) ?? []).filter(eligible);
+    return q
+      .filter((e) => e.enqueuedAt <= cutoff)
+      .filter((seeker) => !q.some((other) => structurallyPairable(seeker, other, stake)))
       .sort((a, b) => a.enqueuedAt - b.enqueuedAt);
   }
 
