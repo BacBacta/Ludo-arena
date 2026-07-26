@@ -2876,6 +2876,19 @@ async function resumeSession(token: string, ws: WebSocket, wallet: string | unde
   }
   const rec = await store.loadSession(token);
   if (!rec) return null;
+  // SAME wallet reconciliation as the in-memory branch above — it was missing
+  // here, and this path is the one that runs after every restart (the in-memory
+  // map is empty then, so EVERY returning client lands on loadSession).
+  // A client that switched wallets was therefore resumed onto its PREVIOUS
+  // address: `makeSession` restores `rec.wallet`, so race.seed / race.claim keyed
+  // on the OLD wallet. The new address got nothing and the player was told
+  // "already funded" — the old wallet's grant record answering for it, for good.
+  // It also defeated the very guard the in-memory branch documents: a stale
+  // wallet-less token could resume a now-wallet-backed client as walletBacked=false
+  // and pair a real-money player against a demo opponent.
+  // Mid-game is the one exception (the wallet cannot change then, and refusing
+  // would strand a live staked room).
+  if (!walletsMatch(rec.wallet, wallet) && !rec.gameId) return null;
   const session = makeSession(rec.id, ws, rec);
   if (rec.gameId && rec.seat !== null) {
     const room = rooms.get(rec.gameId);
