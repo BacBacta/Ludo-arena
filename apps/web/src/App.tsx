@@ -28,7 +28,7 @@ import { describeTxError } from './lib/txError';
 import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, ESTIMATE_REVERTED_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, walletNativeWei, type Wallet, hasInjectedWallet } from './lib/minipay';
-import { isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBlockedOnGas, raceClaimToastKey, raceEntryWalletKind, shouldRestoreBurnerAtBoot } from './lib/raceEntry';
+import { isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBlockedOnGas, raceClaimToastKey, raceEntryWalletKind, seedFailureToastKey, shouldRestoreBurnerAtBoot } from './lib/raceEntry';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
 import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS, boardIsStale } from './lib/pacing';
@@ -1433,7 +1433,10 @@ export default function App() {
           // failed READ, not an empty wallet — fail OPEN and let the mint try.
           if (mintBlockedOnGas(wallet.payGasInStable, balCents, MIN_MINT_GAS_CENTS, nativeWei)) {
             console.error('[race] aborting mint: gas below floor (stable=%sc native=%s wei) — seed did not land', balCents, nativeWei?.toString() ?? 'null');
-            dispatch({ type: 'TOAST', message: seedError ?? t('raceSeedStalled') });
+            // A null seed on the sponsored path is almost always the SIWE
+            // signature still unapproved in the wallet app (mobile app-hop) —
+            // say THAT, not a vague "try again" (the 0x9819 report).
+            dispatch({ type: 'TOAST', message: seedError ?? t(seedFailureToastKey(sponsorNative, seedRes === null)) });
             return;
           }
         }
