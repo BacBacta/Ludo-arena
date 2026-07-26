@@ -23,6 +23,10 @@
  *     fired on a seeded wallet that has since spent it. Clearing is right.
  *   • record says N cents, balance >= N → the player WAS paid. Clearing would pay
  *     them twice; the script says so and refuses unless FORCE=1.
+ *   • record present, balance still POSITIVE → not stuck at all. The player can
+ *     play and re-claim; skipped unless ALL=1. This is the common shape (a 0-cent
+ *     "self-funded" record on a wallet holding its gas seed) and clearing it in
+ *     bulk would re-open a claim for nearly every participant.
  *
  * Runs INSIDE the Fly machine (needs the prod store + an RPC). Sends no
  * transaction of its own. Idempotent.
@@ -38,6 +42,9 @@ const env = (n: string): string | undefined => {
 const raw = (env('UNSTICK_WALLETS') ?? '').trim();
 const APPLY = env('APPLY') === '1';
 const FORCE = env('FORCE') === '1';
+/** Clear even wallets that still hold funds. Off by default: those are not stuck
+ *  and re-opening their claim spends from the prize pool for nothing. */
+const ALL = env('ALL') === '1';
 
 const ERC20 = [
   { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] },
@@ -133,11 +140,6 @@ for (const w of wallets) {
     skipped += 1;
     continue;
   }
-  // The signature of the resumeSession bug: a record exists, yet the wallet is
-  // empty — it was never actually paid, or it was marked "self-funded" off a gas
-  // seed it has since spent. Called out so a long discovery list can be skimmed.
-  const looksStuck = bal !== null && bal === 0;
-  if (looksStuck) console.log('     ⚑ STUCK — record present, wallet empty. Safe to clear.');
   // The one case where clearing PAYS TWICE: the record says money went out and
   // the wallet still holds at least that much.
   const alreadyPaid = grantCents !== null && grantCents > 0 && bal !== null && bal >= grantCents;
@@ -148,6 +150,30 @@ for (const w of wallets) {
     skipped += 1;
     continue;
   }
+  // THE SELECTOR, and the correction that matters. An earlier pass proposed
+  // clearing 57 of 59 records because it only excluded the "already paid" case.
+  // But the dominant shape in production is a 0-cent "self-funded" record on a
+  // wallet holding 8-12c: those players are FINE — the balance-aware branch fired
+  // because their gas seed made them look rich. Clearing their records would
+  // re-open a claim for every one of them and drain the prize pool.
+  //
+  // A wallet is stuck only when a record exists AND it holds NOTHING: either the
+  // grant never landed, or it was marked self-funded off a seed it has since
+  // spent. Either way it can neither play nor re-claim.
+  //
+  // An UNREADABLE balance is not evidence of anything — skip it. Guessing here
+  // spends real money.
+  const looksStuck = bal !== null && bal === 0;
+  if (!looksStuck && !ALL) {
+    console.log(
+      bal === null
+        ? '     → skipped: balance unreadable — cannot confirm it is stuck.\n'
+        : `     → skipped: wallet still holds ${bal}c, so it is not stuck (it can play and re-claim).\n`,
+    );
+    skipped += 1;
+    continue;
+  }
+  if (looksStuck) console.log('     ⚑ STUCK — record present, wallet empty.');
   if (!APPLY) {
     console.log('     → would clear grant + funded records (dry run).\n');
     continue;
