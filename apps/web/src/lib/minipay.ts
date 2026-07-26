@@ -12,6 +12,7 @@ import {
   type WalletClient,
 } from 'viem';
 import { activeChain, chainTransport } from './chains';
+import { forceAccountPicker } from './walletPick';
 import { deploymentForChain, feeCurrencyFor, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
 import { buyCosmeticCusd, feeCurrencyBudgetWei, planFeeExtras, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
@@ -65,8 +66,19 @@ export interface Eip1193Provider {
 }
 
 /** Builds a Wallet on the active chain from ANY EIP-1193 provider (injected or
- *  WalletConnect). Returns null when the provider yields no account. */
-export async function connectWalletWith(provider: Eip1193Provider): Promise<Wallet | null> {
+ *  WalletConnect). Returns null when the provider yields no account.
+ *  `forcePicker` re-opens the wallet's ACCOUNT CHOOSER first (injected wallets
+ *  silently return the per-site remembered account otherwise — the "connect
+ *  keeps bringing back the old account" report); a refused chooser returns
+ *  null instead of falling through to that silent reuse. */
+export async function connectWalletWith(provider: Eip1193Provider, forcePicker = false): Promise<Wallet | null> {
+  if (forcePicker) {
+    try {
+      await forceAccountPicker(provider);
+    } catch {
+      return null; // the user refused the chooser — do NOT reuse the old account
+    }
+  }
   const walletClient = createWalletClient({ chain: activeChain, transport: custom(provider) });
   const [address] = await walletClient.requestAddresses();
   if (!address) return null;
@@ -86,10 +98,11 @@ export async function connectWalletWith(provider: Eip1193Provider): Promise<Wall
   };
 }
 
-/** Connects the injected wallet on the active chain. null when none is present. */
-export async function connectWallet(): Promise<Wallet | null> {
+/** Connects the injected wallet on the active chain. null when none is present.
+ *  `forcePicker` = an explicit switch: reopen the wallet's account chooser. */
+export async function connectWallet(forcePicker = false): Promise<Wallet | null> {
   if (!window.ethereum) return null;
-  return connectWalletWith(window.ethereum);
+  return connectWalletWith(window.ethereum, forcePicker);
 }
 
 /**
