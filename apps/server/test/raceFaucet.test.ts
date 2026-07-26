@@ -11,7 +11,7 @@ import { faucetFailureMessage, RaceFaucet } from '../src/race.js';
 // ONCE (a failed broadcast never reached the chain, so a retry cannot
 // double-spend), and NEVER resends once it holds a tx hash.
 
-const CFG = { quotaCents: 10, poolCents: 3000, jit: true, perGameCents: 2, feeInStable: true, seedCents: 10 };
+const CFG = { quotaCents: 10, poolCents: 3000, jit: true, perGameCents: 2, feeInStable: true, seedCents: 10, nativeSeedWei: 0n, nativePoolWei: 0n };
 const PK = ('0x' + '11'.repeat(32)) as Hex;
 const TOKEN = '0x765DE816845861e75A25fCA122bb6898B8B1282a';
 const PASS = '0x3ca68B8a7e2C429dEc33a34e0589173DFb305BE4';

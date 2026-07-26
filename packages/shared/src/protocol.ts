@@ -666,9 +666,12 @@ export type ClientMsg =
   | { t: 'race.claim'; passTxHash: string }
   // Race Week (B1, burner onboarding): I have a proven wallet but no gas — send a
   // tiny cUSD "gas seed" so I can pay the mint + join fees (Celo feeCurrency). Sent
-  // BEFORE the Pass mint; fingerprint-gated + pool-capped server-side. No args (the
-  // server funds my proven session wallet).
-  | { t: 'race.seed' }
+  // BEFORE the Pass mint; fingerprint-gated + pool-capped server-side. The wallet
+  // funded is my proven session wallet. `native: true` asks for NATIVE CELO
+  // instead of cUSD — the sponsorship path for EXTERNAL wallets (MetaMask/WC),
+  // which cannot sign CIP-64 and therefore cannot pay their gas in the
+  // stablecoin; same allowances, tracked in a separate wei-denominated budget.
+  | { t: 'race.seed'; native?: boolean }
   // Race Week: fetch the current leaderboard (top N + my rank). No args.
   | { t: 'race.leaderboard' }
   | { t: 'ping' };
@@ -857,7 +860,10 @@ export type ServerMsg =
   // Race Week faucet ack: `fundedCents` was just sent to my wallet (0 on an
   // idempotent re-claim — already funded), `alreadyFunded` distinguishes the two,
   // `txHash` = the funding transfer (absent when already funded / no transfer).
-  | { t: 'race.claimed'; fundedCents: number; alreadyFunded: boolean; txHash?: string }
+  // `selfFunded` marks a FIRST registration that drew nothing because the wallet
+  // already covers a stake — without it the client told a freshly-registered
+  // player "your entry is already funded", which reads as a refusal.
+  | { t: 'race.claimed'; fundedCents: number; alreadyFunded: boolean; txHash?: string; selfFunded?: boolean }
   // Race Week gas-seed ack (B1): `seedCents` of cUSD was just sent to cover the
   // player's mint/join gas (0 + `alreadySeeded` on a repeat — already seeded).
   // `rateLimited` (0 cents, not alreadySeeded): the request landed inside the
@@ -868,7 +874,10 @@ export type ServerMsg =
   // client can wait EXACTLY that long and retry instead of guessing — or worse,
   // treating a 0-cent rate-limit ack as a successful seed and minting on an
   // empty wallet (which failed with "your entry is still being funded").
-  | { t: 'race.seeded'; seedCents: number; alreadySeeded: boolean; txHash?: string; rateLimited?: boolean; retryInMs?: number }
+  // `nativeWei` (stringified wei) is set on a NATIVE-CELO sponsorship ack (the
+  // external-wallet path): the amount of CELO just sent — '0' with
+  // `alreadySeeded` when the wallet already holds the target.
+  | { t: 'race.seeded'; seedCents: number; alreadySeeded: boolean; txHash?: string; rateLimited?: boolean; retryInMs?: number; nativeWei?: string }
   // Race Week leaderboard: `top` = highest-scoring players (name + points +
   // 1-indexed rank), `myRank`/`myPoints` locate the caller (rank 0 = unranked).
   | { t: 'race.board'; top: Array<{ name: string; points: number; rank: number }>; myRank: number; myPoints: number }
@@ -1109,7 +1118,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       // 0x + 64 hex chars — a tx hash. Ownership/emit is verified on-chain server-side.
       return typeof m.passTxHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(m.passTxHash) ? m : null;
     case 'race.seed':
-      return m; // no args (server seeds the proven session wallet)
+      // `native` selects the CELO sponsorship path (external wallets); anything
+      // but a boolean/absent is malformed.
+      return m.native === undefined || typeof m.native === 'boolean' ? m : null;
     case 'race.leaderboard':
       return m; // no args
     case 'queue.join':

@@ -72,7 +72,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitDripCents, poolLeftCents, SEED_FP_LIFETIME_MULT, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitDripCents, nativeDrawWei, nativeSeedDeficitWei, nativeSeedGrantWei, poolLeftCents, SEED_FP_LIFETIME_MULT, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -468,6 +468,10 @@ const raceFaucet = bootSubsystem('Race Week faucet', createRaceFaucet);
 // budget guard); only PRIZE is surfaced as poolLeftCents.
 const POOL_SPENT_KEY = 'race:pool:spent';
 const SEED_SPENT_KEY = 'race:seed:spent';
+// NATIVE sponsorship spent counter, in WEI (bare digit string). Its own row —
+// wei and cents must never be added, so the native pool is capped separately
+// (raceFaucet.nativePoolWei), not against the cUSD budget.
+const NATIVE_SEED_SPENT_KEY = 'race:nseed:spent';
 async function raceSpend(s: Awaited<ReturnType<typeof createStore>>): Promise<{ prize: number; seed: number; total: number }> {
   const prize = Number((await s.getMeta(POOL_SPENT_KEY)) || '0');
   const seed = Number((await s.getMeta(SEED_SPENT_KEY)) || '0');
@@ -2145,8 +2149,12 @@ wss.on('connection', (ws, req) => {
         // Kept small (a few cents of gas) and gated: proven wallet, lifetime
         // allowance per WALLET + per DEVICE, pool-capped, deficit-aware (a wallet
         // already at the target draws nothing).
-        if (!raceFaucet || raceFaucet.seedCents <= 0) {
-          session.send({ t: 'error', code: 'BAD_STATE', message: 'Race Week gas seed is not available.' });
+        // `native: true` = the EXTERNAL-wallet sponsorship (CELO — MetaMask/WC
+        // cannot pay gas in the stablecoin); default = the cUSD burner seed.
+        // Each dimension has its own arming knob.
+        const wantNative = msg.native === true;
+        if (!raceFaucet || (wantNative ? raceFaucet.nativeSeedWei <= 0n : raceFaucet.seedCents <= 0)) {
+          session.send({ t: 'error', code: 'BAD_STATE', message: wantNative ? 'Gas sponsorship is not available.' : 'Race Week gas seed is not available.' });
           break;
         }
         if (!session.walletProven || !session.wallet) {
@@ -2173,6 +2181,62 @@ wss.on('connection', (ws, req) => {
         }
         session.lastRaceAt = sNow;
         const sWallet = session.wallet;
+        if (wantNative) {
+          // NATIVE sponsorship — the same shape as the cUSD seed below
+          // (deficit-aware, wallet ×3, device ×30, pool-capped, reserve-then-
+          // send with rollback), denominated in wei with its own counters.
+          const nKey = `race:nseed:${sWallet.toLowerCase()}`;
+          const nFpKey = session.fingerprint ? `race:nseedfp:${session.fingerprint}` : null;
+          const nPriorRaw = await store.getMeta(nKey);
+          const nPriorWei = nativeDrawWei(nPriorRaw);
+          let nBalWei: bigint;
+          try {
+            nBalWei = await raceFaucet.nativeBalanceWeiOf(sWallet as Address);
+          } catch (e) {
+            console.error('[race] native-sponsor balance read failed', e);
+            session.send({ t: 'error', code: 'BAD_STATE', message: 'Gas sponsorship failed reading balances — try again in a moment.' });
+            break;
+          }
+          const nDeficit = nativeSeedDeficitWei(raceFaucet.nativeSeedWei, nBalWei);
+          if (nDeficit <= 0n) {
+            session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: true, nativeWei: '0' });
+            break;
+          }
+          const nFpPriorRaw = nFpKey ? await store.getMeta(nFpKey) : null;
+          const nFpDrawn = nativeDrawWei(nFpPriorRaw);
+          const nCap = raceFaucet.nativeSeedWei * BigInt(SEED_LIFETIME_MULT);
+          const nFpCap = raceFaucet.nativeSeedWei * BigInt(SEED_FP_LIFETIME_MULT);
+          const nSpentWei = nativeDrawWei(await store.getMeta(NATIVE_SEED_SPENT_KEY));
+          const fpLeft = nFpCap > nFpDrawn ? nFpCap - nFpDrawn : 0n;
+          const grantWei0 = nativeSeedGrantWei(nDeficit, nPriorWei, nCap, nSpentWei, raceFaucet.nativePoolWei);
+          const grantWei = grantWei0 < fpLeft ? grantWei0 : fpLeft;
+          if (grantWei <= 0n) {
+            const capped = nPriorWei >= nCap || nFpDrawn >= nFpCap;
+            session.send({ t: 'error', code: 'LIMIT_REACHED', message: capped ? 'This device already used its gas-sponsorship allowance.' : 'Race Week gas sponsorship is exhausted.' });
+            break;
+          }
+          // Reserve BEFORE the transfer (crash-safety), roll back on failure.
+          await store.setMeta(nKey, JSON.stringify({ wei: (nPriorWei + grantWei).toString(), at: sNow, fp: session.fingerprint ?? null }));
+          if (nFpKey) await store.setMeta(nFpKey, JSON.stringify({ wei: (nFpDrawn + grantWei).toString(), wallet: sWallet.toLowerCase() }));
+          await store.setMeta(NATIVE_SEED_SPENT_KEY, (nSpentWei + grantWei).toString());
+          try {
+            const txHash = await raceFaucet.fundNative(sWallet as Address, grantWei);
+            session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: false, txHash, nativeWei: grantWei.toString() });
+            telemetry('race.nseed', { pid: tpid(playerId(sWallet, session.id)), wei: grantWei.toString() });
+          } catch (e) {
+            await store.setMeta(nKey, nPriorRaw ?? '');
+            if (nFpKey) await store.setMeta(nFpKey, nFpPriorRaw ?? '');
+            await store.setMeta(NATIVE_SEED_SPENT_KEY, nSpentWei.toString());
+            // The one failure a retry never fixes: the faucet holds cUSD, not
+            // CELO — sponsorship needs an ops top-up of native CELO. Name it.
+            const nCause = String((e as { shortMessage?: string }).shortMessage ?? (e as Error)?.message ?? e);
+            const faucetWei = await raceFaucet.faucetNativeWei().catch(() => null);
+            console.error(`[race] native sponsorship failed (faucet native: ${faucetWei === null ? 'unreadable' : faucetWei.toString()} wei, sending ${grantWei.toString()} wei)`, e);
+            const dry = faucetWei !== null && faucetWei < grantWei * 2n;
+            session.send({ t: 'error', code: 'BAD_STATE', message: dry ? 'Gas sponsorship is out of funds — refill pending, check back soon.' : `Gas sponsorship failed — try again in a moment. (${nCause.slice(0, 140)})` });
+          }
+          break;
+        }
         const seedKey = `race:seed:${sWallet.toLowerCase()}`;
         const seedFpKey = session.fingerprint ? `race:seedfp:${session.fingerprint}` : null;
         // The top-up keys on the burner's LIVE on-chain balance, not on "was the
@@ -2323,7 +2387,12 @@ wss.on('connection', (ws, req) => {
           await store.setMeta(walletKey, JSON.stringify({ cents: 0, at: rNow, fp: session.fingerprint ?? null }));
           if (fpKey) await store.setMeta(fpKey, JSON.stringify({ wallets: [...new Set([...fpWallets, rWallet.toLowerCase()])] }));
           if (raceFaucet.jit) await store.setMeta(`race:funded:${rWallet.toLowerCase()}`, '0');
-          session.send({ t: 'race.claimed', fundedCents: 0, alreadyFunded: true });
+          // selfFunded: this is a FIRST registration that drew nothing because
+          // the wallet already covers a stake — without the flag the client
+          // told a freshly-registered player "already funded" (reads as a
+          // refusal, the operator's own report). alreadyFunded stays true for
+          // wire-compat with older clients.
+          session.send({ t: 'race.claimed', fundedCents: 0, alreadyFunded: true, selfFunded: true });
           telemetry('race.claim', { pid: tpid(playerId(rWallet, session.id)), cents: 0, poolSpent: spent });
           break;
         }

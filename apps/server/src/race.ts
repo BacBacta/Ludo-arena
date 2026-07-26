@@ -147,6 +147,65 @@ export function seedFpDrawCents(raw: string | null, targetCents: number): number
   }
 }
 
+// ---------------------------------------------------------------------------
+// NATIVE gas sponsorship (external wallets). MetaMask/WalletConnect cannot sign
+// CIP-64, so the cUSD seed is useless to them: their gas is native CELO or
+// nothing. "The platform sponsors the mint" therefore means a second, tiny
+// faucet dimension denominated in WEI, with the SAME shape as the cUSD seed —
+// deficit-aware, wallet ×SEED_LIFETIME_MULT, device ×SEED_FP_LIFETIME_MULT,
+// its own pool cap — but its own counters, because wei and cents must never be
+// added together.
+// ---------------------------------------------------------------------------
+
+/** Wei the wallet is MISSING to reach the native sponsorship target, from its
+ *  live balance. Mirrors seedDeficitCents: what the wallet HOLDS drives the
+ *  grant, not what was ever granted (a failed mint still burnt its gas). */
+export function nativeSeedDeficitWei(targetWei: bigint, balanceWei: bigint): bigint {
+  return targetWei > balanceWei ? targetWei - balanceWei : 0n;
+}
+
+/** Wei to actually send for `deficit`, bounded by the wallet's remaining
+ *  lifetime allowance and the sponsor pool's remaining budget. Mirrors
+ *  seedGrantCents, in bigint (wei overflows Number). */
+export function nativeSeedGrantWei(deficitWei: bigint, grantedWei: bigint, lifetimeCapWei: bigint, spentWei: bigint, poolWei: bigint): bigint {
+  const capLeft = lifetimeCapWei - grantedWei;
+  const poolLeft = poolWei - spentWei;
+  if (deficitWei <= 0n || capLeft <= 0n || poolLeft <= 0n) return 0n;
+  const bounded = deficitWei < capLeft ? deficitWei : capLeft;
+  return bounded < poolLeft ? bounded : poolLeft;
+}
+
+/** Cumulative wei drawn, parsed from a `race:nseed:` / `race:nseedfp:` /
+ *  spent-counter meta row. Rows store JSON `{ wei: "123" }` (stringified —
+ *  JSON.stringify(bigint) throws and Number loses precision); a bare digit
+ *  string is accepted for the plain spent counter. Empty / missing rows are 0:
+ *  these rows are only ever written by this server in the two shapes below, so
+ *  anything else is the rollback tombstone (''), which genuinely is 0. */
+export function nativeDrawWei(raw: string | null): bigint {
+  if (!raw) return 0n;
+  if (/^\d+$/.test(raw.trim())) return BigInt(raw.trim());
+  try {
+    const wei = (JSON.parse(raw) as { wei?: unknown }).wei;
+    return typeof wei === 'string' && /^\d+$/.test(wei) ? BigInt(wei) : 0n;
+  } catch {
+    return 0n;
+  }
+}
+
+/** Parse a decimal-CELO env knob ("0.002") into wei, falling back on garbage —
+ *  the same NaN hazard as policy.ts: a typo'd Fly secret must not turn into a
+ *  0-wei (silently OFF) or a huge (pool-draining) sponsorship. */
+export function parseCeloEnvWei(raw: string | undefined, fallbackWei: bigint): bigint {
+  const v = raw?.trim();
+  if (!v) return fallbackWei;
+  if (!/^\d+(\.\d{1,18})?$/.test(v)) {
+    console.warn(`[race] ignoring malformed CELO amount "${v}" — using default`);
+    return fallbackWei;
+  }
+  const [whole, frac = ''] = v.split('.');
+  return BigInt(whole!) * 10n ** 18n + BigInt((frac + '0'.repeat(18)).slice(0, 18));
+}
+
 /** The wallets a DEVICE has already claimed the Race Week grant with, parsed
  *  from its `race:fp:` meta row. Legacy rows stored one bare wallet address —
  *  parsed as that one wallet. Empty / missing rows (never claimed, or a
@@ -199,6 +258,14 @@ export interface RaceConfig {
    *  pay the mint + join gas (in cUSD). 0 disables the seed endpoint. Tiny — it
    *  only has to cover a few cents of Celo gas. */
   seedCents: number;
+  /** NATIVE sponsorship target per external wallet, in wei (MetaMask/WC can't
+   *  sign CIP-64 → their gas is CELO or nothing). 0n disables the native path.
+   *  The faucet wallet must hold native CELO for this — feeInStable does not
+   *  cover it. */
+  nativeSeedWei: bigint;
+  /** Total wei the native sponsorship may ever send (its own pool cap — wei and
+   *  cents are never added together). */
+  nativePoolWei: bigint;
 }
 
 /** Client-facing Race Week state (in hello.ok): whether the event is on, the
@@ -225,6 +292,8 @@ export class RaceFaucet {
   readonly perGameCents: number;
   readonly feeInStable: boolean;
   readonly seedCents: number;
+  readonly nativeSeedWei: bigint;
+  readonly nativePoolWei: bigint;
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chain: Chain;
   private readonly publicClient: ReturnType<typeof createPublicClient>;
@@ -247,6 +316,8 @@ export class RaceFaucet {
     this.perGameCents = cfg.perGameCents;
     this.feeInStable = cfg.feeInStable;
     this.seedCents = cfg.seedCents;
+    this.nativeSeedWei = cfg.nativeSeedWei;
+    this.nativePoolWei = cfg.nativePoolWei;
     this.account = privateKeyToAccount(faucetKey);
     const transport = http(rpc);
     // 1s receipt polling (Celo block time) — the default 4s made every faucet
@@ -356,6 +427,48 @@ export class RaceFaucet {
     return hash;
   }
 
+  /** Any address's NATIVE CELO balance in wei (the sponsorship dimension for
+   *  external wallets — their gas is native, so the stablecoin read says
+   *  nothing about whether they can mint). */
+  async nativeBalanceWeiOf(addr: Address): Promise<bigint> {
+    return this.publicClient.getBalance({ address: getAddress(addr) });
+  }
+
+  /** The faucet wallet's own native CELO, in wei. feeInStable keeps its cUSD
+   *  runway independent of this — but the NATIVE sponsorship spends from here,
+   *  and an ops top-up (plain CELO transfer to `address`) is what refills it. */
+  async faucetNativeWei(): Promise<bigint> {
+    return this.nativeBalanceWeiOf(this.account.address);
+  }
+
+  /** Send `wei` of native CELO to `to` (external-wallet gas sponsorship). Same
+   *  contract as `fund`: waits for the receipt so the caller records the draw
+   *  only once mined; one broadcast retry (double-spend safe — a failed
+   *  broadcast never reached the chain, and once a hash exists we never
+   *  resend). The transfer's OWN gas follows feeInStable, so the faucet's CELO
+   *  runway is spent on sponsorships only, not on carrying them. */
+  async fundNative(to: Address, wei: bigint, retryDelayMs = 2500): Promise<Hex> {
+    const feeExtra = this.feeInStable ? await this.cip64Fees() : {};
+    const send = (): Promise<Hex> =>
+      this.walletClient.sendTransaction({
+        account: this.account,
+        chain: this.chain,
+        to: getAddress(to),
+        value: wei,
+        ...feeExtra,
+      } as Parameters<typeof this.walletClient.sendTransaction>[0]);
+    let hash: Hex;
+    try {
+      hash = await send();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      hash = await send();
+    }
+    const r = await this.publicClient.waitForTransactionReceipt({ hash });
+    if (r.status !== 'success') throw new Error('native sponsorship transfer reverted');
+    return hash;
+  }
+
   async healthcheck(): Promise<bigint> {
     return this.publicClient.getBlockNumber();
   }
@@ -406,10 +519,19 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   // Default 0 (off) → the seed endpoint is dormant unless a non-MiniPay launch
   // explicitly provisions it. Only meaningful with feeInStable on Celo.
   const seedCents = Math.max(0, Number(env.RACE_SEED_CENTS ?? '0'));
+  // NATIVE sponsorship (external wallets): CELO sent pre-mint to a
+  // MetaMask/WalletConnect wallet, which cannot pay gas in the stablecoin
+  // (no CIP-64). Defaults ON at 0.002 CELO/wallet with a 0.5 CELO pool — a
+  // mint reserves ~1e-4 CELO, so one target covers the mint plus the event's
+  // approve+join txs, and the pool bounds total exposure to ~250 wallets.
+  // Requires the faucet wallet to HOLD native CELO (ops top-up); a dry faucet
+  // fails each request with a message naming its balance, spending nothing.
+  const nativeSeedWei = parseCeloEnvWei(env.RACE_NATIVE_SEED_CELO, 2_000_000_000_000_000n); // 0.002 CELO
+  const nativePoolWei = parseCeloEnvWei(env.RACE_NATIVE_POOL_CELO, 500_000_000_000_000_000n); // 0.5 CELO
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
   // Gas fee-currency = FEE_CURRENCY ?? the deployment's adapter ?? the stake token
   // (correct for 18-dec cUSD; the 18-dec adapter for a 6-dec USD₮ stake token).
   const feeCurrency = (env.FEE_CURRENCY?.trim() as Address | undefined) ?? dep?.feeCurrencyAdapter ?? stablecoin;
-  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable, seedCents }, rpc, feeCurrency);
+  return new RaceFaucet(chain, racePass, stablecoin, pk, { quotaCents, poolCents, endsAt, jit, perGameCents, feeInStable, seedCents, nativeSeedWei, nativePoolWei }, rpc, feeCurrency);
 }
