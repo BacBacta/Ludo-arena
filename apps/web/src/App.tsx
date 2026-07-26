@@ -1346,10 +1346,21 @@ export default function App() {
       // otherwise short-circuit the pairing and land the entry on the burner.
       if (isBurnerAddress(walletRef.current?.address, burnerAddress())) walletRef.current = null;
       if (!(await connectWalletCta())) return;
-      // connectWalletCta may have legitimately fallen back to the burner (no
-      // provider, refused prompt) — it drops the preference when it does, so
-      // the entry below is honest about which wallet it runs on.
       wallet = walletRef.current;
+      // Pairing can fail SILENTLY (dismissed modal, WC deeplink that never
+      // returns) — connectWalletCta then drops the preference and hands back
+      // the burner. Continuing the ENTRY on it answered for the WRONG wallet:
+      // the burner already holds a Pass, so the whole seed block was skipped,
+      // the chosen address was never announced to the server ("the wallet
+      // still receives no gas" — the 0x9819 investigation), the toast said
+      // "already funded", and the silent mode-flip made every NEXT tap do the
+      // same. Stop instead, say so, and keep the player's explicit choice
+      // armed so the next tap re-opens the pairing.
+      if (isBurnerAddress(wallet?.address, burnerAddress())) {
+        setPrefersExternalWallet(true);
+        dispatch({ type: 'TOAST', message: t('raceExternalPairFailed') });
+        return;
+      }
     } else {
       wallet = getBurnerWallet();
       walletRef.current = wallet;
