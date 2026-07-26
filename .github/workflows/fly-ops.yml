@@ -64,6 +64,7 @@ on:
           - allow-token
           - race-status
           - onchain-activity
+          - race-pass-mints
           - race-audit
           - race-forensics
           - wallet-status
@@ -114,6 +115,15 @@ on:
       wallet_address:
         description: 'wallet-status only: the address to probe (cUSD + CELO balance). e.g. the house-bot wallet.'
         required: false
+        type: string
+      mints_day:
+        description: 'race-pass-mints only: a single UTC day (YYYY-MM-DD). Empty = today.'
+        required: false
+        type: string
+      mints_days:
+        description: 'race-pass-mints only: how many days back to report (ignored when mints_day is set)'
+        required: false
+        default: '1'
         type: string
       race_audit_full:
         description: 'race-audit only: print UNTRUNCATED wallet addresses (to copy a farmer into prune-race-board).'
@@ -311,6 +321,29 @@ jobs:
           fi
           npm ci
           npm run race-status -w packages/contracts
+      # race-pass-mints: READ-ONLY — RacePass mints per UTC day, read straight
+      # from the chain. Exists because Dune's Celo indexing runs hours behind, so
+      # "how many wallets minted TODAY" is the one question it cannot answer. The
+      # Pass is soulbound + 1/wallet, so a mint is a distinct new player. No tx,
+      # no key, no Fly change; the day inputs are sanitised to digits and dashes.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'race-pass-mints' }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.operation == 'race-pass-mints' }}
+        with:
+          node-version: 22
+      - name: race-pass-mints (daily RacePass mint census)
+        if: ${{ inputs.operation == 'race-pass-mints' }}
+        env:
+          NETWORK: celo
+          MINTS_DAY: ${{ inputs.mints_day }}
+          MINTS_DAYS: ${{ inputs.mints_days }}
+        run: |
+          set -eu
+          DAY=$(printf '%s' "${MINTS_DAY:-}" | tr -cd '0-9-')
+          DAYS=$(printf '%s' "${MINTS_DAYS:-1}" | tr -cd '0-9')
+          npm ci
+          DAY="$DAY" DAYS="${DAYS:-1}" npm run race-pass-mints -w packages/contracts
       # onchain-activity: READ-ONLY — counts the transactions our mainnet
       # deployment has generated (the Proof of Ship figure). No tx, no Fly
       # change; reads a public block explorer (Blockscout, no key) with an RPC
