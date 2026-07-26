@@ -85,16 +85,31 @@ async function blockAtOrAfter(ts: bigint, head: bigint): Promise<bigint> {
   return lo;
 }
 
-/** eth_getLogs in chunks: public RPCs cap the span of a single range query. */
+/**
+ * eth_getLogs in chunks: public RPCs cap the span of a single range query.
+ * Forno rejects anything over 5000 blocks ("query exceeds range, retry smaller"),
+ * so we start below that AND halve on a range complaint — a hard-coded constant
+ * would break again the day a provider tightens its limit.
+ */
 async function mintedLogs(from: bigint, to: bigint): Promise<Array<{ holder: Address; blockNumber: bigint }>> {
-  const STEP = 10_000n;
   const out: Array<{ holder: Address; blockNumber: bigint }> = [];
-  for (let start = from; start <= to; start += STEP) {
-    const end = start + STEP - 1n > to ? to : start + STEP - 1n;
-    const logs = await client.getLogs({ address: racePass as Address, event: MINTED, fromBlock: start, toBlock: end });
-    for (const l of logs) {
-      const holder = (l.args as { holder?: Address }).holder;
-      if (holder) out.push({ holder, blockNumber: l.blockNumber! });
+  let step = 4_000n;
+  let start = from;
+  while (start <= to) {
+    const end = start + step - 1n > to ? to : start + step - 1n;
+    try {
+      const logs = await client.getLogs({ address: racePass as Address, event: MINTED, fromBlock: start, toBlock: end });
+      for (const l of logs) {
+        const holder = (l.args as { holder?: Address }).holder;
+        if (holder) out.push({ holder, blockNumber: l.blockNumber! });
+      }
+      start = end + 1n;
+    } catch (e) {
+      const msg = String((e as Error)?.message ?? e).toLowerCase();
+      const rangeIssue = msg.includes('range') || msg.includes('too many') || msg.includes('limit');
+      if (!rangeIssue || step <= 100n) throw e;
+      step = step / 2n; // retry the SAME start with a narrower window
+      console.log(`  (RPC capped the range — narrowing to ${step} blocks per query)`);
     }
   }
   return out;
