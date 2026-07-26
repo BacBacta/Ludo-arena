@@ -23,6 +23,26 @@ export function walletConnectAvailable(): boolean {
   return !!wcProjectId();
 }
 
+/** Wipe every persisted WalletConnect artefact (sessions, pairings, keychain).
+ *  `provider.disconnect()` only terminates the ACTIVE session — a day of
+ *  testing accumulates several, and re-init happily restores the next one, so
+ *  the "fresh" pairing still resolved silently on a stale account ("the wallet
+ *  still connects without any signature" report, after #151's disconnect-only
+ *  attempt). Scoped to WC/Reown key prefixes: the app's own keys (burner,
+ *  session token, preferences) are untouched. */
+function purgeWcStorage(): void {
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('wc@2') || k.toLowerCase().startsWith('walletconnect') || k.startsWith('reown') || k.startsWith('W3M') || k.startsWith('@w3m'))) doomed.push(k);
+    }
+    doomed.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* storage unavailable — the disconnect below is still best-effort */
+  }
+}
+
 // Cache the provider across calls so a reconnect within the session reuses the
 // existing pairing instead of spawning a second modal / session.
 let providerPromise: Promise<{ request(args: { method: string; params?: unknown[] }): Promise<unknown>; enable(): Promise<string[]>; disconnect(): Promise<void> }> | null = null;
@@ -71,12 +91,19 @@ export async function connectViaWalletConnect(fresh = false): Promise<Wallet | n
   const projectId = wcProjectId();
   if (!projectId) return null;
   try {
-    const provider = await getProvider(projectId);
     if (fresh) {
-      // Drop the restored session (best-effort) so enable() re-pairs from
-      // scratch instead of resolving instantly on the stale one.
-      await provider.disconnect().catch(() => undefined);
+      // Nuke EVERYTHING WalletConnect ever persisted, then re-init virgin:
+      // disconnect() alone only kills the active session and a re-init
+      // restores the next stale one — the pairing sheet must open every time
+      // an explicit switch is asked for, with the account picker in it.
+      if (providerPromise) {
+        const old = await providerPromise.catch(() => null);
+        await old?.disconnect().catch(() => undefined);
+        providerPromise = null;
+      }
+      purgeWcStorage();
     }
+    const provider = await getProvider(projectId);
     await provider.enable(); // opens the QR/deeplink modal; resolves once paired
     return await connectWalletWith(provider);
   } catch {
