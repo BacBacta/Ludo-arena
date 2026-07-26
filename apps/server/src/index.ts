@@ -2157,7 +2157,19 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'error', code: 'BAD_STATE', message: wantNative ? 'Gas sponsorship is not available.' : 'Race Week gas seed is not available.' });
           break;
         }
-        if (!session.walletProven || !session.wallet) {
+        // PROOF POLICY. The cUSD seed keeps requiring a PROVEN wallet (burners
+        // sign locally at zero UX cost; MiniPay auto-proves). The NATIVE
+        // sponsorship does NOT: a seed is a transfer TO the address the client
+        // names — a gift — so proving control of that address stops no abuse
+        // (an attacker signs for their own addresses for free; someone naming a
+        // stranger's address just donates them 0.002 CELO). The defences that
+        // matter are the per-wallet/per-device lifetime caps, the native pool
+        // cap and the anti-spam window, all of which apply unproven. What the
+        // proof DID cost us: a SIWE popup that never surfaces on its own in the
+        // WalletConnect mobile app-hop, so the whole entry sat spinning behind
+        // a signature the player never saw (the 0x9819 loop report). The CLAIM
+        // keeps its proof — it writes grant records in the wallet's name.
+        if (!session.wallet || (!session.walletProven && !wantNative)) {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Connect your wallet to join Race Week.' });
           break;
         }
