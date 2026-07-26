@@ -26,6 +26,13 @@ gifts/chocolate.mp3 = crispy bite (#122)        gifts/gift.mp3   = reveal tones 
 gifts/pizza.mp3     = tasty eating (#114)        gifts/bubbletea.mp3 = soft slurp (#3207)
 gifts/beer.mp3      = clinking glasses (#2836)  gifts/cake.mp3   = birthday cheer (#974)
 
+--- Pawn-home stingers (batch 4) ---
+home/first.mp3 and home/progress.mp3 are ORIGINAL works synthesized in-house
+(additive celesta/bell voice, warm pad, sub thump, convolution reverb —
+rendered offline with numpy + LAME). No third-party samples; no licence
+constraints. first = premium arpeggio for the 1st pawn home; progress = brief
+two-note motif for the 2nd/3rd.
+
 --- Landing music ---
 landing.mp3 = Mixkit music #1072 (festive / upbeat), Mixkit Free License
 (commercial use, no attribution). Streamed + looped as a low background bed on
