@@ -341,3 +341,40 @@ Directory rate for the adapter == cUSD's (0.06914), so the CIP-64 fee-cap logic
 Env alternative to editing `deployments.json`: set the Fly secrets
 `RACE_STABLECOIN_ADDRESS=0x48065fbB…` + `FEE_CURRENCY=0x0E2A3e05…` (client still
 needs the `deployments.json` flip to show/stake USD₮).
+
+## Anti-abuse policy — retuning WITHOUT a deploy
+
+Every threshold that decides *who may play whom* is read from the environment at
+boot (`apps/server/src/policy.ts`). `flyctl secrets set …` restarts the machine,
+so a change takes effect in one step, no build:
+
+| Variable | Défaut | Effet |
+|---|---|---|
+| `RACE_ACTION_WINDOW_MS` | `3000` | Fenêtre anti-spam partagée par `race.seed` et `race.claim` (chacun envoie une tx). |
+| `RACE_BOT_FALLBACK_MS` | `12000` | Attente d'un demandeur **seul** avant que le house bot ne comble. |
+| `RACE_BOT_HARD_FALLBACK_MS` | `90000` | Soupape : au-delà, le bot comble **même** si un humain est en file (pair bloqué). |
+| `RACE_COLLUSION_PAIR_CAP` | `3` | Parties du jour entre deux mêmes wallets avant que le demandeur ne soit routé vers le bot. `0` désactive. |
+| `RACE_COLLUSION_SAME_IP_PAIR_CAP` | `2` | Idem pour deux joueurs sur **un même réseau** — plus serré, jamais tolérance zéro (le NAT opérateur place des milliers de mobiles derrière une adresse). |
+| `RACE_MAX_DAILY_VS_SAME` | `3` | Parties misées par jour contre le **même adversaire** avant refus. Minimum 1. |
+| `RACE_SEED_FP_MULT` | `30` | Wallets par **empreinte d'appareil** (réclamations) et multiple du budget gas par appareil. |
+| `RACE_SEED_WALLET_MULT` | `3` | Multiple du budget gas à vie d'**un wallet** (`seedCents × N`). |
+| `STAKE_BLOCK_SAME_DEVICE` | `true` | Refuse une partie misée entre deux sessions de **même empreinte**. `false` pour tester à deux profils sur un seul téléphone. |
+| `STAKE_BLOCK_SAME_NETWORK` | `true` | Refuse une partie misée entre deux sessions de **même IP**. `false` est défendable en marché CGNAT. |
+
+**Parsing volontairement strict.** Une valeur illisible **garde le défaut** et le
+signale sur stderr, au lieu de devenir `NaN` — tous ces gardes sont des
+comparaisons `>=`, où `NaN` vaut *faux* : une faute de frappe dans un secret
+désactiverait silencieusement une protection anti-farm. Les booléens n'acceptent
+que `true/false/1/0/yes/no/on/off` ; tout autre mot conserve le défaut.
+
+**Toute protection relâchée est journalisée au démarrage** (`[policy] RELAXED — …`).
+Le silence signifie « tout est au défaut » : après un incident, l'opérateur voit
+d'un coup d'œil si un garde-fou avait été desserré, sans avoir à comparer les
+secrets.
+
+```bash
+# Exemple : tester l'appariement humain avec deux profils sur UN téléphone
+flyctl secrets set STAKE_BLOCK_SAME_DEVICE=false -a ludo-arena
+# …puis REMETTRE la protection avant de rouvrir l'événement
+flyctl secrets unset STAKE_BLOCK_SAME_DEVICE -a ludo-arena
+```

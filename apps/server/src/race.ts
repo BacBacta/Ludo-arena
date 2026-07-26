@@ -76,7 +76,7 @@ export function jitDripCents(perGameCents: number, funded: number, quotaCents: n
  *  pool through one wallet; this bounds that wallet's lifetime draw to
  *  seedCents × SEED_LIFETIME_MULT (the device fingerprint gates fresh wallets,
  *  the pool cap is the global backstop). 3 = the initial seed + two rescues. */
-export const SEED_LIFETIME_MULT = 3;
+export const SEED_LIFETIME_MULT = Math.max(1, Math.trunc(Number(process.env.RACE_SEED_WALLET_MULT ?? '3')) || 3);
 
 /** Per-FINGERPRINT lifetime cap multiple (seed draws AND claim wallets). The
  *  client fingerprint is UA + language + screen + timezone + cores — two phones
