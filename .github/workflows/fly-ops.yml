@@ -231,7 +231,7 @@ jobs:
           flyctl logs -a ludo-arena --no-tail > /tmp/fly.log || true
           echo "== total lines fetched: $(wc -l < /tmp/fly.log) =="
           echo "== house-bot / stake-gate / settlement / race lines =="
-          grep -aE "house-bot|stake-gate|settlement|\[race\]|MATCH_ABORTED|aborting|refund" /tmp/fly.log | tail -120 || echo "(no matching lines in the retained window)"
+          grep -aE "house-bot|stake-gate|settlement|\[race\]|race\.nseed|race\.seed|race\.claim|MATCH_ABORTED|aborting|refund" /tmp/fly.log | tail -120 || echo "(no matching lines in the retained window)"
           echo "== boot / subsystem lines =="
           grep -aE "ARMED|DISABLED|boot|listening|\[store\]" /tmp/fly.log | tail -40 || true
       # probe-fees: READ-ONLY — runs a fixed diagnostic script INSIDE the Fly
