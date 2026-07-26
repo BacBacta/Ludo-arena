@@ -2204,10 +2204,11 @@ wss.on('connection', (ws, req) => {
         // not the device fingerprint, so a returning player shows up with a FRESH
         // 0-balance burner on a device that already drew its seed; the one-shot
         // gate then refused it forever ("This device already received its gas
-        // seed") and every mint died on funds. Bounding the device to the same
-        // seedCents × SEED_LIFETIME_MULT budget as a wallet re-seeds the
-        // replacement burner while capping what any one device can ever draw
-        // (fingerprints are spoofable — the pool cap is the real backstop).
+        // seed") and every mint died on funds. Giving the device a CENTS budget
+        // instead re-seeds the replacement burner while capping what any one
+        // device can ever draw. The device budget uses the FINGERPRINT multiple
+        // (×30), deliberately looser than a wallet's ×3, because a fingerprint is
+        // a device-model cohort — see fpCap below and the constants in race.ts.
         const fpPriorRaw = seedFpKey ? await store.getMeta(seedFpKey) : null;
         const fpDrawn = seedFpDrawCents(fpPriorRaw, raceFaucet.seedCents);
         const seedCap = raceFaucet.seedCents * SEED_LIFETIME_MULT;
@@ -2285,13 +2286,18 @@ wss.on('connection', (ws, req) => {
           session.send({ t: 'race.claimed', fundedCents: 0, alreadyFunded: true });
           break;
         }
-        // Per-device allowance: up to SEED_LIFETIME_MULT wallets may claim on one
-        // device — NOT a one-shot gate. Same wiped-burner trap as the gas seed
-        // (#58): "Clear site data" loses the claiming wallet's KEY, and a one-shot
-        // gate then locks the whole device out of the event forever, whatever
-        // replacement wallet it shows up with. The cap keeps farming bounded (one
-        // device backs at most 3 wallets; fingerprints are spoofable anyway — the
-        // soulbound Pass, the JIT drip and the pool cap carry the weight).
+        // Per-device allowance: up to SEED_FP_LIFETIME_MULT wallets may claim on
+        // one fingerprint (30 by default, env-tunable via RACE_SEED_FP_MULT) —
+        // NOT a one-shot gate. Same wiped-burner trap as the gas seed (#58):
+        // "Clear site data" loses the claiming wallet's KEY, and a one-shot gate
+        // then locks the whole device out of the event forever, whatever
+        // replacement wallet it shows up with.
+        // The number is deliberately generous because a "fingerprint" is a device
+        // MODEL COHORT, not a device: UA + language + screen + timezone + cores
+        // hash identically across two same-model phones in one region (see the
+        // constant's doc in race.ts). A tight cap therefore locks out real players
+        // who merely own a popular handset. Farming stays bounded by the soulbound
+        // Pass, the JIT drip and the pool cap — those carry the weight, not this.
         const fpPriorRaw = fpKey ? await store.getMeta(fpKey) : null;
         const fpWallets = claimFpWallets(fpPriorRaw);
         if (fpWallets.length >= SEED_FP_LIFETIME_MULT && !fpWallets.includes(rWallet.toLowerCase())) {
