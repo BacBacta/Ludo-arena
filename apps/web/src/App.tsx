@@ -29,6 +29,7 @@ import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTI
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, walletNativeWei, type Wallet, hasInjectedWallet } from './lib/minipay';
 import { entrySigningAddress, isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBlockedOnGas, raceClaimToastKey, raceEntryWalletKind, shouldRestoreBurnerAtBoot } from './lib/raceEntry';
+import { pickStrategy } from './lib/walletPick';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
 import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS, boardIsStale } from './lib/pacing';
@@ -226,32 +227,37 @@ export default function App() {
         void refreshBalance(burner);
         return true;
       }
-      // WHICH provider first? An INJECTED wallet always hands back the account
-      // it currently has selected: a dapp cannot make it switch, and there is no
-      // way to "disconnect" it from our side. So when the player explicitly asked
-      // for a DIFFERENT wallet, trying the injected provider first just returns
-      // the same account and the switch looks broken — the "I can't connect a new
-      // wallet" report. WalletConnect is the only path that actually lets them
-      // CHOOSE, so it goes first for an explicit switch; the normal connect keeps
-      // injected-first (fastest, no modal).
-      const wcFirst = pickDifferent && !silent && walletConnectAvailable();
-      // Explicit switch → FRESH pairing: kill the restored WC session so the
-      // wallet app's account picker actually opens (a reused session reconnects
-      // silently to the OLD account — the "connects without any signature"
-      // report — and the entry then seeds one address while the wallet signs
-      // with another).
-      let wallet = wcFirst ? await connectViaWalletConnect(true).catch(() => null) : null;
-      if (!wallet && !wcFirst) wallet = await connectWallet().catch(() => null);
-      // Fallback the other way: WalletConnect is also reachable when an injected
-      // provider EXISTS but yielded nothing (prompt refused, locked wallet). The
-      // old `!hasInjectedWallet()` gate made WC unreachable for those browsers —
-      // the one mechanism that could have offered a different wallet.
-      if (!wallet && !silent && walletConnectAvailable() && !wcFirst) {
-        wallet = await connectViaWalletConnect().catch(() => null);
+      // EXPLICIT SWITCH — which mechanism actually lets the player CHOOSE?
+      //   • Injected present (MetaMask's in-app browser, extension): the
+      //     injected ACCOUNT PICKER (wallet_requestPermissions). A plain
+      //     eth_requestAccounts silently returns the per-site remembered
+      //     account — "connect keeps bringing back the old accounts" — and a
+      //     WalletConnect modal from inside the MetaMask browser would pair
+      //     MetaMask to itself.
+      //   • No injected (plain mobile browser): a FRESH WalletConnect pairing
+      //     (session + storage purged) — its sheet carries the account choice.
+      const explicitSwitch = pickDifferent && !silent;
+      const strategy = explicitSwitch ? pickStrategy(hasInjectedWallet(), walletConnectAvailable()) : null;
+      let wallet: Wallet | null = null;
+      if (strategy === 'injected-picker') {
+        // A refused chooser resolves null and STOPS — falling through to a
+        // plain connect would silently reuse the exact account they refused.
+        wallet = await connectWallet(true).catch(() => null);
+      } else if (strategy === 'wc-fresh') {
+        wallet = await connectViaWalletConnect(true).catch(() => null);
+        // A dismissed WC modal can still fall back to the injected provider —
+        // there is no account-reuse hazard where no injected picker exists.
+        if (!wallet) wallet = await connectWallet().catch(() => null);
+      } else {
+        // Normal (non-switch) connect: injected first (fastest, no modal)…
+        wallet = await connectWallet().catch(() => null);
+        // …then WalletConnect, also reachable when an injected provider EXISTS
+        // but yielded nothing (prompt refused, locked wallet). The old
+        // `!hasInjectedWallet()` gate made WC unreachable for those browsers.
+        if (!wallet && !silent && walletConnectAvailable()) {
+          wallet = await connectViaWalletConnect().catch(() => null);
+        }
       }
-      // Explicit switch whose WalletConnect attempt failed → still try injected,
-      // so a dismissed modal doesn't leave the player with nothing.
-      if (!wallet && wcFirst) wallet = await connectWallet().catch(() => null);
       if (!wallet) {
         // Still nothing: a toast is a dead end when there's no provider AND no
         // WalletConnect — open the actionable MiniPay sheet instead. A
