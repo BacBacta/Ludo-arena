@@ -65,6 +65,7 @@ on:
           - race-status
           - onchain-activity
           - race-pass-mints
+          - race-unstick
           - race-audit
           - race-forensics
           - wallet-status
@@ -114,6 +115,10 @@ on:
         type: string
       wallet_address:
         description: 'wallet-status only: the address to probe (cUSD + CELO balance). e.g. the house-bot wallet.'
+        required: false
+        type: string
+      unstick_wallets:
+        description: 'race-unstick only: wallets wrongly told "already funded" (comma-separated 0x…). LEAVE EMPTY to DISCOVER every stuck wallet (report only). DRY RUN unless confirm=UNSTICK.'
         required: false
         type: string
       mints_day:
@@ -321,6 +326,26 @@ jobs:
           fi
           npm ci
           npm run race-status -w packages/contracts
+      # race-unstick: clears the Race entry records of NAMED wallets so a player
+      # wrongly told "already funded" (the resumeSession wallet bug, #143) can
+      # enter again. WRITE op — clearing a grant re-opens a claim, which SPENDS
+      # from the prize pool, so it is DRY RUN unless confirm=UNSTICK, it refuses a
+      # wallet whose grant appears to have landed, and it never touches the DEVICE
+      # records. Runs in-machine (needs the prod store); wallets sanitised to hex.
+      - name: race-unstick (re-open wallets stuck on "already funded")
+        if: ${{ inputs.operation == 'race-unstick' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          UNSTICK_WALLETS: ${{ inputs.unstick_wallets }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          SAFE=$(printf '%s' "${UNSTICK_WALLETS:-}" | tr -cd '0-9a-fA-Fx,')
+          if [ -z "$SAFE" ]; then echo "No wallet list given — DISCOVERY mode: every grant record is inspected and reported, nothing is written."; fi
+          APPLY=0
+          if [ "${CONFIRM:-}" = "UNSTICK" ]; then APPLY=1; echo "APPLY mode — records WILL be cleared."; else echo "DRY RUN (set confirm=UNSTICK to commit)."; fi
+          flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && UNSTICK_WALLETS=\"$SAFE\" APPLY=\"$APPLY\" npm run race-unstick -w apps/server'"
       # race-pass-mints: READ-ONLY — RacePass mints per UTC day, read straight
       # from the chain. Exists because Dune's Celo indexing runs hours behind, so
       # "how many wallets minted TODAY" is the one question it cannot answer. The

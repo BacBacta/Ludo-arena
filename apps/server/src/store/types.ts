@@ -324,6 +324,12 @@ export interface Store {
   // Generic key/value meta (e.g. the last-processed league week).
   getMeta(key: string): Promise<string | null>;
   setMeta(key: string, value: string): Promise<void>;
+  /** Every meta entry whose key starts with `prefix`, for OPS DISCOVERY.
+   *  Without it an operator can only inspect keys they can already name — which
+   *  is useless for finding the wallets a bug stranded, since those are exactly
+   *  the ones nobody wrote down. Blank values (the tombstone setMeta(k,'')
+   *  writes) are excluded, so a cleared record does not read as a live one. */
+  listMeta(prefix: string): Promise<Array<{ key: string; value: string }>>;
 }
 
 /** Stable player id: wallet when known, otherwise anonymous per-session. */
