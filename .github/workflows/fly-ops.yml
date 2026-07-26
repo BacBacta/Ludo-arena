@@ -118,7 +118,7 @@ on:
         required: false
         type: string
       unstick_wallets:
-        description: 'race-unstick only: wallets wrongly told "already funded" (comma-separated 0x…). DRY RUN unless confirm=UNSTICK.'
+        description: 'race-unstick only: wallets wrongly told "already funded" (comma-separated 0x…). LEAVE EMPTY to DISCOVER every stuck wallet (report only). DRY RUN unless confirm=UNSTICK.'
         required: false
         type: string
       mints_day:
@@ -342,7 +342,7 @@ jobs:
           set -eu
           if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
           SAFE=$(printf '%s' "${UNSTICK_WALLETS:-}" | tr -cd '0-9a-fA-Fx,')
-          if [ -z "$SAFE" ]; then echo "::error::set unstick_wallets to at least one 0x address"; exit 1; fi
+          if [ -z "$SAFE" ]; then echo "No wallet list given — DISCOVERY mode: every grant record is inspected and reported, nothing is written."; fi
           APPLY=0
           if [ "${CONFIRM:-}" = "UNSTICK" ]; then APPLY=1; echo "APPLY mode — records WILL be cleared."; else echo "DRY RUN (set confirm=UNSTICK to commit)."; fi
           flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && UNSTICK_WALLETS=\"$SAFE\" APPLY=\"$APPLY\" npm run race-unstick -w apps/server'"

@@ -569,4 +569,11 @@ export class MemoryStore implements Store {
   async setMeta(key: string, value: string): Promise<void> {
     this.meta.set(key, value);
   }
+  async listMeta(prefix: string): Promise<Array<{ key: string; value: string }>> {
+    const out: Array<{ key: string; value: string }> = [];
+    for (const [key, value] of this.meta) {
+      if (key.startsWith(prefix) && value !== '') out.push({ key, value });
+    }
+    return out.sort((a, b) => a.key.localeCompare(b.key));
+  }
 }

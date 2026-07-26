@@ -36,16 +36,6 @@ const env = (n: string): string | undefined => {
 };
 
 const raw = (env('UNSTICK_WALLETS') ?? '').trim();
-if (!raw) {
-  console.error('[race-unstick] set UNSTICK_WALLETS to a comma/space-separated list of wallet addresses.');
-  process.exit(1);
-}
-const wallets = [...new Set(raw.split(/[\s,]+/).map((w) => w.trim().toLowerCase()).filter((w) => /^0x[0-9a-f]{40}$/.test(w)))];
-if (wallets.length === 0) {
-  console.error('[race-unstick] no valid 0x… addresses parsed from UNSTICK_WALLETS.');
-  process.exit(1);
-}
-
 const APPLY = env('APPLY') === '1';
 const FORCE = env('FORCE') === '1';
 
@@ -82,6 +72,37 @@ async function balanceCents(w: Address): Promise<number | null> {
 
 const store = await createStore();
 
+// DISCOVERY. With no explicit list, scan every grant record — the operator
+// cannot name the stranded wallets, because the whole point of the bug is that
+// nobody ever saw those addresses succeed. Reading them out of the store is the
+// only way to find them.
+let wallets: string[];
+if (raw) {
+  wallets = [...new Set(raw.split(/[\s,]+/).map((w) => w.trim().toLowerCase()).filter((w) => /^0x[0-9a-f]{40}$/.test(w)))];
+  if (wallets.length === 0) {
+    console.error('[race-unstick] no valid 0x… addresses parsed from UNSTICK_WALLETS.');
+    process.exit(1);
+  }
+} else {
+  const records = await store.listMeta('race:grant:');
+  wallets = records.map((r) => r.key.slice('race:grant:'.length)).filter((w) => /^0x[0-9a-f]{40}$/.test(w));
+  console.log(`\n[race-unstick] DISCOVERY — ${wallets.length} wallet(s) hold a Race grant record.`);
+  if (wallets.length === 0) {
+    console.log('[race-unstick] nothing to inspect.');
+    process.exit(0);
+  }
+  if (APPLY) {
+    // Refusing this is the point: a blanket clear re-opens EVERY claim at once,
+    // which can drain the prize pool. Discovery reports; the operator then names
+    // the wallets they actually want re-opened.
+    console.error('[race-unstick] REFUSED: APPLY needs an explicit UNSTICK_WALLETS list.');
+    console.error('               Clearing every discovered record at once re-opens every claim');
+    console.error('               and can drain the pool. Run the discovery, read it, then pass the');
+    console.error('               addresses you decided on.');
+    process.exit(1);
+  }
+}
+
 console.log(`\n[race-unstick] ${APPLY ? 'APPLY' : 'DRY RUN'} · ${wallets.length} wallet(s) · chain=${chainName}`);
 if (!stablecoin) console.log('  NOTE: RACE_STABLECOIN_ADDRESS unset — balances unreadable, shown as "?".');
 console.log('');
@@ -112,6 +133,11 @@ for (const w of wallets) {
     skipped += 1;
     continue;
   }
+  // The signature of the resumeSession bug: a record exists, yet the wallet is
+  // empty — it was never actually paid, or it was marked "self-funded" off a gas
+  // seed it has since spent. Called out so a long discovery list can be skimmed.
+  const looksStuck = bal !== null && bal === 0;
+  if (looksStuck) console.log('     ⚑ STUCK — record present, wallet empty. Safe to clear.');
   // The one case where clearing PAYS TWICE: the record says money went out and
   // the wallet still holds at least that much.
   const alreadyPaid = grantCents !== null && grantCents > 0 && bal !== null && bal >= grantCents;

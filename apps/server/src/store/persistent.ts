@@ -970,4 +970,14 @@ export class PersistentStore implements Store {
       [key, value],
     );
   }
+  async listMeta(prefix: string): Promise<Array<{ key: string; value: string }>> {
+    // Escape the LIKE wildcards: a prefix carrying % or _ would silently widen
+    // the scan, and this feeds an ops tool that DELETES what it finds.
+    const escaped = prefix.replace(/([\\%_])/g, '\\$1');
+    const res = await this.pool.query<{ key: string; value: string }>(
+      `SELECT key, value FROM meta WHERE key LIKE $1 ESCAPE '\\' AND value <> '' ORDER BY key`,
+      [`${escaped}%`],
+    );
+    return res.rows;
+  }
 }
