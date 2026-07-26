@@ -67,6 +67,7 @@ import { Room4, BOT4_NAMES, type Seat4 } from './room4.js';
 import { sameDepositors } from './depositors.js';
 import { countryOf as geoCountryOf, isGeoBlocked as geoIsBlocked } from './geo.js';
 import { clientIpOf, sameNetwork } from './clientIp.js';
+import { racePolicy, relaxationWarnings, RACE_POLICY_DEFAULTS } from './policy.js';
 import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
@@ -2724,16 +2725,16 @@ function resumedGame(s: Session): ResumedGame | undefined {
 /** Anti multi-accounting gate (E5.3): message if the pairing must be refused, else null. */
 async function collusionBlock(a: Session, b: Session, stake: StakeCents): Promise<string | null> {
   if (stake <= 0) return null;
-  if (a.fingerprint && a.fingerprint === b.fingerprint) return 'Same-device play is not allowed for staked games.';
+  if (POLICY.blockSameDevice && a.fingerprint && a.fingerprint === b.fingerprint) return 'Same-device play is not allowed for staked games.';
   // Server-derived signal (not client-controlled like the fingerprint): refuse a
   // staked pairing between two sockets on the same IP. This only blocks pairing
   // the two of them together — each still matches other opponents — so shared-NAT
   // false positives cost nothing, while same-network chip-dumping is stopped.
-  if (sameNetwork(a.ip, b.ip)) return 'Same-network play is not allowed for staked games.';
+  if (POLICY.blockSameNetwork && sameNetwork(a.ip, b.ip)) return 'Same-network play is not allowed for staked games.';
   // Repeated-opponent cap is wallet-scoped (anon rows are ephemeral).
   if (a.wallet && b.wallet) {
     const played = await store.pairGamesToday(playerId(a.wallet, a.id), playerId(b.wallet, b.id), utcToday());
-    if (played >= MAX_DAILY_GAMES_VS_SAME) return 'Daily limit of staked games against this opponent reached.';
+    if (played >= POLICY.maxDailyVsSame) return 'Daily limit of staked games against this opponent reached.';
   }
   return null;
 }
@@ -2952,22 +2953,27 @@ async function startFreeroll(a: Session, b: Session): Promise<void> {
 /** Anti-spam window shared by race.seed and race.claim (both send a tx). The
  *  seed ack reports the REMAINING time as `retryInMs` so a client can wait
  *  exactly that long instead of minting on a wallet that was never funded. */
-const RACE_ACTION_WINDOW_MS = 3000;
+// The shared MAX_DAILY_GAMES_VS_SAME stays the authority for its default — the
+// policy layer makes it OVERRIDABLE, it does not restate its value.
+const POLICY_DEFAULTS = { ...RACE_POLICY_DEFAULTS, maxDailyVsSame: MAX_DAILY_GAMES_VS_SAME };
+const POLICY = racePolicy(process.env, POLICY_DEFAULTS);
+for (const w of relaxationWarnings(POLICY, POLICY_DEFAULTS)) console.warn(`[policy] RELAXED — ${w}`);
+const RACE_ACTION_WINDOW_MS = POLICY.actionWindowMs;
 /** How long a Race seeker waits before the bot may fill in — and only if NO
  *  human in the queue could ever be their opponent (see starvedWaiters). */
-const RACE_BOT_FALLBACK_MS = Number(process.env.RACE_BOT_FALLBACK_MS ?? 12_000);
+const RACE_BOT_FALLBACK_MS = POLICY.botFallbackMs;
 /** Hard deadline: past this the bot fills in even with a human queued. Guards
  *  against a peer that is queued but stuck (dead tab, wedged session) starving a
  *  seeker forever now that a queued human defers the bot. */
-const RACE_BOT_HARD_FALLBACK_MS = Number(process.env.RACE_BOT_HARD_FALLBACK_MS ?? 90_000);
+const RACE_BOT_HARD_FALLBACK_MS = POLICY.botHardFallbackMs;
 /** Games already played today between the SAME two Race wallets before a fresh
  *  pairing between them is treated as wash-trading — the seeker is routed to the
  *  bot instead (denies the reciprocal farm). 0 disables the intercept. */
-const RACE_COLLUSION_PAIR_CAP = Number(process.env.RACE_COLLUSION_PAIR_CAP ?? 3);
+const RACE_COLLUSION_PAIR_CAP = POLICY.collusionPairCap;
 /** Same-network pair cap — tighter than the open-internet one, but NOT zero:
  *  carrier-grade NAT (mobile Africa, this event's core audience) shares one
  *  address between thousands of unrelated players. 0 disables the tightening. */
-const RACE_COLLUSION_SAME_IP_PAIR_CAP = Number(process.env.RACE_COLLUSION_SAME_IP_PAIR_CAP ?? 2);
+const RACE_COLLUSION_SAME_IP_PAIR_CAP = POLICY.collusionSameIpPairCap;
 
 // Believable, indistinguishable opponent identities (operator disclosure choice).
 const BOT_NAMES = ['Kwame', 'Amara', 'Tunde', 'Zola', 'Kofi', 'Nadia', 'Sipho', 'Ama', 'Jabari', 'Imani', 'Chidi', 'Aya'];
