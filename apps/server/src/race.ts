@@ -526,12 +526,14 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   // approve+join txs, and the pool bounds total exposure to ~250 wallets.
   // Requires the faucet wallet to HOLD native CELO (ops top-up); a dry faucet
   // fails each request with a message naming its balance, spending nothing.
-  // 0.01 CELO (~½¢): ~100× a real mint fee. The first 0.002 target was enough
-  // on-chain but left NO margin against wallet-app fee RESERVATIONS (MetaMask
-  // blocks confirmation when gasLimit×maxFee exceeds the balance, and its
-  // estimates run far above actual cost) — the red-fees popup reports.
-  const nativeSeedWei = parseCeloEnvWei(env.RACE_NATIVE_SEED_CELO, 10_000_000_000_000_000n); // 0.01 CELO
-  const nativePoolWei = parseCeloEnvWei(env.RACE_NATIVE_POOL_CELO, 1_500_000_000_000_000_000n); // 1.5 CELO (~150 wallets)
+  // 0.03 CELO (~1.2¢): ~300× a real mint fee (~3e-5 CELO) and ~20% above even
+  // MetaMask's most inflated fee DISPLAY observed in production ("<0.01 $US" ≈
+  // up to 0.025 CELO). The ladder of this default: 0.002 was enough on-chain
+  // but inside wallet-reservation range; 0.01 cleared honest reservations;
+  // 0.03 clears the dishonest ones too. Wallets must never bounce a sponsored
+  // player on fees again — that is the entire promise of this seed.
+  const nativeSeedWei = parseCeloEnvWei(env.RACE_NATIVE_SEED_CELO, 30_000_000_000_000_000n); // 0.03 CELO
+  const nativePoolWei = parseCeloEnvWei(env.RACE_NATIVE_POOL_CELO, 3_000_000_000_000_000_000n); // 3 CELO (~100 wallets)
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
   // Gas fee-currency = FEE_CURRENCY ?? the deployment's adapter ?? the stake token
