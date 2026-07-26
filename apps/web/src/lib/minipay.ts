@@ -7,12 +7,11 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
-  http,
   type Address,
   type PublicClient,
   type WalletClient,
 } from 'viem';
-import { activeChain } from './chains';
+import { activeChain, chainTransport } from './chains';
 import { deploymentForChain, feeCurrencyFor, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
 import { buyCosmeticCusd, feeCurrencyBudgetWei, planFeeExtras, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
@@ -73,7 +72,9 @@ export async function connectWalletWith(provider: Eip1193Provider): Promise<Wall
   if (!address) return null;
   // Celo mines ~1s blocks; viem's default 4s receipt polling quadruples the
   // wait on every approve/join — the bulk of the paired-players' staking lag.
-  const publicClient = createPublicClient({ chain: activeChain, transport: http(), pollingInterval: 1_000 });
+  // chainTransport: forno + public fallbacks — forno alone rate-limits the
+  // exact devices that retry the most (see chains.ts).
+  const publicClient = createPublicClient({ chain: activeChain, transport: chainTransport(), pollingInterval: 1_000 });
   // Celo chains add custom tx/block formatters, so the inferred client types
   // diverge from viem's plain Wallet/PublicClient; flatten at this boundary.
   return {
