@@ -12,7 +12,7 @@ import {
   type WalletClient,
 } from 'viem';
 import { activeChain, chainTransport } from './chains';
-import { forceAccountPicker } from './walletPick';
+import { forceAccountPicker, isUserRejection } from './walletPick';
 import { deploymentForChain, feeCurrencyFor, racePassFor } from './deployments';
 import { assertServerEscrow } from './settlementGuard';
 import { buyCosmeticCusd, feeCurrencyBudgetWei, planFeeExtras, stakeInEscrow, stakeInEscrowN, tokenBalanceCents, type StakeStatus } from './escrow';
@@ -312,6 +312,11 @@ export async function mintRacePass(wallet: Wallet): Promise<Hex> {
       // No cap can both clear the base fee and fit the balance — more attempts
       // only burn what little is left. Surface the numbers instead.
       if (e instanceof InsufficientGasBudgetError) throw e;
+      // A prompt the user REFUSED must never re-pop (the escrow ladders already
+      // had this guard; the mint ladder did not — each tap could fire up to
+      // three popups, which is also what fed MetaMask's "large number of
+      // requests" site throttle during the operator's session).
+      if (isUserRejection(e)) throw e;
       lastError = e;
       plan = nextFeePlan(plan, classifyTxFailure(e));
     }
