@@ -60,6 +60,7 @@ on:
           - unset-escrow-addresses
           - unset-staking-allowed-countries
           - arm-mainnet
+          - race-funding
           - set-tier-rake
           - allow-token
           - race-status
@@ -119,6 +120,18 @@ on:
         type: string
       unstick_wallets:
         description: 'race-unstick only: wallets wrongly told "already funded" (comma-separated 0x…). LEAVE EMPTY to DISCOVER every stuck wallet (report only). DRY RUN unless confirm=UNSTICK.'
+        required: false
+        type: string
+      per_game_cents:
+        description: 'race-funding only: RACE_PER_GAME_CENTS — cUSD granted per event game (stake 1c + margin). Empty = leave unchanged.'
+        required: false
+        type: string
+      quota_cents:
+        description: 'race-funding only: RACE_QUOTA_CENTS — lifetime cUSD funding per wallet. Empty = leave unchanged.'
+        required: false
+        type: string
+      native_seed_celo:
+        description: 'race-funding only: RACE_NATIVE_SEED_CELO — native gas sponsorship per external wallet (decimal CELO, e.g. 0.05). Empty = leave unchanged.'
         required: false
         type: string
       mints_day:
@@ -486,8 +499,8 @@ jobs:
             echo "RACE_WEEK_ACTIVE=true"
             echo "RACE_JIT_FUNDING=true"
             echo "RACE_FEE_IN_STABLE=true"
-            echo "RACE_QUOTA_CENTS=10"
-            echo "RACE_PER_GAME_CENTS=2"
+            echo "RACE_QUOTA_CENTS=20"
+            echo "RACE_PER_GAME_CENTS=4"
             echo "RACE_POOL_CENTS=3000"
             echo "RACE_SEED_CENTS=${RACE_SEED_CENTS:-10}"
             echo "ARBITER_PRIVATE_KEY=$ARBITER_PRIVATE_KEY"
@@ -503,6 +516,36 @@ jobs:
           else
             echo "STAKING_ENABLED left UNSET — mainnet free play + Race Week are armed; staked play stays OFF (R-COMP-2 gate). Re-run with enable_staking=true after sign-off."
           fi
+      # race-funding: adjust the per-game/quota cUSD grants and the native CELO
+      # sponsorship WITHOUT a full arm-mainnet re-import. arm-mainnet pinned
+      # RACE_PER_GAME_CENTS / RACE_QUOTA_CENTS as Fly secrets, so code-default
+      # bumps alone cannot change production ("insufficient balance to stake"
+      # on external wallets sitting at the 2c edge). Values are sanitized to
+      # digits/dot and only the provided knobs are touched; one `secrets set`
+      # = one restart. The server parses defensively (policy.ts-style), so a
+      # bad value falls back to the code default rather than disarming.
+      - name: race-funding (adjust per-game / quota / native sponsorship)
+        if: ${{ inputs.operation == 'race-funding' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          PER_GAME: ${{ inputs.per_game_cents }}
+          QUOTA: ${{ inputs.quota_cents }}
+          NATIVE: ${{ inputs.native_seed_celo }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          PG=$(printf '%s' "${PER_GAME:-}" | tr -cd '0-9')
+          QC=$(printf '%s' "${QUOTA:-}" | tr -cd '0-9')
+          NS=$(printf '%s' "${NATIVE:-}" | tr -cd '0-9.')
+          ARGS=""
+          [ -n "$PG" ] && ARGS="$ARGS RACE_PER_GAME_CENTS=$PG"
+          [ -n "$QC" ] && ARGS="$ARGS RACE_QUOTA_CENTS=$QC"
+          [ -n "$NS" ] && ARGS="$ARGS RACE_NATIVE_SEED_CELO=$NS"
+          if [ -z "$ARGS" ]; then echo "::error::provide at least one of per_game_cents / quota_cents / native_seed_celo"; exit 1; fi
+          echo "Setting:$ARGS"
+          # shellcheck disable=SC2086
+          flyctl secrets set -a ludo-arena $ARGS
+          echo "Done — the machine restarts with the new funding."
       # reset-race-board: wipe the Race Week leaderboard for a clean pre-launch
       # slate. Runs INSIDE the machine (via ssh) because the store (Redis/Postgres)
       # is only reachable from there — the reset uses the server's own createStore,
