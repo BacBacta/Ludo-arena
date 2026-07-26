@@ -15,7 +15,8 @@ import type { Game4 } from '@ludo/game-engine';
 import { Remote4, type Match4Info, type Over4Info } from '../lib/remote4';
 import type { WalletAuth } from '../lib/session';
 import type { StakeStatus } from '../lib/escrow';
-import { playCapture, playDice, playWin } from '../lib/sound';
+import { playCapture, playDice, playPawnHome, playWin } from '../lib/sound';
+import { countFinished, homeTier } from '../lib/homeCelebration';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { skinById, skinSound } from '../lib/diceSkins';
 import { tokenSkinById, type TokenPattern } from '../lib/tokenSkins';
@@ -86,6 +87,8 @@ export function Game4OnlineScreen({
   playersRef.current = players;
   const winFired = useRef(false);
   const overRef = useRef<Over4Info | null>(null);
+  // Last known board, so a server move can be diffed for MY pawn-home tier.
+  const prevPos4Ref = useRef<number[][] | null>(null);
 
   // Open the session once on mount; a fresh Remote4 is created per "play again".
   useEffect(() => {
@@ -98,6 +101,7 @@ export function Game4OnlineScreen({
     remoteRef.current?.dispose();
     winFired.current = false;
     overRef.current = null;
+    prevPos4Ref.current = null; // rematch: last game's board must not fake a tier
     dispatch({ type: 'CLEAR_EMOTES' }); // rematch reuses this screen; drop last game's emotes
     setStatus('connecting');
     setPlayers([]);
@@ -129,6 +133,7 @@ export function Game4OnlineScreen({
           }
         },
         onState: (state) => {
+          prevPos4Ref.current = state.positions;
           setGame(state);
           setActiveTurn(state.turn);
           setStatus('playing');
@@ -141,6 +146,12 @@ export function Game4OnlineScreen({
         },
         onMoved: (_seat, _token, capture, state) => {
           if (capture) playCapture();
+          // Server-authoritative board: diff MY seat's home count across the
+          // broadcast to earn the celebration tier (win itself is playWin's).
+          const me = mySeatRef.current;
+          const tier = homeTier(countFinished(prevPos4Ref.current?.[me]), countFinished(state.positions[me]));
+          playPawnHome(tier);
+          prevPos4Ref.current = state.positions;
           setGame(state);
           setRolling(false);
         },

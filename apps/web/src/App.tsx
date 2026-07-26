@@ -34,7 +34,8 @@ import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnec
 import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS, boardIsStale } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
-import { playCapture, playDice, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
+import { playCapture, playDice, playPawnHome, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
+import { countFinished, homeTier } from './lib/homeCelebration';
 import { recordGameResult, skinById, skinSound } from './lib/diceSkins';
 import { t } from './lib/i18n';
 
@@ -537,6 +538,14 @@ export default function App() {
         const prev = prevPositionsRef.current;
         const steps = prev ? walkSteps(prev, game.positions) : 1;
         animUntilRef.current = Date.now() + steps * WALK_STEP_MS + WALK_TWEEN_MS;
+        // Pawn-home ladder (A3) for MY pawns on a server-driven move (the
+        // optimistic tap path already celebrated its own prediction). Timed to
+        // land when the walk animation arrives, not at message time.
+        const homeSeat = matchSeatRef.current;
+        if (homeSeat !== null) {
+          const tier = homeTier(countFinished(prev?.[homeSeat]), countFinished(game.positions[homeSeat]));
+          playPawnHome(tier, steps * WALK_STEP_MS + WALK_TWEEN_MS);
+        }
         prevPositionsRef.current = game.positions;
         if (capture) playCapture();
         dispatch({ type: 'MOVED', game, capture });
@@ -1112,6 +1121,12 @@ export default function App() {
         movedSinceDiceRef.current = true;
         if (events.capture) playCapture();
         const steps = walkSteps(g.positions, state.positions);
+        // Pawn-home ladder (A3): the engine says THIS move brought a token
+        // home — celebrate at arrival (end of the walk we just started).
+        if (events.finished) {
+          const after = countFinished(state.positions[mySeat]);
+          playPawnHome(homeTier(after - 1, after), steps * WALK_STEP_MS + WALK_TWEEN_MS);
+        }
         animUntilRef.current = Date.now() + steps * WALK_STEP_MS + WALK_TWEEN_MS;
         prevPositionsRef.current = state.positions;
         dispatch({ type: 'MOVED', game: state, capture: events.capture });
