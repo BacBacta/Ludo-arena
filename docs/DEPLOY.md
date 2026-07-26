@@ -358,8 +358,8 @@ so a change takes effect in one step, no build:
 | `RACE_MAX_DAILY_VS_SAME` | `3` | Parties misées par jour contre le **même adversaire** avant refus. Minimum 1. |
 | `RACE_SEED_FP_MULT` | `30` | Wallets par **empreinte d'appareil** (réclamations) et multiple du budget gas par appareil. |
 | `RACE_SEED_WALLET_MULT` | `3` | Multiple du budget gas à vie d'**un wallet** (`seedCents × N`). |
-| `RACE_NATIVE_SEED_CELO` | `0.002` | Sponsor de gas **natif** par wallet **externe** (MetaMask/WC — pas de CIP-64, donc gas en CELO). `0` désactive. Mêmes multiplicateurs ×3/×30 que le seed cUSD, compteurs séparés (wei). **Le faucet doit détenir du CELO natif** (top-up ops : simple transfert CELO vers son adresse). |
-| `RACE_NATIVE_POOL_CELO` | `0.5` | Plafond **total** du sponsor natif (l'exposition maximale, ≈250 wallets au target par défaut). |
+| `RACE_NATIVE_SEED_CELO` | `0.01` | Sponsor de gas **natif** par wallet **externe** (MetaMask/WC — pas de CIP-64, donc gas en CELO). `0` désactive. Mêmes multiplicateurs ×3/×30 que le seed cUSD, compteurs séparés (wei). ~100× le coût réel d'un mint : la marge absorbe les **réservations** de frais des wallets (MetaMask bloque si gasLimit×maxFee > solde). **Le faucet doit détenir du CELO natif.** |
+| `RACE_NATIVE_POOL_CELO` | `1.5` | Plafond **total** du sponsor natif (l'exposition maximale, ≈150 wallets au target par défaut). |
 | `STAKE_BLOCK_SAME_DEVICE` | `true` | Refuse une partie misée entre deux sessions de **même empreinte**. `false` pour tester à deux profils sur un seul téléphone. |
 | `STAKE_BLOCK_SAME_NETWORK` | `true` | Refuse une partie misée entre deux sessions de **même IP**. `false` est défendable en marché CGNAT. |
 
