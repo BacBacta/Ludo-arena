@@ -63,16 +63,6 @@ export function mintBlockedOnGas(
   return nativeWei !== null && nativeWei < minNativeWei;
 }
 
-/** Which toast to show when the gas gate blocks the mint. On the SPONSORED
- *  (external) path, a seed that returned NOTHING (null — socket timeout) is
- *  almost always the SIWE signature still sitting unapproved in the wallet app
- *  (the mobile app-hop): tell the player to approve it, not "try again in a
- *  moment" — that vague line was the 0x9819 report. A server refusal keeps the
- *  server's own words (handled by the caller before this). */
-export function seedFailureToastKey(sponsorNative: boolean, seedTimedOut: boolean): 'raceSignNeeded' | 'raceSeedStalled' {
-  return sponsorNative && seedTimedOut ? 'raceSignNeeded' : 'raceSeedStalled';
-}
-
 /** Which toast a race.claimed ack deserves. `selfFunded` (new) marks a FIRST
  *  registration that drew nothing because the wallet already covers a stake —
  *  telling that player "already funded" read as a refusal (the operator's own

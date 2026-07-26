@@ -28,7 +28,7 @@ import { describeTxError } from './lib/txError';
 import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, ESTIMATE_REVERTED_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, walletNativeWei, type Wallet, hasInjectedWallet } from './lib/minipay';
-import { isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBlockedOnGas, raceClaimToastKey, raceEntryWalletKind, seedFailureToastKey, shouldRestoreBurnerAtBoot } from './lib/raceEntry';
+import { isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBlockedOnGas, raceClaimToastKey, raceEntryWalletKind, shouldRestoreBurnerAtBoot } from './lib/raceEntry';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
 import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS, boardIsStale } from './lib/pacing';
@@ -1397,13 +1397,19 @@ export default function App() {
           // (burner/MiniPay, CIP-64), native CELO for an external wallet — the
           // platform sponsors that too (race.seed { native: true }).
           const sponsorNative = !wallet.payGasInStable;
-          let seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer, sponsorNative).catch((e) => { console.error('[race] seed threw:', e); return null; });
+          // The sponsored (native) seed sends NO signer: the server accepts it
+          // unproven (a seed is a gift to the named address — see the handler's
+          // proof-policy comment). The SIWE popup never surfaces on its own in
+          // the WalletConnect mobile app-hop, so requiring it left the entry
+          // spinning behind a signature the player never saw.
+          const seedSigner = sponsorNative ? undefined : signer;
+          let seedRes = await sendRaceSeed(SERVER_URL, wallet.address, seedSigner, sponsorNative).catch((e) => { console.error('[race] seed threw:', e); return null; });
           console.log('[race] seed result:', JSON.stringify(seedRes));
           for (let tries = 0; tries < 2 && seedRes && !('error' in seedRes) && seedRes.rateLimited; tries++) {
             const waitMs = Math.min(5000, Math.max(500, seedRes.retryInMs ?? 3200)) + 250;
             console.log('[race] seed rate-limited — retrying in %sms', waitMs);
             await new Promise((r) => setTimeout(r, waitMs));
-            seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer, sponsorNative).catch((e) => { console.error('[race] seed retry threw:', e); return null; });
+            seedRes = await sendRaceSeed(SERVER_URL, wallet.address, seedSigner, sponsorNative).catch((e) => { console.error('[race] seed retry threw:', e); return null; });
             console.log('[race] seed retry result:', JSON.stringify(seedRes));
           }
           if (seedRes && 'error' in seedRes) seedError = seedRes.error;
@@ -1433,10 +1439,7 @@ export default function App() {
           // failed READ, not an empty wallet — fail OPEN and let the mint try.
           if (mintBlockedOnGas(wallet.payGasInStable, balCents, MIN_MINT_GAS_CENTS, nativeWei)) {
             console.error('[race] aborting mint: gas below floor (stable=%sc native=%s wei) — seed did not land', balCents, nativeWei?.toString() ?? 'null');
-            // A null seed on the sponsored path is almost always the SIWE
-            // signature still unapproved in the wallet app (mobile app-hop) —
-            // say THAT, not a vague "try again" (the 0x9819 report).
-            dispatch({ type: 'TOAST', message: seedError ?? t(seedFailureToastKey(sponsorNative, seedRes === null)) });
+            dispatch({ type: 'TOAST', message: seedError ?? t('raceSeedStalled') });
             return;
           }
         }

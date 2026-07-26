@@ -122,3 +122,31 @@ describe('the allowance multipliers are shared with the cUSD seed', () => {
     expect(fpCap >= cap).toBe(true);
   });
 });
+
+describe('proof policy — the seed gate, transcribed from the handler', () => {
+  // The rule in index.ts race.seed:
+  //   if (!session.wallet || (!session.walletProven && !wantNative)) refuse;
+  // A seed is a transfer TO the address the client names — a gift — so proving
+  // control stops no abuse on the NATIVE path (caps + pool + anti-spam carry
+  // the weight). Requiring it cost the mobile flow a SIWE popup that never
+  // surfaces on its own in the WalletConnect app-hop: the entry spun forever
+  // behind a signature the player never saw (the 0x9819 loop report). The cUSD
+  // seed keeps the proof: burners sign locally at zero UX cost, and changing a
+  // battle-tested gate mid-event needs a reason — there is none.
+  const mayServeSeed = (wallet: string | undefined, proven: boolean, wantNative: boolean): boolean =>
+    !!wallet && (proven || wantNative);
+
+  it('NATIVE sponsorship serves an UNPROVEN wallet (the mobile-app-hop fix)', () => {
+    expect(mayServeSeed('0x9819c9e1b4f634784fd9a286240ecacd297823fa', false, true)).toBe(true);
+  });
+
+  it('the cUSD seed still requires the proof', () => {
+    expect(mayServeSeed('0xabc', false, false)).toBe(false);
+    expect(mayServeSeed('0xabc', true, false)).toBe(true);
+  });
+
+  it('no wallet on the session → refused on every path', () => {
+    expect(mayServeSeed(undefined, true, true)).toBe(false);
+    expect(mayServeSeed(undefined, true, false)).toBe(false);
+  });
+});
