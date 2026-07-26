@@ -63,6 +63,17 @@ export function mintBlockedOnGas(
   return nativeWei !== null && nativeWei < minNativeWei;
 }
 
+/** The address the entry must run on: the wallet app's ACTIVE account when it
+ *  differs from the one paired earlier. MetaMask signs with its active account
+ *  whatever `from` the dapp announces — a player who switched accounts after
+ *  pairing got the seed on address A and a mint popup signing with address B
+ *  ("Awale owner 1", 0 CELO, blocked on fees). Following the active account at
+ *  tap time keeps the seeded address and the signing address the same one.
+ *  An unreadable active account (undefined) keeps the paired address. */
+export function entrySigningAddress<T extends string>(paired: T, active: T | undefined): T {
+  return active && active.toLowerCase() !== paired.toLowerCase() ? active : paired;
+}
+
 /** Which toast a race.claimed ack deserves. `selfFunded` (new) marks a FIRST
  *  registration that drew nothing because the wallet already covers a stake —
  *  telling that player "already funded" read as a refusal (the operator's own

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  entrySigningAddress,
   isBurnerAddress,
   MIN_MINT_GAS_NATIVE_WEI,
   mintBlockedOnGas,
@@ -93,6 +94,25 @@ describe('mintBlockedOnGas — each gas mode checks ITS OWN balance', () => {
   it('the native floor sits well under the sponsorship target (no deadlock)', () => {
     const sponsorTarget = 2_000_000_000_000_000n; // server default: 0.002 CELO
     expect(MIN_MINT_GAS_NATIVE_WEI < sponsorTarget).toBe(true);
+  });
+});
+
+describe('entrySigningAddress — the entry follows the account that will SIGN', () => {
+  const PAIRED = '0x5CC4d5177ea4525AF5764D8d5F18dE9A0FF95fAB';
+  const ACTIVE = '0x1234567890123456789012345678901234567890';
+
+  it('follows the wallet app\'s active account when it changed after pairing', () => {
+    // The "Awale owner 1" report: seed sent to the paired address, mint popup
+    // signing with the ACTIVE one — 0 CELO, blocked in red on fees.
+    expect(entrySigningAddress(PAIRED, ACTIVE)).toBe(ACTIVE);
+  });
+
+  it('keeps the paired address when the active one matches (any casing)', () => {
+    expect(entrySigningAddress(PAIRED, PAIRED.toLowerCase())).toBe(PAIRED);
+  });
+
+  it('keeps the paired address when the active account is unreadable', () => {
+    expect(entrySigningAddress(PAIRED, undefined)).toBe(PAIRED);
   });
 });
 
