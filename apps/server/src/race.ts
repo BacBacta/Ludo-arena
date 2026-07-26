@@ -511,7 +511,11 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   // Anti-fund-and-run (mainnet): drip the quota one stake at a time instead of a
   // lump sum. Default OFF → the current lump-sum event is unaffected until armed.
   const jit = (env.RACE_JIT_FUNDING ?? '').trim() === 'true';
-  const perGameCents = Math.max(1, Number(env.RACE_PER_GAME_CENTS ?? '2')); // 1¢ stake + gas buffer
+  // 4¢ = the 1¢ stake + real margin. At 2¢ an external (MetaMask) wallet sat
+  // right at the edge and its wallet-side checks read "insufficient balance"
+  // when trying to stake. Balance-aware drip: a wallet already covered draws
+  // NOTHING, so the raise only helps wallets that actually need it.
+  const perGameCents = Math.max(1, Number(env.RACE_PER_GAME_CENTS ?? '4'));
   // B1 (non-MiniPay launch): pay faucet gas in cUSD so the faucet wallet needs no
   // native CELO. Opt-in (Celo fee abstraction only), default off → unchanged.
   const feeInStable = (env.RACE_FEE_IN_STABLE ?? '').trim() === 'true';
@@ -532,8 +536,11 @@ export function createRaceFaucet(env: NodeJS.ProcessEnv = process.env): RaceFauc
   // but inside wallet-reservation range; 0.01 cleared honest reservations;
   // 0.03 clears the dishonest ones too. Wallets must never bounce a sponsored
   // player on fees again — that is the entire promise of this seed.
-  const nativeSeedWei = parseCeloEnvWei(env.RACE_NATIVE_SEED_CELO, 30_000_000_000_000_000n); // 0.03 CELO
-  const nativePoolWei = parseCeloEnvWei(env.RACE_NATIVE_POOL_CELO, 3_000_000_000_000_000_000n); // 3 CELO (~100 wallets)
+  // 0.05: staking chains TWO more wallet-priced txs (approve + join) after the
+  // mint, each carrying its own inflated fee reservation — one target must
+  // cover the trio with margin ("insufficient balance to stake" report).
+  const nativeSeedWei = parseCeloEnvWei(env.RACE_NATIVE_SEED_CELO, 50_000_000_000_000_000n); // 0.05 CELO
+  const nativePoolWei = parseCeloEnvWei(env.RACE_NATIVE_POOL_CELO, 4_000_000_000_000_000_000n); // 4 CELO (~80 wallets)
   const rpc = env.SETTLEMENT_RPC?.trim() || undefined;
   const pk = (key.startsWith('0x') ? key : `0x${key}`) as Hex;
   // Gas fee-currency = FEE_CURRENCY ?? the deployment's adapter ?? the stake token
