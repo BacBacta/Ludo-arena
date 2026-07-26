@@ -1258,7 +1258,13 @@ export function sendRaceClaim(
         /* already closing */
       }
     };
-    const timer = setTimeout(() => done(null), 30000); // chain verify + transfer
+    // 30 s covers the chain verify + transfer when the signer is LOCAL (burner:
+    // in-page key, no popup). An EXTERNAL signer (MetaMask/WC) adds a HUMAN
+    // round-trip — switch apps, read, approve, switch back — which routinely
+    // exceeds 30 s on mobile; timing out under them returns null and the flow
+    // reports a failure for a signature the player was still in the middle of
+    // approving (the 0x9819 report: "could not send your entry gas").
+    const timer = setTimeout(() => done(null), signMessage && !isMiniPay() ? 120000 : 30000);
     const sendClaim = (): void => {
       if (claimSent) return;
       claimSent = true;
@@ -1363,7 +1369,10 @@ export function sendRaceSeed(
         /* already closing */
       }
     };
-    const timer = setTimeout(() => done(null), 30000); // transfer + receipt
+    // Same budget rule as sendRaceClaim: 30 s fits a local signer (transfer +
+    // receipt), but an external signer inserts a human app-hop for the SIWE
+    // signature — give them 120 s instead of failing under their finger.
+    const timer = setTimeout(() => done(null), signMessage && !isMiniPay() ? 120000 : 30000);
     const sendSeed = (): void => {
       if (seedSent) return;
       seedSent = true;

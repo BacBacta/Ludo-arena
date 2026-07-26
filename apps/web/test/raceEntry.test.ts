@@ -5,6 +5,7 @@ import {
   mintBlockedOnGas,
   raceClaimToastKey,
   raceEntryWalletKind,
+  seedFailureToastKey,
   shouldRestoreBurnerAtBoot,
 } from '../src/lib/raceEntry';
 
@@ -93,6 +94,23 @@ describe('mintBlockedOnGas — each gas mode checks ITS OWN balance', () => {
   it('the native floor sits well under the sponsorship target (no deadlock)', () => {
     const sponsorTarget = 2_000_000_000_000_000n; // server default: 0.002 CELO
     expect(MIN_MINT_GAS_NATIVE_WEI < sponsorTarget).toBe(true);
+  });
+});
+
+describe('seedFailureToastKey — a pending signature must not read as a server failure', () => {
+  it('sponsored path + seed timeout → tell them to APPROVE THE SIGNATURE', () => {
+    // The 0x9819 report: the SIWE prove sat unapproved in the MetaMask app, the
+    // one-shot timed out, and the player was told "we could not send your gas".
+    expect(seedFailureToastKey(true, true)).toBe('raceSignNeeded');
+  });
+
+  it('sponsored path with a seed REPLY that still left no gas → the stall toast', () => {
+    expect(seedFailureToastKey(true, false)).toBe('raceSeedStalled');
+  });
+
+  it('burner path keeps the stall toast (its signature never leaves the page)', () => {
+    expect(seedFailureToastKey(false, true)).toBe('raceSeedStalled');
+    expect(seedFailureToastKey(false, false)).toBe('raceSeedStalled');
   });
 });
 
