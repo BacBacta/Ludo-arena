@@ -82,6 +82,13 @@ const FILES: Record<string, string> = {
   g_boba: 'gifts/bubbletea.mp3',
   g_beer: 'gifts/beer.mp3',
   g_cake: 'gifts/cake.mp3',
+  // Pawn-home celebration ladder (A3). These files are OPTIONAL premium
+  // stingers (to be auditioned + dropped in public/sfx/home/ — Kenney Music
+  // Jingles CC0 / Mixkit achievement stingers, same licences as the rest of
+  // the bank). Until they exist, playPawnHome composes a layered fallback
+  // from the core samples — the feature never waits on an asset batch.
+  home_first: 'home/first.mp3',
+  home_progress: 'home/progress.mp3',
   // Per-material premium dice roll sounds (chosen in the cosmetics lab).
   dice_gold: 'dice/gold.mp3',
   dice_obsidian: 'dice/obsidian.mp3',
@@ -241,6 +248,39 @@ export function playCapture(): void {
 export function playWin(): void {
   playSample('confirm', { gain: 1 });
   playSample('coin', { gain: 0.7, delay: 0.16 });
+}
+
+/**
+ * Pawn-home celebration ladder (A3): 'first' = the premium arrival (one per
+ * game — the player's FIRST pawn home), 'progress' = a brief cue for the 2nd
+ * and 3rd, 'final'/'none' = silent here (the 4th is playWin's moment).
+ *
+ * Sample-first: if a dedicated stinger exists in public/sfx/home/ it plays;
+ * otherwise a LAYERED composition of the core samples covers the moment —
+ * arrival impact (low pawn thud) + triumph chord (confirm, pitched up so it
+ * never reads as the win fanfare) + reward tail (coin cascade, delayed the way
+ * reward cues stack in the best 2025/26 mobile titles). `delayMs` lets the
+ * caller land the sound ON the pawn's arrival, not at message time.
+ */
+export function playPawnHome(tier: 'first' | 'progress' | 'final' | 'none', delayMs = 0): void {
+  if (tier !== 'first' && tier !== 'progress') return;
+  if (!soundEnabled()) return;
+  const d = Math.max(0, delayMs) / 1000;
+  const name = tier === 'first' ? 'home_first' : 'home_progress';
+  void load(name).then(() => {
+    if (buffers[name]) {
+      playSample(name, { gain: tier === 'first' ? 0.95 : 0.75, maxDur: tier === 'first' ? 2.8 : 1.4, delay: d });
+      return;
+    }
+    if (tier === 'first') {
+      playSample('pawn', { gain: 0.9, rate: 0.7, delay: d }); // arrival weight
+      playSample('confirm', { gain: 1.0, rate: 1.05, delay: d + 0.02 }); // triumph
+      playSample('coin', { gain: 0.85, delay: d + 0.16 }); // the reward tail
+    } else {
+      playSample('pawn', { gain: 0.7, rate: 0.85, delay: d });
+      playSample('confirm', { gain: 0.55, rate: 1.22, delay: d + 0.02, maxDur: 0.9 });
+    }
+  });
 }
 
 /** No dedicated loss sample yet — a soft, brief synth sigh (kept minimal so it

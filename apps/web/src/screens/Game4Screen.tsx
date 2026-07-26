@@ -13,7 +13,8 @@ import { IconMenu } from '../components/icons';
 import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
 import { EMOTES } from '@ludo/shared';
 import { BOT_MOVE_MS, BOT_ROLL_MS, DIE_SETTLE_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
-import { playCapture, playDice, playWin } from '../lib/sound';
+import { playCapture, playDice, playPawnHome, playWin } from '../lib/sound';
+import { countFinished, homeTier } from '../lib/homeCelebration';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { tokenSkinById } from '../lib/tokenSkins';
 import { VictoryFxOverlay } from '../components/CosmeticFx';
@@ -104,6 +105,12 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
     const steps = oldRel >= 0 ? Math.max(1, newRel - oldRel) : 1;
     animRef.current = steps * WALK_STEP_MS + WALK_TWEEN_MS;
     if (res.events.capture) playCapture();
+    // My pawn reaching home earns its celebration tier (bots stay silent so the
+    // ladder keeps signalling MY progress, not table noise).
+    if (res.events.finished && seat === mySeat) {
+      const after = countFinished(res.state.positions[seat]);
+      playPawnHome(homeTier(after - 1, after), animRef.current);
+    }
     maybeBotEmote(seat, res.events.capture);
     setGame(res.state);
   }
