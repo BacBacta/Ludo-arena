@@ -58,12 +58,25 @@ async function getProvider(projectId: string): Promise<{ request(args: { method:
  * chain, or null when unconfigured / the user dismisses the modal. The returned
  * provider satisfies EIP-1193, so it drives the same viem stake/mint/sign paths
  * as the injected wallet (non-MiniPay → standard gas, personal_sign works).
+ *
+ * `fresh: true` — TEAR DOWN any restored session first, so the wallet app shows
+ * its pairing sheet again and the player actually PICKS an account. WC v2
+ * persists sessions in localStorage and `EthereumProvider.init` restores them:
+ * without this, an explicit "connect a different wallet" silently reused the
+ * OLD pairing — no prompt at all, the entry stayed pinned to the previous
+ * account, and the seed and the mint signature landed on two different
+ * addresses ("connect connects without any signature" report).
  */
-export async function connectViaWalletConnect(): Promise<Wallet | null> {
+export async function connectViaWalletConnect(fresh = false): Promise<Wallet | null> {
   const projectId = wcProjectId();
   if (!projectId) return null;
   try {
     const provider = await getProvider(projectId);
+    if (fresh) {
+      // Drop the restored session (best-effort) so enable() re-pairs from
+      // scratch instead of resolving instantly on the stale one.
+      await provider.disconnect().catch(() => undefined);
+    }
     await provider.enable(); // opens the QR/deeplink modal; resolves once paired
     return await connectWalletWith(provider);
   } catch {

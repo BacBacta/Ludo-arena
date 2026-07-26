@@ -235,7 +235,12 @@ export default function App() {
       // CHOOSE, so it goes first for an explicit switch; the normal connect keeps
       // injected-first (fastest, no modal).
       const wcFirst = pickDifferent && !silent && walletConnectAvailable();
-      let wallet = wcFirst ? await connectViaWalletConnect().catch(() => null) : null;
+      // Explicit switch → FRESH pairing: kill the restored WC session so the
+      // wallet app's account picker actually opens (a reused session reconnects
+      // silently to the OLD account — the "connects without any signature"
+      // report — and the entry then seeds one address while the wallet signs
+      // with another).
+      let wallet = wcFirst ? await connectViaWalletConnect(true).catch(() => null) : null;
       if (!wallet && !wcFirst) wallet = await connectWallet().catch(() => null);
       // Fallback the other way: WalletConnect is also reachable when an injected
       // provider EXISTS but yielded nothing (prompt refused, locked wallet). The
