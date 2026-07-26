@@ -17,8 +17,19 @@ import { celo as celoBase } from 'viem/chains';
 const BASE_FEE_MULTIPLIER = 2;
 
 // Mainnet: keep Celo's formatters + serializers (they carry CIP-64 feeCurrency —
-// gas paid in cUSD) and only widen the fee margin. Spreading preserves both.
-export const celo = { ...celoBase, fees: { ...celoBase.fees, baseFeeMultiplier: BASE_FEE_MULTIPLIER } };
+// gas paid in cUSD), widen the fee margin, and list SEVERAL public RPCs. The
+// rpcUrls list is what `wallet_addEthereumChain` hands to an external wallet
+// when the app first registers Celo there: viem's default is forno ALONE, so
+// every wallet the app ever onboarded was pinned to the one node that
+// rate-limits busy devices — MetaMask then read a 0 balance in every dapp
+// sheet ("Fonds insuffisants" on a funded account) while its own Send flow,
+// on another internal path, saw the real balance. Wallets keep the list and
+// can fail over / let the user pick.
+export const celo = {
+  ...celoBase,
+  rpcUrls: { default: { http: ['https://forno.celo.org', 'https://rpc.ankr.com/celo', 'https://celo.drpc.org'] } },
+  fees: { ...celoBase.fees, baseFeeMultiplier: BASE_FEE_MULTIPLIER },
+};
 
 export const celoSepolia = defineChain({
   id: 11_142_220,
