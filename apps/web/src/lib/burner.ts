@@ -14,9 +14,9 @@
  * through it. (The upgrade path is an embedded-wallet provider with passkey
  * recovery — same feeCurrency flow, better custody — see B2.)
  */
-import { createPublicClient, createWalletClient, http, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
+import { createPublicClient, createWalletClient, type Address, type Hex, type PublicClient, type WalletClient } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { activeChain } from './chains';
+import { activeChain, chainTransport } from './chains';
 import type { Wallet } from './minipay';
 
 const KEY = 'ludo:burner:pk:v1';
@@ -69,10 +69,13 @@ export function burnerAddress(): Address | null {
  *  the caller attach `feeCurrency` (gas in cUSD). */
 export function getBurnerWallet(): Wallet {
   const account = privateKeyToAccount(loadOrCreateBurnerKey());
-  const walletClient = createWalletClient({ account, chain: activeChain, transport: http() });
+  // chainTransport: forno + public fallbacks (see chains.ts) — the burner both
+  // reads AND broadcasts through it, so a rate-limited forno IP must not
+  // strand either path.
+  const walletClient = createWalletClient({ account, chain: activeChain, transport: chainTransport() });
   // Celo mines ~1s blocks; viem's default 4s receipt polling quadruples the
   // wait on every approve/join — the bulk of the paired-players' staking lag.
-  const publicClient = createPublicClient({ chain: activeChain, transport: http(), pollingInterval: 1_000 });
+  const publicClient = createPublicClient({ chain: activeChain, transport: chainTransport(), pollingInterval: 1_000 });
   return {
     // Celo chains add custom formatters, so the inferred client types diverge
     // from viem's plain Wallet/PublicClient; flatten at this boundary (same as
