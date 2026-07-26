@@ -28,7 +28,7 @@ import { describeTxError } from './lib/txError';
 import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, ESTIMATE_REVERTED_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
 import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, walletNativeWei, type Wallet, hasInjectedWallet } from './lib/minipay';
-import { isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBlockedOnGas, raceClaimToastKey, raceEntryWalletKind, shouldRestoreBurnerAtBoot } from './lib/raceEntry';
+import { entrySigningAddress, isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBlockedOnGas, raceClaimToastKey, raceEntryWalletKind, shouldRestoreBurnerAtBoot } from './lib/raceEntry';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
 import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS, boardIsStale } from './lib/pacing';
@@ -1360,6 +1360,22 @@ export default function App() {
         setPrefersExternalWallet(true);
         dispatch({ type: 'TOAST', message: t('raceExternalPairFailed') });
         return;
+      }
+      // MetaMask signs with its ACTIVE account whatever `from` we announce. A
+      // player who switched accounts after pairing got the seed on address A
+      // and a mint popup signing with address B — 0 CELO, blocked in red on
+      // fees ("Awale owner 1", the operator's report). Re-read the active
+      // account at TAP time and follow it, so the address we announce, seed
+      // and mint with is the one that will actually sign.
+      if (wallet) {
+        const active = await wallet.walletClient.getAddresses().then((a) => a[0]).catch(() => undefined);
+        const entryAddr = entrySigningAddress(wallet.address, active);
+        if (entryAddr !== wallet.address) {
+          console.log('[race] wallet app switched account %s → %s — the entry follows it', wallet.address, entryAddr);
+          wallet = { ...wallet, address: entryAddr };
+          walletRef.current = wallet;
+          dispatch({ type: 'SET_WALLET_ADDRESS', address: entryAddr });
+        }
       }
     } else {
       wallet = getBurnerWallet();
