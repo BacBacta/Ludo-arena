@@ -17,7 +17,8 @@
     "allow-token": "tsx script/allowToken.ts",
     "race-status": "tsx script/raceStatus.ts",
     "onchain-activity": "tsx script/onchainActivity.ts",
-    "wallet-status": "tsx script/walletStatus.ts"
+    "wallet-status": "tsx script/walletStatus.ts",
+    "race-pass-mints": "tsx script/racePassMints.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
