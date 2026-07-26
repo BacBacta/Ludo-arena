@@ -92,7 +92,7 @@ describe('mintBlockedOnGas — each gas mode checks ITS OWN balance', () => {
   });
 
   it('the native floor sits well under the sponsorship target (no deadlock)', () => {
-    const sponsorTarget = 2_000_000_000_000_000n; // server default: 0.002 CELO
+    const sponsorTarget = 10_000_000_000_000_000n; // server default: 0.01 CELO
     expect(MIN_MINT_GAS_NATIVE_WEI < sponsorTarget).toBe(true);
   });
 });

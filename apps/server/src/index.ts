@@ -2182,6 +2182,7 @@ wss.on('connection', (ws, req) => {
           // `retryInMs` tells the client exactly when the window reopens: NOTHING
           // was sent here, and a client that mistook this ack for a funded wallet
           // went on to mint with no gas ("your entry is still being funded").
+          telemetry('race.seed.ratelimited', { pid: tpid(playerId(session.wallet, session.id)), native: wantNative, retryInMs: Math.max(0, RACE_ACTION_WINDOW_MS - sinceLastRace) });
           session.send({
             t: 'race.seeded',
             seedCents: 0,
@@ -2211,6 +2212,11 @@ wss.on('connection', (ws, req) => {
           }
           const nDeficit = nativeSeedDeficitWei(raceFaucet.nativeSeedWei, nBalWei);
           if (nDeficit <= 0n) {
+            // Telemetry on the SILENT outcomes too: during the 16:24Z "Awale"
+            // investigation an attempt left NO trace at all — a granted seed
+            // logs, but "already at target" and "capped" did not, so the probes
+            // could not tell "nothing was asked" from "asked and answered".
+            telemetry('race.nseed', { pid: tpid(playerId(sWallet, session.id)), wei: '0', already: true, balWei: nBalWei.toString() });
             session.send({ t: 'race.seeded', seedCents: 0, alreadySeeded: true, nativeWei: '0' });
             break;
           }
@@ -2224,6 +2230,7 @@ wss.on('connection', (ws, req) => {
           const grantWei = grantWei0 < fpLeft ? grantWei0 : fpLeft;
           if (grantWei <= 0n) {
             const capped = nPriorWei >= nCap || nFpDrawn >= nFpCap;
+            telemetry('race.nseed', { pid: tpid(playerId(sWallet, session.id)), wei: '0', refused: capped ? 'caps' : 'pool' });
             session.send({ t: 'error', code: 'LIMIT_REACHED', message: capped ? 'This device already used its gas-sponsorship allowance.' : 'Race Week gas sponsorship is exhausted.' });
             break;
           }
