@@ -315,6 +315,17 @@ export async function racePassTokenId(wallet: Wallet): Promise<bigint | null> {
   return wallet.publicClient.readContract({ address: racePass, abi: RACE_PASS_ABI, functionName: 'passOf', args: [wallet.address] }) as Promise<bigint>;
 }
 
+/** Wallet NATIVE CELO balance in wei, or null on a failed read. The gas gauge
+ *  for EXTERNAL wallets (MetaMask/WC): their txs pay gas in the native coin, so
+ *  the stablecoin balance says nothing about whether they can mint. */
+export async function walletNativeWei(wallet: Wallet): Promise<bigint | null> {
+  try {
+    return await wallet.publicClient.getBalance({ address: wallet.address });
+  } catch {
+    return null;
+  }
+}
+
 /** Wallet stake-token balance in USD cents, or null if the chain has no deployment. */
 export async function walletBalanceCents(wallet: Wallet): Promise<number | null> {
   const chainId = wallet.walletClient.chain?.id ?? activeChain.id;

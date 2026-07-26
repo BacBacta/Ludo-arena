@@ -23,11 +23,12 @@ import { RaceSheet } from './components/RaceSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
 import { HowToPlayModal, howToSeen } from './components/HowToPlay';
 import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
-import { getBurnerWallet, prefersExternalWallet, restoreBurnerWallet, setPrefersExternalWallet } from './lib/burner';
+import { burnerAddress, getBurnerWallet, prefersExternalWallet, restoreBurnerWallet, setPrefersExternalWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
 import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, ESTIMATE_REVERTED_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
 import { saveCustomIdentity } from './lib/profile';
-import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, type Wallet, hasInjectedWallet } from './lib/minipay';
+import { connectWallet, isMiniPay, lockStake, lockStake4, buyCosmetic, mintRacePass, racePassTokenId, walletBalanceCents, walletNativeWei, type Wallet, hasInjectedWallet } from './lib/minipay';
+import { isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBlockedOnGas, raceClaimToastKey, raceEntryWalletKind, shouldRestoreBurnerAtBoot } from './lib/raceEntry';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
 import { activeChain } from './lib/chains';
 import { WALK_STEP_MS, WALK_TWEEN_MS, boardIsStale } from './lib/pacing';
@@ -348,7 +349,12 @@ export default function App() {
     // rightly never pairs with a wallet-backed opponent → an infinite spinner.
     // restoreBurnerWallet only REUSES an existing burner (never mints), so a
     // first-time visitor is unaffected.
-    if (!walletRef.current) {
+    // …but NOT when the player explicitly switched to THEIR OWN wallet:
+    // re-installing the burner here is what made "the old wallet" reappear on
+    // every reload in external mode. Their wallet is paired on demand by
+    // connectWalletCta (staked entry, race join) — until then the app stays
+    // wallet-less, which is honest: we cannot silently reconnect MetaMask.
+    if (!walletRef.current && shouldRestoreBurnerAtBoot(isMiniPay(), prefersExternalWallet())) {
       const burner = restoreBurnerWallet();
       if (burner) {
         walletRef.current = burner;
@@ -1321,12 +1327,28 @@ export default function App() {
    *  Pass + its stored mint tx instead of re-minting, and the server no-ops a
    *  second grant (alreadyFunded). */
   const joinRaceWeek = useCallback(async () => {
-    // Wallet for the event. Inside MiniPay: the ambient wallet (gas in cUSD). Outside
-    // MiniPay (B1, non-MiniPay launch): the app-minted BURNER — the player brings no
-    // wallet and needs no CELO; its gas is paid in cUSD (feeCurrency), seeded below.
+    // Wallet for the event. Inside MiniPay: the ambient wallet (gas in cUSD).
+    // Outside MiniPay the DEFAULT is the app-minted BURNER (gas in cUSD via
+    // feeCurrency, seeded below) — but when the player EXPLICITLY switched to
+    // their own wallet (TopBar), the entry follows the CONNECTED address, so a
+    // different MetaMask/WC address is a different entry. That wallet cannot
+    // sign CIP-64, so its gas is native CELO — sponsored by the server's
+    // native seed (race.seed { native: true }) below. Forcing the burner here
+    // regardless was the "I connected a NEW address and it still says already
+    // funded" report: same browser → same burner → same grant record.
     let wallet: Wallet | null;
-    if (isMiniPay()) {
+    const entryKind = raceEntryWalletKind(isMiniPay(), prefersExternalWallet());
+    if (entryKind === 'ambient') {
       if (!(await connectWalletCta())) return;
+      wallet = walletRef.current;
+    } else if (entryKind === 'external') {
+      // Drop a lingering burner from the ref first — "already connected" would
+      // otherwise short-circuit the pairing and land the entry on the burner.
+      if (isBurnerAddress(walletRef.current?.address, burnerAddress())) walletRef.current = null;
+      if (!(await connectWalletCta())) return;
+      // connectWalletCta may have legitimately fallen back to the burner (no
+      // provider, refused prompt) — it drops the preference when it does, so
+      // the entry below is honest about which wallet it runs on.
       wallet = walletRef.current;
     } else {
       wallet = getBurnerWallet();
@@ -1371,31 +1393,46 @@ export default function App() {
           // as "funded" is what made the mint run on an empty burner and fail with
           // "your entry is still being funded". Wait out the server's own window
           // and ask again instead of minting blind.
-          let seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch((e) => { console.error('[race] seed threw:', e); return null; });
+          // Which gas the seed must cover: cUSD for wallets whose txs WE build
+          // (burner/MiniPay, CIP-64), native CELO for an external wallet — the
+          // platform sponsors that too (race.seed { native: true }).
+          const sponsorNative = !wallet.payGasInStable;
+          let seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer, sponsorNative).catch((e) => { console.error('[race] seed threw:', e); return null; });
           console.log('[race] seed result:', JSON.stringify(seedRes));
           for (let tries = 0; tries < 2 && seedRes && !('error' in seedRes) && seedRes.rateLimited; tries++) {
             const waitMs = Math.min(5000, Math.max(500, seedRes.retryInMs ?? 3200)) + 250;
             console.log('[race] seed rate-limited — retrying in %sms', waitMs);
             await new Promise((r) => setTimeout(r, waitMs));
-            seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer).catch((e) => { console.error('[race] seed retry threw:', e); return null; });
+            seedRes = await sendRaceSeed(SERVER_URL, wallet.address, signer, sponsorNative).catch((e) => { console.error('[race] seed retry threw:', e); return null; });
             console.log('[race] seed retry result:', JSON.stringify(seedRes));
           }
           if (seedRes && 'error' in seedRes) seedError = seedRes.error;
-          // Log the burner's on-chain cUSD balance right before minting — the
-          // single most diagnostic number ("need gas" == this is below the mint's
-          // gas reservation). Re-read a few times for load-balanced RPC lag.
-          let balCents = await walletBalanceCents(wallet).catch(() => null);
-          for (let i = 0; i < 5 && (balCents ?? 0) < MIN_MINT_GAS_CENTS; i++) {
-            await new Promise((r) => setTimeout(r, 1500));
+          // Log the wallet's gas balance (in ITS gas token) right before minting
+          // — the single most diagnostic number ("need gas" == this is below the
+          // mint's reservation). Re-read a few times for load-balanced RPC lag.
+          let balCents: number | null = null;
+          let nativeWei: bigint | null = null;
+          if (sponsorNative) {
+            nativeWei = await walletNativeWei(wallet);
+            for (let i = 0; i < 5 && (nativeWei ?? 0n) < MIN_MINT_GAS_NATIVE_WEI; i++) {
+              await new Promise((r) => setTimeout(r, 1500));
+              nativeWei = await walletNativeWei(wallet);
+            }
+            console.log('[race] external wallet native balance before mint: %s wei', nativeWei?.toString() ?? 'null');
+          } else {
             balCents = await walletBalanceCents(wallet).catch(() => null);
+            for (let i = 0; i < 5 && (balCents ?? 0) < MIN_MINT_GAS_CENTS; i++) {
+              await new Promise((r) => setTimeout(r, 1500));
+              balCents = await walletBalanceCents(wallet).catch(() => null);
+            }
+            console.log('[race] burner cUSD balance before mint: %s cents', balCents);
           }
-          console.log('[race] burner cUSD balance before mint: %s cents', balCents);
           // Do NOT mint on a wallet we KNOW cannot pay: the tx dies on funds and
           // the player gets the vaguest toast in the app ("still being funded")
           // with no idea whether to wait, retry, or give up. A null balance is a
-          // failed READ, not an empty wallet — fail OPEN there and let the mint try.
-          if (balCents !== null && balCents < MIN_MINT_GAS_CENTS) {
-            console.error('[race] aborting mint: burner has %sc, needs >= %sc (seed did not land)', balCents, MIN_MINT_GAS_CENTS);
+          // failed READ, not an empty wallet — fail OPEN and let the mint try.
+          if (mintBlockedOnGas(wallet.payGasInStable, balCents, MIN_MINT_GAS_CENTS, nativeWei)) {
+            console.error('[race] aborting mint: gas below floor (stable=%sc native=%s wei) — seed did not land', balCents, nativeWei?.toString() ?? 'null');
             dispatch({ type: 'TOAST', message: seedError ?? t('raceSeedStalled') });
             return;
           }
@@ -1422,9 +1459,12 @@ export default function App() {
       console.log('[race] claim result:', JSON.stringify(res));
       if (res && 'fundedCents' in res) {
         dispatch({ type: 'RACE_FUNDED' });
+        // selfFunded = a FIRST registration that drew nothing because the wallet
+        // already covers a stake. "Already funded" there read as a refusal.
+        const toastKey = raceClaimToastKey(res.alreadyFunded, res.selfFunded);
         dispatch({
           type: 'TOAST',
-          message: res.alreadyFunded ? t('raceAlreadyFunded') : `🏁 ${t('raceFundedToast')} +${fmtUsd(res.fundedCents)}`,
+          message: toastKey === 'raceFunded' ? `🏁 ${t('raceFundedToast')} +${fmtUsd(res.fundedCents)}` : t(toastKey === 'raceSelfFunded' ? 'raceSelfFunded' : 'raceAlreadyFunded'),
         });
         syncLobbyNow(); // pull fresh race state (funded + poolLeft) + balances
         void refreshBalance(wallet);

@@ -1214,7 +1214,7 @@ export function buyStreakFreeze(serverUrl: string, walletAddress?: string): Prom
     };
   }));
 }
-export type RaceClaimResult = { fundedCents: number; alreadyFunded: boolean; txHash?: string } | { error: string };
+export type RaceClaimResult = { fundedCents: number; alreadyFunded: boolean; txHash?: string; selfFunded?: boolean } | { error: string };
 
 /**
  * One-shot Race Week claim: hand the server the RacePass mint tx hash. The server
@@ -1308,7 +1308,7 @@ export function sendRaceClaim(
         sendClaim();
       } else if (msg.t === 'race.claimed') {
         clearTimeout(timer);
-        done({ fundedCents: msg.fundedCents, alreadyFunded: msg.alreadyFunded, txHash: msg.txHash });
+        done({ fundedCents: msg.fundedCents, alreadyFunded: msg.alreadyFunded, txHash: msg.txHash, selfFunded: msg.selfFunded });
       } else if (msg.t === 'error') {
         clearTimeout(timer);
         done({ error: msg.message });
@@ -1326,7 +1326,7 @@ export function sendRaceClaim(
  *  made the Pass mint run on an empty burner and fail "still being funded").
  *  `retryInMs` = when the window reopens. */
 export type RaceSeedResult =
-  | { seedCents: number; alreadySeeded: boolean; txHash?: string; rateLimited?: boolean; retryInMs?: number }
+  | { seedCents: number; alreadySeeded: boolean; txHash?: string; rateLimited?: boolean; retryInMs?: number; nativeWei?: string }
   | { error: string };
 
 /**
@@ -1340,6 +1340,9 @@ export function sendRaceSeed(
   serverUrl: string,
   walletAddress?: string,
   signMessage?: (message: string) => Promise<string>,
+  // native: ask for CELO instead of cUSD — the sponsorship for EXTERNAL wallets
+  // (MetaMask/WC), whose gas cannot be paid in the stablecoin (no CIP-64).
+  native?: boolean,
 ): Promise<RaceSeedResult | null> {
   return queueOneShot(() => new Promise((resolve) => {
     let ws: WebSocket;
@@ -1365,7 +1368,7 @@ export function sendRaceSeed(
       if (seedSent) return;
       seedSent = true;
       if (proveFallback) clearTimeout(proveFallback);
-      ws.send(JSON.stringify({ t: 'race.seed' }));
+      ws.send(JSON.stringify({ t: 'race.seed', native: native || undefined }));
     };
     const entropy = (() => {
       const b = new Uint8Array(16);
@@ -1403,7 +1406,7 @@ export function sendRaceSeed(
         sendSeed();
       } else if (msg.t === 'race.seeded') {
         clearTimeout(timer);
-        done({ seedCents: msg.seedCents, alreadySeeded: msg.alreadySeeded, txHash: msg.txHash, rateLimited: msg.rateLimited, retryInMs: msg.retryInMs });
+        done({ seedCents: msg.seedCents, alreadySeeded: msg.alreadySeeded, txHash: msg.txHash, rateLimited: msg.rateLimited, retryInMs: msg.retryInMs, nativeWei: msg.nativeWei });
       } else if (msg.t === 'error') {
         clearTimeout(timer);
         done({ error: msg.message });
