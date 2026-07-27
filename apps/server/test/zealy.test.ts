@@ -55,9 +55,23 @@ describe('zealyStats — the filters ARE the sprint rules', () => {
     expect(s.finished).toBe(1);
   });
 
-  it('a game against the house bot is not a real opponent', () => {
-    const s = zealyStats([game({ isHouseBot: true })], TODAY, new Set());
-    expect(s.finished).toBe(0);
+  it('a house-bot game COUNTS for the player — the fill bot is a real staked opponent', () => {
+    // Operator decision at sprint launch: a solo player matched with the
+    // liquidity fill must not see "0/4" after 4 real games. The bot itself
+    // earns nothing (no Zealy account), and farming it is bounded by the
+    // per-pair daily cap + the house runway it costs.
+    const s = zealyStats([game({ isHouseBot: true, won: true })], TODAY, new Set());
+    expect(s.finished).toBe(1);
+    expect(s.winsToday).toBe(1);
+  });
+
+  it('the bot is only ever ONE distinct opponent (marathon still needs humans)', () => {
+    const s = zealyStats(
+      [game({ opponent: '0xbot', isHouseBot: true }), game({ opponent: '0xbot', isHouseBot: true }), game({ opponent: '0xhuman' })],
+      TODAY,
+      new Set(),
+    );
+    expect(s.opponents).toBe(2);
   });
 
   it('a game the anti-farm audit voided never happened', () => {
