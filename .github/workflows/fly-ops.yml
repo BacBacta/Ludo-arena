@@ -135,6 +135,10 @@ on:
         description: 'race-funding only: RACE_NATIVE_SEED_CELO — native gas sponsorship per external wallet (decimal CELO, e.g. 0.05). Empty = leave unchanged.'
         required: false
         type: string
+      pool_cents:
+        description: 'race-funding only: RACE_POOL_CENTS — TOTAL campaign cap (prizes + cUSD gas seeds), in cents. e.g. 8000 = $80. Empty = leave unchanged.'
+        required: false
+        type: string
       mints_day:
         description: 'race-pass-mints only: a single UTC day (YYYY-MM-DD). Empty = today.'
         required: false
@@ -532,17 +536,20 @@ jobs:
           PER_GAME: ${{ inputs.per_game_cents }}
           QUOTA: ${{ inputs.quota_cents }}
           NATIVE: ${{ inputs.native_seed_celo }}
+          POOL: ${{ inputs.pool_cents }}
         run: |
           set -eu
           if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
           PG=$(printf '%s' "${PER_GAME:-}" | tr -cd '0-9')
           QC=$(printf '%s' "${QUOTA:-}" | tr -cd '0-9')
           NS=$(printf '%s' "${NATIVE:-}" | tr -cd '0-9.')
+          PC=$(printf '%s' "${POOL:-}" | tr -cd '0-9')
           ARGS=""
           [ -n "$PG" ] && ARGS="$ARGS RACE_PER_GAME_CENTS=$PG"
           [ -n "$QC" ] && ARGS="$ARGS RACE_QUOTA_CENTS=$QC"
           [ -n "$NS" ] && ARGS="$ARGS RACE_NATIVE_SEED_CELO=$NS"
-          if [ -z "$ARGS" ]; then echo "::error::provide at least one of per_game_cents / quota_cents / native_seed_celo"; exit 1; fi
+          [ -n "$PC" ] && ARGS="$ARGS RACE_POOL_CENTS=$PC"
+          if [ -z "$ARGS" ]; then echo "::error::provide at least one of per_game_cents / quota_cents / native_seed_celo / pool_cents"; exit 1; fi
           echo "Setting:$ARGS"
           # shellcheck disable=SC2086
           flyctl secrets set -a ludo-arena $ARGS
