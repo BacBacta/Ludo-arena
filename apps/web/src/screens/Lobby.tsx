@@ -32,7 +32,6 @@ export function Lobby({
   onRemoveFriendEdge,
   onViewProfile,
   onJoinRace,
-  onOpenRaceBoard,
   onPlayRace,
 }: {
   onPlay(stake: StakeCents): void;
@@ -56,22 +55,11 @@ export function Lobby({
   onViewProfile(pid: string): void;
   /** Race Week: mint the RacePass + claim the subsidised stake quota. */
   onJoinRace(): void;
-  /** Race Week: open the event leaderboard sheet. */
-  onOpenRaceBoard(): void;
   /** Race Week: launch a subsidised event 1v1 at the micro-stake. */
   onPlayRace(): void;
 }) {
-  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceBoard, raceJoining, friends, friendRequests, sentRequests } = useAppState();
+  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceJoining, friends, friendRequests, sentRequests } = useAppState();
   const dispatch = useAppDispatch();
-
-  // Race Week live countdown: re-render every 30 s while the event card shows a
-  // deadline, so "ends in 2 h 05 min" actually counts down on an idle lobby.
-  const [raceNow, setRaceNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!race?.active || !race.endsAt) return;
-    const id = setInterval(() => setRaceNow(Date.now()), 30_000);
-    return () => clearInterval(id);
-  }, [race?.active, race?.endsAt]);
 
   /** Recent opponents I can still invite: wallet-linked (have a pid) and not
    *  already a friend, an incoming request, or one I've already sent. This is
@@ -321,19 +309,21 @@ export function Lobby({
           <span className="racestrip__flag" aria-hidden="true">🏁</span>
           <b>{t('raceCardTitle')}</b>
           <em className="racecard__live">● {t('raceLiveBadge')}</em>
-          {race?.prizePoolCents ? <span className="racestrip__prize">🏆 {fmtUsd(race.prizePoolCents)}</span> : null}
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
       )}
       </>)}
 
       {/* RACE WEEK — the live event surface (only while the server reports it
-          armed). A time-limited leaderboard with a subsidised micro-stake: the
-          player mints a soulbound RacePass (anti-sybil entry) and the pool funds
-          their stake quota, then event 1v1s score on the board. Premium event
-          styling: dark racing card, LIVE badge, ticking countdown, pool gauge and
-          a podium preview — an event must read as the most special thing on the
-          page, not another grey row. Lives on its OWN tab (footer nav). */}
+          armed). The player mints a soulbound RacePass (anti-sybil entry) and the
+          pool funds their stake quota, then plays subsidised event 1v1s.
+
+          SUSPENDED SURFACES: the ranking, the countdown and the prize pool are no
+          longer shown. Farming rings (self-play, forced abandons, multi-wallet
+          loops) invalidated the standings, so the leaderboard and its pool were
+          called off — advertising a ranking and a prize the platform will not pay
+          out is worse than showing neither. The entry and the subsidised games
+          stay; the campaign relaunches with its own rules. */}
       {tab === 'race' && (
         <div className="pagehead pagehead--race">
           <span className="pagehead__ic" aria-hidden="true">🏁</span>
@@ -350,94 +340,54 @@ export function Lobby({
           <span className="friendrow__meta"><b>{t('raceTitle')}</b><small>{t('raceNoEvent')}</small></span>
         </div>
       )}
-      {tab === 'race' && race?.active && (() => {
-        // No endsAt configured = open-ended armed event: never read as "ended",
-        // no countdown chip. With an endsAt, a live (30 s tick) countdown; the
-        // join CTA disables once it's elapsed.
-        const remaining = race.endsAt ? new Date(race.endsAt).getTime() - raceNow : Infinity;
-        const ended = remaining <= 0;
-        const endsLabel =
-          remaining === Infinity
-            ? null
-            : ended
-              ? t('raceEnded')
-              : remaining < 3_600_000
-                ? t('raceEndsIn').replace('{t}', `${Math.max(1, Math.floor(remaining / 60_000))} min`)
-                : remaining < 86_400_000
-                  ? t('raceEndsIn').replace('{t}', `${Math.floor(remaining / 3_600_000)} h ${Math.floor((remaining % 3_600_000) / 60_000)} min`)
-                  : t('raceEndsIn').replace('{t}', `${Math.floor(remaining / 86_400_000)} d ${Math.floor((remaining % 86_400_000) / 3_600_000)} h`);
-        const top3 = (raceBoard?.top ?? []).slice(0, 3);
-        const medals = ['🥇', '🥈', '🥉'];
-        return (
-          <>
-            <div className="card racecard">
-              <div className="racecard__top">
-                <span className="racecard__flag" aria-hidden="true">🏁</span>
-                <div className="racecard__id">
-                  <b>
-                    {t('raceCardTitle')}
-                    {!ended && <em className="racecard__live">● {t('raceLiveBadge')}</em>}
-                  </b>
-                  <small>{race.funded ? `✅ ${t('raceFundedLabel')} · ${fmtUsd(race.quotaCents)} ${t('raceQuota')}` : t('raceCardSub')}</small>
-                </div>
-                {endsLabel && <span className={`racecard__timer${remaining < 86_400_000 ? ' racecard__timer--soon' : ''}`}>⏱ {endsLabel}</span>}
-              </div>
-
-              {/* Podium preview: the top 3 as one glanceable strip — the social
-                  pull ("I could be up there") without opening the sheet. */}
-              {top3.length > 0 && (
-                <button className="racecard__podium" onClick={() => { playTap(); onOpenRaceBoard(); }}>
-                  {top3.map((r, i) => (
-                    <span key={r.rank} className={`racecard__podchip${i === 0 ? ' racecard__podchip--first' : ''}`}>
-                      {medals[i]} <b>{r.name}</b> {r.points}
-                    </span>
-                  ))}
-                </button>
-              )}
-
-              {/* The FIXED leaderboard prize — a stable reward for the top players.
-                  NOT the gas/stake faucet (a separate internal budget that drains as
-                  players are subsidised); showing that here read as "the prize is
-                  shrinking". This stays constant for the whole event. */}
-              {race.prizePoolCents ? (
-                <div className="racebar racebar--prize">
-                  <span>🏆 {t('racePrizeLabel')}</span>
-                  <b>{fmtUsd(race.prizePoolCents)}</b>
-                </div>
-              ) : null}
-
-              <div className="racecard__actions">
-                {race.funded ? (
-                  <button className="btn btn--race btn--race-play" onClick={() => { playTap('select'); onPlayRace(); }}>
-                    🎲 {t('racePlayCta')} <small>{fmtUsd(1)} · {t('racePlaySub')}</small>
-                  </button>
-                ) : (
-                  <button
-                    className="btn btn--race"
-                    disabled={raceJoining || ended}
-                    onClick={() => { playTap('select'); onJoinRace(); }}
-                  >
-                    {raceJoining ? `⏳ ${t('raceJoining')}` : <>🎟️ {t('raceMintCta')} <small>{t('raceMintSub')}</small></>}
-                  </button>
-                )}
-                <button className="racecard__board" onClick={() => { playTap(); onOpenRaceBoard(); }} aria-label={t('raceBoardCta')}>
-                  🏆<small>{t('raceBoardCta')}</small>
-                </button>
-              </div>
-              {/* How to play & win — collapsed by default (keeps the card compact),
-                  the {pool} amount is injected live so it tracks the real prize. */}
-              <details className="racehow">
-                <summary className="racehow__sum">ℹ️ {t('raceHowToTitle')} · {t('raceScoring')}</summary>
-                <ol className="racehow__steps">
-                  <li>{t('raceHowStep1')}</li>
-                  <li>{t('raceHowStep2')}</li>
-                  <li>{t('raceHowStep3').replace('{pool}', race.prizePoolCents ? fmtUsd(race.prizePoolCents) : t('racePrizeLabel'))}</li>
-                </ol>
-              </details>
+      {tab === 'race' && race?.active && (
+        <div className="card racecard">
+          <div className="racecard__top">
+            <span className="racecard__flag" aria-hidden="true">🏁</span>
+            <div className="racecard__id">
+              <b>
+                {t('raceCardTitle')}
+                <em className="racecard__live">● {t('raceLiveBadge')}</em>
+              </b>
+              <small>{race.funded ? `✅ ${t('raceFundedLabel')} · ${fmtUsd(race.quotaCents)} ${t('raceQuota')}` : t('raceCardSub')}</small>
             </div>
-          </>
-        );
-      })()}
+          </div>
+
+          {/* The suspension, stated on the card itself: players who were racing
+              for the ranking must read WHY it vanished, from the app, not from a
+              rumour. */}
+          <div className="racebar racebar--paused">
+            <span>⏸ {t('racePausedTitle')}</span>
+            <small>{t('racePausedSub')}</small>
+          </div>
+
+          <div className="racecard__actions">
+            {race.funded ? (
+              <button className="btn btn--race btn--race-play" onClick={() => { playTap('select'); onPlayRace(); }}>
+                🎲 {t('racePlayCta')} <small>{fmtUsd(1)} · {t('racePlaySub')}</small>
+              </button>
+            ) : (
+              <button
+                className="btn btn--race"
+                disabled={raceJoining}
+                onClick={() => { playTap('select'); onJoinRace(); }}
+              >
+                {raceJoining ? `⏳ ${t('raceJoining')}` : <>🎟️ {t('raceMintCta')} <small>{t('raceMintSub')}</small></>}
+              </button>
+            )}
+          </div>
+
+          {/* How to play — no ranking, no timer, no pool: entry + subsidised games. */}
+          <details className="racehow">
+            <summary className="racehow__sum">ℹ️ {t('raceHowToTitle')}</summary>
+            <ol className="racehow__steps">
+              <li>{t('raceHowStep1')}</li>
+              <li>{t('raceHowStep2')}</li>
+              <li>{t('raceHowStep3')}</li>
+            </ol>
+          </details>
+        </div>
+      )}
 
       {/* PENDING FRIEND REQUESTS — promoted near the top: a request is the most
           actionable social moment on the page, and it persists server-side until
