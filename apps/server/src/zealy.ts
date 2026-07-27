@@ -60,16 +60,25 @@ export interface ZealyStats {
 }
 
 /** Fold the game list into the numbers the verdicts read. The filters ARE the
- *  sprint rules: an abandon (resign/timeout) is not a completed game, a game
- *  against the operator house bot is not a real opponent, and a game the
- *  anti-farm audit voided never happened. */
+ *  sprint rules: an abandon (resign/timeout) is not a completed game, and a
+ *  game the anti-farm audit voided never happened.
+ *
+ *  House-bot games COUNT for the player (operator decision, sprint launch):
+ *  the bot exists to fill matchmaking at quiet hours, and a real staked
+ *  on-chain game against it costs the player the same 1c and pays the same
+ *  pot — punishing the player for the platform's own liquidity fill reads as
+ *  a rigged quest. Farming the bot stays bounded elsewhere: the bot never
+ *  earns XP (it has no Zealy account), the per-pair daily staked cap limits
+ *  grinding one opponent, every win against the bot costs the HOUSE money
+ *  (runway), and the marathon still demands 3 distinct opponents — the bot
+ *  can only ever be one of them. */
 export function zealyStats(games: readonly ZealyGame[], todayUtc: string, voided: ReadonlySet<string>): Omit<ZealyStats, 'minted'> {
   let finished = 0;
   let finishedToday = 0;
   let winsToday = 0;
   const opponents = new Set<string>();
   for (const g of games) {
-    if (g.reason !== 'finish' || g.isHouseBot || voided.has(g.id)) continue;
+    if (g.reason !== 'finish' || voided.has(g.id)) continue;
     finished += 1;
     opponents.add(g.opponent);
     if (g.endedAt.slice(0, 10) === todayUtc) {
