@@ -1161,8 +1161,16 @@ const http = createServer((req, res) => {
       res.end();
       return;
     }
-    const given = String(req.headers['x-api-key'] ?? req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim();
+    // Zealy's API-task key header has varied across versions — accept every
+    // name seen in the wild. Node lowercases incoming header names.
+    const keyHeader = req.headers['x-api-key'] ?? req.headers['api-key'] ?? req.headers['x-zealy-api-key'] ?? req.headers.authorization ?? '';
+    const given = String(keyHeader).replace(/^Bearer\s+/i, '').trim();
     if (given !== ZEALY_VERIFY_KEY) {
+      // Diagnosable 401: WHICH auth-ish headers arrived and the length compare
+      // (never the values) — separates "key not sent / wrong header" (gotLen 0)
+      // from "values out of sync" (gotLen > 0) straight from server-logs.
+      const hdrs = Object.keys(req.headers).filter((h) => /key|auth/i.test(h)).join(',') || '(none)';
+      telemetry('zealy.auth_fail', { hdrs, gotLen: given.length, expLen: ZEALY_VERIFY_KEY.length });
       res.writeHead(401, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ message: 'unauthorized' }));
       return;
