@@ -19,10 +19,9 @@ import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
 import { ChallengeOfferModal, CollectionSheet, ComebackModal, DiceModal, DocModal, FairnessModal, GiftCosmeticModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
-import { RaceSheet } from './components/RaceSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
 import { HowToPlayModal, howToSeen } from './components/HowToPlay';
-import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, fetchRaceLeaderboard } from './lib/session';
+import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed } from './lib/session';
 import { burnerAddress, getBurnerWallet, prefersExternalWallet, restoreBurnerWallet, setPrefersExternalWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
 import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, ESTIMATE_REVERTED_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
@@ -32,7 +31,7 @@ import { entrySigningAddress, isBurnerAddress, MIN_MINT_GAS_NATIVE_WEI, mintBloc
 import { pickStrategy } from './lib/walletPick';
 import { connectViaWalletConnect, walletConnectAvailable, disconnectWalletConnect } from './lib/walletconnect';
 import { activeChain } from './lib/chains';
-import { WALK_STEP_MS, WALK_TWEEN_MS, boardIsStale } from './lib/pacing';
+import { WALK_STEP_MS, WALK_TWEEN_MS } from './lib/pacing';
 import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playPawnHome, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
 import { countFinished, homeTier } from './lib/homeCelebration';
@@ -1623,36 +1622,15 @@ export default function App() {
     }
   }, [dispatch, connectWalletCta, refreshBalance, syncLobbyNow]);
 
-  // Podium preview data for the lobby event card.
-  //
-  // THE STALENESS BUG: this used to fetch ONCE per app mount — a `useRef(false)`
-  // latch plus a `state.raceBoard` guard — so the podium a player saw when they
-  // opened the app was the podium they kept for the whole session. Finish a
-  // scoring game, walk back to the lobby, and the card still showed the old
-  // standings; only opening the full sheet ever refreshed it. Re-read whenever
-  // the lobby is (re-)entered, throttled so a re-render storm can't hammer the
-  // endpoint — returning from a game is always well past the TTL.
-  const raceBoardAt = useRef(0);
-  useEffect(() => {
-    if (state.screen !== 'lobby' || !state.race?.active) return;
-    if (!boardIsStale(Date.now(), raceBoardAt.current)) return;
-    raceBoardAt.current = Date.now();
-    void fetchRaceLeaderboard(SERVER_URL, walletRef.current?.address).then((board) => {
-      if (board) dispatch({ type: 'RACE_BOARD', board });
-    });
-  }, [state.screen, state.race, dispatch]);
-
-  /** Open the Race Week leaderboard sheet and (re)fetch the standings. */
-  const openRaceBoard = useCallback(async () => {
-    dispatch({ type: 'RACE_MODAL', open: true });
-    const board = await fetchRaceLeaderboard(SERVER_URL, walletRef.current?.address);
-    raceBoardAt.current = Date.now(); // the podium shares this read — don't refetch behind the sheet
-    dispatch({ type: 'RACE_BOARD', board });
-  }, [dispatch]);
+  // NOTE: the Race Week standings are no longer surfaced in the app. The event
+  // leaderboard and its prize pool were suspended after farming was found on
+  // them (self-play rings, forced abandons, multi-wallet loops), so the client
+  // stopped fetching, previewing and ranking entirely — showing a ranking the
+  // platform will not pay out is worse than showing none. The server keeps
+  // scoring (the data is still auditable); only the surfaces are gone.
 
   /** Launch a subsidised event 1v1 at the Race Week micro-stake (gated like any
-   *  staked entry: 18+/ToS consent + wallet + balance). Wins/plays score on the
-   *  event leaderboard server-side. */
+   *  staked entry: 18+/ToS consent + wallet + balance). */
   const playRaceGame = useCallback(
     () => gateStaked(RACE_STAKE_CENTS as StakeCents, () => void startMatch(RACE_STAKE_CENTS as StakeCents)),
     [gateStaked, startMatch],
@@ -1661,7 +1639,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onDisconnectWallet={disconnectWallet} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} onJoinRace={joinRaceWeek} onOpenRaceBoard={openRaceBoard} onPlayRace={playRaceGame} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onDisconnectWallet={disconnectWallet} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} onJoinRace={joinRaceWeek} onPlayRace={playRaceGame} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking
@@ -1737,7 +1715,6 @@ export default function App() {
       <ComebackModal />
       <ProgressionSheet onViewProfile={onViewProfile} onBuyFreeze={buyFreeze} />
       <SeasonSheet onClaim={claimSeason} onBuyPremium={purchasePremium} />
-      <RaceSheet onPlay={playRaceGame} />
       <DocModal />
       <Toast />
     </>
