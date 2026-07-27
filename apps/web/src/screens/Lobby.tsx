@@ -361,14 +361,6 @@ export function Lobby({
             <small>{t('racePausedSub')}</small>
           </div>
 
-          {/* The relaunched campaign lives on Zealy: quests verified against the
-              REAL on-chain games (our /zealy/verify endpoint), prizes secured by
-              Zealy. This is the replacement for the suspended prize pool, so it
-              gets the prominent slot the pool used to hold. */}
-          <a className="btn btn--race racecard__zealy" href="https://zealy.io/cw/ludoarena" target="_blank" rel="noreferrer" onClick={() => playTap('select')}>
-            🏁 {t('raceZealyCta')} <small>{t('raceZealySub')}</small>
-          </a>
-
           <div className="racecard__actions">
             {race.funded ? (
               <button className="btn btn--race btn--race-play" onClick={() => { playTap('select'); onPlayRace(); }}>
