@@ -136,6 +136,18 @@ export interface GameRecord {
   isHouseBot?: boolean;
 }
 
+/** A durable game as the verification read-path consumes it. */
+export interface StoredGameRow {
+  gameId: string;
+  playerA: string;
+  playerB: string;
+  winnerSeat: Seat;
+  reason: GameOverReason;
+  /** ISO timestamp of the finish (insert time in the durable store). */
+  endedAt: string;
+  isHouseBot: boolean;
+}
+
 /** Durable on-chain settlement job (E3.3): survives restarts, retried until mined. */
 export interface SettlementJob {
   gameId: string;
@@ -206,6 +218,10 @@ export interface Store {
    *  updateElo (which bumps games_played) doesn't run. No-op for unknown ids. */
   recordPlayed(id: string): Promise<void>;
   recordGame(rec: GameRecord): Promise<void>;
+  /** All durable games this player id (lowercased wallet for wallet-backed
+   *  players) took part in, chronological. Read path for the Zealy sprint
+   *  verification — quest claims are checked against what actually happened. */
+  listGamesFor(playerId: string): Promise<StoredGameRow[]>;
 
   // Settlements (durable, E3.3)
   enqueueSettlement(job: SettlementJob): Promise<void>;

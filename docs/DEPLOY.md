@@ -361,6 +361,7 @@ so a change takes effect in one step, no build:
 | `RACE_NATIVE_SEED_CELO` | `0.05` | Sponsor de gas **natif** par wallet **externe** (MetaMask/WC — pas de CIP-64, donc gas en CELO). `0` désactive. Mêmes multiplicateurs ×3/×30 que le seed cUSD, compteurs séparés (wei). Couvre mint + approve + join avec la marge « réservation gonflée » de MetaMask sur chacune des trois tx. **Le faucet doit détenir du CELO natif.** |
 | `RACE_NATIVE_POOL_CELO` | `4` | Plafond **total** du sponsor natif (l'exposition maximale, ≈80 wallets au target par défaut, ~1,6 $). |
 | `RACE_PER_GAME_CENTS` | `4` | Dotation cUSD par partie (drip JIT) : la mise de 1 ¢ + marge. Balance-aware — un wallet déjà couvert ne tire rien. |
+| `ZEALY_VERIFY_KEY` | *(unset)* | Secret partagé du endpoint `/zealy/verify` (quêtes API du sprint Zealy). Non défini ⇒ endpoint 404. À armer via le fly-op `arm-zealy` (repo secret, jamais un input) ; la même valeur va dans le champ « API key » de chaque tâche API Zealy. |
 | `STAKE_BLOCK_SAME_DEVICE` | `true` | Refuse une partie misée entre deux sessions de **même empreinte**. `false` pour tester à deux profils sur un seul téléphone. |
 | `STAKE_BLOCK_SAME_NETWORK` | `true` | Refuse une partie misée entre deux sessions de **même IP**. `false` est défendable en marché CGNAT. |
 

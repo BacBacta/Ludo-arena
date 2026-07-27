@@ -77,6 +77,7 @@ import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
 import { telemetry, tpid } from './telemetry.js';
+import { parseZealyCheck, zealyStats, zealyVerdict, zealyWalletFromBody, type ZealyGame } from './zealy.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -1149,9 +1150,89 @@ const http = createServer((req, res) => {
     })();
     return;
   }
+  // Zealy sprint verification: Zealy POSTs the claiming player's identity here
+  // when they claim an API quest; 200 auto-approves, 400 rejects with a message
+  // the player sees. Enabled only when the shared secret is configured, and
+  // every claim is checked against the durable game history + grant registry —
+  // a Zealy claim can never assert something the server didn't witness.
+  if (req.method === 'POST' && req.url && req.url.startsWith('/zealy/verify')) {
+    if (!ZEALY_VERIFY_KEY) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    const given = String(req.headers['x-api-key'] ?? req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim();
+    if (given !== ZEALY_VERIFY_KEY) {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ message: 'unauthorized' }));
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size > 64 * 1024) req.destroy(); // a claim payload is small; anything bigger is abuse
+      else chunks.push(c);
+    });
+    req.on('end', () => {
+      void (async () => {
+        const check = parseZealyCheck(new URL(req.url ?? '/', 'http://x').searchParams.get('check'));
+        if (!check) {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ message: 'unknown check' }));
+          return;
+        }
+        let body: unknown = null;
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8') || 'null');
+        } catch {
+          /* malformed body → no wallet → the message below tells the player what to fix */
+        }
+        const wallet = zealyWalletFromBody(body);
+        if (!wallet) {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Connect your wallet to your Zealy profile (Profile → Linked accounts), then claim again.' }));
+          return;
+        }
+        const minted = !!(await store.getMeta(`race:grant:${wallet}`));
+        const rows = await store.listGamesFor(wallet);
+        let voided: Set<string>;
+        try {
+          voided = new Set(JSON.parse((await store.getMeta('race:voided')) || '[]') as string[]);
+        } catch {
+          voided = new Set();
+        }
+        const games: ZealyGame[] = rows.map((r) => {
+          const iAmA = r.playerA.toLowerCase() === wallet;
+          return {
+            id: r.gameId,
+            opponent: (iAmA ? r.playerB : r.playerA).toLowerCase(),
+            won: (r.winnerSeat === 0) === iAmA,
+            reason: r.reason,
+            endedAt: r.endedAt,
+            isHouseBot: r.isHouseBot,
+          };
+        });
+        const stats = { minted, ...zealyStats(games, new Date().toISOString().slice(0, 10), voided) };
+        const verdict = zealyVerdict(check, stats);
+        telemetry('zealy.verify', { check, wallet: `${wallet.slice(0, 8)}…`, ok: verdict.ok, finished: stats.finished, today: stats.finishedToday, winsToday: stats.winsToday });
+        res.writeHead(verdict.ok ? 200 : 400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ message: verdict.message }));
+      })().catch((e) => {
+        console.error('[zealy] verify', e);
+        if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ message: 'verification temporarily unavailable — try again in a minute' }));
+      });
+    });
+    return;
+  }
   res.writeHead(404);
   res.end();
 });
+
+// Shared secret for the Zealy sprint endpoint (unset = endpoint off). Set via
+// the arm-zealy fly-op from a GitHub repo secret — never as a workflow input.
+const ZEALY_VERIFY_KEY = (process.env.ZEALY_VERIFY_KEY ?? '').trim();
 
 /** Reject a promise that takes longer than `ms` (keeps the readiness probe from
  *  hanging on a wedged store/RPC connection). */

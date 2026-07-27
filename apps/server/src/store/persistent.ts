@@ -9,7 +9,7 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import { pidFor } from './types.js';
-import type { BuyFreezeResult, GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
+import type { BuyFreezeResult, GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store, StoredGameRow } from './types.js';
 import {
   ALLOWED_STAKES_CENTS,
   ANTI_TILT,
@@ -373,6 +373,34 @@ export class PersistentStore implements Store {
         rec.isHouseBot ?? false,
       ],
     );
+  }
+
+  async listGamesFor(playerId: string): Promise<StoredGameRow[]> {
+    const me = playerId.toLowerCase();
+    const res = await this.pool.query<{
+      id: string;
+      player_a: string;
+      player_b: string;
+      winner_seat: number;
+      reason: string;
+      ended_at: string | Date;
+      is_house_bot: boolean;
+    }>(
+      `SELECT id, player_a, player_b, winner_seat, reason, ended_at, is_house_bot
+         FROM games
+        WHERE lower(player_a) = $1 OR lower(player_b) = $1
+        ORDER BY ended_at ASC, id ASC`,
+      [me],
+    );
+    return res.rows.map((r) => ({
+      gameId: r.id,
+      playerA: r.player_a,
+      playerB: r.player_b,
+      winnerSeat: r.winner_seat as StoredGameRow['winnerSeat'],
+      reason: r.reason as StoredGameRow['reason'],
+      endedAt: new Date(r.ended_at).toISOString(),
+      isHouseBot: r.is_house_bot,
+    }));
   }
 
   async enqueueSettlement(job: SettlementJob): Promise<void> {

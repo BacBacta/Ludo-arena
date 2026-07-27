@@ -4,7 +4,7 @@
  * it does NOT survive a restart (see AGENTS.md / BACKLOG E2.1).
  */
 import { pidFor } from './types.js';
-import type { BuyFreezeResult, GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store } from './types.js';
+import type { BuyFreezeResult, GameRecord, Room4Snapshot, RoomSnapshot, SeasonMeta, SeasonProgress, SessionRecord, SettlementJob, Store, StoredGameRow } from './types.js';
 import {
   ANTI_TILT,
   DAILY_CHALLENGE,
@@ -64,6 +64,7 @@ export class MemoryStore implements Store {
   private queues = new Map<StakeCents, string[]>();
   private players = new Map<string, PlayerRow>();
   private games = new Map<string, GameRecord>();
+  private gameTimes = new Map<string, string>(); // gameId -> ISO finish time
   private settlements = new Map<string, SettlementJob>();
   private meta = new Map<string, string>();
   private season: SeasonMeta | null = null;
@@ -190,6 +191,24 @@ export class MemoryStore implements Store {
   }
   async recordGame(rec: GameRecord): Promise<void> {
     this.games.set(rec.gameId, structuredClone(rec));
+    if (!this.gameTimes.has(rec.gameId)) this.gameTimes.set(rec.gameId, new Date().toISOString());
+  }
+  async listGamesFor(playerId: string): Promise<StoredGameRow[]> {
+    const me = playerId.toLowerCase();
+    const rows: StoredGameRow[] = [];
+    for (const g of this.games.values()) {
+      if (g.playerA.toLowerCase() !== me && g.playerB.toLowerCase() !== me) continue;
+      rows.push({
+        gameId: g.gameId,
+        playerA: g.playerA,
+        playerB: g.playerB,
+        winnerSeat: g.winnerSeat,
+        reason: g.reason,
+        endedAt: this.gameTimes.get(g.gameId) ?? new Date(0).toISOString(),
+        isHouseBot: g.isHouseBot ?? false,
+      });
+    }
+    return rows.sort((a, b) => a.endedAt.localeCompare(b.endedAt) || a.gameId.localeCompare(b.gameId));
   }
 
   async enqueueSettlement(job: SettlementJob): Promise<void> {

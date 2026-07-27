@@ -71,6 +71,7 @@ on:
           - race-forensics
           - wallet-status
           - arm-house-bot
+          - arm-zealy
           - reset-race-board
           - race-budget
           - prune-race-board
@@ -673,6 +674,34 @@ jobs:
           FULL=$([ "${AUDIT_FULL:-false}" = "true" ] && echo 1 || echo 0)
           echo "Running Race Week farming forensics on ludo-arena (full=$FULL)…"
           flyctl ssh console -a ludo-arena -C "sh -lc 'cd /app && FULL=\"$FULL\" npm run race-forensics -w apps/server'"
+      # arm-zealy: enable the Zealy sprint verification endpoint by importing
+      # ZEALY_VERIFY_KEY (the shared secret Zealy sends back on every API-quest
+      # claim) from a GitHub REPO SECRET — never a workflow input, so the value
+      # never appears in run inputs or logs. Unset ⇒ /zealy/verify answers 404.
+      # Generate any long random string, store it as the ZEALY_VERIFY_KEY repo
+      # secret, run this op, then paste the SAME value in each Zealy API task's
+      # key field. Requires typing ARM-ZEALY in `confirm`.
+      - name: arm Zealy verification endpoint
+        if: ${{ inputs.operation == 'arm-zealy' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ZEALY_VERIFY_KEY: ${{ secrets.ZEALY_VERIFY_KEY }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          if [ "${CONFIRM:-}" != "ARM-ZEALY" ]; then
+            echo "::error::type ARM-ZEALY in the 'confirm' box to proceed"; exit 1
+          fi
+          if [ -z "${ZEALY_VERIFY_KEY:-}" ]; then
+            echo "::error::add the ZEALY_VERIFY_KEY repo secret first (Settings → Secrets and variables → Actions) — any long random string; the same value goes in each Zealy API task's key field"; exit 1
+          fi
+          echo "Secrets BEFORE (names only):"
+          flyctl secrets list -a ludo-arena || true
+          printf 'ZEALY_VERIFY_KEY=%s\n' "$ZEALY_VERIFY_KEY" | flyctl secrets import -a ludo-arena
+          echo "Secrets AFTER (names only):"
+          flyctl secrets list -a ludo-arena
+          echo "Zealy verification endpoint ARMED: POST https://ludo-arena.fly.dev/zealy/verify?check=<mint|games4|daily4|win3|marathon25>"
       # arm-house-bot: turn ON the Race house bot on the running server in one
       # atomic secrets import (single restart). RACE_HOUSE_BOT_PRIVATE_KEY is read
       # from a GitHub REPO SECRET (never an input), so the key never appears in the
