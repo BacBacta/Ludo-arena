@@ -1222,7 +1222,7 @@ const http = createServer((req, res) => {
           };
         });
         const stats = { minted, ...zealyStats(games, new Date().toISOString().slice(0, 10), voided) };
-        const verdict = zealyVerdict(check, stats);
+        const verdict = zealyVerdict(check, stats, wallet);
         telemetry('zealy.verify', { check, wallet: `${wallet.slice(0, 8)}…`, ok: verdict.ok, finished: stats.finished, today: stats.finishedToday, winsToday: stats.winsToday });
         res.writeHead(verdict.ok ? 200 : 400, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ message: verdict.message }));

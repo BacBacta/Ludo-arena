@@ -92,18 +92,27 @@ export function zealyStats(games: readonly ZealyGame[], todayUtc: string, voided
 /** Thresholds per check — one source of truth for verdicts AND messages. */
 export const ZEALY_GOALS = { games4: 4, daily4: 4, win3: 3, marathon25: 25, marathonOpponents: 3 } as const;
 
+/** Compact 0x1234…abcd for player-facing messages. */
+export function shortWallet(wallet: string | null | undefined): string {
+  return wallet && wallet.length >= 12 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : 'your linked wallet';
+}
+
 /** The quest verdict. `ok:false` messages are shown to the player by Zealy, so
  *  they say what progress IS and what still counts — a rejection that reads as
- *  "no" with no reason just generates support pings. */
-export function zealyVerdict(check: ZealyCheck, s: ZealyStats): { ok: boolean; message: string } {
+ *  "no" with no reason just generates support pings. The wallet Zealy sent is
+ *  echoed back in mint rejections: the dominant failure in production is the
+ *  player linking a DIFFERENT wallet to Zealy than the one they play with, and
+ *  seeing the concrete address is what makes that click. */
+export function zealyVerdict(check: ZealyCheck, s: ZealyStats, wallet?: string): { ok: boolean; message: string } {
+  const w = shortWallet(wallet);
   if (!s.minted && check !== 'mint') {
-    return { ok: false, message: 'Mint your Race Pass on ludoarena.xyz first (Race tab) — with the wallet linked to your Zealy profile.' };
+    return { ok: false, message: `No Race Pass found for ${w} (the wallet linked to your Zealy profile). Play on ludoarena.xyz with THAT wallet (connect MetaMask via "Switch wallet"), or link your game wallet on Zealy: Profile → Linked accounts.` };
   }
   switch (check) {
     case 'mint':
       return s.minted
         ? { ok: true, message: 'Race Pass verified on-chain. Welcome to the race!' }
-        : { ok: false, message: 'No Race Pass found for your linked wallet. Mint it on ludoarena.xyz (Race tab), and make sure the wallet linked to Zealy is the one you play with.' };
+        : { ok: false, message: `No Race Pass found for ${w} (the wallet linked to your Zealy profile) — is this the wallet you play with? Mint on ludoarena.xyz (Race tab) with THIS wallet, or link the right one on Zealy: Profile → Linked accounts.` };
     case 'games4':
       return s.finished >= ZEALY_GOALS.games4
         ? { ok: true, message: `${s.finished} completed games verified. GG!` }
