@@ -78,6 +78,7 @@ import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
 import { telemetry, tpid } from './telemetry.js';
 import { parseZealyCheck, zealyStats, zealyVerdict, zealyWalletFromBody, type ZealyGame } from './zealy.js';
+import { aggregateDailyStats, parseDaysParam, type DailyStatRow } from './stats.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -1150,6 +1151,31 @@ const http = createServer((req, res) => {
     })();
     return;
   }
+  // Public daily-activity aggregates: the honest DAU (free games included —
+  // on-chain views can only ever see staked players). Aggregates only, no
+  // addresses; CORS-open so dashboards/posts can cite it directly. Cached
+  // in-process: the query walks the games table, one refresh per 5 min per
+  // window is plenty for a public stats page.
+  if (req.method === 'GET' && req.url && req.url.startsWith('/stats/daily')) {
+    void (async () => {
+      const days = parseDaysParam(new URL(req.url ?? '/', 'http://x').searchParams.get('days'));
+      const now = Date.now();
+      const hit = statsCache.get(days);
+      const rows = hit && now - hit.at < STATS_TTL_MS ? hit.rows : aggregateDailyStats(await store.listRecentGames(days), new Date(now - days * 86_400_000).toISOString());
+      if (!hit || now - hit.at >= STATS_TTL_MS) statsCache.set(days, { at: now, rows });
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'access-control-allow-origin': '*',
+        'cache-control': 'public, max-age=300',
+      });
+      res.end(JSON.stringify({ days, generatedAt: new Date(now).toISOString(), daily: rows }));
+    })().catch((e) => {
+      console.error('[stats] daily', e);
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'stats temporarily unavailable' }));
+    });
+    return;
+  }
   // Zealy sprint verification: Zealy POSTs the claiming player's identity here
   // when they claim an API quest; 200 auto-approves, 400 rejects with a message
   // the player sees. Enabled only when the shared secret is configured, and
@@ -1241,6 +1267,10 @@ const http = createServer((req, res) => {
 // Shared secret for the Zealy sprint endpoint (unset = endpoint off). Set via
 // the arm-zealy fly-op from a GitHub repo secret — never as a workflow input.
 const ZEALY_VERIFY_KEY = (process.env.ZEALY_VERIFY_KEY ?? '').trim();
+
+// /stats/daily in-process cache: one games-table walk per window per 5 minutes.
+const STATS_TTL_MS = 5 * 60_000;
+const statsCache = new Map<number, { at: number; rows: DailyStatRow[] }>();
 
 /** Reject a promise that takes longer than `ms` (keeps the readiness probe from
  *  hanging on a wedged store/RPC connection). */

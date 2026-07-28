@@ -143,6 +143,7 @@ export interface StoredGameRow {
   playerB: string;
   winnerSeat: Seat;
   reason: GameOverReason;
+  stakeCents: number;
   /** ISO timestamp of the finish (insert time in the durable store). */
   endedAt: string;
   isHouseBot: boolean;
@@ -222,6 +223,9 @@ export interface Store {
    *  players) took part in, chronological. Read path for the Zealy sprint
    *  verification — quest claims are checked against what actually happened. */
   listGamesFor(playerId: string): Promise<StoredGameRow[]>;
+  /** All durable games finished in the last `days` UTC days — the read path of
+   *  GET /stats/daily (public aggregates: DAU incl. free games). */
+  listRecentGames(days: number): Promise<StoredGameRow[]>;
 
   // Settlements (durable, E3.3)
   enqueueSettlement(job: SettlementJob): Promise<void>;
