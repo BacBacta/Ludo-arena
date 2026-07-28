@@ -208,7 +208,15 @@ jobs:
           # The escrow OWNER's key (the TREASURY when roles were split at deploy).
           # First configured secret wins; the on-chain owner check is the real gate.
           DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
+          # Presence booleans (values never printed) — lets a failed-ownership run
+          # distinguish "secret not visible" from "secret holds the wrong key":
+          # the script prints caller=<address derived from the key that was used>.
+          HAS_OWNER: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY != '' }}
+          HAS_TREASURY: ${{ secrets.TREASURY_PRIVATE_KEY != '' }}
+          HAS_DEPLOYER: ${{ secrets.DEPLOYER_PRIVATE_KEY != '' }}
+          HAS_ARBITER: ${{ secrets.ARBITER_PRIVATE_KEY != '' }}
         run: |
+          echo "secrets present — ESCROW_OWNER_PRIVATE_KEY: $HAS_OWNER · TREASURY_PRIVATE_KEY: $HAS_TREASURY · DEPLOYER_PRIVATE_KEY: $HAS_DEPLOYER · ARBITER_PRIVATE_KEY: $HAS_ARBITER"
           if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
             echo "::error::No owner key configured — add one repo secret among ESCROW_OWNER_PRIVATE_KEY / TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY (must be the escrow owner)."; exit 1
           fi
