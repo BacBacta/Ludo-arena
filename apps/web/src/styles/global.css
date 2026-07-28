@@ -1417,6 +1417,11 @@ small.muted { font-size: 12px; }
 /* Fixed-prize row (no draining gauge): a stable "🏆 Prize pool  $30" line. */
 .racebar--prize { flex-direction: row; justify-content: space-between; align-items: baseline; font-size: 12px; color: rgba(234, 255, 246, 0.8); }
 .racebar--prize b { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 800; }
+/* The connected-wallet chip on the Race card: monospace address, tap-to-copy.
+   Informational, so it must not compete with the play/mint CTAs. */
+.racewallet { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 8px 10px; border: 1px dashed rgba(255, 255, 255, 0.18); border-radius: 10px; background: transparent; color: rgba(234, 255, 246, 0.75); font-size: 12px; cursor: pointer; }
+.racewallet b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; color: #fff; }
+
 /* Suspension notice — deliberately sober (no gold, no glow): it states a fact,
    it must not read as another prize chip. */
 .racebar--paused { gap: 3px; padding: 9px 11px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); }

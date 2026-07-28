@@ -115,6 +115,17 @@ describe('zealyVerdict — what the player is told', () => {
     }
   });
 
+  it('mint rejections echo the wallet Zealy sent — the mismatch must be visible', () => {
+    const W = '0x743bb002b6f925442be7f6ae0a3f9d56ed15cd7b';
+    const v = zealyVerdict('mint', { ...base, minted: false }, W);
+    expect(v.message).toContain('0x743b');
+    expect(v.message).toContain('cd7b');
+    const gate = zealyVerdict('daily4', { ...base, minted: false }, W);
+    expect(gate.message).toContain('0x743b');
+    // no wallet → graceful generic wording, never "undefined"
+    expect(zealyVerdict('mint', { ...base, minted: false }).message).toContain('your linked wallet');
+  });
+
   it('mint: pass/fail on the grant registry', () => {
     expect(zealyVerdict('mint', base).ok).toBe(true);
     expect(zealyVerdict('mint', { ...base, minted: false }).ok).toBe(false);

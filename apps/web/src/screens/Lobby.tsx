@@ -58,7 +58,7 @@ export function Lobby({
   /** Race Week: launch a subsidised event 1v1 at the micro-stake. */
   onPlayRace(): void;
 }) {
-  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceJoining, friends, friendRequests, sentRequests } = useAppState();
+  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, walletAddress, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceJoining, friends, friendRequests, sentRequests } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Recent opponents I can still invite: wallet-linked (have a pid) and not
@@ -376,6 +376,24 @@ export function Lobby({
               </button>
             )}
           </div>
+
+          {/* The connected wallet, visible and copyable — the sprint's API quests
+              verify THIS address, and the dominant support issue is players
+              linking a different wallet to Zealy than the one that plays. */}
+          {walletAddress && (
+            <button
+              className="racewallet"
+              onClick={() => {
+                playTap();
+                void navigator.clipboard?.writeText(walletAddress).then(
+                  () => dispatch({ type: 'TOAST', message: t('walletCopied') }),
+                  () => undefined,
+                );
+              }}
+            >
+              👛 {t('racePlayingAs')} <b>{walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}</b> ⧉
+            </button>
+          )}
 
           {/* How to play — no ranking, no timer, no pool: entry + subsidised games. */}
           <details className="racehow">
