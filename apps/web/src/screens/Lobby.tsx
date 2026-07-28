@@ -379,16 +379,8 @@ export function Lobby({
                 {t('raceCardTitle')}
                 <em className="racecard__live">● {t('raceLiveBadge')}</em>
               </b>
-              <small>{race.funded ? `✅ ${t('raceFundedLabel')} · ${fmtUsd(race.quotaCents)} ${t('raceQuota')}` : t('raceCardSub')}</small>
+              <small>{race.funded ? `✅ ${t('raceFundedLabel')}` : t('raceCardSub')}</small>
             </div>
-          </div>
-
-          {/* The suspension, stated on the card itself: players who were racing
-              for the ranking must read WHY it vanished, from the app, not from a
-              rumour. */}
-          <div className="racebar racebar--paused">
-            <span>⏸ {t('racePausedTitle')}</span>
-            <small>{t('racePausedSub')}</small>
           </div>
 
           <div className="racecard__actions">
