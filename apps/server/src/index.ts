@@ -77,7 +77,7 @@ import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
 import { telemetry, tpid } from './telemetry.js';
-import { parseZealyCheck, zealyStats, zealyVerdict, zealyWalletFromBody, type ZealyGame } from './zealy.js';
+import { parseZealyCheck, zealyPayloadKeys, zealyStats, zealyUserIdFromBody, zealyVerdict, zealyWalletFromBody, type ZealyGame } from './zealy.js';
 import { aggregateDailyStats, parseDaysParam, type DailyStatRow } from './stats.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
@@ -1222,10 +1222,21 @@ const http = createServer((req, res) => {
         } catch {
           /* malformed body → no wallet → the message below tells the player what to fix */
         }
-        const wallet = zealyWalletFromBody(body);
+        // Identity resolution, in trust order: (1) the wallet linked on Zealy
+        // when WE know it (it claimed a Race grant); (2) the wallet bound
+        // in-game to the claimer's Zealy Connect id (the burner path); (3) the
+        // linked wallet even if unknown (the verdict will explain). The binding
+        // outranks an unknown linked wallet on purpose — players often link a
+        // cold wallet on Zealy while playing with the in-app one.
+        const linked = zealyWalletFromBody(body);
+        const zid = zealyUserIdFromBody(body);
+        const bound = zid ? await store.getMeta(`zealy:user:${zid}`) : null;
+        const linkedKnown = linked ? !!(await store.getMeta(`race:grant:${linked}`)) : false;
+        const wallet = (linkedKnown ? linked : null) ?? bound ?? linked;
         if (!wallet) {
+          telemetry('zealy.noid', { check, keys: zealyPayloadKeys(body) });
           res.writeHead(400, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Connect your wallet to your Zealy profile (Profile → Linked accounts), then claim again.' }));
+          res.end(JSON.stringify({ message: 'We could not identify you. Either link your wallet on Zealy (Profile → Linked accounts) or link your Zealy account in the game (ludoarena.xyz → Race tab → Link Zealy), then claim again.' }));
           return;
         }
         const minted = !!(await store.getMeta(`race:grant:${wallet}`));
@@ -1249,7 +1260,7 @@ const http = createServer((req, res) => {
         });
         const stats = { minted, ...zealyStats(games, new Date().toISOString().slice(0, 10), voided) };
         const verdict = zealyVerdict(check, stats, wallet);
-        telemetry('zealy.verify', { check, wallet: `${wallet.slice(0, 8)}…`, ok: verdict.ok, finished: stats.finished, today: stats.finishedToday, winsToday: stats.winsToday });
+        telemetry('zealy.verify', { check, wallet: `${wallet.slice(0, 8)}…`, via: wallet === bound ? 'binding' : 'linked', ok: verdict.ok, finished: stats.finished, today: stats.finishedToday, winsToday: stats.winsToday });
         res.writeHead(verdict.ok ? 200 : 400, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ message: verdict.message }));
       })().catch((e) => {
@@ -2580,6 +2591,36 @@ wss.on('connection', (ws, req) => {
         if (!raceFaucet) break;
         const board = await raceLeaderboard(store, session.wallet?.toLowerCase());
         session.send({ t: 'race.board', top: board.top.map((e) => ({ name: e.name, points: e.points, rank: e.rank })), myRank: board.myRank, myPoints: board.myPoints });
+        break;
+      }
+
+      case 'zealy.bind': {
+        // Bind this session's PROVEN wallet to a Zealy account, so the sprint's
+        // API quests can verify burner players via Zealy Connect identity (a
+        // burner cannot be linked on Zealy's side — it cannot sign there).
+        // First-write-wins and PERMANENT on both sides: 1 Zealy account ↔ 1
+        // wallet is the anti-farm rule (no rotating burners under one account).
+        if (!session.wallet || !session.walletProven) {
+          session.send({ t: 'zealy.bound', ok: false, reason: 'no_wallet' });
+          break;
+        }
+        const zid = msg.zealyId.toLowerCase();
+        const wallet = session.wallet.toLowerCase();
+        const userKey = `zealy:user:${zid}`;
+        const walletKey = `zealy:wallet:${wallet}`;
+        const [byUser, byWallet] = await Promise.all([store.getMeta(userKey), store.getMeta(walletKey)]);
+        if (byUser && byUser !== wallet) {
+          session.send({ t: 'zealy.bound', ok: false, reason: 'taken' });
+          break;
+        }
+        if (byWallet && byWallet !== zid) {
+          session.send({ t: 'zealy.bound', ok: false, reason: 'wallet_taken' });
+          break;
+        }
+        if (!byUser) await store.setMeta(userKey, wallet);
+        if (!byWallet) await store.setMeta(walletKey, zid);
+        telemetry('zealy.bind', { zid: `${zid.slice(0, 8)}…`, wallet: `${wallet.slice(0, 8)}…`, already: !!(byUser && byWallet) });
+        session.send({ t: 'zealy.bound', ok: true, zealyId: zid });
         break;
       }
 
