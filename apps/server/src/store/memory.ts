@@ -193,22 +193,33 @@ export class MemoryStore implements Store {
     this.games.set(rec.gameId, structuredClone(rec));
     if (!this.gameTimes.has(rec.gameId)) this.gameTimes.set(rec.gameId, new Date().toISOString());
   }
+  private gameRow(g: GameRecord): StoredGameRow {
+    return {
+      gameId: g.gameId,
+      playerA: g.playerA,
+      playerB: g.playerB,
+      winnerSeat: g.winnerSeat,
+      reason: g.reason,
+      stakeCents: g.stakeCents,
+      endedAt: this.gameTimes.get(g.gameId) ?? new Date(0).toISOString(),
+      isHouseBot: g.isHouseBot ?? false,
+    };
+  }
   async listGamesFor(playerId: string): Promise<StoredGameRow[]> {
     const me = playerId.toLowerCase();
     const rows: StoredGameRow[] = [];
     for (const g of this.games.values()) {
       if (g.playerA.toLowerCase() !== me && g.playerB.toLowerCase() !== me) continue;
-      rows.push({
-        gameId: g.gameId,
-        playerA: g.playerA,
-        playerB: g.playerB,
-        winnerSeat: g.winnerSeat,
-        reason: g.reason,
-        endedAt: this.gameTimes.get(g.gameId) ?? new Date(0).toISOString(),
-        isHouseBot: g.isHouseBot ?? false,
-      });
+      rows.push(this.gameRow(g));
     }
     return rows.sort((a, b) => a.endedAt.localeCompare(b.endedAt) || a.gameId.localeCompare(b.gameId));
+  }
+  async listRecentGames(days: number): Promise<StoredGameRow[]> {
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    return [...this.games.values()]
+      .map((g) => this.gameRow(g))
+      .filter((r) => r.endedAt >= since)
+      .sort((a, b) => a.endedAt.localeCompare(b.endedAt) || a.gameId.localeCompare(b.gameId));
   }
 
   async enqueueSettlement(job: SettlementJob): Promise<void> {

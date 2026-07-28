@@ -375,32 +375,48 @@ export class PersistentStore implements Store {
     );
   }
 
-  async listGamesFor(playerId: string): Promise<StoredGameRow[]> {
-    const me = playerId.toLowerCase();
-    const res = await this.pool.query<{
-      id: string;
-      player_a: string;
-      player_b: string;
-      winner_seat: number;
-      reason: string;
-      ended_at: string | Date;
-      is_house_bot: boolean;
-    }>(
-      `SELECT id, player_a, player_b, winner_seat, reason, ended_at, is_house_bot
-         FROM games
-        WHERE lower(player_a) = $1 OR lower(player_b) = $1
-        ORDER BY ended_at ASC, id ASC`,
-      [me],
-    );
-    return res.rows.map((r) => ({
+  private static readonly GAME_ROW_COLS = 'id, player_a, player_b, winner_seat, reason, stake_cents, ended_at, is_house_bot';
+  private static gameRow(r: {
+    id: string;
+    player_a: string;
+    player_b: string;
+    winner_seat: number;
+    reason: string;
+    stake_cents: number;
+    ended_at: string | Date;
+    is_house_bot: boolean;
+  }): StoredGameRow {
+    return {
       gameId: r.id,
       playerA: r.player_a,
       playerB: r.player_b,
       winnerSeat: r.winner_seat as StoredGameRow['winnerSeat'],
       reason: r.reason as StoredGameRow['reason'],
+      stakeCents: Number(r.stake_cents),
       endedAt: new Date(r.ended_at).toISOString(),
       isHouseBot: r.is_house_bot,
-    }));
+    };
+  }
+  async listGamesFor(playerId: string): Promise<StoredGameRow[]> {
+    const me = playerId.toLowerCase();
+    const res = await this.pool.query(
+      `SELECT ${PersistentStore.GAME_ROW_COLS}
+         FROM games
+        WHERE lower(player_a) = $1 OR lower(player_b) = $1
+        ORDER BY ended_at ASC, id ASC`,
+      [me],
+    );
+    return res.rows.map((r) => PersistentStore.gameRow(r));
+  }
+  async listRecentGames(days: number): Promise<StoredGameRow[]> {
+    const res = await this.pool.query(
+      `SELECT ${PersistentStore.GAME_ROW_COLS}
+         FROM games
+        WHERE ended_at >= now() - make_interval(days => $1)
+        ORDER BY ended_at ASC, id ASC`,
+      [days],
+    );
+    return res.rows.map((r) => PersistentStore.gameRow(r));
   }
 
   async enqueueSettlement(job: SettlementJob): Promise<void> {
