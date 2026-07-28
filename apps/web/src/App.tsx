@@ -21,7 +21,7 @@ import { ChallengeOfferModal, CollectionSheet, ComebackModal, DiceModal, DocModa
 import { SeasonSheet } from './components/SeasonSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
 import { HowToPlayModal, howToSeen } from './components/HowToPlay';
-import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed } from './lib/session';
+import { sendLimits, sendFriendAction, sendFriendGift, buySkin, claimCollection, claimCosmetic, claimSeasonReward, buySeasonPremium, buyStreakFreeze, fetchProfile, pushIdentity, sendRaceClaim, sendRaceSeed, sendZealyBind } from './lib/session';
 import { burnerAddress, getBurnerWallet, prefersExternalWallet, restoreBurnerWallet, setPrefersExternalWallet } from './lib/burner';
 import { describeTxError } from './lib/txError';
 import { needsPreLockSeed, mintFailureToast, GAS_BUDGET_SENTINEL, RPC_BUSY_SENTINEL, ESTIMATE_REVERTED_SENTINEL, type InsufficientGasBudgetError } from './lib/feePlan';
@@ -1629,6 +1629,13 @@ export default function App() {
   // platform will not pay out is worse than showing none. The server keeps
   // scoring (the data is still auditable); only the surfaces are gone.
 
+  /** Bind the player's Zealy account to their proven game wallet (one-shot,
+   *  same SIWE machinery as the race senders) — the burner path to API quests. */
+  const bindZealy = useCallback(
+    (zealyId: string) => sendZealyBind(SERVER_URL, zealyId, walletRef.current?.address, makeAuth().signMessage),
+    [makeAuth],
+  );
+
   /** Launch a subsidised event 1v1 at the Race Week micro-stake (gated like any
    *  staked entry: 18+/ToS consent + wallet + balance). */
   const playRaceGame = useCallback(
@@ -1639,7 +1646,7 @@ export default function App() {
   return (
     <>
       {state.screen === 'lobby' && (
-        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onDisconnectWallet={disconnectWallet} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} onJoinRace={joinRaceWeek} onPlayRace={playRaceGame} />
+        <Lobby onPlay={onPlay} onCreateTable={onCreateTable} onFreeroll={startFreeroll} onPlay4={onPlay4} onPractice4={onPractice4} onConnectWallet={connectWalletCta} onDisconnectWallet={disconnectWallet} onChallengeFriend={challengeFriend} onAcceptFriend={addFriend} onRemoveFriendEdge={(pid) => void removeFriendEdge(pid)} onViewProfile={onViewProfile} onJoinRace={joinRaceWeek} onPlayRace={playRaceGame} onBindZealy={bindZealy} />
       )}
       {state.screen === 'matchmaking' && (
         <Matchmaking

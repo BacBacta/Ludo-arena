@@ -14,6 +14,7 @@ import { frameClass } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
 import { PremiumFrame } from '../components/PremiumFrame';
 import { t } from '../lib/i18n';
+import { parseZealyProfileId } from '../lib/zealyLink';
 
 /** MiniPay top-up deeplink — the required alternative to an "insufficient" error. */
 const ADD_CASH = 'https://link.minipay.xyz/add_cash?tokens=USDT,USDC';
@@ -33,6 +34,7 @@ export function Lobby({
   onViewProfile,
   onJoinRace,
   onPlayRace,
+  onBindZealy,
 }: {
   onPlay(stake: StakeCents): void;
   onCreateTable(stake: StakeCents): void;
@@ -57,6 +59,9 @@ export function Lobby({
   onJoinRace(): void;
   /** Race Week: launch a subsidised event 1v1 at the micro-stake. */
   onPlayRace(): void;
+  /** Zealy sprint: bind my Zealy account (id from pasted profile link) to my
+   *  game wallet, so API quests verify me via Zealy Connect. */
+  onBindZealy(zealyId: string): Promise<'ok' | 'taken' | 'wallet_taken' | 'no_wallet' | 'failed'>;
 }) {
   const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, walletAddress, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceJoining, friends, friendRequests, sentRequests } = useAppState();
   const dispatch = useAppDispatch();
@@ -90,6 +95,31 @@ export function Lobby({
     }
     setConfirmRemove(pid);
     removeTimer.current = setTimeout(() => setConfirmRemove(null), 2600);
+  };
+
+  // ---- Zealy binding form (Race tab) ----
+  const [zealyInput, setZealyInput] = useState('');
+  const [zealyBusy, setZealyBusy] = useState(false);
+  const bindZealy = async (): Promise<void> => {
+    const id = parseZealyProfileId(zealyInput);
+    if (!id) {
+      dispatch({ type: 'TOAST', message: t('zealyLinkInvalid') });
+      return;
+    }
+    setZealyBusy(true);
+    try {
+      const res = await onBindZealy(id);
+      const key =
+        res === 'ok' ? 'zealyLinked'
+        : res === 'taken' ? 'zealyLinkTaken'
+        : res === 'wallet_taken' ? 'zealyLinkWalletTaken'
+        : res === 'no_wallet' ? 'zealyLinkNoWallet'
+        : 'zealyLinkFailed';
+      dispatch({ type: 'TOAST', message: t(key) });
+      if (res === 'ok') setZealyInput('');
+    } finally {
+      setZealyBusy(false);
+    }
   };
 
   /** My on-device record vs a pid (recent opponents) → the "2-1 vs you" chip.
@@ -394,6 +424,28 @@ export function Lobby({
               👛 {t('racePlayingAs')} <b>{walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}</b> ⧉
             </button>
           )}
+
+          {/* Zealy sprint binding: the burner cannot be linked on Zealy's side
+              (it cannot sign there), so the bridge lives HERE — paste the Zealy
+              profile link once, and the sprint's API quests verify this wallet
+              via Zealy Connect identity. Permanent, 1 account ↔ 1 wallet. */}
+          <details className="racezealy">
+            <summary className="racehow__sum">🔗 {t('zealyLinkTitle')}</summary>
+            <p className="racezealy__hint">{t('zealyLinkHint')}</p>
+            <div className="racezealy__row">
+              <input
+                className="racezealy__input"
+                type="text"
+                inputMode="url"
+                placeholder="https://zealy.io/cw/ludoarena/users/…"
+                value={zealyInput}
+                onChange={(e) => setZealyInput(e.target.value)}
+              />
+              <button className="btn btn--race racezealy__btn" disabled={zealyBusy || !zealyInput.trim()} onClick={() => { playTap('select'); void bindZealy(); }}>
+                {zealyBusy ? '⏳' : t('zealyLinkBtn')}
+              </button>
+            </div>
+          </details>
 
           {/* How to play — no ranking, no timer, no pool: entry + subsidised games. */}
           <details className="racehow">

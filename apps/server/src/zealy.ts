@@ -34,6 +34,54 @@ export function zealyWalletFromBody(body: unknown): string | null {
   return /^0x[0-9a-f]{40}$/.test(w) ? w : null;
 }
 
+/** The Zealy user id from an API-task payload sent with "Zealy Connect"
+ *  identification. Field name tolerant (their payload shape has varied):
+ *  accounts['zealy-connect'] / accounts.zealyConnect / userId / id / user.id.
+ *  Lowercased so binding lookups are case-stable (UUIDs compare fine). */
+export function zealyUserIdFromBody(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const b = body as {
+    accounts?: { [k: string]: unknown };
+    userId?: unknown;
+    id?: unknown;
+    user?: { id?: unknown };
+  };
+  const cands = [b.accounts?.['zealy-connect'], b.accounts?.zealyConnect, b.userId, b.id, b.user?.id];
+  for (const c of cands) {
+    if (typeof c === 'string') {
+      const v = c.trim().toLowerCase();
+      if (/^[a-z0-9_-]{8,64}$/.test(v)) return v;
+    }
+  }
+  return null;
+}
+
+/** Extract a Zealy user id from whatever the player pasted: their profile LINK
+ *  (…zealy.io/cw/<community>/users/<id>, query/hash tolerated) or the raw id.
+ *  Null = nothing id-shaped in there. */
+export function parseZealyProfileId(input: string | null | undefined): string | null {
+  if (!input) return null;
+  let v = input.trim();
+  if (v.includes('zealy.io')) {
+    const path = v.split(/[?#]/)[0] ?? '';
+    const segs = path.split('/').filter(Boolean);
+    v = segs[segs.length - 1] ?? '';
+  }
+  v = v.toLowerCase();
+  return /^[a-z0-9_-]{8,64}$/.test(v) ? v : null;
+}
+
+/** Payload shape probe for telemetry when identification fails: top-level and
+ *  accounts KEY NAMES only (never values) — tells us what Zealy actually sends
+ *  so the tolerant parser can be extended from logs instead of guesses. */
+export function zealyPayloadKeys(body: unknown): string {
+  if (!body || typeof body !== 'object') return '(none)';
+  const b = body as { accounts?: object };
+  const top = Object.keys(b).join(',');
+  const acc = b.accounts && typeof b.accounts === 'object' ? ` accounts:[${Object.keys(b.accounts).join(',')}]` : '';
+  return (top + acc) || '(none)';
+}
+
 /** One durable game, reduced to what the sprint rules need. */
 export interface ZealyGame {
   id: string;

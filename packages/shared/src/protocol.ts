@@ -674,7 +674,20 @@ export type ClientMsg =
   | { t: 'race.seed'; native?: boolean }
   // Race Week: fetch the current leaderboard (top N + my rank). No args.
   | { t: 'race.leaderboard' }
+  // Zealy sprint: bind my Zealy account to my (proven) game wallet, so the
+  // sprint's API quests can verify me via Zealy Connect identity even though my
+  // in-app burner wallet cannot be linked on Zealy's side. `zealyId` is the id
+  // extracted from the player's pasted Zealy profile link. First-write-wins and
+  // permanent on BOTH sides (1 Zealy account ↔ 1 wallet) — the anti-farm rule.
+  | { t: 'zealy.bind'; zealyId: string }
   | { t: 'ping' };
+
+/** A plausible Zealy user id (UUID or handle-like), as extracted from a profile
+ *  link. Kept permissive on charset, strict on length — the server only stores
+ *  the binding; matching happens against what Zealy's API actually sends. */
+export function isZealyId(s: string): boolean {
+  return /^[A-Za-z0-9_-]{8,64}$/.test(s);
+}
 
 /** Private-table code: unambiguous charset, fixed length. */
 export const TABLE_CODE_LEN = 6;
@@ -881,6 +894,10 @@ export type ServerMsg =
   // Race Week leaderboard: `top` = highest-scoring players (name + points +
   // 1-indexed rank), `myRank`/`myPoints` locate the caller (rank 0 = unranked).
   | { t: 'race.board'; top: Array<{ name: string; points: number; rank: number }>; myRank: number; myPoints: number }
+  // zealy.bind ack. ok:false reasons: 'taken' (that Zealy account is bound to
+  // another wallet), 'wallet_taken' (this wallet already bound to another Zealy
+  // account), 'no_wallet' (no proven wallet on the session).
+  | { t: 'zealy.bound'; ok: boolean; zealyId?: string; reason?: 'taken' | 'wallet_taken' | 'no_wallet' }
   // Your last opponent clicked Rematch and is waiting; `name` is their display
   // label. The end screen surfaces an Accept/Decline offer instead of the game
   // silently depending on both sides happening to click.
@@ -1123,6 +1140,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return m.native === undefined || typeof m.native === 'boolean' ? m : null;
     case 'race.leaderboard':
       return m; // no args
+    case 'zealy.bind':
+      return typeof m.zealyId === 'string' && isZealyId(m.zealyId) ? m : null;
     case 'queue.join':
       if (m.freeroll !== undefined && typeof m.freeroll !== 'boolean') return null;
       return isAcceptedStake(m.stake) ? m : null;

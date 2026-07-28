@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseZealyCheck, ZEALY_GOALS, zealyStats, zealyVerdict, zealyWalletFromBody, type ZealyGame, type ZealyStats } from '../src/zealy.js';
+import { parseZealyCheck, parseZealyProfileId, ZEALY_GOALS, zealyPayloadKeys, zealyStats, zealyUserIdFromBody, zealyVerdict, zealyWalletFromBody, type ZealyGame, type ZealyStats } from '../src/zealy.js';
 
 // The sprint's API quests are auto-approved from these rules alone, with real
 // money at the end — every filter here IS a prize-integrity rule.
@@ -149,5 +149,42 @@ describe('zealyVerdict — what the player is told', () => {
   it('rejections carry the progress, not a bare no', () => {
     const v = zealyVerdict('daily4', { ...base, finishedToday: 2 });
     expect(v.message).toContain('2/4');
+  });
+});
+
+describe('Zealy Connect — the burner path to API quests', () => {
+  const UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+  it('parseZealyProfileId: accepts the pasted profile LINK, raw id, query/hash noise', () => {
+    expect(parseZealyProfileId(`https://zealy.io/cw/ludoarena/users/${UUID}`)).toBe(UUID);
+    expect(parseZealyProfileId(`https://zealy.io/cw/ludoarena/users/${UUID}?ref=abc#top`)).toBe(UUID);
+    expect(parseZealyProfileId(UUID.toUpperCase())).toBe(UUID);
+    expect(parseZealyProfileId('  my_handle-42  ')).toBe('my_handle-42');
+  });
+
+  it('parseZealyProfileId: rejects junk — too short, spaces, bare community URLs', () => {
+    expect(parseZealyProfileId('abc')).toBeNull();
+    expect(parseZealyProfileId('hello world')).toBeNull();
+    expect(parseZealyProfileId('https://zealy.io/cw/')).toBeNull();
+    expect(parseZealyProfileId(null)).toBeNull();
+  });
+
+  it('zealyUserIdFromBody: tolerant to the payload shapes Zealy has used', () => {
+    expect(zealyUserIdFromBody({ accounts: { 'zealy-connect': UUID } })).toBe(UUID);
+    expect(zealyUserIdFromBody({ accounts: { zealyConnect: UUID } })).toBe(UUID);
+    expect(zealyUserIdFromBody({ userId: UUID })).toBe(UUID);
+    expect(zealyUserIdFromBody({ id: UUID.toUpperCase() })).toBe(UUID);
+    expect(zealyUserIdFromBody({ user: { id: UUID } })).toBe(UUID);
+    expect(zealyUserIdFromBody({ accounts: { wallet: '0xabc' } })).toBeNull();
+    expect(zealyUserIdFromBody(null)).toBeNull();
+  });
+
+  it('zealyPayloadKeys: key NAMES only, never values (safe for logs)', () => {
+    const probe = zealyPayloadKeys({ requestId: 'secret-value', accounts: { email: 'x@y.z' } });
+    expect(probe).toContain('requestId');
+    expect(probe).toContain('accounts:[email]');
+    expect(probe).not.toContain('secret-value');
+    expect(probe).not.toContain('x@y.z');
+    expect(zealyPayloadKeys(null)).toBe('(none)');
   });
 });

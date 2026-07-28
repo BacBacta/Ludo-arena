@@ -1428,6 +1428,95 @@ export function sendRaceSeed(
   }));
 }
 
+export type ZealyBindResult = 'ok' | 'taken' | 'wallet_taken' | 'no_wallet' | 'failed';
+
+/**
+ * One-shot Zealy account ↔ game wallet binding (zealy.bind → zealy.bound).
+ * Same prove-then-act machinery as sendRaceSeed: the burner signs locally (no
+ * dialog), an external wallet pops its SIWE prompt. Resolves with the outcome —
+ * 'failed' covers timeouts/socket errors so the UI always has a message.
+ */
+export function sendZealyBind(
+  serverUrl: string,
+  zealyId: string,
+  walletAddress?: string,
+  signMessage?: (message: string) => Promise<string>,
+): Promise<ZealyBindResult> {
+  return queueOneShot(() => new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(withQa(serverUrl));
+    } catch {
+      resolve('failed');
+      return;
+    }
+    let bindSent = false;
+    let proveFallback: ReturnType<typeof setTimeout> | null = null;
+    const done = (v: ZealyBindResult): void => {
+      resolve(v);
+      if (proveFallback) clearTimeout(proveFallback);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => done('failed'), signMessage && !isMiniPay() ? 120000 : 30000);
+    const sendBind = (): void => {
+      if (bindSent) return;
+      bindSent = true;
+      if (proveFallback) clearTimeout(proveFallback);
+      ws.send(JSON.stringify({ t: 'zealy.bind', zealyId }));
+    };
+    const entropy = (() => {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ t: 'hello', entropy, sessionToken: token ?? undefined, wallet: walletAddress, miniPay: isMiniPay(), fingerprint: deviceFingerprint() }));
+    };
+    ws.onmessage = (e) => {
+      let msg: ServerMsg;
+      try {
+        msg = JSON.parse(String(e.data)) as ServerMsg;
+      } catch {
+        return;
+      }
+      if (msg.t === 'hello.ok') {
+        if (msg.walletNonce && signMessage && !isMiniPay()) {
+          signMessage(walletProofMessage(msg.walletNonce))
+            .then((signature) => {
+              ws.send(JSON.stringify({ t: 'wallet.prove', signature }));
+              proveFallback = setTimeout(sendBind, 4000);
+            })
+            .catch(() => done('failed'));
+        } else {
+          sendBind();
+        }
+      } else if (msg.t === 'friends.update') {
+        sendBind();
+      } else if (msg.t === 'zealy.bound') {
+        clearTimeout(timer);
+        done(msg.ok ? 'ok' : (msg.reason ?? 'failed'));
+      } else if (msg.t === 'error') {
+        clearTimeout(timer);
+        done('failed');
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done('failed');
+    };
+  }));
+}
+
 /**
  * One-shot Race Week leaderboard fetch (race.leaderboard → race.board). Resumes
  * the session so the server can resolve MY rank, and resolves with the top board +
