@@ -139,6 +139,11 @@ on:
         description: 'race-funding only: RACE_POOL_CENTS — TOTAL campaign cap (prizes + cUSD gas seeds), in cents. e.g. 8000 = $80. Empty = leave unchanged.'
         required: false
         type: string
+      tier_bps:
+        description: 'set-tier-rake only: rake in basis points for the 1c Race tier (0..2000; e.g. 1000 = 10%, 1 = ~rake-free). Default 1.'
+        required: false
+        default: '1'
+        type: string
       mints_day:
         description: 'race-pass-mints only: a single UTC day (YYYY-MM-DD). Empty = today.'
         required: false
@@ -199,6 +204,7 @@ jobs:
         if: ${{ inputs.operation == 'set-tier-rake' }}
         env:
           NETWORK: celo
+          RAW_BPS: ${{ inputs.tier_bps }}
           # The escrow OWNER's key (the TREASURY when roles were split at deploy).
           # First configured secret wins; the on-chain owner check is the real gate.
           DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
@@ -206,6 +212,9 @@ jobs:
           if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
             echo "::error::No owner key configured — add one repo secret among ESCROW_OWNER_PRIVATE_KEY / TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY (must be the escrow owner)."; exit 1
           fi
+          TIER_BPS=$(printf '%s' "${RAW_BPS:-1}" | tr -cd '0-9')
+          export TIER_BPS="${TIER_BPS:-1}"
+          echo "Setting 1c tier rake to $TIER_BPS bps"
           npm ci
           npm run set-tier-rake -w packages/contracts
       # allow-token: on-chain OWNER call — whitelist a stake token on the DEPLOYED
