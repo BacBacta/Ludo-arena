@@ -36,8 +36,8 @@ describe('zealyWalletFromBody — the wallet Zealy sends', () => {
 });
 
 describe('parseZealyCheck', () => {
-  it('accepts exactly the six known checks', () => {
-    for (const c of ['mint', 'games1', 'games4', 'daily4', 'win3', 'marathon25']) expect(parseZealyCheck(c)).toBe(c);
+  it('accepts exactly the seven known checks', () => {
+    for (const c of ['mint', 'games1', 'daily1', 'games4', 'daily4', 'win3', 'marathon25']) expect(parseZealyCheck(c)).toBe(c);
   });
   it('rejects unknowns', () => {
     expect(parseZealyCheck('drain-the-pool')).toBeNull();
@@ -108,7 +108,7 @@ describe('zealyVerdict — what the player is told', () => {
   const base: ZealyStats = { minted: true, finished: 0, finishedToday: 0, winsToday: 0, opponents: 0 };
 
   it('every game check demands the Race Pass first', () => {
-    for (const check of ['games1', 'games4', 'daily4', 'win3', 'marathon25'] as const) {
+    for (const check of ['games1', 'daily1', 'games4', 'daily4', 'win3', 'marathon25'] as const) {
       const v = zealyVerdict(check, { ...base, minted: false, finished: 99, finishedToday: 9, winsToday: 9, opponents: 9 });
       expect(v.ok).toBe(false);
       expect(v.message).toContain('Race Pass');
@@ -140,6 +140,17 @@ describe('zealyVerdict — what the player is told', () => {
     expect(none.ok).toBe(false);
     // The rejection must POINT somewhere (Race tab) and set the expectation
     // (3 minutes) — "0/1" alone tells a brand-new player nothing.
+    expect(none.message).toContain('Race tab');
+    expect(none.message).toContain('3 minutes');
+  });
+
+  it('daily1 (the published activation rung): yesterday earns NOTHING today', () => {
+    // The whole point of windowing this rung: a player sitting on a pile of
+    // past games must still play one to claim, or the quest rewards without
+    // provoking anything. `finished` high + `finishedToday` 0 => refused.
+    expect(zealyVerdict('daily1', { ...base, finished: 25, finishedToday: 0 }).ok).toBe(false);
+    expect(zealyVerdict('daily1', { ...base, finished: 1, finishedToday: 1 }).ok).toBe(true);
+    const none = zealyVerdict('daily1', { ...base, finished: 4, finishedToday: 0 });
     expect(none.message).toContain('Race tab');
     expect(none.message).toContain('3 minutes');
   });
