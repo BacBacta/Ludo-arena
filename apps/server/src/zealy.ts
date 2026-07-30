@@ -13,9 +13,9 @@
  */
 import type { GameOverReason } from '@ludo/shared';
 
-export type ZealyCheck = 'mint' | 'games4' | 'daily4' | 'win3' | 'marathon25';
+export type ZealyCheck = 'mint' | 'games1' | 'games4' | 'daily4' | 'win3' | 'marathon25';
 
-const CHECKS: readonly ZealyCheck[] = ['mint', 'games4', 'daily4', 'win3', 'marathon25'];
+const CHECKS: readonly ZealyCheck[] = ['mint', 'games1', 'games4', 'daily4', 'win3', 'marathon25'];
 
 export function parseZealyCheck(raw: string | null | undefined): ZealyCheck | null {
   return CHECKS.includes(raw as ZealyCheck) ? (raw as ZealyCheck) : null;
@@ -137,8 +137,13 @@ export function zealyStats(games: readonly ZealyGame[], todayUtc: string, voided
   return { finished, finishedToday, winsToday, opponents: opponents.size };
 }
 
-/** Thresholds per check — one source of truth for verdicts AND messages. */
-export const ZEALY_GOALS = { games4: 4, daily4: 4, win3: 3, marathon25: 25, marathonOpponents: 3 } as const;
+/** Thresholds per check — one source of truth for verdicts AND messages.
+ *  `games1` is the ACTIVATION rung: the sprint's first game quest asked for 4,
+ *  which is ~15 minutes of play before any reward, and production showed the
+ *  leak exactly there (12 Passes minted in a day against ~6 staked games). One
+ *  finished game is ~3 minutes — a claim the player can reach while they still
+ *  have the app open. */
+export const ZEALY_GOALS = { games1: 1, games4: 4, daily4: 4, win3: 3, marathon25: 25, marathonOpponents: 3 } as const;
 
 /** Compact 0x1234…abcd for player-facing messages. */
 export function shortWallet(wallet: string | null | undefined): string {
@@ -161,6 +166,10 @@ export function zealyVerdict(check: ZealyCheck, s: ZealyStats, wallet?: string):
       return s.minted
         ? { ok: true, message: 'Race Pass verified on-chain. Welcome to the race!' }
         : { ok: false, message: `No Race Pass found for ${w} (the wallet linked to your Zealy profile) — is this the wallet you play with? Mint on ludoarena.xyz (Race tab) with THIS wallet, or link the right one on Zealy: Profile → Linked accounts.` };
+    case 'games1':
+      return s.finished >= ZEALY_GOALS.games1
+        ? { ok: true, message: 'Your first game is on-chain. Welcome to the arena!' }
+        : { ok: false, message: `No completed game yet for ${w} — open the Race tab and play your first 1v1. It takes about 3 minutes, and a game you leave mid-match doesn't count.` };
     case 'games4':
       return s.finished >= ZEALY_GOALS.games4
         ? { ok: true, message: `${s.finished} completed games verified. GG!` }
