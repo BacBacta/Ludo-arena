@@ -36,8 +36,8 @@ describe('zealyWalletFromBody — the wallet Zealy sends', () => {
 });
 
 describe('parseZealyCheck', () => {
-  it('accepts exactly the five known checks', () => {
-    for (const c of ['mint', 'games4', 'daily4', 'win3', 'marathon25']) expect(parseZealyCheck(c)).toBe(c);
+  it('accepts exactly the six known checks', () => {
+    for (const c of ['mint', 'games1', 'games4', 'daily4', 'win3', 'marathon25']) expect(parseZealyCheck(c)).toBe(c);
   });
   it('rejects unknowns', () => {
     expect(parseZealyCheck('drain-the-pool')).toBeNull();
@@ -108,7 +108,7 @@ describe('zealyVerdict — what the player is told', () => {
   const base: ZealyStats = { minted: true, finished: 0, finishedToday: 0, winsToday: 0, opponents: 0 };
 
   it('every game check demands the Race Pass first', () => {
-    for (const check of ['games4', 'daily4', 'win3', 'marathon25'] as const) {
+    for (const check of ['games1', 'games4', 'daily4', 'win3', 'marathon25'] as const) {
       const v = zealyVerdict(check, { ...base, minted: false, finished: 99, finishedToday: 9, winsToday: 9, opponents: 9 });
       expect(v.ok).toBe(false);
       expect(v.message).toContain('Race Pass');
@@ -129,6 +129,24 @@ describe('zealyVerdict — what the player is told', () => {
   it('mint: pass/fail on the grant registry', () => {
     expect(zealyVerdict('mint', base).ok).toBe(true);
     expect(zealyVerdict('mint', { ...base, minted: false }).ok).toBe(false);
+  });
+
+  it('games1 (activation): ONE finished game is the whole bar', () => {
+    // The rung that catches a player right after the mint — if this ever needs
+    // more than one game it has stopped being an activation quest.
+    expect(ZEALY_GOALS.games1).toBe(1);
+    expect(zealyVerdict('games1', { ...base, finished: 1 }).ok).toBe(true);
+    const none = zealyVerdict('games1', base);
+    expect(none.ok).toBe(false);
+    // The rejection must POINT somewhere (Race tab) and set the expectation
+    // (3 minutes) — "0/1" alone tells a brand-new player nothing.
+    expect(none.message).toContain('Race tab');
+    expect(none.message).toContain('3 minutes');
+  });
+
+  it('games1 rejections echo the wallet, like every other gate', () => {
+    const W = '0x743bb002b6f925442be7f6ae0a3f9d56ed15cd7b';
+    expect(zealyVerdict('games1', base, W).message).toContain('0x743b');
   });
 
   it('games4 & daily4 & win3: thresholds from ZEALY_GOALS', () => {
