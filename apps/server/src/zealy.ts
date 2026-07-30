@@ -13,9 +13,9 @@
  */
 import type { GameOverReason } from '@ludo/shared';
 
-export type ZealyCheck = 'mint' | 'games1' | 'games4' | 'daily4' | 'win3' | 'marathon25';
+export type ZealyCheck = 'mint' | 'games1' | 'daily1' | 'games4' | 'daily4' | 'win3' | 'marathon25';
 
-const CHECKS: readonly ZealyCheck[] = ['mint', 'games1', 'games4', 'daily4', 'win3', 'marathon25'];
+const CHECKS: readonly ZealyCheck[] = ['mint', 'games1', 'daily1', 'games4', 'daily4', 'win3', 'marathon25'];
 
 export function parseZealyCheck(raw: string | null | undefined): ZealyCheck | null {
   return CHECKS.includes(raw as ZealyCheck) ? (raw as ZealyCheck) : null;
@@ -142,8 +142,15 @@ export function zealyStats(games: readonly ZealyGame[], todayUtc: string, voided
  *  which is ~15 minutes of play before any reward, and production showed the
  *  leak exactly there (12 Passes minted in a day against ~6 staked games). One
  *  finished game is ~3 minutes — a claim the player can reach while they still
- *  have the app open. */
-export const ZEALY_GOALS = { games1: 1, games4: 4, daily4: 4, win3: 3, marathon25: 25, marathonOpponents: 3 } as const;
+ *  have the app open.
+ *
+ *  `daily1` is that same rung fenced to TODAY, and it is the one the sprint
+ *  should publish: a lifetime counter is retroactive, so every player who had
+ *  already played collected the reward without playing again — the opposite of
+ *  what an activation quest is for. Windowed to the UTC day, nobody can claim
+ *  without playing, and a newcomer who just minted still clears it with their
+ *  first 3-minute game. */
+export const ZEALY_GOALS = { games1: 1, daily1: 1, games4: 4, daily4: 4, win3: 3, marathon25: 25, marathonOpponents: 3 } as const;
 
 /** Compact 0x1234…abcd for player-facing messages. */
 export function shortWallet(wallet: string | null | undefined): string {
@@ -170,6 +177,10 @@ export function zealyVerdict(check: ZealyCheck, s: ZealyStats, wallet?: string):
       return s.finished >= ZEALY_GOALS.games1
         ? { ok: true, message: 'Your first game is on-chain. Welcome to the arena!' }
         : { ok: false, message: `No completed game yet for ${w} — open the Race tab and play your first 1v1. It takes about 3 minutes, and a game you leave mid-match doesn't count.` };
+    case 'daily1':
+      return s.finishedToday >= ZEALY_GOALS.daily1
+        ? { ok: true, message: 'One game played today. Come back tomorrow!' }
+        : { ok: false, message: `No game finished today for ${w} — open the Race tab and play one 1v1. It takes about 3 minutes (UTC day; a game you leave mid-match doesn't count).` };
     case 'games4':
       return s.finished >= ZEALY_GOALS.games4
         ? { ok: true, message: `${s.finished} completed games verified. GG!` }
