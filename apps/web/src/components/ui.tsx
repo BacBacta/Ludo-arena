@@ -17,6 +17,7 @@ import { devUnlockCosmetics } from '../lib/devUnlock';
 import { COUNTRIES, GLOBE_FLAG } from '../lib/profile';
 import { COSMETIC_SETS, DIVISIONS, FEATURED_SET_MULTIPLIER, PREMIUM_COSMETICS, PREMIUM_SKINS, PROFILE_NAME_MIN, PROFILE_NAME_MAX, cosmeticById, cosmeticCents, featuredSetIdFor, potCents4, ALLOWED_STAKES_CENTS } from '@ludo/shared';
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
+import { MARKET } from '../lib/market';
 import { isMiniPay } from '../lib/minipay';
 import { playDice, playTap } from '../lib/sound';
 import { t } from '../lib/i18n';
@@ -1145,7 +1146,8 @@ export function Table4Modal({ onPractice, onFree, onStaked }: {
   const close = (): void => void dispatch({ type: 'TABLE4_MODAL', open: false });
   const trapRef = useFocusTrap<HTMLDivElement>(table4Open, close);
   if (!table4Open) return null;
-  const staked = (ALLOWED_STAKES_CENTS as readonly number[]).filter((s) => s > 0);
+  // No-staking MARKET (Cameroon build): the 4p sheet offers practice + free only.
+  const staked = MARKET.staking ? (ALLOWED_STAKES_CENTS as readonly number[]).filter((s) => s > 0) : [];
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
@@ -1160,7 +1162,7 @@ export function Table4Modal({ onPractice, onFree, onStaked }: {
             <span className="t4mode__ic" aria-hidden="true">🌍</span>
             <span className="t4mode__txt"><b>{t('t4FreeOnline')}</b><small>{t('t4FreeOnlineD')}</small></span>
           </button>
-          {staked4Available && (
+          {staked4Available && staked.length > 0 && (
             <div className="t4mode t4mode--real">
               <div className="t4mode__row">
                 <span className="t4mode__ic" aria-hidden="true">💵</span>

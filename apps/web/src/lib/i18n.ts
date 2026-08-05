@@ -1,4 +1,6 @@
 /** i18n: FR/EN/PT/ES/SW (E6.1). English is the complete reference (TKey). */
+import { MARKET } from './market';
+
 const en = {
   play: 'PLAY ⚡',
   playFreeSub: '1v1 online · free · vs a real player',
@@ -2025,7 +2027,7 @@ const dict = { en, fr, pt, es, sw } as const;
 export type Lang = keyof typeof dict;
 
 /**
- * English by default (product requirement); other locales opt-in via
+ * The MARKET's default language (global: en, cm: fr); other locales opt-in via
  * ?lang=fr|pt|es|sw (persisted) — no silent browser-language switching.
  */
 function resolveLang(): Lang {
@@ -2040,7 +2042,7 @@ function resolveLang(): Lang {
   } catch {
     /* SSR/storage unavailable */
   }
-  return 'en';
+  return MARKET.defaultLang;
 }
 
 export const lang: Lang = resolveLang();

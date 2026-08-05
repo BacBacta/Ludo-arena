@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ALLOWED_STAKES_CENTS, FREEROLL, SEASON_PREMIUM, crownsForTier, potCents, type StakeCents } from '@ludo/shared';
+import { MARKET } from '../lib/market';
 import { cosmeticsCusdAvailable } from '../lib/deployments';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { SUPPORT_EMAIL, TopBar, Table4Modal } from '../components/ui';
@@ -173,8 +174,10 @@ export function Lobby({
     return false;
   }
 
-  // All rationalised tiers fit the picker now (0 / 25¢ / $1 / $5).
-  const lobbyStakes = ALLOWED_STAKES_CENTS;
+  // All rationalised tiers fit the picker now (0 / 25¢ / $1 / $5). In a
+  // no-staking MARKET (e.g. the Cameroon build) only the free tier exists —
+  // this single source also empties the challenge sheet's staked options.
+  const lobbyStakes = MARKET.staking ? ALLOWED_STAKES_CENTS : ([0] as readonly StakeCents[]);
 
   function createTable() {
     if (guardStaked(stakeCents)) return;
@@ -199,7 +202,9 @@ export function Lobby({
   // it just renders under its topic. Play is always the landing tab.
   type LobbyTab = 'play' | 'race' | 'friends' | 'shop' | 'profile';
   const [tab, setTab] = useState<LobbyTab>('play');
-  const raceLive = !!race?.active;
+  // The Race is subsidised STAKED play — a no-staking market has no Race tab
+  // even while the event runs elsewhere.
+  const raceLive = !!race?.active && MARKET.staking;
   // The Race tab exists only while the server reports a live event; if the
   // event ends while the player is ON that tab, fall back to Play.
   useEffect(() => {
@@ -247,7 +252,7 @@ export function Lobby({
     <div className="screen screen--lobby">
       <TopBar onConnect={onConnectWallet} onDisconnect={onDisconnectWallet} />
 
-      {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
+      {MARKET.staking && stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
 
       {/* keyed per tab: switching replays the staggered entrance, so every
           page ARRIVES with the same premium rhythm the landing has */}
@@ -281,7 +286,9 @@ export function Lobby({
         <small>{t('playFreeSub')}</small>
       </button>
 
-      {/* Secondary money path: reveal the USDT stake tiles on demand. */}
+      {/* Secondary money path: reveal the USDT stake tiles on demand.
+          Absent entirely in a no-staking market. */}
+      {MARKET.staking && (
       <button
         className={`btn btn--usdt${showStakes ? ' btn--usdt-open' : ''}`}
         onClick={() => { playTap(); setShowStakes((v) => !v); }}
@@ -293,7 +300,8 @@ export function Lobby({
         </span>
         <span className="btn--usdt__hint">{t('winUpTo')} {fmtUsd(potCents(500 as StakeCents))} {showStakes ? '▲' : '▾'}</span>
       </button>
-      {showStakes && (
+      )}
+      {MARKET.staking && showStakes && (
         <div className="gstakes gstakes--reveal">
           {stakedTiers.map((s) => {
             const locked = !walletBacked;
@@ -315,7 +323,7 @@ export function Lobby({
           <small className="gstakes__rakenote">{t('rakeNote')}</small>
         </div>
       )}
-      {walletBacked && limits.stakedTodayCents > 0 && (
+      {MARKET.staking && walletBacked && limits.stakedTodayCents > 0 && (
         <small className="stagehint" style={{ display: 'block', marginTop: 6 }}>
           {t('realityStaked')} {fmtUsd(limits.stakedTodayCents)} / {fmtUsd(limits.dailyLimitCents)}
         </small>

@@ -3237,8 +3237,8 @@ const RACE_COLLUSION_PAIR_CAP = POLICY.collusionPairCap;
 const RACE_COLLUSION_SAME_IP_PAIR_CAP = POLICY.collusionSameIpPairCap;
 
 // Believable, indistinguishable opponent identities (operator disclosure choice).
-const BOT_NAMES = ['Kwame', 'Amara', 'Tunde', 'Zola', 'Kofi', 'Nadia', 'Sipho', 'Ama', 'Jabari', 'Imani', 'Chidi', 'Aya'];
-const BOT_FLAGS = ['🇬🇭', '🇳🇬', '🇰🇪', '🇿🇦', '🇨🇮', '🇸🇳', '🇹🇿', '🇺🇬'];
+const BOT_NAMES = ['Kwame', 'Amara', 'Tunde', 'Zola', 'Kofi', 'Nadia', 'Sipho', 'Ama', 'Jabari', 'Imani', 'Chidi', 'Aya', 'Achille', 'Solange', 'Brice', 'Clarisse'];
+const BOT_FLAGS = ['🇬🇭', '🇳🇬', '🇰🇪', '🇿🇦', '🇨🇮', '🇸🇳', '🇹🇿', '🇺🇬', '🇨🇲'];
 
 /** A synthetic, socket-less Session driven entirely server-side: the Room plays
  *  its seat (isHouseBot) and its stake is locked on-chain from the house wallet.

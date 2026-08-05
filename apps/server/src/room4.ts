@@ -440,7 +440,7 @@ export class Room4 {
 export const BOT4_NAMES: ReadonlyArray<{ name: string; flag: string }> = [
   { name: 'Ana', flag: '🌍' },
   { name: 'Young', flag: '🌍' },
-  { name: 'Dragan', flag: '🌍' },
+  { name: 'Brice', flag: '🌍' },
   { name: 'Amara', flag: '🌍' },
 ];
 
