@@ -72,7 +72,7 @@ import { miniPayOriginTrusted } from './originTrust.js';
 import { createArbiter, GameStatus, SettlementQueue } from './settlement.js';
 import { createArbiterN, GameStatusN, SettlementQueue4 } from './settlement4.js';
 import { createCosmeticsVerifier } from './cosmetics.js';
-import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitDripCents, nativeDrawWei, nativeSeedDeficitWei, nativeSeedGrantWei, poolLeftCents, SEED_FP_LIFETIME_MULT, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
+import { budgetLeftCents, claimFpWallets, createRaceFaucet, faucetFailureMessage, jitClaimCents, jitDripCents, nativeDrawWei, nativeSeedDeficitWei, nativeSeedGrantWei, poolLeftCents, raceIsOver, SEED_FP_LIFETIME_MULT, SEED_LIFETIME_MULT, seedDeficitCents, seedFpDrawCents, seedGrantCents, type RaceFaucet } from './race.js';
 import { scoreEventGame, raceLeaderboard } from './raceScore.js';
 import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
@@ -480,10 +480,20 @@ async function raceSpend(s: Awaited<ReturnType<typeof createStore>>): Promise<{ 
   return { prize, seed, total: prize + seed };
 }
 
+/** Is the event armed AND still within its announced window? Every path that
+ *  shows the event or spends its budget (hello state, gas seed, entry claim,
+ *  JIT drip) goes through this: `active` used to be hardcoded true with
+ *  `endsAt` display-only, so a campaign kept running past its own close until
+ *  an operator disarmed it by hand. Call sites keep their own `!raceFaucet`
+ *  check so TypeScript still narrows the faucet to non-null. */
+function raceOpen(): boolean {
+  return !!raceFaucet && !raceIsOver(raceFaucet.endsAt, Date.now());
+}
+
 /** Client-facing Race Week state for hello.ok: dormant (undefined) off-event,
  *  else whether THIS wallet already claimed its grant + the funding params. */
 async function raceStateFor(wallet: string | undefined): Promise<RaceState | undefined> {
-  if (!raceFaucet) return undefined;
+  if (!raceFaucet || !raceOpen()) return undefined;
   const funded = wallet ? !!(await store.getMeta(`race:grant:${wallet.toLowerCase()}`)) : false;
   // Prize dimension only — gas seeds don't tick down the pool players race for.
   const { prize } = await raceSpend(store);
@@ -929,7 +939,7 @@ function wireRoom(room: Room): void {
     // would return 0 regardless, but this also skips the JIT top-up below — the
     // faucet must never fund the bot, and the human's own next-stake drip is
     // handled by their real games, not this honeypot one.
-    if (raceFaucet && result.stakeCents > 0 && pa.wallet && pb.wallet && !pa.isHouseBot && !pb.isHouseBot) {
+    if (raceFaucet && raceOpen() && result.stakeCents > 0 && pa.wallet && pb.wallet && !pa.isHouseBot && !pb.isHouseBot) {
       const winW = result.winner === 0 ? pa.wallet : pb.wallet;
       const winN = result.winner === 0 ? pa.name : pb.name;
       const loseW = result.winner === 0 ? pb.wallet : pa.wallet;
@@ -2283,7 +2293,7 @@ wss.on('connection', (ws, req) => {
         // cannot pay gas in the stablecoin); default = the cUSD burner seed.
         // Each dimension has its own arming knob.
         const wantNative = msg.native === true;
-        if (!raceFaucet || (wantNative ? raceFaucet.nativeSeedWei <= 0n : raceFaucet.seedCents <= 0)) {
+        if (!raceFaucet || !raceOpen() || (wantNative ? raceFaucet.nativeSeedWei <= 0n : raceFaucet.seedCents <= 0)) {
           session.send({ t: 'error', code: 'BAD_STATE', message: wantNative ? 'Gas sponsorship is not available.' : 'Race Week gas seed is not available.' });
           break;
         }
@@ -2477,7 +2487,7 @@ wss.on('connection', (ws, req) => {
         // proven wallet, one grant per WALLET (the Pass is 1/wallet → 1/phone),
         // one per DEVICE fingerprint, and a hard total pool cap. Amounts are
         // trivial (cents), so "claim & never play" is economically negligible.
-        if (!raceFaucet) {
+        if (!raceFaucet || !raceOpen()) {
           session.send({ t: 'error', code: 'BAD_STATE', message: 'Race Week is not active.' });
           break;
         }
