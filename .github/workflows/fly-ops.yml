@@ -61,6 +61,7 @@ on:
           - unset-staking-allowed-countries
           - arm-mainnet
           - race-funding
+          - end-race-week
           - set-tier-rake
           - allow-token
           - race-status
@@ -81,7 +82,7 @@ on:
           - probe-lock
           - probe-feecurrencies
       confirm:
-        description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT · prune-race-board: PRUNE-BOARD · void-race-games (APPLY only): VOID-GAMES'
+        description: 'arm-mainnet: ARM-MAINNET · reset-race-board: RESET-BOARD · arm-house-bot: ARM-HOUSE-BOT · prune-race-board: PRUNE-BOARD · void-race-games (APPLY only): VOID-GAMES · end-race-week: END-RACE-WEEK'
         required: false
         type: string
       reset_full:
@@ -571,6 +572,36 @@ jobs:
           # shellcheck disable=SC2086
           flyctl secrets set -a ludo-arena $ARGS
           echo "Done — the machine restarts with the new funding."
+      # end-race-week: close the campaign. Unsets RACE_WEEK_ACTIVE, so
+      # createRaceFaucet() returns null and the whole event goes dormant in one
+      # step: the Race card disappears from the lobby (hello.ok carries no race
+      # state), race.seed / race.claim answer "not active", and the JIT drip
+      # stops. Nothing on-chain is touched — minted Passes stay valid, settled
+      # games stay settled, the faucet keeps its balance — so re-arming later is
+      # just arm-mainnet again. Spend counters are deliberately LEFT ALONE
+      # (reset-race-board --full is the separate, explicit way to zero them).
+      - name: end-race-week (close the campaign — event goes dormant)
+        if: ${{ inputs.operation == 'end-race-week' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -eu
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN secret is not configured"; exit 1; fi
+          if [ "${CONFIRM:-}" != "END-RACE-WEEK" ]; then
+            echo "::error::type END-RACE-WEEK in the 'confirm' box to proceed — this closes the event for every player"; exit 1
+          fi
+          echo "Secrets BEFORE (names only):"
+          flyctl secrets list -a ludo-arena || true
+          # -w: whole-token match, so RACE_WEEK_ACTIVE_SOMETHING can't satisfy it.
+          if flyctl secrets list -a ludo-arena | grep -qw RACE_WEEK_ACTIVE; then
+            flyctl secrets unset RACE_WEEK_ACTIVE -a ludo-arena
+            echo "RACE_WEEK_ACTIVE unset — Race Week is CLOSED (card hidden, seeds and grants refused, JIT drip stopped)."
+          else
+            echo "RACE_WEEK_ACTIVE is not set — the event is already dormant, nothing to do."
+          fi
+          echo "Secrets AFTER (names only):"
+          flyctl secrets list -a ludo-arena || true
       # reset-race-board: wipe the Race Week leaderboard for a clean pre-launch
       # slate. Runs INSIDE the machine (via ssh) because the store (Redis/Postgres)
       # is only reachable from there — the reset uses the server's own createStore,

@@ -268,6 +268,21 @@ export interface RaceConfig {
   nativePoolWei: bigint;
 }
 
+/** Has the campaign passed its own announced end? `endsAt` used to be a
+ *  display-only field while the event's `active` flag was hardcoded true, so a
+ *  finished campaign kept running — card shown, Passes mintable, faucet
+ *  seeding — until an operator remembered to disarm it by hand (Race Week ran a
+ *  full day past its close). Every money path now reads this.
+ *
+ *  Unset or unparseable `endsAt` = NOT over: an open-ended campaign is the
+ *  legacy behaviour, and a typo'd date must never silently kill a live event —
+ *  the same fail-safe direction as parseCeloEnvWei. */
+export function raceIsOver(endsAt: string | undefined, nowMs: number): boolean {
+  if (!endsAt) return false;
+  const end = Date.parse(endsAt);
+  return Number.isFinite(end) && nowMs >= end;
+}
+
 /** Client-facing Race Week state (in hello.ok): whether the event is on, the
  *  funding quota, the end time, and whether THIS wallet already claimed. */
 export interface RaceState {
