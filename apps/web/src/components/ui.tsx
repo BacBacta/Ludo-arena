@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useFocusTrap } from './useFocusTrap';
 import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
-import { IconDice5, IconFlame2 } from './icons';
+import { IconCrown, IconDice5, IconFlame2, IconLock } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats, skinSound } from '../lib/diceSkins';
 import { FRAMES, frameById, frameClass } from '../lib/avatarFrames';
@@ -578,7 +578,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                             ? t('seasonExclusive')
                             : t(s.hintKey ?? 'skinSoon')}
                 </small>
-                {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : s.season ? '👑' : '🔒'}</span>}
+                {!unlocked && <span className="skin__lock">{s.season ? <IconCrown /> : <IconLock />}</span>}
               </button>
             );
           })}
@@ -619,7 +619,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                         ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
                         : s.blurb}
                 </small>
-                {!owned && <span className="skin__lock">🎟️</span>}
+                {!owned && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -660,7 +660,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                         ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
                         : b.blurb}
                 </small>
-                {!owned && <span className="skin__lock">🎟️</span>}
+                {!owned && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -700,7 +700,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                         ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
                         : t('skinTap')}
                 </small>
-                {!owned && <span className="skin__lock">🎟️</span>}
+                {!owned && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -741,7 +741,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                         ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
                         : t('skinTap')}
                 </small>
-                {!owned && <span className="skin__lock">🎟️</span>}
+                {!owned && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -790,7 +790,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                         ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
                         : t(f.hintKey ?? 'skinSoon')}
                 </small>
-                {!unlocked && <span className="skin__lock">{price !== undefined ? '🎟️' : '🔒'}</span>}
+                {!unlocked && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}

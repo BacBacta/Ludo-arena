@@ -4,6 +4,7 @@ import { fmtUsd, useAppState } from '../state/store';
 import { activeChain } from '../lib/chains';
 import { VictoryFxOverlay } from '../components/CosmeticFx';
 import { playPayout, playLose } from '../lib/sound';
+import { IconSwords, IconTrophy } from '../components/icons';
 import { t } from '../lib/i18n';
 
 /** Eased 0→target counter for the payout reveal. */
@@ -127,7 +128,9 @@ export function EndScreen({ onRematch, onDecline, onAddFriend }: { onRematch(): 
       {/* the WINNER's equipped victory effect — both players watch it */}
       <VictoryFxOverlay key={match.gameId} fxId={won ? victoryFx : match.opponent.victoryFx} />
       <div className="center">
-        <div className="end__emoji">{won ? '🏆' : '😔'}</div>
+        <div className={`end__glyph${won ? '' : ' end__glyph--lost'}`} aria-hidden="true">
+          {won ? <IconTrophy /> : <IconSwords />}
+        </div>
         <div className="end__title">{won ? t('victory') : t('defeat')}</div>
         <div className="end__amount">{amount}</div>
         <div className="paynote">

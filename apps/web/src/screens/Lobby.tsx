@@ -457,7 +457,6 @@ export function Lobby({
           stay; the campaign relaunches with its own rules. */}
       {tab === 'race' && (
         <div className="pagehead pagehead--race">
-          <span className="pagehead__ic" aria-hidden="true"><IconFlag /></span>
           <div className="pagehead__txt">
             <b>{t('raceTitle')}</b>
             <small>{t('raceCardSub')}</small>
@@ -560,7 +559,6 @@ export function Lobby({
           you're not accepting blind. */}
       {tab === 'friends' && (
         <div className="pagehead pagehead--friends">
-          <span className="pagehead__ic" aria-hidden="true"><IconUsersRound /></span>
           <div className="pagehead__txt">
             <b>{t('friendsTitle')}</b>
             <small>{onlineCount > 0 ? `● ${onlineCount} ${t('friendOnline')}` : t('friendsPageSub')}</small>
@@ -638,7 +636,6 @@ export function Lobby({
           a numbers-free version (default stats read as fake data — reported). */}
       {tab === 'profile' && (<>
       <div className="pagehead pagehead--profile">
-        <span className="pagehead__ic" aria-hidden="true"><IconUserRound /></span>
         <div className="pagehead__txt">
           <b>{t('tabProfile')}</b>
           <small>{t('profilePageSub')}</small>
@@ -765,7 +762,6 @@ export function Lobby({
           collection album and the premium pass, plus the ticket balance. */}
       {tab === 'shop' && (<>
       <div className="pagehead pagehead--shop">
-        <span className="pagehead__ic" aria-hidden="true"><IconStore /></span>
         <div className="pagehead__txt">
           <b>{t('shopCardTitle')}</b>
           <small>{t('shopCardSub')}</small>

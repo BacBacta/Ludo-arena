@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAppDispatch, useAppState } from '../state/store';
-import { IconUsers } from '../components/icons';
+import { IconShieldCheck, IconUsers } from '../components/icons';
 import { t } from '../lib/i18n';
 
 export function Matchmaking({ onCancel, onPlayBot }: { onCancel(): void; onPlayBot?(): void }) {
@@ -67,7 +67,7 @@ export function Matchmaking({ onCancel, onPlayBot }: { onCancel(): void; onPlayB
                 <div className="avatar avatar--me" />
                 <div style={{ marginTop: 6 }}>{t('you')}</div>
               </div>
-              <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--accent)' }}>VS</div>
+              <div className="vs__x">vs</div>
               <div>
                 <div className="avatar avatar--opp">{match.opponent.flag}</div>
                 <div style={{ marginTop: 6 }}>
@@ -77,7 +77,12 @@ export function Matchmaking({ onCancel, onPlayBot }: { onCancel(): void; onPlayB
                 </div>
               </div>
             </div>
-            {match.stakeCents > 0 && <small className="muted">{t('escrow')}</small>}
+            {match.stakeCents > 0 && (
+              <div className="mm-escrow">
+                <IconShieldCheck />
+                {t('escrow')}
+              </div>
+            )}
           </>
         )}
         {!match && (
