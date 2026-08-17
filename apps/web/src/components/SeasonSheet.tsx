@@ -6,12 +6,12 @@ import { useFocusTrap } from './useFocusTrap';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { crownsForTier, SEASON_PREMIUM, type Reward, type TierDef } from '@ludo/shared';
 import { cosmeticsCusdAvailable } from '../lib/deployments';
-import { t } from '../lib/i18n';
+import { t, tickets } from '../lib/i18n';
 
 function rewardLabel(r: Reward): string {
   switch (r.kind) {
     case 'tickets':
-      return `${r.amount ?? 0} 🎟️`;
+      return tickets(r.amount ?? 0);
     case 'cosmetic':
       return `🎨 ${t('seasonRewardSkin')}`;
     case 'streakFreeze':

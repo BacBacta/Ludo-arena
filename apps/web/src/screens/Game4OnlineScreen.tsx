@@ -5,11 +5,11 @@
  * client only sends roll/move/resign and paints what the server broadcasts.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Board4, seatAtQuad4, shownQuad4 } from '../components/Board4';
+import { Board4, SEAT_HEX, SEAT_ON_HEX, seatAtQuad4, shownQuad4 } from '../components/Board4';
 import { Die } from '../components/DiePremium';
 import { SeatAvatar, SeatDie } from '../components/Seat4';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFlight, type GiftTarget } from '../components/Emote';
-import { IconMenu } from '../components/icons';
+import { IconCoins, IconFlag, IconMenu } from '../components/icons';
 import type { Player4Info } from '@ludo/shared';
 import type { Game4 } from '@ludo/game-engine';
 import { Remote4, type Match4Info, type Over4Info } from '../lib/remote4';
@@ -287,15 +287,29 @@ export function Game4OnlineScreen({
       <SeatDie value={dieHere ? dieVal : 1} rollKey={dieHere ? dieKey : 0} idle={!dieHere} skin={skinById(players[seat]?.diceSkin ?? 'classic')} />
     );
 
+    // Seat chip in the seat's OWN colour. The board is spun so my quadrant is
+    // bottom-left, but a seat's colour follows its index, not where it lands.
+    const chip = (
+      <SeatAvatar
+        name={name}
+        flag={flag}
+        frame={frame}
+        avatar={avatar}
+        active={active}
+        color={SEAT_HEX[seat] ?? '#3f7d2f'}
+        onColor={SEAT_ON_HEX[seat] ?? '#f9f4ed'}
+        you={seat === mySeat}
+      />
+    );
     const av = (
       <span className="emoteanchor" data-seat-anchor={seat}>
         <EmoteFloat seat={seat} />
         {players[seat]?.pid && !players[seat]?.bot ? (
           <button className="avtap" aria-label={`${name} profile`} onClick={() => onViewProfile(players[seat]!.pid!)}>
-            <SeatAvatar name={name} flag={flag} frame={frame} avatar={avatar} active={active} />
+            {chip}
           </button>
         ) : (
-          <SeatAvatar name={name} flag={flag} frame={frame} avatar={avatar} active={active} />
+          chip
         )}
       </span>
     );
@@ -313,20 +327,16 @@ export function Game4OnlineScreen({
       <div className="gamewrap">
         {/* one overlay flies each gift from the sender's quadrant to the recipient's */}
         <GiftFlight />
-        <div className="gametop">
-          <button className="chromebtn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
-            <IconMenu />
-          </button>
-          {/* cUSD pot chip — hidden on a free table (keeps the top bar balanced) */}
-          <div className="coinchip" style={{ visibility: potCents > 0 ? 'visible' : 'hidden' }}>
-            <span className="coinchip__c" /> {fmtUsd(potCents)}
+        {/* the stake sits on the dark surface above the table (design 1d) */}
+        {potCents > 0 && (
+          <div className="gamecorner gamecorner--top">
+            <span />
+            <div className="pot">
+              <IconCoins />
+              {`${t('pot')} ${fmtUsd(potCents)}`}
+            </div>
           </div>
-          <EmoteBar onEmote={(id) => remoteRef.current?.emote(id)} dir="down" />
-          <GiftBar recipients={giftTargets} onGift={(to, id) => remoteRef.current?.gift(to, id)} dir="down" />
-          <button className="chromebtn" aria-label="leave" onClick={onLeave}>
-            ✕
-          </button>
-        </div>
+        )}
 
         {/* top corners: whoever the spun board draws in quadrant 1 (left) / 2 (right) */}
         <div className="avrow">
@@ -360,6 +370,19 @@ export function Game4OnlineScreen({
         <div className="avrow">
           {renderCorner(seatAtQuad4(0, mySeat))}
           {renderCorner(seatAtQuad4(3, mySeat))}
+        </div>
+
+        {/* the tray of quiet controls (design 1d) */}
+        <div className="gamebar">
+          <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
+            <IconMenu />
+          </button>
+          <EmoteBar onEmote={(id) => remoteRef.current?.emote(id)} />
+          <GiftBar recipients={giftTargets} onGift={(to, id) => remoteRef.current?.gift(to, id)} />
+          <div className="gamebar__coins">{potCents > 0 ? '' : t('freeMatch')}</div>
+          <button className="gamebar__btn gamebar__btn--leave" aria-label="leave" onClick={onLeave}>
+            <IconFlag />
+          </button>
         </div>
       </div>
 

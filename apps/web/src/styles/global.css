@@ -1,43 +1,103 @@
-/* Design tokens — Ludo Arena (understated premium, see docs/GAME_DESIGN.md) */
+/* Design tokens — Ludo Arena (Organic "premium table", see docs/GAME_DESIGN.md) */
 @font-face {
-  font-family: 'Fredoka';
-  src: url('/fonts/Fredoka.woff2') format('woff2');
+  font-family: 'Caprasimo';
+  src: url('/fonts/Caprasimo.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Figtree';
+  src: url('/fonts/Figtree.woff2') format('woff2');
   font-weight: 400 700;
   font-display: swap;
 }
 
-/* Candy theme (Ludo-Club reference): blue dotted stage, white panels,
-   glossy 3D buttons, the classic four board colours. */
+/* Organic theme: the app should read as a beautiful board game sitting on a
+   table, not as a mobile casino. Cream ground, sand surfaces, ONE accent
+   (terracotta), ceramic pieces, Caprasimo on the numbers. The ramps below are
+   the Organic design system's, generated in OKLCH on one shared lightness
+   scale, so the same step of any role matches the others in visual value. */
 :root {
-  --bg: #4666cf;
-  --bg-2: #3a56be;
-  --card: #ffffff;
-  --card-2: #eef2f9;
-  --line: #dbe2ef;
-  --glass: rgba(255, 255, 255, 0.35);
-  --txt: #233150;
-  --muted: #5b6d92;
-  --label: #64759b;
-  --accent: #f5b301;
-  --accent-2: #ffca3a;
-  --me: #2e9e6b;
-  --me-deep: #0f3d28;
-  --opp: #e8833a;
-  --opp-deep: #7a3d12;
-  --p1: #3e63dd; /* you (blue) */
-  --p1-deep: #2947a8;
-  --p2: #46a758; /* opponent (green) */
-  --p2-deep: #2e7a3c;
-  --candy: #4caf50;
-  --candy-light: #8ee06b;
-  --candy-deep: #2e7d32;
-  --danger: #e05555;
-  --radius: 18px;
-  --radius-s: 12px;
-  --font-display: 'Fredoka', system-ui, sans-serif;
-  --shadow-accent: 0 4px 14px rgba(245, 179, 1, 0.35);
-  --surface: #ffffff;
-  --surface-shadow: 0 8px 22px rgba(23, 43, 99, 0.28);
+  --n-100: #f9f4ed;
+  --n-200: #eee7db;
+  --n-300: #dcd3c4;
+  --n-400: #c0b6a5;
+  --n-500: #a19786;
+  --n-600: #82796a;
+  --n-700: #645c50;
+  --n-800: #474238;
+  --n-900: #2e2b25;
+  --a-100: #fff2eb;
+  --a-200: #ffe1d0;
+  --a-300: #ffc6a5;
+  --a-400: #f6a06b;
+  --a-500: #d67f48;
+  --a-600: #b2622d;
+  --a-700: #8c491a;
+  --a-800: #643312;
+  --a-900: #402310;
+  --a2-100: #f0fae1;
+  --a2-200: #e1eecc;
+  --a2-300: #ccdbb2;
+  --a2-400: #aebf92;
+  --a2-500: #8fa073;
+  --a2-600: #728157;
+  --a2-700: #56633f;
+  --a2-800: #3d472b;
+  --a2-900: #272e1b;
+
+  /* Roles. Names are kept from the candy pass so the whole sheet re-tints. */
+  --bg: #f5ead8;
+  --bg-2: #efe2cb;
+  --bg-hi: #fdf6e9; /* lit top of the ground gradient */
+  --card: #fffdf8; /* raised paper — every panel, tile and row */
+  --card-2: #f0e4cf; /* recessed sand — selected tabs, locked tiles */
+  --sand: #ebddc5; /* the table surface itself (hero, board plate) */
+  --sand-deep: #e2d0b2;
+  --line: rgba(32, 30, 29, 0.1);
+  --glass: rgba(253, 246, 233, 0.9);
+  --txt: #201e1d;
+  --muted: rgba(32, 30, 29, 0.58);
+  --label: rgba(32, 30, 29, 0.45);
+  --ink: #201e1d; /* the dark surface: stakes mode, end screen, season card */
+  --ink-2: #2e2b25;
+  --ink-3: #3b352c;
+  --on-ink: #f9f4ed;
+  --accent: #c67139; /* terracotta — the single accent */
+  --accent-2: #f6a06b; /* its lit step, for text/icons on the dark surface */
+  --accent-deep: #8c491a;
+
+  /* Four seat colours. Organic ships two accents; a Ludo board needs four, so
+     terracotta and sage are pushed to full saturation and a board yellow + ink
+     blue are added. Pulled apart in BOTH hue and value so four pieces stay
+     legible at 12px. Never re-skinned by a board cosmetic (golden rule). */
+  --seat-red: #c8371b;
+  --seat-green: #3f7d2f;
+  --seat-yellow: #f2b307;
+  --seat-blue: #1f5fa8;
+
+  --me: #3f7d2f; /* you — green */
+  --me-deep: #2a5420;
+  --opp: #c8371b; /* opponent — red clay */
+  --opp-deep: #8a2412;
+  --p1: #3f7d2f;
+  --p1-deep: #2a5420;
+  --p2: #c8371b;
+  --p2-deep: #8a2412;
+  --candy: #c67139; /* the primary CTA is the accent, not a green */
+  --candy-light: #d67f48;
+  --candy-deep: #8c491a;
+  --danger: #c8371b;
+  --radius: 22px;
+  --radius-s: 16px;
+  --font-display: 'Caprasimo', Georgia, serif;
+  --font-body: 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --shadow-accent: 0 8px 20px rgba(140, 73, 26, 0.28);
+  --surface: #fffdf8;
+  --surface-shadow: 0 10px 26px rgba(46, 43, 37, 0.18);
+  --shadow-sm: 0 1px 2px rgba(46, 43, 37, 0.12);
+  --shadow-md: 0 3px 10px rgba(46, 43, 37, 0.16);
+  --shadow-lg: 0 12px 32px rgba(46, 43, 37, 0.22);
 }
 
 * {
@@ -54,9 +114,13 @@ body,
 }
 
 body {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   background: var(--bg);
-  color: #ffffff; /* default text sits on the blue stage; panels re-set to dark */
+  color: var(--txt); /* the ground is light now — ink text everywhere by default */
+  /* Caprasimo is a single-weight display face. The sheet asks for 700 in a
+     couple of dozen places; without this the browser smears a synthetic bold
+     over it. Figtree is a real 400–700 variable font, so it loses nothing. */
+  font-synthesis-weight: none;
   display: flex;
   justify-content: center;
   /* MiniPay/webview: kill the rubber-band overscroll that drags the page into the
@@ -68,17 +132,15 @@ body {
    can never make the document horizontally pannable in a webview. */
 html { overflow-x: clip; }
 
-/* signature dotted stage */
+/* Signature ground: light falling from the top of the table onto cream paper.
+   Replaces the blue dotted casino stage — no pattern, the warmth carries it. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(rgba(255, 255, 255, 0.07) 2.4px, transparent 2.8px),
-    linear-gradient(180deg, #4565d8 0%, var(--bg) 40%, var(--bg-2) 100%);
-  background-size: 30px 30px, 100% 100%;
+  background: radial-gradient(120% 60% at 50% 0%, var(--bg-hi) 0%, var(--bg) 55%, var(--bg-2) 100%);
 }
 
 .card, .streak, .mini, .modal__card, .paynote, .toast { color: var(--txt); }
@@ -126,39 +188,41 @@ body::before {
   display: flex;
   justify-content: space-around;
   gap: 2px;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.94);
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: var(--glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(23, 43, 99, 0.12);
-  box-shadow: 0 -6px 18px rgba(23, 43, 99, 0.14);
+  border-top: 1px solid rgba(32, 30, 29, 0.08);
+  box-shadow: none;
 }
 .tabbar__btn {
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 3px;
   border: none;
   background: none;
-  padding: 4px 2px 3px;
-  border-radius: 12px;
-  font-family: var(--font-display);
+  padding: 8px 2px;
+  border-radius: 16px;
+  font-family: var(--font-body);
   font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--label);
   cursor: pointer;
 }
 .tabbar__btn { transition: background 0.18s ease, color 0.18s ease; }
+/* The selected tab is a recessed sand pill, not a glossy gold lozenge. */
 .tabbar__btn--on {
-  color: #6b4d00;
-  background: linear-gradient(180deg, rgba(255, 217, 77, 0.55), rgba(245, 179, 1, 0.38));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 2px 6px rgba(245, 179, 1, 0.35);
+  color: var(--accent-deep);
+  background: var(--card-2);
+  font-weight: 700;
+  box-shadow: none;
 }
 .tabbar__btn:active { transform: translateY(1px); }
-.tabbar__ic { position: relative; font-size: 19px; line-height: 1.1; transition: transform 0.18s ease; }
-.tabbar__btn--on .tabbar__ic { transform: translateY(-1px) scale(1.12); }
+.tabbar__ic { position: relative; display: block; line-height: 0; }
+.tabbar__ic .icon { width: 21px; height: 21px; vertical-align: 0; }
 /* red pulsing LIVE dot on the Race tab */
 .tabbar__live {
   position: absolute;
@@ -167,8 +231,8 @@ body::before {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #e5484d;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-hi);
   animation: rushpulse 1.2s ease-in-out infinite;
 }
 /* numeric badge (pending friend requests) */
@@ -180,14 +244,14 @@ body::before {
   height: 15px;
   padding: 0 4px;
   border-radius: 999px;
-  background: #e5484d;
-  color: #fff;
+  background: var(--accent);
+  color: var(--bg-hi);
   font-style: normal;
   font-size: 9.5px;
   font-weight: 800;
   line-height: 15px;
   text-align: center;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 2px var(--bg-hi);
 }
 
 /* Slim LIVE-event pointer on the Play tab (full Race card lives on its tab). */
@@ -205,7 +269,7 @@ body::before {
   font-size: 13.5px;
   color: #fff;
   background: linear-gradient(90deg, #12141f, #232b45);
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
+  box-shadow: 0 4px 12px rgba(46, 43, 37, 0.3);
 }
 .racestrip b { flex: 0 1 auto; }
 .racestrip__flag { font-size: 17px; }
@@ -227,35 +291,26 @@ body::before {
 
 /* Per-tab identity header: big icon coin + title/sub on a tinted glass band.
    Each tab wears its own colour story; the type scale matches the hero. */
+/* Tab header, design 1g/1h/1i: a Caprasimo title over a muted line, with the
+   right-hand slot free for the tab's one action. It used to be a coloured
+   gradient banner per tab — a gold one on the shop, navy on the profile, green
+   on friends — which is four accents in an app that ships one. */
 .pagehead {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 12px;
-  margin: 10px 0;
-  padding: 14px 16px;
-  border-radius: var(--radius);
-  color: #fff;
-  box-shadow: 0 8px 22px rgba(23, 43, 99, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-.pagehead__ic {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 15px;
-  font-size: 24px;
-  background: rgba(255, 255, 255, 0.16);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 8px rgba(0, 0, 0, 0.18);
+  margin: 12px 0 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--txt);
+  box-shadow: none;
 }
 .pagehead__txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.pagehead__txt b { font-family: var(--font-display); font-size: 19px; font-weight: 700; letter-spacing: 0.3px; }
-.pagehead__txt small { font-size: 11.5px; opacity: 0.85; line-height: 1.35; }
+.pagehead__txt b { font-family: var(--font-display); font-size: 27px; font-weight: 400; line-height: 1; letter-spacing: -0.02em; }
+.pagehead__txt small { font-family: var(--font-body); font-size: 12.5px; color: var(--muted); line-height: 1.35; margin-top: 5px; }
 .pagehead__live { margin-left: auto; }
-.pagehead--race { background: linear-gradient(135deg, #12141f 0%, #232b45 70%, #2c3a66 100%); }
-.pagehead--friends { background: linear-gradient(135deg, #1c7a4c 0%, #2e9e6b 70%, #45b57f 100%); }
-.pagehead--shop { background: linear-gradient(135deg, #8a5f00 0%, #c78a00 55%, #f5b301 100%); }
-.pagehead--profile { background: linear-gradient(135deg, #2947a8 0%, #3e63dd 70%, #5b7ce6 100%); }
 
 /* Shop storefront: the player's own equipped die, live in 3D, as the feature. */
 .shopfeat {
@@ -276,14 +331,14 @@ body::before {
   width: 88px;
   height: 88px;
   border-radius: 16px;
-  background: radial-gradient(circle at 50% 38%, #31406e 0%, #1d2747 68%, #141b33 100%);
-  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(23, 43, 99, 0.25);
+  background: linear-gradient(160deg, var(--ink) 0%, var(--ink-2) 100%);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(46, 43, 37, 0.25);
 }
 .shopfeat__glow {
   position: absolute;
   inset: 12px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(245, 179, 1, 0.4) 0%, transparent 65%);
+  background: radial-gradient(circle, rgba(246, 160, 107, 0.22) 0%, transparent 65%);
   animation: rushpulse 2.4s ease-in-out infinite;
 }
 /* keep the cube above the glow WITHOUT touching its internal absolute layout */
@@ -291,7 +346,7 @@ body::before {
 .shopfeat__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .shopfeat__txt small { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--label); }
 .shopfeat__txt b { font-family: var(--font-display); font-size: 18px; color: var(--txt); }
-.shopfeat__txt em { font-style: normal; font-size: 12.5px; font-weight: 700; color: #b98700; }
+.shopfeat__txt em { font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--accent); }
 
 /* Ticket balance strip (shop): the free-currency counter, storefront-styled. */
 .ticketstrip {
@@ -301,7 +356,7 @@ body::before {
   margin-top: 10px;
   padding: 12px 14px;
 }
-.ticketstrip__ic { align-self: center; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: rgba(245, 179, 1, 0.16); color: #b98700; }
+.ticketstrip__ic { align-self: center; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--a-100); color: var(--a-600); }
 .ticketstrip b { font-family: var(--font-display); font-size: 20px; color: var(--txt); }
 .ticketstrip__label { font-weight: 700; font-size: 13px; color: var(--txt); }
 .ticketstrip small { flex: 1 1 100%; margin-top: 2px; font-size: 11px; line-height: 1.45; color: var(--muted); }
@@ -324,11 +379,15 @@ body::before {
   position: relative;
   display: grid;
   place-items: center;
-  width: 72px;
-  height: 72px;
+  width: 74px;
+  height: 74px;
   border-radius: 50%;
-  background: var(--card-2);
-  box-shadow: inset 0 0 0 3px rgba(245, 179, 1, 0.55), 0 6px 14px rgba(23, 43, 99, 0.2);
+  /* Design 1h: paper ringed in the player's own sage, not a gold inner glow —
+     the last candy ring in the app. A bought frame still overrides the border. */
+  background: var(--card);
+  border: 3px solid var(--a2-500);
+  box-shadow: 0 6px 16px rgba(46, 43, 37, 0.14);
+  box-sizing: border-box;
   overflow: visible;
 }
 .profilehero__avatar .profilecard__img { width: 64px; height: 64px; border-radius: 50%; }
@@ -388,9 +447,10 @@ a.mrow { text-decoration: none; color: inherit; }
   font-size: 20px;
 }
 .modetile__ic .icon { width: 19px; height: 19px; }
-.modetile__ic--gold { background: rgba(245, 179, 1, 0.16); color: var(--accent); }
-.modetile__ic--me { background: rgba(46, 158, 107, 0.14); color: var(--me); }
-.modetile__ic--bot { background: rgba(62, 99, 221, 0.13); }
+/* Tinted chips from the ramps — the tint names the family, never the brand. */
+.modetile__ic--clay { background: var(--a-100); color: var(--a-600); }
+.modetile__ic--sage { background: var(--a2-100); color: var(--a2-700); }
+.modetile__ic--sand { background: var(--n-200); color: var(--n-700); }
 .modetile__badge {
   position: absolute;
   top: 10px;
@@ -400,8 +460,8 @@ a.mrow { text-decoration: none; color: inherit; }
   gap: 3px;
   padding: 3px 8px;
   border-radius: 999px;
-  background: rgba(245, 179, 1, 0.16);
-  color: #b98700;
+  background: var(--a-100);
+  color: var(--a-600);
   font-size: 11px;
   font-weight: 800;
 }
@@ -436,7 +496,7 @@ a.mrow { text-decoration: none; color: inherit; }
   height: 22px;
   border-radius: 7px;
   overflow: hidden;
-  box-shadow: 0 1px 4px rgba(23, 43, 99, 0.25);
+  box-shadow: 0 1px 4px rgba(46, 43, 37, 0.25);
 }
 .shopfeat__mini .die { width: 22px; height: 22px; display: block; }
 .shopfeat__more i { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--label); }
@@ -506,12 +566,12 @@ a.mrow { text-decoration: none; color: inherit; }
   align-items: center;
   justify-content: center;
   flex: 0 0 30px;
-  background: rgba(245, 179, 1, 0.13);
-  color: var(--accent);
+  background: var(--a-100);
+  color: var(--a-600);
 }
 .chip-ic .icon { width: 16px; height: 16px; vertical-align: 0; }
-.chip-ic--me { background: rgba(46, 158, 107, 0.15); color: var(--me); }
-.chip-ic--opp { background: rgba(232, 131, 58, 0.15); color: var(--opp); }
+.chip-ic--me { background: var(--a2-100); color: var(--a2-700); }
+.chip-ic--opp { background: var(--a-100); color: var(--a-600); }
 
 /* candy 3D button: light top, saturated body, thick dark lip */
 .btn {
@@ -528,7 +588,7 @@ a.mrow { text-decoration: none; color: inherit; }
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.22);
   background: linear-gradient(180deg, var(--candy-light) 0%, var(--candy) 55%, #3f9a44 100%);
   border-bottom: 4px solid var(--candy-deep);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.55), 0 8px 18px rgba(23, 43, 99, 0.35);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.55), 0 8px 18px rgba(46, 43, 37, 0.35);
   transition: transform 0.12s ease, box-shadow 0.2s ease, border-bottom-width 0.08s ease;
 }
 
@@ -546,44 +606,91 @@ a.btn {
 /* casino-chip stake picker */
 .hero { margin-bottom: 14px; }
 /* hero tagline: the one-line promise a first-time user reads before anything */
+/* The promise is now the biggest type on the page — it earned display size the
+   moment it stopped being a feature list ("Fast 1v1 Ludo · 2–3 min · Free or
+   real USDT") and became a sentence. */
 .hero__tagline {
   font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: 0 2px 0 rgba(23, 43, 99, 0.3);
+  font-size: 23px;
+  line-height: 1.12;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--txt);
+  text-shadow: none;
   text-align: center;
   text-wrap: balance;
-  margin: 8px 0 12px;
+  margin: 10px 0 2px;
+}
+.hero__sub {
+  margin: 5px 0 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-align: center;
+  text-wrap: balance;
 }
 
 /* hero game table: four seat-colour pegs flanking the REAL 3D die (tappable).
    The one bold moment of the page — everything below stays calm. */
 .hero--table { margin-bottom: 10px; }
+/* The hero is a TABLE now, not pieces floating on the page ground: a sand
+   surface with a lit centre and a dashed ring, so the die reads as thrown onto
+   something. "TAP TO ROLL" is the only instruction the landing gives. */
 .herotable {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  gap: 14px;
-  padding: 12px 0 4px;
+  gap: 18px;
+  height: 124px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 28px;
+  background: linear-gradient(165deg, var(--sand), var(--sand-deep));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.herotable::after {
+  content: 'TAP TO ROLL';
+  position: absolute;
+  bottom: 7px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: rgba(32, 30, 29, 0.42);
+  pointer-events: none;
 }
 .herotable__glow {
   position: absolute;
   left: 50%;
-  bottom: 0;
-  width: 250px;
-  height: 78px;
-  transform: translateX(-50%);
-  background: radial-gradient(55% 62% at 50% 100%, rgba(255, 255, 255, 0.16), transparent 72%);
+  top: 50%;
+  width: 230px;
+  height: 230px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 70%);
   pointer-events: none;
+}
+/* the dashed ring that makes the surface read as a playing field */
+.herotable__glow::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 168px;
+  height: 168px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px dashed rgba(32, 30, 29, 0.16);
 }
 .herotable__pegs { display: flex; align-items: flex-end; gap: 8px; }
 .heropeg {
   width: 33px;
   height: 42px;
-  filter: drop-shadow(0 4px 5px rgba(16, 24, 48, 0.35));
+  filter: drop-shadow(0 4px 5px rgba(46, 43, 37, 0.35));
   animation: pegBob 3.8s ease-in-out infinite;
 }
 /* outer pegs sit further from the table -> slightly smaller, for depth */
@@ -620,27 +727,19 @@ a.btn {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1.4px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: 0 1px 0 rgba(23, 43, 99, 0.3);
-  margin: 4px 2px 8px;
+  color: var(--label);
+  text-shadow: none;
+  margin: 14px 2px 8px;
 }
-/* the four seat colours as a 2x2 quad-dot — the page's Ludo signature */
-.seclabel::before {
-  content: '';
-  flex: 0 0 11px;
-  width: 11px;
-  height: 11px;
-  background:
-    radial-gradient(circle at 27% 27%, #1f8fd4 2.3px, transparent 2.8px),
-    radial-gradient(circle at 73% 27%, #25a544 2.3px, transparent 2.8px),
-    radial-gradient(circle at 27% 73%, #f6c200 2.3px, transparent 2.8px),
-    radial-gradient(circle at 73% 73%, #e62e2a 2.3px, transparent 2.8px);
-}
+/* The 2×2 quad-dot signature is retired: on cream it read as clutter beside a
+   label that is already quiet, and the four seat colours now earn their keep on
+   the board, where they carry meaning. */
+.seclabel .icon { width: 14px; height: 14px; color: var(--label); }
 
 /* game modes: one clean row per mode (icon · title/sub · chevron/badge) */
 .modelist { padding: 4px 6px; }
@@ -698,13 +797,13 @@ a.btn {
 }
 .howstrip span {
   flex: 1; display: flex; align-items: center; gap: 7px;
-  background: rgba(255, 255, 255, 0.09); border-radius: 12px; padding: 8px 9px;
-  font-size: 10.5px; line-height: 1.25; color: rgba(255, 255, 255, 0.9);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background: var(--card); border-radius: 16px; padding: 9px 10px;
+  font-size: 10.5px; line-height: 1.3; color: var(--muted);
+  box-shadow: var(--shadow-sm);
 }
 .howstrip i {
   font-style: normal; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--accent); color: #5d4300; font-weight: 800; font-size: 11px;
+  background: var(--a-100); color: var(--a-700); font-weight: 800; font-size: 11px;
   display: flex; align-items: center; justify-content: center;
 }
 /* candy stake tiles: white 3D chips, selected turns gold and lifts */
@@ -729,7 +828,7 @@ a.btn {
   color: var(--txt);
   background: linear-gradient(180deg, #ffffff, #eef2f9);
   border-bottom: 4px solid #ccd6e8;
-  box-shadow: 0 6px 14px rgba(23, 43, 99, 0.25);
+  box-shadow: 0 6px 14px rgba(46, 43, 37, 0.25);
   transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.18s ease, background 0.18s ease;
 }
 .gstake b { display: block; font-family: var(--font-display); font-size: 16px; font-weight: 600; }
@@ -737,13 +836,13 @@ a.btn {
 .gstake--free b { color: var(--candy); }
 .gstake--sel {
   transform: translateY(-4px);
-  background: linear-gradient(180deg, #ffe27a, #f5b301);
-  border-bottom-color: #c98f00;
-  box-shadow: 0 10px 22px rgba(245, 179, 1, 0.45);
+  background: var(--accent);
+  border-bottom-color: var(--accent-deep);
+  box-shadow: var(--shadow-accent);
 }
-.gstake--sel b { color: #6b4d00; }
-.gstake--sel small { color: #8a6200; }
-.gstake--sel.gstake--free b { color: #6b4d00; }
+.gstake--sel b { color: var(--card); }
+.gstake--sel small { color: rgba(255, 253, 248, 0.8); }
+.gstake--sel.gstake--free b { color: var(--card); }
 .gstake:active { transform: translateY(0) scale(0.96); }
 .gstake__lock { width: 11px; height: 11px; vertical-align: -1px; opacity: .7; }
 
@@ -760,13 +859,13 @@ a.btn {
   cursor: pointer;
   font-family: var(--font-display);
   color: #ffffff;
-  background: linear-gradient(180deg, #2d4193 0%, #22347a 100%);
+  background: var(--ink);
   /* Louder than the old hairline: the money path was reading as a footnote
      under the hero CTA. Still SECONDARY (navy body, no size change) — the gold
      frame + glow lift it without competing with PLAY. */
-  border: 2px solid rgba(255, 202, 58, 0.9);
-  border-bottom: 4px solid #b98700;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 16px rgba(245, 179, 1, 0.32);
+  border: 2px solid var(--accent);
+  border-bottom: 4px solid var(--accent-deep);
+  box-shadow: 0 6px 16px rgba(140, 73, 26, 0.28);
   transition: transform 0.12s ease, border-color 0.2s ease;
 }
 .btn--usdt:active { transform: scale(0.99); }
@@ -829,26 +928,32 @@ a.btn {
 
 /* dice-skin picker */
 .skingrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+/* Shop tile, design 1g: paper with a hairline, the equipped one ringed in the
+   accent, a locked one recessed into sand. It was a white card on blue-grey
+   borders with a 3px bottom lip — the candy button language. */
 .skin {
   position: relative;
-  background: linear-gradient(180deg, #ffffff, #f0f3fa);
-  border: 1.5px solid #e0e6f2;
-  border-bottom: 3px solid #d3dcec;
-  border-radius: 14px;
-  padding: 10px 6px 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 12px 8px;
+  box-shadow: 0 1px 2px rgba(46, 43, 37, 0.12);
   cursor: pointer;
   text-align: center;
   color: var(--txt);
   transition: transform 0.15s ease, border-color 0.15s ease;
 }
 .skin .die { width: 44px; height: 44px; margin: 0 auto; display: block; }
-.skin b { display: block; font-family: var(--font-display); font-size: 12px; margin-top: 6px; }
-.skin small { display: block; font-size: 9px; color: var(--muted); margin-top: 2px; min-height: 20px; }
-.skin--on { border-color: var(--accent); box-shadow: 0 0 14px rgba(245, 179, 1, 0.22); }
-.skin--on small { color: var(--accent-2); font-weight: 700; }
-.skin--locked { opacity: 0.55; cursor: default; }
+.skin b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 12.5px; margin-top: 8px; }
+.skin small { display: block; font-family: var(--font-body); font-weight: 600; font-size: 10.5px; color: var(--muted); margin-top: 2px; min-height: 20px; }
+.skin--on { border: 2px solid var(--accent); padding: 11px 7px; }
+.skin--on small { color: var(--a-600); font-weight: 700; }
+.skin--locked { background: var(--card-2); border-color: rgba(32, 30, 29, 0.08); box-shadow: none; cursor: default; }
+.skin--locked b { color: var(--muted); }
+.skin--locked small { color: var(--label); }
 .skin--locked .die { filter: grayscale(0.5); }
-.skin__lock { position: absolute; top: 6px; right: 8px; font-size: 11px; }
+.skin__lock { position: absolute; top: 9px; right: 9px; display: grid; place-items: center; color: var(--label); }
+.skin__lock .icon { width: 12px; height: 12px; }
 .skin:not(.skin--locked):active { transform: scale(0.95); }
 
 /* signature CTA: candy green + sheen sweep + stake summary line */
@@ -897,7 +1002,7 @@ a.btn {
   background: linear-gradient(180deg, #ffffff, #eef2f9);
   color: #4a5a7a;
   text-shadow: none;
-  box-shadow: 0 6px 14px rgba(23, 43, 99, 0.22);
+  box-shadow: 0 6px 14px rgba(46, 43, 37, 0.22);
   border-bottom: 4px solid #c9d3e6;
   font-weight: 600;
 }
@@ -931,9 +1036,14 @@ small.muted { font-size: 12px; }
 .icon--opp { color: var(--opp); }
 .icon--muted { color: var(--muted); }
 .player__elo { color: var(--muted); font-weight: 600; font-size: 11px; margin-left: 5px; }
-.center { color: #ffffff; }
-.center .muted, .screen--end .muted { color: rgba(255, 255, 255, 0.82); }
-.screen--end a { color: #ffe27a; }
+/* The matchmaking screen sits on the cream table, so it writes in ink. White on
+   cream has been invisible since the tokens were retuned. The end screen brings
+   its own dark surface (design 1f) and re-lightens its own text. */
+.center { color: var(--txt); }
+.center .muted { color: var(--muted); }
+.screen--end .center { color: var(--on-ink); }
+.screen--end .center .muted { color: rgba(249, 244, 237, 0.62); }
+.screen--end a { color: rgba(249, 244, 237, 0.45); }
 .soundtoggle { color: #ffffff; }
 .soundtoggle .icon--muted { color: rgba(255, 255, 255, 0.55); }
 /* on-blue h/values keep gold; TurnChip idle ring lighter on white pills */
@@ -956,57 +1066,79 @@ small.muted { font-size: 12px; }
   min-width: 0;
   margin-bottom: 14px;
 }
+/* Wordmark set in the display face, sentence case — the shouty all-caps
+   "LUDO ARENA" belonged to the casino direction. */
 .topbar__logo {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 20px;
-  letter-spacing: 0.5px;
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: -0.01em;
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #ffffff;
-  text-shadow: 0 2px 0 rgba(23, 43, 99, 0.35);
+  gap: 9px;
+  color: var(--txt);
+  text-shadow: none;
 }
-.topbar__logo span { color: var(--accent-2); }
 .logomark {
-  width: 27px;
-  height: 27px;
-  border-radius: 8px;
-  background: linear-gradient(150deg, #ffd94d, #e09b00);
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--bg-hi);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(245, 179, 1, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow: 0 3px 10px rgba(140, 73, 26, 0.3);
 }
-.logomark svg { width: 17px; height: 17px; display: block; }
-.topbar__balance {
-  background: #ffffff;
-  color: var(--txt);
-  border-radius: 20px;
-  padding: 6px 12px;
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  display: flex;
+.logomark .icon { width: 19px; height: 19px; vertical-align: 0; }
+/* Streak: a light chip, because it is a fact and not an alarm. */
+.streakchip {
+  position: relative;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 6px 11px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
 }
-.topbar__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--me); }
+.streakchip .icon { width: 14px; height: 14px; color: var(--accent); vertical-align: -0.15em; }
+.streakchip b { font-size: 13px; font-weight: 700; color: var(--txt); }
+/* Balance: the ONE dark object in the bar. Money should be the only thing on
+   this row that reads as heavy. */
+.topbar__balance {
+  background: var(--ink);
+  color: var(--on-ink);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-shadow: none;
+}
+.topbar__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--a2-500); }
 /* Compact top bar on phone-width viewports (MiniPay's target device is 360px):
    icon-only brand — the wordmark alone costs ~140px, and with streak + shop +
    sound + wallet the row can NEVER fit 360 with it. The golden logomark stays;
    the name still lives in MiniPay's own title bar and the hero right below. */
 @media (max-width: 430px) {
-  .topbar__word { display: none; }
+  /* The wordmark used to be dropped here to make room for five controls; the
+     bar now carries three, so the brand fits at 360px. */
   .topbar__right { gap: 6px; }
   .topbar__balance { font-size: 12px; padding: 5px 10px; }
 }
 /* Low-balance top-up chip inside the balance pill. */
+/* Never an error message: a balance too low for the picked table turns itself
+   into the MiniPay top-up route, inside the pill it belongs to. */
 .topbar__add {
-  margin-left: 3px; padding: 2px 8px; border-radius: 999px;
-  background: var(--accent); color: #3a2b00; font-size: 11px; font-weight: 800;
+  margin-left: 3px; padding: 4px 10px; border-radius: 999px;
+  background: var(--accent); color: var(--bg-hi); font-size: 11.5px; font-weight: 700;
   text-decoration: none; cursor: pointer;
 }
 /* No wallet yet: the balance slot becomes an honest connect CTA (no demo number). */
@@ -1014,12 +1146,17 @@ small.muted { font-size: 12px; }
    pair a different one. Muted until hover so it never competes with the balance. */
 .topbar__disconnect {
   margin-left: 2px; padding: 0; border: none; background: none; cursor: pointer;
-  display: inline-flex; align-items: center; color: var(--muted); line-height: 0;
+  display: inline-flex; align-items: center; color: rgba(249, 244, 237, 0.5); line-height: 0;
 }
 .topbar__disconnect .icon { width: 15px; height: 15px; }
-.topbar__disconnect:hover { color: #c0392b; }
+.topbar__disconnect:hover { color: var(--danger); }
 .topbar__disconnect:active { transform: scale(0.9); }
-.topbar__connect { border: none; cursor: pointer; background: var(--accent); color: #3a2b00; }
+/* Guest: an outlined pill, not a filled one — there is no balance to show yet,
+   and a demo number would read as fake money. */
+.topbar__connect {
+  cursor: pointer; background: transparent; color: var(--txt);
+  border: 1px solid rgba(32, 30, 29, 0.16); font-weight: 700;
+}
 .topbar__connect:active { transform: scale(0.96); }
 
 /* Staked tier locked until a real wallet backs the balance (no demo money). */
@@ -1061,7 +1198,7 @@ small.muted { font-size: 12px; }
 .pe__flagbtn {
   border: 2px solid transparent; background: #ffffff; border-radius: 10px;
   font-size: 22px; line-height: 1; padding: 6px 0; cursor: pointer;
-  box-shadow: 0 1px 3px rgba(23, 43, 99, 0.12);
+  box-shadow: 0 1px 3px rgba(46, 43, 37, 0.12);
 }
 .pe__flagbtn--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245, 179, 1, 0.35); }
 .pe__flagbtn:active { transform: scale(0.9); }
@@ -1075,7 +1212,7 @@ small.muted { font-size: 12px; }
 }
 .pe__avbtn {
   border: 2px solid transparent; background: #ffffff; border-radius: 12px;
-  padding: 3px; cursor: pointer; box-shadow: 0 1px 3px rgba(23, 43, 99, 0.12);
+  padding: 3px; cursor: pointer; box-shadow: 0 1px 3px rgba(46, 43, 37, 0.12);
   aspect-ratio: 1; display: grid; place-items: center;
 }
 .pe__avbtn img { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -1083,7 +1220,6 @@ small.muted { font-size: 12px; }
 .pe__avbtn--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245, 179, 1, 0.35); }
 .pe__avbtn:active { transform: scale(0.9); }
 /* avatar image filling each render target (all circular) */
-.seatav__img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .avcard__img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .profilecard__img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; display: block; }
 .profilesheet__img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: block; }
@@ -1110,8 +1246,8 @@ small.muted { font-size: 12px; }
 .friendhead__count {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, var(--accent-2), var(--accent));
-  color: #3a2c00; font-size: 12px; font-weight: 800;
+  background: var(--accent);
+  color: var(--card); font-size: 12px; font-weight: 800;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 .friendhead__online { margin-left: auto; font-size: 11.5px; color: var(--me); font-weight: 700; }
@@ -1145,7 +1281,7 @@ small.muted { font-size: 12px; }
 .frbtn:active { transform: scale(0.95); }
 .frbtn--gold {
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
-  border-bottom-color: #a97a00; color: #3a2c00;
+  border-bottom-color: var(--accent-deep); color: var(--card);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 .frbtn--ghost {
@@ -1234,7 +1370,7 @@ small.muted { font-size: 12px; }
   width: 46px; height: 46px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; font-size: 24px;
   background: radial-gradient(circle at 50% 35%, #ffffff, #e7ecf7);
-  border: 1.5px solid rgba(23, 43, 99, 0.12);
+  border: 1.5px solid rgba(46, 43, 37, 0.12);
 }
 .rival__name { font-size: 11px; max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); }
 .rival__wl { font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -1345,57 +1481,61 @@ small.muted { font-size: 12px; }
    the page (light shop/season cards sit around it). Racing-green + gold, a
    checkered top stripe, a pulsing LIVE badge, a pool gauge and a podium peek. */
 :root {
-  --race-ink: #eafff6;
-  --race-green: #16b57e;
-  --race-green-2: #34e0a4;
-  --race-gold: #ffd35c;
+  /* Race Week keeps its own identity, but on the Organic system: the campaign
+     card is the app's dark surface, its highlight is the one accent's lit step,
+     and its second colour is the sage the rest of the app already uses. It was
+     a mint/emerald/gold set — a whole second palette. */
+  --race-ink: #f9f4ed;
+  --race-green: #8fa073;
+  --race-green-2: #aebf92;
+  --race-gold: #f6a06b;
 }
 .racecard {
   position: relative; overflow: hidden;
   display: flex; flex-direction: column; gap: 12px;
   width: 100%; padding: 15px 14px 14px;
-  border: 1px solid rgba(52, 224, 164, 0.35); border-radius: 18px;
+  border: 1px solid rgba(174, 191, 146, 0.35); border-radius: 18px;
   color: var(--race-ink);
   background:
-    radial-gradient(120% 90% at 100% 0%, rgba(52, 224, 164, 0.16), transparent 55%),
-    radial-gradient(120% 120% at 0% 100%, rgba(255, 211, 92, 0.10), transparent 50%),
-    linear-gradient(165deg, #0c2a22 0%, #0a1f1a 55%, #0b1512 100%);
-  box-shadow: 0 18px 40px -14px rgba(0, 60, 40, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    radial-gradient(120% 90% at 100% 0%, rgba(174, 191, 146, 0.16), transparent 55%),
+    radial-gradient(120% 120% at 0% 100%, rgba(246, 160, 107, 0.10), transparent 50%),
+    linear-gradient(165deg, #3b352c 0%, #2e2b25 55%, #201e1d 100%);
+  box-shadow: 0 18px 40px -14px rgba(46, 43, 37, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .racecard::before { /* checkered flag stripe along the top */
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 5px;
   background-image:
-    repeating-linear-gradient(90deg, #0d1a16 0 7px, #eafff6 7px 14px),
-    repeating-linear-gradient(90deg, #eafff6 0 7px, #0d1a16 7px 14px);
+    repeating-linear-gradient(90deg, #201e1d 0 7px, #f9f4ed 7px 14px),
+    repeating-linear-gradient(90deg, #f9f4ed 0 7px, #201e1d 7px 14px);
   background-size: 14px 2.5px; background-position: 0 0, 7px 2.5px; opacity: 0.9;
 }
 .racecard__top { display: flex; align-items: center; gap: 12px; }
 .racecard__flag {
   width: 42px; height: 42px; border-radius: 13px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; font-size: 23px;
-  background: linear-gradient(180deg, rgba(52, 224, 164, 0.22), rgba(52, 224, 164, 0.08));
-  box-shadow: inset 0 0 0 1px rgba(52, 224, 164, 0.3);
+  background: linear-gradient(180deg, rgba(174, 191, 146, 0.22), rgba(174, 191, 146, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(174, 191, 146, 0.3);
 }
 .racecard__id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .racecard__id b {
   font-family: var(--font-display); font-size: 16px; color: #fff;
   display: inline-flex; align-items: center; gap: 8px;
 }
-.racecard__id small { font-size: 12px; color: rgba(234, 255, 246, 0.68); line-height: 1.4; }
+.racecard__id small { font-size: 12px; color: rgba(249, 244, 237, 0.68); line-height: 1.4; }
 .racecard__live {
   font-style: normal; font-family: var(--font-body); font-size: 10px; font-weight: 800;
   letter-spacing: 0.5px; text-transform: uppercase; color: #0a1f1a;
   padding: 2px 7px; border-radius: 999px; background: var(--race-green-2);
   animation: racePulse 1.8s ease-in-out infinite;
 }
-@keyframes racePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(52, 224, 164, 0.55); } 50% { box-shadow: 0 0 0 6px rgba(52, 224, 164, 0); } }
+@keyframes racePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(174, 191, 146, 0.55); } 50% { box-shadow: 0 0 0 6px rgba(174, 191, 146, 0); } }
 .racecard__timer {
   flex-shrink: 0; font-size: 12px; font-weight: 800; white-space: nowrap;
   font-variant-numeric: tabular-nums; padding: 5px 9px; border-radius: 999px;
-  color: var(--race-green-2); background: rgba(52, 224, 164, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(52, 224, 164, 0.22);
+  color: var(--race-green-2); background: rgba(174, 191, 146, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(174, 191, 146, 0.22);
 }
-.racecard__timer--soon { color: var(--race-gold); background: rgba(255, 211, 92, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.35); }
+.racecard__timer--soon { color: var(--race-gold); background: rgba(246, 160, 107, 0.14); box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.35); }
 
 /* Podium peek — top 3 as one tappable strip */
 .racecard__podium {
@@ -1410,13 +1550,10 @@ small.muted { font-size: 12px; }
   white-space: nowrap;
 }
 .racecard__podchip b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
-.racecard__podchip--first { background: rgba(255, 211, 92, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.35); color: #fff; }
+.racecard__podchip--first { background: rgba(246, 160, 107, 0.14); box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.35); color: #fff; }
 
 /* Prize-pool gauge */
-.racebar { display: flex; flex-direction: column; gap: 5px; }
 /* Fixed-prize row (no draining gauge): a stable "🏆 Prize pool  $30" line. */
-.racebar--prize { flex-direction: row; justify-content: space-between; align-items: baseline; font-size: 12px; color: rgba(234, 255, 246, 0.8); }
-.racebar--prize b { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 800; }
 /* Zealy binding form (Race card, collapsed by default): a paste field + one
    button. Utility styling — it must read as setup, not as a play CTA. */
 .racezealy { border: 1px dashed rgba(255, 255, 255, 0.14); border-radius: 12px; padding: 8px 11px; }
@@ -1431,30 +1568,10 @@ small.muted { font-size: 12px; }
 .racewallet { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 8px 10px; border: 1px dashed rgba(255, 255, 255, 0.18); border-radius: 10px; background: transparent; color: rgba(234, 255, 246, 0.75); font-size: 12px; cursor: pointer; }
 .racewallet b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; color: #fff; }
 
-.racebar__head { display: flex; justify-content: space-between; align-items: baseline; font-size: 11.5px; color: rgba(234, 255, 246, 0.7); }
-.racebar__head b { color: #fff; font-variant-numeric: tabular-nums; }
-.racebar__track { height: 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
-.racebar__fill {
-  display: block; height: 100%; border-radius: 999px;
-  background: linear-gradient(90deg, var(--race-gold), var(--race-green-2));
-  box-shadow: 0 0 12px rgba(52, 224, 164, 0.5); transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
 
 /* The fixed leaderboard prize — a confident glance-value, no gauge. A gold
    coin chip that reads as "this is what you're playing for", never as a
    balance ticking down. */
-.raceprize {
-  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
-  padding: 9px 12px; border-radius: 12px;
-  background: linear-gradient(180deg, rgba(255, 214, 102, 0.14), rgba(255, 214, 102, 0.05));
-  border: 1px solid rgba(255, 214, 102, 0.28);
-}
-.raceprize__label { font-size: 12px; font-weight: 800; color: var(--race-gold); letter-spacing: 0.2px; }
-.raceprize__amount {
-  font-family: var(--font-display); font-size: 20px; color: #fff;
-  font-variant-numeric: tabular-nums; text-shadow: 0 1px 10px rgba(255, 214, 102, 0.35);
-}
-.raceprize__sub { font-size: 11px; color: rgba(234, 255, 246, 0.62); margin-left: auto; }
 
 .racecard__actions { display: flex; gap: 8px; align-items: stretch; }
 .btn--race {
@@ -1468,12 +1585,12 @@ small.muted { font-size: 12px; }
 .btn--race small { font-family: var(--font-body); font-size: 11px; font-weight: 700; opacity: 0.8; }
 .btn--race:active { transform: scale(0.98); }
 .btn--race:disabled { filter: grayscale(0.5) brightness(0.7); cursor: default; box-shadow: none; }
-.btn--race-play { background: linear-gradient(180deg, #ffe08a, var(--race-gold)); color: #3a2c00; box-shadow: 0 10px 22px -8px rgba(255, 200, 60, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.6); }
+.btn--race-play { background: var(--accent); color: var(--card); box-shadow: 0 10px 22px -8px rgba(214, 127, 72, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.6); }
 .racecard__board {
   flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 1px; padding: 8px 12px; border: none; border-radius: 14px; cursor: pointer;
   font-size: 18px; color: var(--race-gold);
-  background: rgba(255, 255, 255, 0.06); box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.28);
+  background: rgba(255, 255, 255, 0.06); box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.28);
   transition: transform 0.12s ease;
 }
 .racecard__board small { font-family: var(--font-body); font-size: 9.5px; font-weight: 700; color: rgba(234, 255, 246, 0.7); text-transform: uppercase; letter-spacing: 0.3px; }
@@ -1481,7 +1598,7 @@ small.muted { font-size: 12px; }
 .racecard__rule { font-size: 10.5px; color: rgba(234, 255, 246, 0.5); text-align: center; letter-spacing: 0.2px; }
 
 /* How to play & win — a dependency-free <details> disclosure inside the card. */
-.racehow { border-radius: 12px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.16); }
+.racehow { border-radius: 12px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.16); }
 .racehow__sum {
   list-style: none; cursor: pointer; user-select: none;
   padding: 8px 12px; font-size: 11px; font-weight: 700; letter-spacing: 0.2px;
@@ -1498,13 +1615,6 @@ small.muted { font-size: 12px; }
 .racehow__steps li::marker { color: var(--race-gold); font-weight: 700; }
 
 /* ---- Leaderboard sheet ---- */
-.racesheet { max-height: 86dvh; display: flex; flex-direction: column; position: relative; overflow: hidden; }
-.racesheet__banner {
-  position: absolute; top: 0; left: 0; right: 0; height: 6px;
-  background-image: repeating-linear-gradient(90deg, #0d1a16 0 8px, var(--txt) 8px 16px); opacity: 0.5;
-}
-.racesheet__title { margin-top: 6px; }
-.racesheet__chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 4px 0 12px; }
 .racechip {
   font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
   color: var(--txt); background: rgba(0, 0, 0, 0.05);
@@ -1512,10 +1622,9 @@ small.muted { font-size: 12px; }
 .racechip--live { color: #0a1f1a; background: var(--race-green-2); animation: racePulse 1.8s ease-in-out infinite; }
 .racechip--pool {
   color: #7a5600; font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, rgba(255, 240, 200, 0.95), rgba(255, 224, 138, 0.6));
+  background: linear-gradient(180deg, rgba(255, 240, 200, 0.95), rgba(255, 194, 158, 0.6));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(212, 160, 23, 0.4);
 }
-.racesheet__scroll { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px; }
 
 /* Podium (top 3): winner centre + raised, blocks by rank */
 .podium { display: flex; align-items: flex-end; justify-content: center; gap: 8px; padding: 6px 0 2px; }
@@ -1537,35 +1646,15 @@ small.muted { font-size: 12px; }
   padding-top: 6px; font-family: var(--font-display); font-size: 18px; font-weight: 800; color: rgba(255, 255, 255, 0.9);
   background: linear-gradient(180deg, var(--race-green), var(--race-green-2)); border-radius: 8px 8px 0 0;
 }
-.podium__col--1 .podium__block { height: 62px; background: linear-gradient(180deg, var(--race-gold), #ffbf3d); color: #3a2c00; }
+/* first place keeps its medal gold: a podium colour is content, like .board__rank--1 */
+.podium__col--1 .podium__block { height: 62px; background: linear-gradient(180deg, #ffe08a, #f5b301); color: #5d4300; }
 .podium__col--2 .podium__block { height: 46px; }
 .podium__col--3 .podium__block { height: 34px; background: linear-gradient(180deg, #cd7f4a, #b8663a); }
 .podium__col--me { outline: 2px solid var(--p1); outline-offset: 2px; border-radius: 14px; }
 
 .raceboard { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.racerow {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-  border-radius: 12px; background: rgba(0, 0, 0, 0.03); font-size: 14px;
-}
-.racerow--anim { animation: raceRowIn 0.32s ease both; animation-delay: calc(var(--i) * 45ms); }
-@keyframes raceRowIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-.racerow__rank { flex-shrink: 0; min-width: 34px; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; }
-.racerow__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.racerow__you { font-style: normal; font-size: 10px; font-weight: 800; color: #fff; background: var(--p1); padding: 1px 6px; border-radius: 999px; }
-.racerow__pts { flex-shrink: 0; font-weight: 800; color: var(--p1); font-variant-numeric: tabular-nums; }
-.racerow--me { background: rgba(37, 99, 235, 0.1); outline: 1px solid rgba(37, 99, 235, 0.35); }
-.racerow--sticky { margin: 4px 2px 0; }
-.racesheet__play { margin-top: 10px; }
 
 /* Skeleton rows while the board loads */
-.raceskel { display: flex; flex-direction: column; gap: 6px; }
-.raceskel__row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(0, 0, 0, 0.03); }
-.raceskel__rank, .raceskel__name, .raceskel__pts {
-  height: 12px; border-radius: 6px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.12) 37%, rgba(0,0,0,0.06) 63%);
-  background-size: 400% 100%; animation: raceShimmer 1.4s ease infinite;
-}
-.raceskel__rank { width: 28px; } .raceskel__name { flex: 1; } .raceskel__pts { width: 40px; }
 @keyframes raceShimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 /* Empty state */
@@ -1577,11 +1666,11 @@ small.muted { font-size: 12px; }
 /* ---- Race Week premium pass: gold-lit card, metallic podium, glossy gauge.
    Overrides layered on the base race styles above so the structure stays. ---- */
 .racecard {
-  border: 1px solid rgba(255, 211, 92, 0.38);
+  border: 1px solid rgba(246, 160, 107, 0.38);
   box-shadow:
     0 24px 52px -16px rgba(0, 60, 40, 0.75),
-    0 0 0 1px rgba(255, 211, 92, 0.12),
-    0 0 34px -10px rgba(255, 211, 92, 0.3),
+    0 0 0 1px rgba(246, 160, 107, 0.12),
+    0 0 34px -10px rgba(246, 160, 107, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .racecard::after { /* slow diagonal sheen sweeping the card — the "trophy glass" read */
@@ -1595,8 +1684,8 @@ small.muted { font-size: 12px; }
 }
 @keyframes raceSheen { 0%, 55% { background-position: 130% 0; } 100% { background-position: -140% 0; } }
 .racecard__flag {
-  background: radial-gradient(130% 130% at 30% 20%, rgba(255, 224, 138, 0.35), rgba(255, 211, 92, 0.12) 60%, rgba(52, 224, 164, 0.08));
-  box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.45), 0 6px 16px -6px rgba(255, 211, 92, 0.4);
+  background: radial-gradient(130% 130% at 30% 20%, rgba(255, 194, 158, 0.35), rgba(246, 160, 107, 0.12) 60%, rgba(174, 191, 146, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.45), 0 6px 16px -6px rgba(246, 160, 107, 0.4);
   animation: raceFlagFloat 3.6s ease-in-out infinite;
 }
 @keyframes raceFlagFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
@@ -1605,18 +1694,8 @@ small.muted { font-size: 12px; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 .racecard__podchip--first {
-  background: linear-gradient(180deg, rgba(255, 224, 138, 0.22), rgba(255, 191, 61, 0.1));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 0 1px rgba(255, 211, 92, 0.5), 0 4px 14px -6px rgba(255, 200, 60, 0.45);
-}
-.racebar__track { height: 9px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
-.racebar__fill { position: relative; overflow: hidden; }
-.racebar__fill::after { /* travelling glint on the remaining-pool fill */
-  content: '';
-  position: absolute;
-  inset: 0;
-  width: 34%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  animation: raceGaugeShine 2.4s ease-in-out infinite;
+  background: linear-gradient(180deg, rgba(255, 194, 158, 0.22), rgba(255, 191, 61, 0.1));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 0 1px rgba(246, 160, 107, 0.5), 0 4px 14px -6px rgba(214, 127, 72, 0.45);
 }
 @keyframes raceGaugeShine { from { transform: translateX(-130%); } to { transform: translateX(360%); } }
 .btn--race-play { position: relative; overflow: hidden; }
@@ -1631,11 +1710,6 @@ small.muted { font-size: 12px; }
 }
 
 /* Sheet: richer banner, metallic podium (gold / silver / bronze), gold "me". */
-.racesheet__banner {
-  height: 8px;
-  opacity: 0.7;
-  box-shadow: 0 6px 18px -6px rgba(255, 211, 92, 0.4);
-}
 .podium__block {
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), inset 0 -10px 18px rgba(0, 0, 0, 0.18), 0 8px 18px -8px rgba(0, 0, 0, 0.35);
 }
@@ -1643,7 +1717,7 @@ small.muted { font-size: 12px; }
 .podium__col--1 .podium__block {
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.55), inset 0 -12px 20px rgba(160, 110, 0, 0.25), 0 10px 26px -8px rgba(255, 190, 50, 0.55);
 }
-.podium__col--1 { filter: drop-shadow(0 10px 22px rgba(255, 200, 60, 0.28)); }
+.podium__col--1 { filter: drop-shadow(0 10px 22px rgba(214, 127, 72, 0.28)); }
 .podium__crown {
   position: absolute;
   top: -15px;
@@ -1652,37 +1726,15 @@ small.muted { font-size: 12px; }
   animation: crownFloat 2.6s ease-in-out infinite;
 }
 @keyframes crownFloat { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-3px) rotate(6deg); } }
-.podium__pts { color: #a97a00; }
-.racerow {
-  background: linear-gradient(180deg, rgba(12, 22, 52, 0.04), rgba(12, 22, 52, 0.02));
-  box-shadow: inset 0 0 0 1px rgba(12, 22, 52, 0.05);
-}
-.racerow__rank {
-  min-width: 30px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: rgba(12, 22, 52, 0.06);
-  font-size: 11.5px;
-}
-.racerow__pts { color: #a97a00; }
-.racerow--me {
-  background: linear-gradient(180deg, rgba(255, 224, 138, 0.3), rgba(255, 211, 92, 0.14));
-  outline: 1px solid rgba(212, 160, 23, 0.45);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 6px 16px -8px rgba(212, 160, 23, 0.5);
-}
-.racerow__you { background: linear-gradient(180deg, #ffd35c, #f0b428); color: #3a2c00; }
-.racerow--sticky { box-shadow: 0 -8px 18px -12px rgba(12, 22, 52, 0.3), 0 6px 16px -8px rgba(212, 160, 23, 0.5); }
+.podium__pts { color: var(--a-600); }
 @media (prefers-reduced-motion: reduce) {
-  .racecard::after, .btn--race-play::after, .racebar__fill::after { animation: none; content: none; }
+  .racecard::after, .btn--race-play::after { animation: none; content: none; }
   .racecard__flag, .podium__crown { animation: none; }
 }
 
 /* Rematch offer banner (end screen) — gold glass, breathing glow. */
 .rematchoffer {
-  background: linear-gradient(180deg, rgba(255, 240, 200, 0.92), rgba(255, 224, 138, 0.55));
+  background: linear-gradient(180deg, rgba(255, 240, 200, 0.92), rgba(255, 194, 158, 0.55));
   border: 1px solid rgba(212, 160, 23, 0.55);
   color: #7a5600;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 8px 20px -10px rgba(212, 160, 23, 0.6);
@@ -1732,9 +1784,10 @@ small.muted { font-size: 12px; }
 .buysheet h3 { margin: 8px 0 14px; }
 .buysheet .btn { width: 100%; margin-bottom: 4px; }
 .buysheet__bal { display: block; margin: 0 0 12px; font-size: 12px; }
+/* Paying with real money gets the dark surface, never a gold button. */
 .buysheet__usdt {
-  background: linear-gradient(180deg, #ffd977, #f5b301); color: #4a3400;
-  border-color: rgba(185, 135, 0, 0.8); margin-top: 6px;
+  background: var(--ink); color: var(--on-ink);
+  border-color: var(--ink-3); margin-top: 6px;
 }
 
 /* Collection album (cosmetics phase 3): sets, item tiles, completion claim. */
@@ -1804,7 +1857,7 @@ small.muted { font-size: 12px; }
   align-items: center;
   justify-content: center;
   color: var(--p1);
-  box-shadow: 0 8px 24px rgba(23, 43, 99, 0.4);
+  box-shadow: 0 8px 24px rgba(46, 43, 37, 0.4);
 }
 .radar__core .icon { width: 26px; height: 26px; }
 .radar--sm { width: 110px; height: 110px; margin-bottom: 4px; }
@@ -1813,20 +1866,43 @@ small.muted { font-size: 12px; }
   .radar i { animation: none; opacity: 0.3; transform: scale(0.8); }
 }
 
-.vs { display: flex; align-items: center; gap: 18px; font-size: 15px; font-weight: 700; }
-.vs .avatar { box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4); }
+/* the two players and the word between them (design 1e) */
+.vs { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; font-family: var(--font-display); font-weight: 400; font-size: 16px; }
+.vs > div { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+.vs small { font-family: var(--font-body); font-weight: 600; font-size: 12px; color: var(--muted); }
+.vs__x { font-family: var(--font-display); font-weight: 400; font-size: 22px; color: var(--accent); }
+/* the escrow reassurance, sage-tinted so it reads as safety, not as an alert */
+.mm-escrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(143, 160, 115, 0.16);
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--a2-700);
+}
+.mm-escrow .icon { width: 16px; height: 16px; flex: none; }
+/* Design 1e: a paper disc ringed in the player's own colour, carrying a
+   Caprasimo initial — not a saturated colour blob with a white ring. */
 .avatar {
-  width: 58px;
-  height: 58px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 34px;
+  background: var(--card);
   border: 3px solid var(--card-2);
+  box-shadow: 0 8px 20px rgba(46, 43, 37, 0.16);
 }
-.avatar--me { background: var(--p1); border-color: #ffffff; }
-.avatar--opp { background: var(--p2); border-color: #ffffff; }
+.avatar--me { border-color: var(--a2-500); color: var(--a2-700); }
+.avatar--opp { border-color: var(--accent); color: var(--a-600); }
 
 /* Game */
 /* vertical centering: board + controls sit in the middle, not glued to the top */
@@ -1834,19 +1910,56 @@ small.muted { font-size: 12px; }
   flex: 1;
   display: flex;
   flex-direction: column;
+  /* The design pins its tray to the bottom of an 844px frame it very nearly
+     fills; our column is shorter (no OS status bar, tighter header), so pinning
+     opened a dead band under the turn row. Centre the whole stack instead — the
+     tray still lands low enough for a thumb. */
   justify-content: center;
   gap: 6px;
   position: relative; /* positioning context for the gift-flight overlay */
 }
-/* nest each seat's avatar cluster into its board corner (Ludo-Club) */
-.gamecorner--top { position: relative; z-index: 4; margin-bottom: -14px; }
-.gamecorner--bottom { position: relative; z-index: 4; margin-top: -14px; }
-/* corner rows above/below the board (Ludo-Club: players live at their corners) */
-.gamecorner { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+/* Design 1c: the players sit in rows ABOVE and BELOW the board, not nested into
+   its corners — the board is a discrete object on the table now, and overlapping
+   it with avatars fought its own drop shadow. */
+.gamecorner--top { position: relative; z-index: 4; }
+.gamecorner--bottom { position: relative; z-index: 4; margin-top: 14px; }
+.gamecorner { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 /* reserve the tallest state's height so the board never shifts between turns */
-.gamecorner--top { min-height: 66px; }
-.gamecorner--bottom { min-height: 96px; }
-.cornerstack { display: flex; align-items: center; gap: 10px; }
+.gamecorner--top { min-height: 62px; }
+.gamecorner--bottom { min-height: 72px; }
+.cornerstack { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cornerstack--die { flex: none; }
+
+/* name + rating beside an avatar */
+.pident { min-width: 0; }
+.pident b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 1.1;
+  color: var(--txt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pident small {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--label);
+  white-space: nowrap;
+}
+/* the stake, and how far into the game we are */
+.potstack { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.rollno {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--label);
+  white-space: nowrap;
+}
 
 /* framed avatar with conic countdown ring while active */
 .avcard {
@@ -1857,34 +1970,34 @@ small.muted { font-size: 12px; }
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 .avcard--turn { transform: scale(1.06); opacity: 1; }
+/* Paper disc carrying a Caprasimo initial in the player's OWN colour (design
+   1c): the conic ring around it is the clock, so the face itself stays quiet.
+   `--seat-ink` is set per card by the screen. */
 .avcard__face {
-  width: 56px;
-  height: 56px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
-  font-size: 26px;
-  font-weight: 600;
-  color: #ffffff;
-  text-shadow: 0 2px 0 rgba(16, 24, 48, 0.3);
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 6px 14px rgba(15, 26, 68, 0.35);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--seat-ink, var(--accent-deep));
+  background: var(--card);
 }
-/* country flag on a light inner disc — the seat colour reads as a premium frame */
+/* country flag fills the paper disc — identity content, not decoration */
 .avcard__flag {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #ffffff, #e7ecf7);
+  background: var(--card);
   font-size: 23px;
   line-height: 1;
-  text-shadow: none;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.85), inset 0 -2px 4px rgba(15, 26, 68, 0.18);
 }
 
 /* tap-on-avatar: an invisible button wrapper (keeps the avatar's own layout) */
@@ -1939,9 +2052,6 @@ small.muted { font-size: 12px; }
 .avcard, .profilecard__flag, .profilesheet__flag, .pe__flag { position: relative; }
 /* 4-player seat: the tile clips its content, so the frame lives on a wrapper
    OUTSIDE it; a premium frame also rounds the tile so the ring fits snugly */
-.seatav-framed { position: relative; display: inline-flex; }
-.seatav--circ { border-radius: 50%; }
-.seatav--circ .seatav__flag { align-self: center; }
 
 /* frame picker (in the cosmetics modal) */
 .framegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -1956,21 +2066,23 @@ small.muted { font-size: 12px; }
 .frametile__ring.avframe { padding: 0; } /* the swatch IS the ring */
 .frametile b { font-family: var(--font-display); font-size: 12px; }
 .frametile small { font-size: 9px; color: var(--muted); min-height: 20px; }
-.frametile--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245, 179, 1, 0.35); }
+.frametile--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(198, 113, 57, 0.35); }
 .frametile--locked { opacity: 0.6; cursor: default; }
 .frametile .skin__lock { position: absolute; top: 6px; right: 8px; font-size: 12px; }
 
 /* bottom action bar: sound · verify · balance · dice skins · menu */
+/* A raised paper tray of quiet controls (design 1c/1d) — the only tinted one is
+   the resign flag, because it is the only one that ends something. */
 .gamebar {
   margin-top: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  background: rgba(23, 37, 84, 0.55);
-  border-radius: 16px;
-  padding: 6px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 14px rgba(15, 26, 68, 0.3);
+  gap: 6px;
+  background: var(--card);
+  border-radius: 22px;
+  padding: 9px 12px;
+  box-shadow: 0 1px 3px rgba(46, 43, 37, 0.14);
 }
 /* The bar packs 8 controls; on a narrow (MiniPay) width they must SHRINK to fit —
    otherwise the last ones (menu, and critically the leave ✕) overflow and, under
@@ -1978,43 +2090,47 @@ small.muted { font-size: 12px; }
    shrink toward a still-tappable floor instead of pushing the exit off-screen. */
 .gamebar__btn {
   flex: 0 1 auto;
-  width: 44px;
-  min-width: 30px;
-  height: 44px;
+  width: 38px;
+  min-width: 28px;
+  height: 38px;
   border: none;
-  border-radius: 12px;
+  border-radius: 13px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: transparent;
+  color: var(--n-700);
   cursor: pointer;
 }
-.gamebar__btn .icon { width: 22px; height: 22px; }
+.gamebar__btn .icon { width: 19px; height: 19px; }
 .gamebar__btn:active { transform: scale(0.94); }
-.gamebar__die { width: 30px; height: 30px; display: block; }
+.gamebar__gap { flex: 1; }
+.gamebar__die { width: 24px; height: 24px; display: block; }
 .gamebar__die .die { width: 100%; height: 100%; }
+/* The centre slot of the tray: a quiet caption, not a lit money widget. In 1d it
+   reads "Free table"; here it carries the balance. */
 .gamebar__coins {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 16px;
-  color: #ffffff;
-  background: rgba(16, 24, 48, 0.4);
-  border-radius: 12px;
-  height: 44px;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  height: 38px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .gamebar__coin {
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe27a, #f5b301 60%, #c98f00);
-  box-shadow: inset 0 -2px 3px rgba(140, 95, 0, 0.55);
+  background: var(--accent);
+  flex: none;
 }
 
 /* turn-timer ring around the active player's chip */
@@ -2039,7 +2155,7 @@ small.muted { font-size: 12px; }
   border: 2px solid transparent;
   font-size: 13px;
   font-weight: 700;
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
+  box-shadow: 0 4px 12px rgba(46, 43, 37, 0.3);
 }
 .player--turn { border-color: var(--accent); }
 .player__chip {
@@ -2051,24 +2167,34 @@ small.muted { font-size: 12px; }
   justify-content: center;
   font-size: 13px;
 }
+/* Money gets the dark surface, never gold-on-blue (GAME_DESIGN §UI tone). */
 .pot {
-  background: #ffffff;
-  border-radius: var(--radius-s);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--ink);
+  border-radius: 999px;
   padding: 6px 12px;
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  color: #cf9200;
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--on-ink);
+  white-space: nowrap;
 }
+.pot .icon { width: 13px; height: 13px; color: var(--accent-2); flex: none; }
+/* Inset, not full-bleed: the board now carries its own radius and drop shadow
+   from the equipped theme, and bleeding it past the screen edge sheared both off.
+   Capped at the design's 340px so it stays a board ON a table, not wall-to-wall. */
 .boardwrap {
   position: relative;
-  width: calc(100% + 32px);
-  margin: 0 -16px;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
   aspect-ratio: 1;
   background: transparent;
   padding: 0;
-  filter: drop-shadow(0 10px 22px rgba(15, 26, 68, 0.42));
+  /* The shadow now rides the <svg> itself, from the board theme (a night board
+     casts a different shadow than a paper one), so the wrapper adds none. */
 }
 .boardwrap--shake { animation: boardshake 0.3s ease; }
 @keyframes boardshake {
@@ -2100,22 +2226,25 @@ small.muted { font-size: 12px; }
 /* Discreet roll control: the bold blue button read as heavy next to the premium
    die, so it's now a faint translucent tile — still a clear tap target (soft
    inset ring + the die's own nudge pulse invite the tap), just far less loud. */
+/* The die IS the surface (design 1c): the button is a bare 66px tap target and
+   the die face draws its own paper tile, so there is no glass box around it. */
 .dicebtn {
-  flex: 0 0 90px;
-  height: 90px;
-  border-radius: 22px;
+  flex: 0 0 66px;
+  height: 66px;
+  border-radius: 20px;
   border: none;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   cursor: pointer;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.14);
-  transition: transform 0.1s ease, background 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.1s ease;
 }
-.dicebtn:active:not(:disabled) { transform: translateY(2px); background: rgba(255, 255, 255, 0.09); }
+.dicebtn .die { width: 66px; height: 66px; }
+.dicebtn:active:not(:disabled) { transform: translateY(2px); }
 /* disabled only occurs mid-turn (picking a token): inert, no tap ring */
-.dicebtn:disabled { cursor: default; box-shadow: none; background: transparent; }
+.dicebtn:disabled { cursor: default; background: transparent; }
 /* Hidden-but-MOUNTED between turns (same trick as .huddie--idle): the die element
    must exist before its roll arrives or the Die3D tumble transition can't play,
    which made the first roll after each turn just pop to the result. */
@@ -2151,19 +2280,19 @@ small.muted { font-size: 12px; }
   left: -9999px;
 }
 
+/* The opponent's die, kept from the candy build so their roll (and their premium
+   skin) stays visible — the design's 1c has no slot for it, so it rides the top
+   row as a plain small die rather than a ringed green badge. */
 .huddie {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-  padding: 4px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #eef4ec, #d3e4d5);
-  box-shadow: 0 3px 9px rgba(15, 26, 68, 0.35), 0 0 0 2px rgba(46, 167, 88, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: transparent;
 }
-.huddie .die { width: 100%; height: 100%; }
+.huddie .die { width: 40px; height: 40px; }
 
 .die { width: 52px; height: 52px; display: block; }
 /* idle nudge invites the tap; the tumble plays while faces cycle */
@@ -2184,25 +2313,70 @@ small.muted { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .dicebtn .die, .dicebtn--rolling .die, .huddie--rolling .die, .ring--low { animation: none !important; }
 }
-.gamemsg { flex: 1; font-size: 15px; line-height: 1.35; color: #ffffff; text-shadow: 0 1px 0 rgba(23, 43, 99, 0.3); }
-/* ≤5s on MY clock: the message becomes an amber pulsing countdown that names
-   the auto-play consequence (the rule that surprised every MiniPay tester). */
-.gamemsg--rush span { color: #ffe27a; font-weight: 800; animation: rushpulse 0.8s ease-in-out infinite; display: inline-block; }
+/* Turn state, design 1c: the headline in Caprasimo, the instruction beneath it
+   in muted Figtree. It used to be white text on the blue stage. */
+.gamemsg { flex: 1; min-width: 0; }
+.gamemsg > span {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 1.15;
+  color: var(--txt);
+}
+/* ≤5s on MY clock: the message counts down and names the auto-play consequence
+   (the rule that surprised every MiniPay tester). */
+.gamemsg--rush > span { color: var(--danger); animation: rushpulse 0.8s ease-in-out infinite; }
 @keyframes rushpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-@media (prefers-reduced-motion: reduce) { .gamemsg--rush span { animation: none; } }
-.gamemsg small { display: block; color: rgba(255, 255, 255, 0.75); font-size: 11px; margin-top: 3px; }
-.gamemsg small a { color: #ffe27a; cursor: pointer; text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) { .gamemsg--rush > span { animation: none; } }
+.gamemsg small {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.gamemsg small a { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
 /* End */
-.screen--end { position: relative; overflow: hidden; }
-.end__emoji { font-size: 44px; }
-.end__title { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: 0.5px; color: #fff; text-shadow: 0 2px 0 rgba(23,43,99,.35); }
+/* the ghost pair and the rematch CTA, on the dark surface (design 1f) */
+.screen--end .btn--ghost {
+  background: transparent;
+  border: 1px solid rgba(249, 244, 237, 0.2);
+  border-radius: 24px;
+  color: rgba(249, 244, 237, 0.8);
+  box-shadow: none;
+}
+/* Design 1f: the result lands on the dark surface — the one Stakes mode uses. */
+.screen--end { position: relative; overflow: hidden; color: var(--on-ink); }
+.screen--end::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(90% 45% at 50% 22%, var(--ink-2) 0%, var(--ink) 65%);
+}
+/* the trophy sits in a tinted rounded square, not as a 44px emoji */
+.end__glyph {
+  width: 84px;
+  height: 84px;
+  border-radius: 28px;
+  display: grid;
+  place-items: center;
+  background: rgba(246, 160, 107, 0.16);
+  color: var(--accent-2);
+}
+.end__glyph .icon { width: 40px; height: 40px; }
+.end__glyph--lost { background: rgba(249, 244, 237, 0.08); color: rgba(249, 244, 237, 0.6); }
+.end__title { font-family: var(--font-display); font-size: 40px; font-weight: 400; letter-spacing: -0.02em; line-height: 1; color: var(--on-ink); }
 /* ranking ceremony (C5): animated ELO delta + resulting rating, on the blue stage */
 .eloreveal { display: inline-flex; align-items: baseline; gap: 10px; animation: eloPop 0.5s cubic-bezier(0.34, 1.5, 0.64, 1) both; animation-delay: 0.35s; }
 .eloreveal__delta { font-family: var(--font-display); font-weight: 700; font-size: 20px; display: inline-flex; align-items: center; gap: 3px; }
 .eloreveal__arrow { font-size: 11px; }
-.eloreveal--up .eloreveal__delta { color: #66e39b; text-shadow: 0 1px 2px rgba(8, 16, 44, 0.4); }
-.eloreveal--down .eloreveal__delta { color: #ff8a8a; text-shadow: 0 1px 2px rgba(8, 16, 44, 0.4); }
+.eloreveal--up .eloreveal__delta { color: #66e39b; text-shadow: 0 1px 2px rgba(46, 43, 37, 0.4); }
+.eloreveal--down .eloreveal__delta { color: #ff8a8a; text-shadow: 0 1px 2px rgba(46, 43, 37, 0.4); }
 .eloreveal__rating { font-family: var(--font-display); font-size: 16px; color: rgba(255, 255, 255, 0.95); }
 .eloreveal__rating small { font-size: 10px; color: rgba(255, 255, 255, 0.6); }
 @keyframes eloPop { 0% { opacity: 0; transform: translateY(8px) scale(0.8); } 100% { opacity: 1; transform: none; } }
@@ -2222,16 +2396,16 @@ small.muted { font-size: 12px; }
 .eloreveal__rating small { font-size: 10px; color: rgba(255, 255, 255, 0.6); }
 @keyframes eloPop { 0% { opacity: 0; transform: translateY(8px) scale(0.8); } 100% { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .eloreveal { animation: none; } }
+/* The payout, design 1f: plain sage Caprasimo on the dark surface. It was a gold
+   gradient clipped to the text — the casino tell this pass exists to kill. */
 .end__amount {
   font-family: var(--font-display);
-  font-size: 44px;
-  font-weight: 700;
+  font-size: 52px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-  background: linear-gradient(160deg, #ffd94d, #e09b00);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 4px 14px rgba(245, 179, 1, 0.3));
+  color: var(--a2-400);
 }
 /* orchestrated entrance */
 .screen--end .center > * { animation: fadeup 0.45s ease both; }
@@ -2265,16 +2439,19 @@ small.muted { font-size: 12px; }
   .confetti, .boardwrap--shake, .burst__p { animation: none !important; }
   .confetti { display: none; }
 }
+/* payout confirmation pill on the dark surface (design 1f) */
 .paynote {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-s);
-  padding: 10px 14px;
-  font-size: 12px;
-  color: var(--muted);
+  background: rgba(143, 160, 115, 0.14);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 11.5px;
+  color: rgba(249, 244, 237, 0.8);
   max-width: 300px;
 }
-.paynote b { color: var(--me); }
+.paynote b { color: var(--a2-400); }
 
 /* Modal & toast */
 .modal {
@@ -2405,23 +2582,27 @@ small.muted { font-size: 12px; }
 }
 .t4chip b { display: block; font-family: var(--font-display); font-size: 14px; }
 .t4chip small { display: block; font-size: 8px; color: var(--muted); white-space: nowrap; margin-top: 1px; }
-.t4chip--sel { background: linear-gradient(180deg, #ffe27a, #f5b301); border-bottom-color: #c98f00; }
+.t4chip--sel { background: var(--accent); border-bottom-color: var(--accent-deep); color: var(--card); }
 .t4chip--sel b, .t4chip--sel small { color: #6b4d00; }
 .t4chip:active { transform: scale(0.95); }
 
 /* ---- in-game emotes ---- */
 .emotebar { position: relative; display: inline-flex; }
+/* Sits IN the paper tray, so it is one of its quiet icons — design 1c draws this
+   exact button as a `smile` glyph. The palette it opens stays emoji: those are
+   content the players send, not chrome. */
 .emotebar__toggle {
-  width: 40px; height: 40px; min-width: 30px; flex-shrink: 1; border-radius: 50%; border: none; cursor: pointer;
-  font-size: 20px; line-height: 1; background: var(--surface); color: var(--txt);
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; min-width: 28px; flex-shrink: 1; border-radius: 13px; border: none; cursor: pointer;
+  line-height: 1; background: transparent; color: var(--n-700);
+  display: flex; align-items: center; justify-content: center;
 }
+.emotebar__toggle .icon { width: 19px; height: 19px; }
 .emotebar__toggle:active { transform: scale(0.92); }
 /* popover sheet: emoji row + quick-chat pill row */
 .emotebar__sheet {
   position: absolute; z-index: 20; width: 224px; max-width: calc(100vw - 20px); box-sizing: border-box;
   display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--surface);
-  border-radius: 18px; box-shadow: 0 12px 30px rgba(23, 43, 99, 0.5);
+  border-radius: 18px; box-shadow: var(--shadow-lg);
   animation: emoteRow 0.14s ease-out;
 }
 /* Anchor to the button's RIGHT edge so the sheet opens toward the board centre and
@@ -2452,7 +2633,7 @@ small.muted { font-size: 12px; }
 .emotefloat {
   position: absolute; left: 50%; top: -10px; transform: translateX(-50%);
   font-size: 42px; pointer-events: none; z-index: 6; will-change: transform, opacity;
-  filter: drop-shadow(0 3px 6px rgba(8, 16, 44, 0.45));
+  filter: drop-shadow(0 3px 6px rgba(46, 43, 37, 0.45));
   animation: emoteFloat 2s ease-out forwards;
 }
 @keyframes emoteFloat {
@@ -2466,7 +2647,7 @@ small.muted { font-size: 12px; }
 .emotefloat--chat {
   font-size: 13px; font-weight: 700; color: var(--txt); background: var(--surface);
   padding: 6px 12px; border-radius: 14px; border-bottom-left-radius: 4px;
-  box-shadow: 0 6px 16px rgba(23, 43, 99, 0.35); white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(46, 43, 37, 0.35); white-space: nowrap;
 }
 /* per-emote entrance, layered INSIDE the float so the rise/fade base still runs */
 .emotein { display: inline-block; }
@@ -2489,15 +2670,16 @@ small.muted { font-size: 12px; }
 /* ---- in-game gifts (directed treats: coffee, rose, cake…) ---- */
 .giftbar { position: relative; display: inline-flex; }
 .giftbar__toggle {
-  width: 40px; height: 40px; min-width: 30px; flex-shrink: 1; border-radius: 50%; border: none; cursor: pointer;
-  font-size: 20px; line-height: 1; color: var(--txt); background: rgba(245, 179, 1, 0.16);
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; min-width: 28px; flex-shrink: 1; border-radius: 13px; border: none; cursor: pointer;
+  line-height: 1; color: var(--n-700); background: transparent;
+  display: flex; align-items: center; justify-content: center;
 }
+.giftbar__toggle .icon { width: 19px; height: 19px; }
 .giftbar__toggle:active { transform: scale(0.92); }
 .giftbar__sheet {
   position: absolute; z-index: 20; width: 236px; box-sizing: border-box;
   display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--surface);
-  border-radius: 18px; box-shadow: 0 12px 30px rgba(23, 43, 99, 0.5); animation: emoteRow 0.14s ease-out;
+  border-radius: 18px; box-shadow: var(--shadow-lg); animation: emoteRow 0.14s ease-out;
 }
 /* anchored to the button's right edge so the sheet never overhangs the board */
 .emotebar--up .giftbar__sheet { bottom: 100%; margin-bottom: 8px; right: 0; transform-origin: bottom right; }
@@ -2528,7 +2710,7 @@ small.muted { font-size: 12px; }
   border-radius: 12px;
   background: rgba(245, 179, 1, 0.14);
   border: 1px solid rgba(245, 179, 1, 0.5);
-  color: var(--accent, #f5b301);
+  color: var(--accent, #c67139);
   font-weight: 700;
   font-size: 14px;
   text-align: center;
@@ -2543,7 +2725,7 @@ small.muted { font-size: 12px; }
 .giftflight-layer { position: absolute; inset: 0; pointer-events: none; z-index: 30; overflow: visible; }
 .giftflight {
   position: absolute; left: 0; top: 0; font-size: 38px; will-change: transform, opacity;
-  filter: drop-shadow(0 4px 8px rgba(8, 16, 44, 0.5));
+  filter: drop-shadow(0 4px 8px rgba(46, 43, 37, 0.5));
   animation: giftFly 2.6s cubic-bezier(0.45, 0, 0.25, 1) forwards;
 }
 /* Timed so the gift is clearly readable: a pop at the sender, a slow arc, then a
@@ -2586,16 +2768,16 @@ small.muted { font-size: 12px; }
 .shopbtn {
   position: relative;
   /* solid glass chip — the old translucent tint washed out on the blue stage */
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--card);
   border: none;
-  color: #b98700;
+  color: var(--a-600);
   border-radius: 11px;
   cursor: pointer;
   padding: 6px 7px;
   display: flex;
   align-items: center;
   line-height: 0;
-  box-shadow: 0 2px 8px rgba(23, 43, 99, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(46, 43, 37, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .shopbtn:active { transform: scale(0.94); }
 .shopbtn .icon { width: 18px; height: 18px; }
@@ -2622,7 +2804,7 @@ small.muted { font-size: 12px; }
   cursor: pointer;
   padding: 6px 9px;
   line-height: 0;
-  box-shadow: 0 2px 8px rgba(23, 43, 99, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(46, 43, 37, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .progbtn:active { transform: scale(0.94); }
 .progbtn .icon { width: 18px; height: 18px; }
@@ -2697,7 +2879,7 @@ small.muted { font-size: 12px; }
   padding: 10px 18px;
   border-radius: 14px;
   border-bottom: 4px solid #ccd6e8;
-  box-shadow: 0 8px 18px rgba(23, 43, 99, 0.3);
+  box-shadow: 0 8px 18px rgba(46, 43, 37, 0.3);
 }
 .board {
   list-style: none;
@@ -2808,7 +2990,7 @@ small.muted { font-size: 12px; }
 .board--ghost { opacity: 0.4; }
 
 .huddie--big { width: 84px; height: 84px; border-radius: 20px; padding: 8px; background: #ffffff; }
-.huddie--big .die { filter: drop-shadow(0 2px 3px rgba(15,26,68,.3)); }
+.huddie--big .die { filter: drop-shadow(0 2px 3px rgba(46, 43, 37,.3)); }
 .linkbtn {
   border: none;
   background: rgba(255, 255, 255, 0.16);
@@ -2845,7 +3027,7 @@ small.muted { font-size: 12px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 6px 12px rgba(15, 26, 68, 0.45));
+  filter: drop-shadow(0 6px 12px rgba(46, 43, 37, 0.45));
 }
 .ludodie .die { width: 100%; height: 100%; display: block; }
 /* Hidden-but-mounted (same trick as .huddie--idle): the die element must exist
@@ -2950,84 +3132,55 @@ small.muted { font-size: 12px; }
 
 
 /* ---- 4-player Ludo-Club chrome (flat, no heavy bar) ---- */
+/* The table, lit from the top (design 1c/1d) — not a dotted casino stage. The
+   board brings its own paper, so the ground under it only has to be warm. */
 .screen--game::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(rgba(8, 16, 44, 0.35) 2.2px, transparent 2.6px),
-    radial-gradient(120% 90% at 50% 40%, #2c4890 0%, #1c3170 48%, #0e1a3e 100%);
-  background-size: 22px 22px, 100% 100%;
-}
-.gametop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.chromebtn {
-  width: 46px;
-  height: 46px;
-  border: none;
-  border-radius: 13px;
-  background: linear-gradient(180deg, #5b8bff, #2f6bf0);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 4px 10px rgba(15, 26, 68, 0.4);
-  color: #ffffff;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.chromebtn .icon { width: 22px; height: 22px; }
-.coinchip {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(12, 20, 46, 0.45);
-  border-radius: 20px;
-  padding: 7px 15px 7px 10px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 15px;
-  color: #ffffff;
-}
-.coinchip__c {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe27a, #f5b301 60%, #c98f00);
-  box-shadow: inset 0 -2px 3px rgba(140, 95, 0, 0.55);
+  background: radial-gradient(120% 55% at 50% 0%, var(--bg-hi), var(--bg-2));
 }
 
 /* plain white player labels painted on each quadrant */
+/* Labels sit on the board PLATE, so they take their ink from the equipped board
+   theme (--plabel-ink, set on .boardwrap): near-black on paper, warm sand on the
+   night table. They used to be white with a hard drop shadow, which was only
+   legible because the candy plate was saturated blue. */
 .plabel {
   position: absolute;
   transform: translate(-50%, -50%);
-  color: #ffffff;
+  color: var(--plabel-ink, #3b352c);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 14px;
   letter-spacing: 0.4px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
   z-index: 3;
   pointer-events: none;
 }
-.plabel--active { text-shadow: 0 0 9px rgba(255, 255, 255, 0.7), 0 1px 3px rgba(0, 0, 0, 0.45); }
-/* Gold "YOU" chip after the local player's name — MiniPay testers couldn't
-   tell which side was theirs, and on a 15s clock that hesitation costs turns. */
+/* Held back via the colour, NOT via opacity: opacity on the label would drag the
+   YOU chip down with it, and that chip is the cue testers needed to find their
+   own side inside a 15s clock. */
+.plabel { color: color-mix(in srgb, var(--plabel-ink, #3b352c) 62%, transparent); }
+/* Whose turn it is reads as full presence, not as a glow. */
+.plabel--active { color: var(--plabel-ink, #3b352c); }
+/* "YOU" chip after the local player's name — MiniPay testers couldn't tell which
+   side was theirs, and on a 15s clock that hesitation costs turns. Now the one
+   accent on paper instead of the candy gold gradient. */
 .plabel__you {
   display: inline-block;
   margin-left: 6px;
   padding: 1px 6px 0;
   border-radius: 999px;
-  background: linear-gradient(180deg, #ffd94d, #f5b301);
-  color: #4a3400;
+  background: var(--accent);
+  color: var(--card);
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-shadow: none;
   vertical-align: 1.5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 .plabel--q0 { left: 25%; top: 96.6%; }
 .plabel--q1 { left: 25%; top: 3.4%; }
@@ -3038,24 +3191,53 @@ small.muted { font-size: 12px; }
 /* corner avatar rows hugging the board (Ludo-Club 4-player structure) */
 /* reserve the die's full height (64px) on EVERY row so the board never shifts
    when the active die appears/moves between the top and bottom rows */
-.avrow { display: flex; justify-content: space-between; align-items: center; min-height: 68px; padding: 2px 4px; }
-.avrow__side { display: flex; align-items: center; gap: 8px; }
-.seatav {
-  width: 54px;
-  height: 54px;
-  border-radius: 14px;
-  background: #e3e9f3;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 4px 10px rgba(8, 16, 44, 0.4);
-  overflow: hidden;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  transition: transform 0.2s ease;
+/* Design 1d: two seat chips per row, hugging the board's own corners. */
+.avrow { display: flex; justify-content: space-between; align-items: center; min-height: 44px; padding: 6px 2px 0; gap: 8px; }
+.avrow__side { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+/* A seat chip: paper pill, a disc in the seat's colour, the name, and a pulsing
+   dot while it is their turn. The local player's chip inverts onto the dark
+   surface — that inversion is what answers "which one am I" at a glance. */
+.seatchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border-radius: 999px;
+  padding: 6px 12px 6px 6px;
+  box-shadow: 0 1px 3px rgba(46, 43, 37, 0.12);
+  min-width: 0;
 }
-.seatav svg { width: 78%; height: 78%; }
-.seatav__flag { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 30px; line-height: 1; text-shadow: 0 1px 2px rgba(8, 16, 44, 0.25); }
-.seatav--active { transform: scale(1.1); box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.9), 0 5px 12px rgba(8, 16, 44, 0.45); }
+.seatchip--you { background: var(--ink); box-shadow: none; }
+.seatchip__disc {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1;
+  overflow: hidden;
+  flex: none;
+}
+.seatchip__img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.seatchip__framed { position: relative; display: inline-flex; flex: none; }
+.seatchip__name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--txt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.seatchip--you .seatchip__name { color: var(--on-ink); }
+.seatchip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; animation: seatpulse 1.6s ease-in-out infinite; }
+.seatchip--you .seatchip__dot { background: var(--a2-400); }
+@keyframes seatpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .seatchip__dot { animation: none; } }
 /* the die is a clean floating 3D cube (no navy slot) — matches Ludo Club */
 
 
@@ -3083,7 +3265,7 @@ small.muted { font-size: 12px; }
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(8, 16, 44, 0.62);
+  background: rgba(32, 30, 29, 0.55);
   backdrop-filter: blur(3px);
   animation: g4fade 0.25s ease;
 }
@@ -3095,7 +3277,7 @@ small.muted { font-size: 12px; }
   border-radius: 22px;
   padding: 26px 22px 22px;
   text-align: center;
-  box-shadow: 0 18px 40px rgba(8, 16, 44, 0.45);
+  box-shadow: 0 18px 40px rgba(46, 43, 37, 0.45);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3112,7 +3294,7 @@ small.muted { font-size: 12px; }
 .crash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .crash__card {
   width: 100%; max-width: 300px; background: #ffffff; border-radius: 22px;
-  padding: 26px 22px 22px; text-align: center; box-shadow: 0 18px 40px rgba(8, 16, 44, 0.45);
+  padding: 26px 22px 22px; text-align: center; box-shadow: 0 18px 40px rgba(46, 43, 37, 0.45);
   display: flex; flex-direction: column; gap: 12px;
 }
 .crash__emoji { font-size: 48px; }
@@ -3120,8 +3302,10 @@ small.muted { font-size: 12px; }
 .crash__sub { font-size: 13px; color: #6b7794; margin-bottom: 6px; }
 
 /* leave/forfeit button in the staked game bar */
-.gamebar__btn--leave { color: #ffd7d2; }
-.gamebar__btn--leave:active { color: #ff9b90; }
+/* Resign: the one control in the tray that carries a tint, because it is the one
+   that ends the game (design 1c/1d draw it as a flag on a blush square). */
+.gamebar__btn--leave { background: #f9e9e2; color: var(--a-600); }
+.gamebar__btn--leave:active { background: var(--a-200); }
 
 /* ---- legal / age-consent gate ---- */
 .legal__draft { background: #fff4d6; color: #7a5b00; border-radius: 8px; padding: 8px 10px; font-size: 11.5px; font-weight: 600; margin: 6px 0 12px; }
@@ -3250,3 +3434,276 @@ small.muted { font-size: 12px; }
   animation: crownpop 0.5s ease;
 }
 @keyframes crownpop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ORGANIC PASS — lobby. Money as two floors: Free is the default, Stakes is a
+   mode you choose, and choosing it changes the ground under your feet.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Segmented control. The unselected half must not look disabled — both are
+   real destinations, one just happens to be where you already are. */
+.moneytabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 0 9px;
+  border-radius: 999px;
+  background: #e6d8bf;
+}
+.moneytab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 9px 0;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.moneytab .icon { width: 15px; height: 15px; vertical-align: -0.2em; }
+.moneytab--on {
+  background: var(--card);
+  color: var(--txt);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+.moneytab:active { transform: translateY(1px); }
+
+/* The one CTA. A card, not a glossy 3D lozenge: the accent block alone carries
+   enough weight on cream, and the sub-line does the reassuring. */
+.playnow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: none;
+  padding: 14px 18px;
+  border-radius: 26px;
+  background: var(--accent);
+  box-shadow: var(--shadow-accent);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, background 0.18s ease;
+}
+.playnow:active { transform: translateY(2px); }
+.playnow__txt b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 21px;
+  line-height: 1;
+  font-weight: 400;
+  color: var(--bg-hi);
+}
+.playnow__txt small {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(253, 246, 233, 0.8);
+}
+.playnow__go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(253, 246, 233, 0.16);
+  color: var(--bg-hi);
+}
+.playnow__go .icon { width: 20px; height: 20px; vertical-align: 0; }
+
+/* ---- Stakes: the second floor ---- */
+.stakemode {
+  margin-top: 2px;
+  padding: 18px 16px 16px;
+  border-radius: 28px;
+  background: var(--ink);
+  color: var(--on-ink);
+  background-image: radial-gradient(110% 55% at 50% 0%, var(--ink-2) 0%, var(--ink) 60%);
+}
+.stakemode__head {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 25px;
+  line-height: 1.15;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--on-ink);
+}
+.stakemode__sub {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(249, 244, 237, 0.55);
+}
+.stakemode__tables {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 16px;
+}
+.stakerow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(249, 244, 237, 0.1);
+  background: rgba(249, 244, 237, 0.06);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.stakerow:active { transform: translateY(1px); }
+/* The most-played table is the recommendation, so it gets the accent — one
+   suggested choice, not three equal ones a first-timer has to price out. */
+.stakerow--featured {
+  background: rgba(198, 113, 57, 0.14);
+  border-color: rgba(246, 160, 107, 0.35);
+}
+.stakerow--locked { opacity: 0.75; }
+.stakerow__amt {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 400;
+  background: rgba(198, 113, 57, 0.18);
+  color: var(--accent-2);
+}
+.stakerow--featured .stakerow__amt { background: var(--accent); color: var(--bg-hi); }
+.stakerow__txt { flex: 1; min-width: 0; }
+.stakerow__txt b {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--on-ink);
+}
+.stakerow__txt small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: rgba(249, 244, 237, 0.5);
+}
+.stakerow__win { color: var(--a2-400); font-weight: 700; }
+.stakerow__flag {
+  flex: none;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  vertical-align: 2px;
+  background: var(--accent-2);
+  color: var(--a-900);
+}
+.stakerow__chev { flex: none; width: 18px; height: 18px; color: rgba(249, 244, 237, 0.4); }
+.stakerow--featured .stakerow__chev { color: rgba(249, 244, 237, 0.55); }
+
+/* Escrow + the self-set cap stay on screen with the tables. A staking player
+   should never have to remember where the guarantees live. */
+.stakenote {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 18px;
+  padding: 13px 15px;
+  border-radius: 20px;
+  background: rgba(143, 160, 115, 0.12);
+  border: 1px solid rgba(143, 160, 115, 0.25);
+}
+.stakenote__ic { flex: none; width: 19px; height: 19px; color: var(--a2-400); }
+.stakenote__txt { flex: 1; min-width: 0; }
+.stakenote__txt b { display: block; font-size: 12.5px; font-weight: 700; color: var(--on-ink); }
+.stakenote__txt small { display: block; font-size: 11px; color: rgba(249, 244, 237, 0.5); }
+.stakelimit {
+  margin-top: 10px;
+  padding: 13px 15px;
+  border-radius: 20px;
+  background: rgba(249, 244, 237, 0.06);
+}
+.stakelimit__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(249, 244, 237, 0.75);
+}
+.stakelimit__row span:last-child { color: rgba(249, 244, 237, 0.55); }
+.stakelimit__bar {
+  margin-top: 8px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(249, 244, 237, 0.14);
+  overflow: hidden;
+}
+.stakelimit__bar i { display: block; height: 100%; border-radius: 999px; background: var(--a2-500); }
+.stakelimit__foot { margin-top: 9px; font-size: 11px; color: rgba(249, 244, 237, 0.42); }
+
+/* ---- Season strip on the landing ---- */
+.seasonstrip {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  margin-top: 11px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 22px;
+  background: var(--ink);
+  color: var(--on-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.seasonstrip:active { transform: translateY(1px); }
+.seasonstrip__ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(245, 234, 216, 0.12);
+  color: var(--accent-2);
+}
+.seasonstrip__ic .icon { width: 18px; height: 18px; vertical-align: 0; }
+.seasonstrip__txt { flex: 1; min-width: 0; }
+.seasonstrip__row { display: flex; justify-content: space-between; align-items: baseline; }
+.seasonstrip__row b { font-family: var(--font-display); font-size: 14px; font-weight: 400; }
+.seasonstrip__row em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: rgba(249, 244, 237, 0.6);
+}
+.seasonstrip__bar {
+  display: block;
+  margin-top: 7px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(249, 244, 237, 0.16);
+  overflow: hidden;
+}
+.seasonstrip__bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent-2); }
+.seasonstrip__chev { flex: none; width: 17px; height: 17px; color: rgba(249, 244, 237, 0.5); }

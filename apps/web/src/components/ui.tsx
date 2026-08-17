@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useFocusTrap } from './useFocusTrap';
 import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
-import { IconSoundOff, IconSoundOn } from './icons';
+import { IconCrown, IconDice5, IconFlame2, IconGift, IconLock, IconTicket } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats, skinSound } from '../lib/diceSkins';
 import { FRAMES, frameById, frameClass } from '../lib/avatarFrames';
@@ -19,7 +19,7 @@ import { COSMETIC_SETS, DIVISIONS, FEATURED_SET_MULTIPLIER, PREMIUM_COSMETICS, P
 import { cosmeticsCusdAvailable, staked4Available } from '../lib/deployments';
 import { isMiniPay } from '../lib/minipay';
 import { playDice, playTap } from '../lib/sound';
-import { t } from '../lib/i18n';
+import { t, tickets } from '../lib/i18n';
 
 /** The "(tap to close)" hint at the bottom of a modal card. It MUST be a real
  *  control: every modal card stops click propagation (so taps on the body don't
@@ -43,8 +43,15 @@ function CloseHint({ onClose, top = 10 }: { onClose(): void; top?: number }) {
   );
 }
 
+/** A ticket amount, written out — design 1g labels a tile "1 ticket" rather than
+ *  pairing a number with a glyph. Prices used to end in a 🎟️ inside a template
+ *  literal, which is why the emoji outlived every other one in the shop. */
+function Tk({ n }: { n: number }) {
+  return <>{tickets(n)}</>;
+}
+
 export function TopBar({ onConnect, onDisconnect }: { onConnect?: () => Promise<boolean>; onDisconnect?: () => Promise<void> }) {
-  const { balanceCents, walletBacked, soundOn, streak, challenge, tickets, profile } = useAppState();
+  const { balanceCents, walletBacked, streak, challenge, tickets, profile } = useAppState();
   const dispatch = useAppDispatch();
   // Draw the eye to Progression when there's something to do there: an unfinished
   // daily challenge, or a live streak worth protecting. Only for a RETURNING
@@ -55,57 +62,22 @@ export function TopBar({ onConnect, onDisconnect }: { onConnect?: () => Promise<
   return (
     <div className="topbar">
       <div className="topbar__logo">
-        <i className="logomark" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <rect x={3} y={3} width={18} height={18} rx={5.5} fill="#0c130f" />
-            <circle cx={8.4} cy={8.4} r={1.8} fill="#f5b301" />
-            <circle cx={12} cy={12} r={1.8} fill="#f5b301" />
-            <circle cx={15.6} cy={15.6} r={1.8} fill="#f5b301" />
-          </svg>
-        </i>
-        <span className="topbar__word">LUDO <span>ARENA</span></span>
+        <i className="logomark" aria-hidden="true"><IconDice5 /></i>
+        <span className="topbar__word">Ludo Arena</span>
       </div>
       <div className="topbar__right">
-        {/* Progression: the daily loop + rivals moved off the landing so the home
-            screen stays focused on Play + Season. Accent-styled + a nudge so it
-            never reads as a mere toggle users can miss. */}
+        {/* Streak is the progression entry point: it is the one number that
+            changes daily, and tapping it opens the sheet the chart button used
+            to. A zero streak still shows — "0" is the nudge. */}
         <button
-          className="progbtn"
+          className="streakchip"
           title={t('progressionTitle')}
           aria-label={t('progressionTitle')}
           onClick={() => dispatch({ type: 'PROGRESSION_MODAL', open: true })}
         >
-          {streak.days > 0 ? (
-            <span className="progbtn__streak">🔥 {streak.days}</span>
-          ) : (
-            <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 20V10M10 20V4M16 20v-7M20 20H3" />
-            </svg>
-          )}
+          <IconFlame2 />
+          <b>{streak.days}</b>
           {progNudge && <span className="progbtn__dot" aria-hidden="true" />}
-        </button>
-        {/* Cosmetics shop entry — accent-tinted + a sparkle so it reads as a SHOP,
-            not a settings toggle (it used to reuse .soundtoggle and vanish). */}
-        <button
-          className="shopbtn"
-          title={t('diceTitle')}
-          aria-label={t('diceTitle')}
-          onClick={() => dispatch({ type: 'DICE_MODAL', open: true })}
-        >
-          <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round">
-            <rect x={3} y={3} width={18} height={18} rx={5} />
-            <circle cx={8.5} cy={8.5} r={1.3} fill="currentColor" stroke="none" />
-            <circle cx={15.5} cy={15.5} r={1.3} fill="currentColor" stroke="none" />
-            <circle cx={12} cy={12} r={1.3} fill="currentColor" stroke="none" />
-          </svg>
-          <span className="shopbtn__spark" aria-hidden="true">✦</span>
-        </button>
-        <button
-          className="soundtoggle"
-          title={soundOn ? t('soundOn') : t('soundOff')}
-          onClick={() => dispatch({ type: 'TOGGLE_SOUND' })}
-        >
-          {soundOn ? <IconSoundOn /> : <IconSoundOff className="icon--muted" />}
         </button>
         {walletBacked ? (
           <div className="topbar__balance">
@@ -231,9 +203,9 @@ export function GiftCosmeticModal({ onSend }: { onSend(pid: string, id: string):
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>🎁 {t('giftTitle')} {giftFriend.name}</h3>
+        <h3><IconGift /> {t('giftTitle')} {giftFriend.name}</h3>
         <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-          {t('giftIntro')} · 🎟️ {tickets}
+          {t('giftIntro')} · <Tk n={tickets} />
         </p>
         <div className="skingrid">
           {giftables.map((c) => {
@@ -254,7 +226,7 @@ export function GiftCosmeticModal({ onSend }: { onSend(pid: string, id: string):
               >
                 <CosmeticPreview id={c.id} idKey={`gift-${c.id}`} />
                 <b>{cosmeticName(c.id)}</b>
-                <small>{sendingId === c.id ? '…' : `${c.tickets} 🎟️`}</small>
+                <small>{sendingId === c.id ? '…' : <Tk n={c.tickets} />}</small>
               </button>
             );
           })}
@@ -327,10 +299,10 @@ export function CollectionSheet({ onClaim }: { onClaim(setId: string): Promise<b
                     void onClaim(set.id).then(() => setClaiming(null));
                   }}
                 >
-                  {claiming === set.id ? '…' : `🎁 ${t('setClaim')} +${bonus} 🎟️`}
+                  {claiming === set.id ? '…' : <>{t('setClaim')} +<Tk n={bonus} /></>}
                 </button>
               ) : (
-                <small className="muted">{t('setBonus')} +{bonus} 🎟️</small>
+                <small className="muted">{t('setBonus')} +<Tk n={bonus} /></small>
               )}
             </div>
           );
@@ -477,7 +449,7 @@ export function ComebackModal() {
         <p className="muted" style={{ fontSize: 13 }}>
           {t('comebackBody').replace('{d}', String(comeback.daysAway))}
         </p>
-        <div className="crowngain" style={{ margin: '4px auto 12px' }}>+{comeback.tickets} 🎟️</div>
+        <div className="crowngain" style={{ margin: '4px auto 12px' }}>+<Tk n={comeback.tickets} /></div>
         <button className="btn" onClick={close}>{t('comebackCta')}</button>
       </div>
     </div>
@@ -513,9 +485,9 @@ function PurchaseSheet({ id, tickets, onClose, onBuy, onBuyCusd }: {
               disabled={!affordable}
               onClick={() => { playTap('select'); onBuy(id); onClose(); }}
             >
-              🎟️ {t('buyTicketsBtn')} — {ticketPrice} 🎟️
+              {t('buyTicketsBtn')} — <Tk n={ticketPrice} />
             </button>
-            <small className="muted buysheet__bal">{t('yourTickets')}: {tickets} 🎟️{affordable ? '' : ` · ${t('notEnoughTickets')}`}</small>
+            <small className="muted buysheet__bal">{t('yourTickets')}: <Tk n={tickets} />{affordable ? '' : ` · ${t('notEnoughTickets')}`}</small>
           </>
         )}
         {cosmeticsCusdAvailable && cents > 0 && (
@@ -606,14 +578,14 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                     : unlocked
                       ? t('skinTap')
                       : canBuyTickets
-                        ? `${t('skinUnlock')} ${price} 🎟️${cusdBuyable ? ` · ${fmtUsd(cusd)}` : ''}`
+                        ? <>{t('skinUnlock')} <Tk n={price} />{cusdBuyable ? ` · ${fmtUsd(cusd)}` : ''}</>
                         : cusdBuyable
                           ? `${fmtUsd(cusd)} USDT`
                           : s.season
                             ? t('seasonExclusive')
                             : t(s.hintKey ?? 'skinSoon')}
                 </small>
-                {!unlocked && <span className="skin__lock">{canBuyTickets ? '🎟️' : cusdBuyable ? '💵' : s.season ? '👑' : '🔒'}</span>}
+                {!unlocked && <span className="skin__lock">{s.season ? <IconCrown /> : <IconLock />}</span>}
               </button>
             );
           })}
@@ -651,10 +623,10 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                     : owned
                       ? t('skinTap')
                       : price !== undefined
-                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        ? <>{t('skinUnlock')} <Tk n={price} />{cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}</>
                         : s.blurb}
                 </small>
-                {!owned && <span className="skin__lock">🎟️</span>}
+                {!owned && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -692,10 +664,10 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                     : owned
                       ? t('skinTap')
                       : price !== undefined
-                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        ? <>{t('skinUnlock')} <Tk n={price} />{cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}</>
                         : b.blurb}
                 </small>
-                {!owned && <span className="skin__lock">🎟️</span>}
+                {!owned && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -732,10 +704,10 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                     : owned
                       ? t('skinTap')
                       : price !== undefined
-                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        ? <>{t('skinUnlock')} <Tk n={price} />{cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}</>
                         : t('skinTap')}
                 </small>
-                {!owned && <span className="skin__lock">🎟️</span>}
+                {!owned && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -773,10 +745,10 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                     : owned
                       ? t('skinTap')
                       : price !== undefined
-                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        ? <>{t('skinUnlock')} <Tk n={price} />{cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}</>
                         : t('skinTap')}
                 </small>
-                {!owned && <span className="skin__lock">🎟️</span>}
+                {!owned && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -822,10 +794,10 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
                     : unlocked
                       ? t('skinTap')
                       : price !== undefined
-                        ? `${t('skinUnlock')} ${price} 🎟️${cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}`
+                        ? <>{t('skinUnlock')} <Tk n={price} />{cusd > 0 ? ` · ${fmtUsd(cusd)}` : ''}</>
                         : t(f.hintKey ?? 'skinSoon')}
                 </small>
-                {!unlocked && <span className="skin__lock">{price !== undefined ? '🎟️' : '🔒'}</span>}
+                {!unlocked && <span className="skin__lock"><IconLock /></span>}
               </button>
             );
           })}
@@ -1082,7 +1054,7 @@ export function HelpModal() {
             <p><a className="help__link" onClick={openHowTo}>{t('howToTitle')} →</a></p>
           </section>
           <section className="help__sec">
-            <h4>🎟️ {t('hTickets')}</h4>
+            <h4><IconTicket /> {t('hTickets')}</h4>
             <p>{t('hTicketsBody')}</p>
           </section>
           <section className="help__sec">

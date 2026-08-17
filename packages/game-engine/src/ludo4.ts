@@ -24,10 +24,12 @@ export const SEAT_START4: readonly number[] = [39, 0, 13, 26];
 
 /** Home columns per seat (grid coords, entrance → centre) matching the starts. */
 export const HOME_COLUMNS4: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
-  [[7, 13], [7, 12], [7, 11], [7, 10], [7, 9]], // blue, bottom arm
-  [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]], // red, left arm
-  [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]], // green, top arm
-  [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]], // yellow, right arm
+  // Seat colours belong to the frontend, never to the engine — naming them here
+  // is what let the board and the stylesheet drift apart. Arms only.
+  [[7, 13], [7, 12], [7, 11], [7, 10], [7, 9]], // seat 0, bottom arm
+  [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]], // seat 1, left arm
+  [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]], // seat 2, top arm
+  [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]], // seat 3, right arm
 ];
 
 /** Four base slots per quadrant (grid centres), matching the board home squares. */

@@ -44,10 +44,12 @@ export const DICE_SKINS: DiceSkin[] = [
   {
     id: 'classic',
     name: 'Classic',
-    body1: '#ffffff',
-    body2: '#e8e2d2',
-    pip: '#1b241f',
-    stroke: 'rgba(0,0,0,.15)',
+    // Organic pass: the free die is paper with sage pips (design 1c), not a
+    // white casino cube. Premium skins keep their own materials.
+    body1: '#fffdf8',
+    body2: '#efe2cb',
+    pip: '#7a8a5e',
+    stroke: 'rgba(32,30,29,.10)',
     unlocked: () => true,
   },
   {

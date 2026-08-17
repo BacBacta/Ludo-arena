@@ -6,7 +6,7 @@ import { EntranceFxOverlay } from '../components/CosmeticFx';
 import { Board } from '../components/Board';
 import { DieFace } from '../components/Die';
 import { Die } from '../components/DiePremium';
-import { IconMenu, IconShield, IconSoundOff, IconSoundOn } from '../components/icons';
+import { IconCoins, IconFlag, IconMenu, IconShieldCheck, IconSoundOff, IconSoundOn } from '../components/icons';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFlight } from '../components/Emote';
 import { DIE_HOLD_MS } from '../lib/pacing';
 import { skinById, skinSound, type DiceSkin } from '../lib/diceSkins';
@@ -91,13 +91,19 @@ function AvatarCard({
 }) {
   const frac = useCountdown(active ? deadlineTs : null);
   const low = active && frac < 0.34;
+  // The ring IS the move clock (design 1c): it drains around a paper disc, on an
+  // ink-tinted track. On the candy stage the track was white, which vanished the
+  // moment the ground turned to paper.
   const ring = active
-    ? `conic-gradient(${low ? 'var(--danger)' : 'var(--accent)'} ${frac * 360}deg, rgba(255,255,255,.35) 0deg)`
-    : 'rgba(255,255,255,.4)';
+    ? `conic-gradient(${low ? 'var(--danger)' : 'var(--accent)'} ${frac * 360}deg, rgba(32,30,29,.12) 0deg)`
+    : 'rgba(32,30,29,.12)';
   const src = avatarSrc(avatar);
   return (
-    <div className={`avcard${active ? ' avcard--turn' : ''}${low ? ' ring--low' : ''} ${frameRing(frame)}`} style={{ background: ring }}>
-      <div className="avcard__face" style={{ background: src ? 'transparent' : color }}>
+    <div
+      className={`avcard${active ? ' avcard--turn' : ''}${low ? ' ring--low' : ''} ${frameRing(frame)}`}
+      style={{ background: ring, ['--seat-ink' as string]: color }}
+    >
+      <div className="avcard__face">
         {src ? <img className="avcard__img" src={src} alt="" /> : flag ? <span className="avcard__flag">{flag}</span> : initial}
       </div>
       <PremiumFrame frame={frame} />
@@ -121,7 +127,7 @@ export function GameScreen({
   /** Tap the opponent's avatar → their public profile sheet. */
   onViewProfile(pid: string): void;
 }) {
-  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, tokenSkin, entranceFx, boardTheme, activeTurn, balanceCents, soundOn, profile, avatarFrame, avatar, botMode, pendingAction } =
+  const { game, match, lastDice, turnDeadlineTs, reconnecting, diceSkin, tokenSkin, entranceFx, boardTheme, activeTurn, soundOn, profile, avatarFrame, avatar, botMode, pendingAction } =
     useAppState();
   const dispatch = useAppDispatch();
   const skin = skinById(diceSkin);
@@ -199,17 +205,21 @@ export function GameScreen({
   const secsLeft = Math.ceil((myClockFrac * BLITZ.moveClockMs) / 1000);
   const rush = myTurn && !handoff && (canRoll || needPick) && secsLeft <= 5;
 
-  const message = handoff
-    ? '…'
+  // Design 1c splits turn state in two: who is acting (Caprasimo headline) and
+  // what to do about it (muted sub-line). The candy build crammed both into one
+  // white sentence with a 🎲 in it.
+  const headline = handoff ? '…' : myTurn ? t('yourTurn') : match.opponent.name;
+  const subline = handoff
+    ? ''
     : rush
       ? t('hurry').replace('{s}', String(secsLeft))
       : needPick
-        ? `🎲 ${myVal} — ${t('pickToken')}`
+        ? t('pickToken').replace('{n}', String(myVal))
         : myTurn
-          ? t('yourTurn')
+          ? t('tapDie')
           : oppRolling
-            ? `${match.opponent.name} ${t('oppRolling')}`
-            : `${match.opponent.name} ${t('oppTurn')}`;
+            ? t('oppRolling')
+            : t('oppTurn');
 
   // My label for this game: the server's `youName` wins over the local profile —
   // it is what the OPPONENT's screen shows for me, disambiguated if we both drew
@@ -227,11 +237,10 @@ export function GameScreen({
       <div className="gamewrap">
         {/* one overlay flies each gift from the sender's tile to the recipient's */}
         <GiftFlight />
-        {/* opponent's corner: avatar top-right (their quadrant side), die beside it */}
+        {/* Opponent row (design 1c): who they are on the left, what is at stake on
+            the right. The pot moved to a dark pill because money gets the dark
+            surface, never gold-on-blue. */}
         <div className="gamecorner gamecorner--top">
-          <div className="pot">
-            {match.stakeCents > 0 ? `${t('pot')} ${fmtUsd(match.potCents)}` : botMode ? t('training') : t('freeMatch')}
-          </div>
           <div className="cornerstack" data-seat-anchor={1 - mySeat}>
             <EmoteFloat seat={1 - mySeat} />
             {/* ALWAYS mounted. Die3D animates via a CSS transition, and a freshly
@@ -260,11 +269,32 @@ export function GameScreen({
                 flag={match.opponent.flag}
                 frame={match.opponent.frame}
                 avatar={match.opponent.avatar}
-                color="var(--p2)"
+                color="var(--opp)"
                 active={!myTurn}
                 deadlineTs={turnDeadlineTs}
               />
             </button>
+            <div className="pident">
+              <b>{match.opponent.name}</b>
+              <small>{match.opponent.elo} ELO</small>
+            </div>
+          </div>
+          <div className="potstack">
+            <div className="pot">
+              {match.stakeCents > 0 ? (
+                <>
+                  <IconCoins />
+                  {`${t('pot')} ${fmtUsd(match.potCents)}`}
+                </>
+              ) : (
+                botMode ? t('training') : t('freeMatch')
+              )}
+            </div>
+            {lastDice && (
+              <small className="rollno">
+                {t('rollNo')} #{lastDice.index}
+              </small>
+            )}
           </div>
         </div>
 
@@ -273,17 +303,11 @@ export function GameScreen({
           mySeat={mySeat}
           onTokenTap={onMove}
           locked={locked}
-          // Name banners follow the REAL seats. The board never rotates (seat 0 is
-          // always bottom-left/blue, seat 1 top-right/green), and the joining
-          // player is seat 1 — so hardcoding "me" to seat 0 mislabelled every
-          // seat-1 player's board: their own tokens carried the opponent's name
-          // and they tapped the opponent's tokens, which did nothing ("frozen die").
-          // `youName` is the server's label for me (it disambiguates two players
-          // who drew the same name); the local profile is only a fallback.
-          banners={[
-            { seat: mySeat, name: myLabel.toUpperCase(), flag: profile.flag || '🌍', active: myTurn, you: true },
-            { seat: oppSeat, name: match.opponent.name, flag: match.opponent.flag, active: !myTurn },
-          ]}
+          // No name banners painted on the plate: design 1c moves identity into
+          // the chrome — the opponent's avatar + name + ELO sit above the board,
+          // mine sits below with my turn state, and the local player is always
+          // the bottom seat. Two names on the board on top of that was the same
+          // fact twice, and it was the board that had to carry the ugly one.
           // Token skins (cosmetics phase 1): mine from local state, the
           // opponent's as relayed by match.found — both sides see both skins.
           tokenPatterns={{
@@ -304,7 +328,14 @@ export function GameScreen({
         <div className="gamecorner gamecorner--bottom">
           <div className="cornerstack" data-seat-anchor={mySeat}>
             <EmoteFloat seat={mySeat} />
-            <AvatarCard initial={myLabel.slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} avatar={avatar} color="var(--p1)" active={myTurn} deadlineTs={turnDeadlineTs} />
+            <AvatarCard initial={myLabel.slice(0, 1).toUpperCase()} flag={profile.flag} frame={avatarFrame} avatar={avatar} color="var(--me)" active={myTurn} deadlineTs={turnDeadlineTs} />
+          </div>
+          {/* turn state sits between my avatar and my die (design 1c) */}
+          <div className={`gamemsg${rush ? ' gamemsg--rush' : ''}`}>
+            <span>{headline}</span>
+            {subline && <small>{subline}</small>}
+          </div>
+          <div className="cornerstack cornerstack--die">
             {/* ALWAYS mounted, like the opponent die above: a freshly-mounted element
                 cannot run the CSS tumble transition, so unmounting the die between
                 turns made the FIRST roll after each remount just pop to the result
@@ -324,14 +355,6 @@ export function GameScreen({
               <Die value={myDieVal} rollKey={myRollIndex} skin={skin} spinning={pendingAction === 'roll'} />
             </button>
           </div>
-          <div className={`gamemsg${rush ? ' gamemsg--rush' : ''}`}>
-            <span>{message}</span>
-            {lastDice && (
-              <small>
-                {t('rollNo')} #{lastDice.index}
-              </small>
-            )}
-          </div>
         </div>
 
         {/* bottom action bar (Ludo-Club structure): sound · verify · balance · dice skins · menu */}
@@ -344,12 +367,8 @@ export function GameScreen({
             aria-label={t('verify')}
             onClick={() => dispatch({ type: 'FAIR_MODAL', open: true })}
           >
-            <IconShield />
+            <IconShieldCheck />
           </button>
-          <div className="gamebar__coins">
-            <span className="gamebar__coin" />
-            {fmtUsd(balanceCents)}
-          </div>
           <button
             className="gamebar__btn"
             aria-label={t('diceTitle')}
@@ -364,6 +383,10 @@ export function GameScreen({
             recipients={[{ seat: 1 - mySeat, name: match.opponent.name, flag: match.opponent.flag }]}
             onGift={onGift}
           />
+          {/* the design's empty middle: the tray splits into "things you do" and
+              "ways out". The balance moved off — it lives on the lobby top bar,
+              and mid-match it was only ever a number being clipped. */}
+          <span className="gamebar__gap" />
           <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
             <IconMenu />
           </button>
@@ -377,7 +400,7 @@ export function GameScreen({
               setConfirmLeave(true);
             }}
           >
-            ✕
+            <IconFlag />
           </button>
         </div>
       </div>

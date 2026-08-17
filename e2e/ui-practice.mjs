@@ -17,15 +17,15 @@ try {
   {
     const P = await newPlayer(browser);
     await openLobby(P.page);
-    await P.page.locator('.gstake--free').first().click({ timeout: 4000 }).catch(() => {});
-    await P.ctx.setOffline(true); // page loaded, stake picked; NOW the network dies
-    await P.page.locator('.btn--hero').first().click({ timeout: 4000 });
+    await P.page.locator('.btn--ghost').first().click({ timeout: 4000 }).catch(() => {}); // dismiss first-run how-to
+    await P.ctx.setOffline(true); // page loaded; NOW the network dies
+    await P.page.locator('.modetile').first().click({ timeout: 4000 }); // "Practice — offline vs 3 bots"
     await P.page.waitForTimeout(2500);
-    t.check('M1 offline free CTA opens the practice table', (await P.page.locator('.plabel').count()) === 4);
+    t.check('M1 offline free CTA opens the practice table', (await P.page.locator('.seatchip').count()) === 4);
     let myTurns = 0;
     const deadline = Date.now() + 60_000;
     while (myTurns < 3 && Date.now() < deadline) {
-      const btn = P.page.locator('.ludodie--tap:not([disabled])');
+      const btn = P.page.locator('.dicebtn:not([disabled]), .ludodie--tap:not([disabled])');
       if (await btn.count()) {
         await btn.first().click({ timeout: 700 }).catch(() => {});
         myTurns++;
@@ -43,17 +43,17 @@ try {
   {
     const P = await newPlayer(browser);
     await openLobby(P.page);
-    await P.page.locator('.mrow').first().click({ timeout: 5000 });
-    await P.page.waitForTimeout(800);
-    await P.page.locator('button.t4mode').nth(0).click({ timeout: 5000 }); // "Practice"
+    await P.page.locator('.btn--ghost').first().click({ timeout: 5000 }).catch(() => {}); // dismiss first-run how-to
+    await P.page.waitForTimeout(400);
+    await P.page.locator('.modetile').first().click({ timeout: 5000 }); // "Practice"
     await P.page.waitForTimeout(2500);
-    t.check('M7 practice table opens', (await P.page.locator('.plabel').count()) === 4);
+    t.check('M7 practice table opens', (await P.page.locator('.seatchip').count()) === 4);
 
     // my turns keep coming back and stay playable across many bot cycles
     let myTurns = 0;
     const deadline = Date.now() + 90_000;
     while (myTurns < 5 && Date.now() < deadline) {
-      const btn = P.page.locator('.ludodie--tap:not([disabled])');
+      const btn = P.page.locator('.dicebtn:not([disabled]), .ludodie--tap:not([disabled])');
       if (await btn.count()) {
         await btn.first().click({ timeout: 700 }).catch(() => {});
         myTurns++;

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { EMOTES, GIFTS, QUICK_CHATS, isQuickChat, type QuickChat } from '@ludo/shared';
 import { useAppState } from '../state/store';
 import { playEmote, playGift, playTap } from '../lib/sound';
+import { IconGift, IconSmile } from './icons';
 import { t, type TKey } from '../lib/i18n';
 
 /** Someone a gift can be directed at (an opponent seat + how to name them). */
@@ -77,7 +78,7 @@ export function EmoteBar({ onEmote, dir = 'up' }: { onEmote(id: string): void; d
         </div>
       )}
       <button className="emotebar__toggle" aria-label={t('emote')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        😊
+        <IconSmile />
       </button>
     </div>
   );
@@ -163,7 +164,7 @@ export function GiftBar({
         </div>
       )}
       <button className="giftbar__toggle" aria-label={t('gift')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        🎁
+        <IconGift />
       </button>
     </div>
   );
