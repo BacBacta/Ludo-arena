@@ -1246,8 +1246,8 @@ small.muted { font-size: 12px; }
 .friendhead__count {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, var(--accent-2), var(--accent));
-  color: #3a2c00; font-size: 12px; font-weight: 800;
+  background: var(--accent);
+  color: var(--card); font-size: 12px; font-weight: 800;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 .friendhead__online { margin-left: auto; font-size: 11.5px; color: var(--me); font-weight: 700; }
@@ -1281,7 +1281,7 @@ small.muted { font-size: 12px; }
 .frbtn:active { transform: scale(0.95); }
 .frbtn--gold {
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
-  border-bottom-color: #a97a00; color: #3a2c00;
+  border-bottom-color: var(--accent-deep); color: var(--card);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 .frbtn--ghost {
@@ -1481,57 +1481,61 @@ small.muted { font-size: 12px; }
    the page (light shop/season cards sit around it). Racing-green + gold, a
    checkered top stripe, a pulsing LIVE badge, a pool gauge and a podium peek. */
 :root {
-  --race-ink: #eafff6;
-  --race-green: #16b57e;
-  --race-green-2: #34e0a4;
-  --race-gold: #ffd35c;
+  /* Race Week keeps its own identity, but on the Organic system: the campaign
+     card is the app's dark surface, its highlight is the one accent's lit step,
+     and its second colour is the sage the rest of the app already uses. It was
+     a mint/emerald/gold set — a whole second palette. */
+  --race-ink: #f9f4ed;
+  --race-green: #8fa073;
+  --race-green-2: #aebf92;
+  --race-gold: #f6a06b;
 }
 .racecard {
   position: relative; overflow: hidden;
   display: flex; flex-direction: column; gap: 12px;
   width: 100%; padding: 15px 14px 14px;
-  border: 1px solid rgba(52, 224, 164, 0.35); border-radius: 18px;
+  border: 1px solid rgba(174, 191, 146, 0.35); border-radius: 18px;
   color: var(--race-ink);
   background:
-    radial-gradient(120% 90% at 100% 0%, rgba(52, 224, 164, 0.16), transparent 55%),
-    radial-gradient(120% 120% at 0% 100%, rgba(255, 211, 92, 0.10), transparent 50%),
-    linear-gradient(165deg, #0c2a22 0%, #0a1f1a 55%, #0b1512 100%);
-  box-shadow: 0 18px 40px -14px rgba(0, 60, 40, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    radial-gradient(120% 90% at 100% 0%, rgba(174, 191, 146, 0.16), transparent 55%),
+    radial-gradient(120% 120% at 0% 100%, rgba(246, 160, 107, 0.10), transparent 50%),
+    linear-gradient(165deg, #3b352c 0%, #2e2b25 55%, #201e1d 100%);
+  box-shadow: 0 18px 40px -14px rgba(46, 43, 37, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .racecard::before { /* checkered flag stripe along the top */
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 5px;
   background-image:
-    repeating-linear-gradient(90deg, #0d1a16 0 7px, #eafff6 7px 14px),
-    repeating-linear-gradient(90deg, #eafff6 0 7px, #0d1a16 7px 14px);
+    repeating-linear-gradient(90deg, #201e1d 0 7px, #f9f4ed 7px 14px),
+    repeating-linear-gradient(90deg, #f9f4ed 0 7px, #201e1d 7px 14px);
   background-size: 14px 2.5px; background-position: 0 0, 7px 2.5px; opacity: 0.9;
 }
 .racecard__top { display: flex; align-items: center; gap: 12px; }
 .racecard__flag {
   width: 42px; height: 42px; border-radius: 13px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; font-size: 23px;
-  background: linear-gradient(180deg, rgba(52, 224, 164, 0.22), rgba(52, 224, 164, 0.08));
-  box-shadow: inset 0 0 0 1px rgba(52, 224, 164, 0.3);
+  background: linear-gradient(180deg, rgba(174, 191, 146, 0.22), rgba(174, 191, 146, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(174, 191, 146, 0.3);
 }
 .racecard__id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .racecard__id b {
   font-family: var(--font-display); font-size: 16px; color: #fff;
   display: inline-flex; align-items: center; gap: 8px;
 }
-.racecard__id small { font-size: 12px; color: rgba(234, 255, 246, 0.68); line-height: 1.4; }
+.racecard__id small { font-size: 12px; color: rgba(249, 244, 237, 0.68); line-height: 1.4; }
 .racecard__live {
   font-style: normal; font-family: var(--font-body); font-size: 10px; font-weight: 800;
   letter-spacing: 0.5px; text-transform: uppercase; color: #0a1f1a;
   padding: 2px 7px; border-radius: 999px; background: var(--race-green-2);
   animation: racePulse 1.8s ease-in-out infinite;
 }
-@keyframes racePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(52, 224, 164, 0.55); } 50% { box-shadow: 0 0 0 6px rgba(52, 224, 164, 0); } }
+@keyframes racePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(174, 191, 146, 0.55); } 50% { box-shadow: 0 0 0 6px rgba(174, 191, 146, 0); } }
 .racecard__timer {
   flex-shrink: 0; font-size: 12px; font-weight: 800; white-space: nowrap;
   font-variant-numeric: tabular-nums; padding: 5px 9px; border-radius: 999px;
-  color: var(--race-green-2); background: rgba(52, 224, 164, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(52, 224, 164, 0.22);
+  color: var(--race-green-2); background: rgba(174, 191, 146, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(174, 191, 146, 0.22);
 }
-.racecard__timer--soon { color: var(--race-gold); background: rgba(255, 211, 92, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.35); }
+.racecard__timer--soon { color: var(--race-gold); background: rgba(246, 160, 107, 0.14); box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.35); }
 
 /* Podium peek — top 3 as one tappable strip */
 .racecard__podium {
@@ -1546,13 +1550,10 @@ small.muted { font-size: 12px; }
   white-space: nowrap;
 }
 .racecard__podchip b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
-.racecard__podchip--first { background: rgba(255, 211, 92, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.35); color: #fff; }
+.racecard__podchip--first { background: rgba(246, 160, 107, 0.14); box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.35); color: #fff; }
 
 /* Prize-pool gauge */
-.racebar { display: flex; flex-direction: column; gap: 5px; }
 /* Fixed-prize row (no draining gauge): a stable "🏆 Prize pool  $30" line. */
-.racebar--prize { flex-direction: row; justify-content: space-between; align-items: baseline; font-size: 12px; color: rgba(234, 255, 246, 0.8); }
-.racebar--prize b { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 800; }
 /* Zealy binding form (Race card, collapsed by default): a paste field + one
    button. Utility styling — it must read as setup, not as a play CTA. */
 .racezealy { border: 1px dashed rgba(255, 255, 255, 0.14); border-radius: 12px; padding: 8px 11px; }
@@ -1567,30 +1568,10 @@ small.muted { font-size: 12px; }
 .racewallet { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 8px 10px; border: 1px dashed rgba(255, 255, 255, 0.18); border-radius: 10px; background: transparent; color: rgba(234, 255, 246, 0.75); font-size: 12px; cursor: pointer; }
 .racewallet b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; color: #fff; }
 
-.racebar__head { display: flex; justify-content: space-between; align-items: baseline; font-size: 11.5px; color: rgba(234, 255, 246, 0.7); }
-.racebar__head b { color: #fff; font-variant-numeric: tabular-nums; }
-.racebar__track { height: 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
-.racebar__fill {
-  display: block; height: 100%; border-radius: 999px;
-  background: linear-gradient(90deg, var(--race-gold), var(--race-green-2));
-  box-shadow: 0 0 12px rgba(52, 224, 164, 0.5); transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
 
 /* The fixed leaderboard prize — a confident glance-value, no gauge. A gold
    coin chip that reads as "this is what you're playing for", never as a
    balance ticking down. */
-.raceprize {
-  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
-  padding: 9px 12px; border-radius: 12px;
-  background: linear-gradient(180deg, rgba(255, 214, 102, 0.14), rgba(255, 214, 102, 0.05));
-  border: 1px solid rgba(255, 214, 102, 0.28);
-}
-.raceprize__label { font-size: 12px; font-weight: 800; color: var(--race-gold); letter-spacing: 0.2px; }
-.raceprize__amount {
-  font-family: var(--font-display); font-size: 20px; color: #fff;
-  font-variant-numeric: tabular-nums; text-shadow: 0 1px 10px rgba(255, 214, 102, 0.35);
-}
-.raceprize__sub { font-size: 11px; color: rgba(234, 255, 246, 0.62); margin-left: auto; }
 
 .racecard__actions { display: flex; gap: 8px; align-items: stretch; }
 .btn--race {
@@ -1604,12 +1585,12 @@ small.muted { font-size: 12px; }
 .btn--race small { font-family: var(--font-body); font-size: 11px; font-weight: 700; opacity: 0.8; }
 .btn--race:active { transform: scale(0.98); }
 .btn--race:disabled { filter: grayscale(0.5) brightness(0.7); cursor: default; box-shadow: none; }
-.btn--race-play { background: linear-gradient(180deg, #ffe08a, var(--race-gold)); color: #3a2c00; box-shadow: 0 10px 22px -8px rgba(255, 200, 60, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.6); }
+.btn--race-play { background: var(--accent); color: var(--card); box-shadow: 0 10px 22px -8px rgba(214, 127, 72, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.6); }
 .racecard__board {
   flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 1px; padding: 8px 12px; border: none; border-radius: 14px; cursor: pointer;
   font-size: 18px; color: var(--race-gold);
-  background: rgba(255, 255, 255, 0.06); box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.28);
+  background: rgba(255, 255, 255, 0.06); box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.28);
   transition: transform 0.12s ease;
 }
 .racecard__board small { font-family: var(--font-body); font-size: 9.5px; font-weight: 700; color: rgba(234, 255, 246, 0.7); text-transform: uppercase; letter-spacing: 0.3px; }
@@ -1617,7 +1598,7 @@ small.muted { font-size: 12px; }
 .racecard__rule { font-size: 10.5px; color: rgba(234, 255, 246, 0.5); text-align: center; letter-spacing: 0.2px; }
 
 /* How to play & win — a dependency-free <details> disclosure inside the card. */
-.racehow { border-radius: 12px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.16); }
+.racehow { border-radius: 12px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.16); }
 .racehow__sum {
   list-style: none; cursor: pointer; user-select: none;
   padding: 8px 12px; font-size: 11px; font-weight: 700; letter-spacing: 0.2px;
@@ -1634,13 +1615,6 @@ small.muted { font-size: 12px; }
 .racehow__steps li::marker { color: var(--race-gold); font-weight: 700; }
 
 /* ---- Leaderboard sheet ---- */
-.racesheet { max-height: 86dvh; display: flex; flex-direction: column; position: relative; overflow: hidden; }
-.racesheet__banner {
-  position: absolute; top: 0; left: 0; right: 0; height: 6px;
-  background-image: repeating-linear-gradient(90deg, #0d1a16 0 8px, var(--txt) 8px 16px); opacity: 0.5;
-}
-.racesheet__title { margin-top: 6px; }
-.racesheet__chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 4px 0 12px; }
 .racechip {
   font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
   color: var(--txt); background: rgba(0, 0, 0, 0.05);
@@ -1648,10 +1622,9 @@ small.muted { font-size: 12px; }
 .racechip--live { color: #0a1f1a; background: var(--race-green-2); animation: racePulse 1.8s ease-in-out infinite; }
 .racechip--pool {
   color: #7a5600; font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, rgba(255, 240, 200, 0.95), rgba(255, 224, 138, 0.6));
+  background: linear-gradient(180deg, rgba(255, 240, 200, 0.95), rgba(255, 194, 158, 0.6));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(212, 160, 23, 0.4);
 }
-.racesheet__scroll { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px; }
 
 /* Podium (top 3): winner centre + raised, blocks by rank */
 .podium { display: flex; align-items: flex-end; justify-content: center; gap: 8px; padding: 6px 0 2px; }
@@ -1673,35 +1646,15 @@ small.muted { font-size: 12px; }
   padding-top: 6px; font-family: var(--font-display); font-size: 18px; font-weight: 800; color: rgba(255, 255, 255, 0.9);
   background: linear-gradient(180deg, var(--race-green), var(--race-green-2)); border-radius: 8px 8px 0 0;
 }
-.podium__col--1 .podium__block { height: 62px; background: linear-gradient(180deg, var(--race-gold), #ffbf3d); color: #3a2c00; }
+/* first place keeps its medal gold: a podium colour is content, like .board__rank--1 */
+.podium__col--1 .podium__block { height: 62px; background: linear-gradient(180deg, #ffe08a, #f5b301); color: #5d4300; }
 .podium__col--2 .podium__block { height: 46px; }
 .podium__col--3 .podium__block { height: 34px; background: linear-gradient(180deg, #cd7f4a, #b8663a); }
 .podium__col--me { outline: 2px solid var(--p1); outline-offset: 2px; border-radius: 14px; }
 
 .raceboard { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.racerow {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-  border-radius: 12px; background: rgba(0, 0, 0, 0.03); font-size: 14px;
-}
-.racerow--anim { animation: raceRowIn 0.32s ease both; animation-delay: calc(var(--i) * 45ms); }
-@keyframes raceRowIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-.racerow__rank { flex-shrink: 0; min-width: 34px; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; }
-.racerow__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.racerow__you { font-style: normal; font-size: 10px; font-weight: 800; color: #fff; background: var(--p1); padding: 1px 6px; border-radius: 999px; }
-.racerow__pts { flex-shrink: 0; font-weight: 800; color: var(--p1); font-variant-numeric: tabular-nums; }
-.racerow--me { background: rgba(37, 99, 235, 0.1); outline: 1px solid rgba(37, 99, 235, 0.35); }
-.racerow--sticky { margin: 4px 2px 0; }
-.racesheet__play { margin-top: 10px; }
 
 /* Skeleton rows while the board loads */
-.raceskel { display: flex; flex-direction: column; gap: 6px; }
-.raceskel__row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(0, 0, 0, 0.03); }
-.raceskel__rank, .raceskel__name, .raceskel__pts {
-  height: 12px; border-radius: 6px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.12) 37%, rgba(0,0,0,0.06) 63%);
-  background-size: 400% 100%; animation: raceShimmer 1.4s ease infinite;
-}
-.raceskel__rank { width: 28px; } .raceskel__name { flex: 1; } .raceskel__pts { width: 40px; }
 @keyframes raceShimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 /* Empty state */
@@ -1713,11 +1666,11 @@ small.muted { font-size: 12px; }
 /* ---- Race Week premium pass: gold-lit card, metallic podium, glossy gauge.
    Overrides layered on the base race styles above so the structure stays. ---- */
 .racecard {
-  border: 1px solid rgba(255, 211, 92, 0.38);
+  border: 1px solid rgba(246, 160, 107, 0.38);
   box-shadow:
     0 24px 52px -16px rgba(0, 60, 40, 0.75),
-    0 0 0 1px rgba(255, 211, 92, 0.12),
-    0 0 34px -10px rgba(255, 211, 92, 0.3),
+    0 0 0 1px rgba(246, 160, 107, 0.12),
+    0 0 34px -10px rgba(246, 160, 107, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .racecard::after { /* slow diagonal sheen sweeping the card — the "trophy glass" read */
@@ -1731,8 +1684,8 @@ small.muted { font-size: 12px; }
 }
 @keyframes raceSheen { 0%, 55% { background-position: 130% 0; } 100% { background-position: -140% 0; } }
 .racecard__flag {
-  background: radial-gradient(130% 130% at 30% 20%, rgba(255, 224, 138, 0.35), rgba(255, 211, 92, 0.12) 60%, rgba(52, 224, 164, 0.08));
-  box-shadow: inset 0 0 0 1px rgba(255, 211, 92, 0.45), 0 6px 16px -6px rgba(255, 211, 92, 0.4);
+  background: radial-gradient(130% 130% at 30% 20%, rgba(255, 194, 158, 0.35), rgba(246, 160, 107, 0.12) 60%, rgba(174, 191, 146, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(246, 160, 107, 0.45), 0 6px 16px -6px rgba(246, 160, 107, 0.4);
   animation: raceFlagFloat 3.6s ease-in-out infinite;
 }
 @keyframes raceFlagFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
@@ -1741,18 +1694,8 @@ small.muted { font-size: 12px; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 .racecard__podchip--first {
-  background: linear-gradient(180deg, rgba(255, 224, 138, 0.22), rgba(255, 191, 61, 0.1));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 0 1px rgba(255, 211, 92, 0.5), 0 4px 14px -6px rgba(255, 200, 60, 0.45);
-}
-.racebar__track { height: 9px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
-.racebar__fill { position: relative; overflow: hidden; }
-.racebar__fill::after { /* travelling glint on the remaining-pool fill */
-  content: '';
-  position: absolute;
-  inset: 0;
-  width: 34%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  animation: raceGaugeShine 2.4s ease-in-out infinite;
+  background: linear-gradient(180deg, rgba(255, 194, 158, 0.22), rgba(255, 191, 61, 0.1));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 0 1px rgba(246, 160, 107, 0.5), 0 4px 14px -6px rgba(214, 127, 72, 0.45);
 }
 @keyframes raceGaugeShine { from { transform: translateX(-130%); } to { transform: translateX(360%); } }
 .btn--race-play { position: relative; overflow: hidden; }
@@ -1767,11 +1710,6 @@ small.muted { font-size: 12px; }
 }
 
 /* Sheet: richer banner, metallic podium (gold / silver / bronze), gold "me". */
-.racesheet__banner {
-  height: 8px;
-  opacity: 0.7;
-  box-shadow: 0 6px 18px -6px rgba(255, 211, 92, 0.4);
-}
 .podium__block {
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), inset 0 -10px 18px rgba(0, 0, 0, 0.18), 0 8px 18px -8px rgba(0, 0, 0, 0.35);
 }
@@ -1779,7 +1717,7 @@ small.muted { font-size: 12px; }
 .podium__col--1 .podium__block {
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.55), inset 0 -12px 20px rgba(160, 110, 0, 0.25), 0 10px 26px -8px rgba(255, 190, 50, 0.55);
 }
-.podium__col--1 { filter: drop-shadow(0 10px 22px rgba(255, 200, 60, 0.28)); }
+.podium__col--1 { filter: drop-shadow(0 10px 22px rgba(214, 127, 72, 0.28)); }
 .podium__crown {
   position: absolute;
   top: -15px;
@@ -1788,37 +1726,15 @@ small.muted { font-size: 12px; }
   animation: crownFloat 2.6s ease-in-out infinite;
 }
 @keyframes crownFloat { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-3px) rotate(6deg); } }
-.podium__pts { color: #a97a00; }
-.racerow {
-  background: linear-gradient(180deg, rgba(12, 22, 52, 0.04), rgba(12, 22, 52, 0.02));
-  box-shadow: inset 0 0 0 1px rgba(12, 22, 52, 0.05);
-}
-.racerow__rank {
-  min-width: 30px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: rgba(12, 22, 52, 0.06);
-  font-size: 11.5px;
-}
-.racerow__pts { color: #a97a00; }
-.racerow--me {
-  background: linear-gradient(180deg, rgba(255, 224, 138, 0.3), rgba(255, 211, 92, 0.14));
-  outline: 1px solid rgba(212, 160, 23, 0.45);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 6px 16px -8px rgba(212, 160, 23, 0.5);
-}
-.racerow__you { background: linear-gradient(180deg, #ffd35c, #f0b428); color: #3a2c00; }
-.racerow--sticky { box-shadow: 0 -8px 18px -12px rgba(12, 22, 52, 0.3), 0 6px 16px -8px rgba(212, 160, 23, 0.5); }
+.podium__pts { color: var(--a-600); }
 @media (prefers-reduced-motion: reduce) {
-  .racecard::after, .btn--race-play::after, .racebar__fill::after { animation: none; content: none; }
+  .racecard::after, .btn--race-play::after { animation: none; content: none; }
   .racecard__flag, .podium__crown { animation: none; }
 }
 
 /* Rematch offer banner (end screen) — gold glass, breathing glow. */
 .rematchoffer {
-  background: linear-gradient(180deg, rgba(255, 240, 200, 0.92), rgba(255, 224, 138, 0.55));
+  background: linear-gradient(180deg, rgba(255, 240, 200, 0.92), rgba(255, 194, 158, 0.55));
   border: 1px solid rgba(212, 160, 23, 0.55);
   color: #7a5600;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 8px 20px -10px rgba(212, 160, 23, 0.6);
@@ -1868,9 +1784,10 @@ small.muted { font-size: 12px; }
 .buysheet h3 { margin: 8px 0 14px; }
 .buysheet .btn { width: 100%; margin-bottom: 4px; }
 .buysheet__bal { display: block; margin: 0 0 12px; font-size: 12px; }
+/* Paying with real money gets the dark surface, never a gold button. */
 .buysheet__usdt {
-  background: linear-gradient(180deg, #ffd977, #f5b301); color: #4a3400;
-  border-color: rgba(185, 135, 0, 0.8); margin-top: 6px;
+  background: var(--ink); color: var(--on-ink);
+  border-color: var(--ink-3); margin-top: 6px;
 }
 
 /* Collection album (cosmetics phase 3): sets, item tiles, completion claim. */
