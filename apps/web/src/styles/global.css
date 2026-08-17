@@ -1,43 +1,101 @@
-/* Design tokens — Ludo Arena (understated premium, see docs/GAME_DESIGN.md) */
+/* Design tokens — Ludo Arena (Organic "premium table", see docs/GAME_DESIGN.md) */
 @font-face {
-  font-family: 'Fredoka';
-  src: url('/fonts/Fredoka.woff2') format('woff2');
+  font-family: 'Caprasimo';
+  src: url('/fonts/Caprasimo.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Figtree';
+  src: url('/fonts/Figtree.woff2') format('woff2');
   font-weight: 400 700;
   font-display: swap;
 }
 
-/* Candy theme (Ludo-Club reference): blue dotted stage, white panels,
-   glossy 3D buttons, the classic four board colours. */
+/* Organic theme: the app should read as a beautiful board game sitting on a
+   table, not as a mobile casino. Cream ground, sand surfaces, ONE accent
+   (terracotta), ceramic pieces, Caprasimo on the numbers. The ramps below are
+   the Organic design system's, generated in OKLCH on one shared lightness
+   scale, so the same step of any role matches the others in visual value. */
 :root {
-  --bg: #4666cf;
-  --bg-2: #3a56be;
-  --card: #ffffff;
-  --card-2: #eef2f9;
-  --line: #dbe2ef;
-  --glass: rgba(255, 255, 255, 0.35);
-  --txt: #233150;
-  --muted: #5b6d92;
-  --label: #64759b;
-  --accent: #f5b301;
-  --accent-2: #ffca3a;
-  --me: #2e9e6b;
-  --me-deep: #0f3d28;
-  --opp: #e8833a;
-  --opp-deep: #7a3d12;
-  --p1: #3e63dd; /* you (blue) */
-  --p1-deep: #2947a8;
-  --p2: #46a758; /* opponent (green) */
-  --p2-deep: #2e7a3c;
-  --candy: #4caf50;
-  --candy-light: #8ee06b;
-  --candy-deep: #2e7d32;
-  --danger: #e05555;
-  --radius: 18px;
-  --radius-s: 12px;
-  --font-display: 'Fredoka', system-ui, sans-serif;
-  --shadow-accent: 0 4px 14px rgba(245, 179, 1, 0.35);
-  --surface: #ffffff;
-  --surface-shadow: 0 8px 22px rgba(23, 43, 99, 0.28);
+  --n-100: #f9f4ed;
+  --n-200: #eee7db;
+  --n-300: #dcd3c4;
+  --n-400: #c0b6a5;
+  --n-500: #a19786;
+  --n-600: #82796a;
+  --n-700: #645c50;
+  --n-800: #474238;
+  --n-900: #2e2b25;
+  --a-100: #fff2eb;
+  --a-200: #ffe1d0;
+  --a-300: #ffc6a5;
+  --a-400: #f6a06b;
+  --a-500: #d67f48;
+  --a-600: #b2622d;
+  --a-700: #8c491a;
+  --a-800: #643312;
+  --a-900: #402310;
+  --a2-100: #f0fae1;
+  --a2-200: #e1eecc;
+  --a2-300: #ccdbb2;
+  --a2-400: #aebf92;
+  --a2-500: #8fa073;
+  --a2-600: #728157;
+  --a2-700: #56633f;
+  --a2-800: #3d472b;
+  --a2-900: #272e1b;
+
+  /* Roles. Names are kept from the candy pass so the whole sheet re-tints. */
+  --bg: #f5ead8;
+  --bg-2: #efe2cb;
+  --bg-hi: #fdf6e9; /* lit top of the ground gradient */
+  --card: #fffdf8; /* raised paper — every panel, tile and row */
+  --card-2: #f0e4cf; /* recessed sand — selected tabs, locked tiles */
+  --line: rgba(32, 30, 29, 0.1);
+  --glass: rgba(253, 246, 233, 0.9);
+  --txt: #201e1d;
+  --muted: rgba(32, 30, 29, 0.58);
+  --label: rgba(32, 30, 29, 0.45);
+  --ink: #201e1d; /* the dark surface: stakes mode, end screen, season card */
+  --ink-2: #2e2b25;
+  --ink-3: #3b352c;
+  --on-ink: #f9f4ed;
+  --accent: #c67139; /* terracotta — the single accent */
+  --accent-2: #f6a06b; /* its lit step, for text/icons on the dark surface */
+  --accent-deep: #8c491a;
+
+  /* Four seat colours. Organic ships two accents; a Ludo board needs four, so
+     terracotta and sage are pushed to full saturation and a board yellow + ink
+     blue are added. Pulled apart in BOTH hue and value so four pieces stay
+     legible at 12px. Never re-skinned by a board cosmetic (golden rule). */
+  --seat-red: #c8371b;
+  --seat-green: #3f7d2f;
+  --seat-yellow: #f2b307;
+  --seat-blue: #1f5fa8;
+
+  --me: #3f7d2f; /* you — green */
+  --me-deep: #2a5420;
+  --opp: #c8371b; /* opponent — red clay */
+  --opp-deep: #8a2412;
+  --p1: #3f7d2f;
+  --p1-deep: #2a5420;
+  --p2: #c8371b;
+  --p2-deep: #8a2412;
+  --candy: #c67139; /* the primary CTA is the accent, not a green */
+  --candy-light: #d67f48;
+  --candy-deep: #8c491a;
+  --danger: #c8371b;
+  --radius: 22px;
+  --radius-s: 16px;
+  --font-display: 'Caprasimo', Georgia, serif;
+  --font-body: 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --shadow-accent: 0 8px 20px rgba(140, 73, 26, 0.28);
+  --surface: #fffdf8;
+  --surface-shadow: 0 10px 26px rgba(46, 43, 37, 0.18);
+  --shadow-sm: 0 1px 2px rgba(46, 43, 37, 0.12);
+  --shadow-md: 0 3px 10px rgba(46, 43, 37, 0.16);
+  --shadow-lg: 0 12px 32px rgba(46, 43, 37, 0.22);
 }
 
 * {
@@ -54,9 +112,13 @@ body,
 }
 
 body {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   background: var(--bg);
-  color: #ffffff; /* default text sits on the blue stage; panels re-set to dark */
+  color: var(--txt); /* the ground is light now — ink text everywhere by default */
+  /* Caprasimo is a single-weight display face. The sheet asks for 700 in a
+     couple of dozen places; without this the browser smears a synthetic bold
+     over it. Figtree is a real 400–700 variable font, so it loses nothing. */
+  font-synthesis-weight: none;
   display: flex;
   justify-content: center;
   /* MiniPay/webview: kill the rubber-band overscroll that drags the page into the
@@ -68,17 +130,15 @@ body {
    can never make the document horizontally pannable in a webview. */
 html { overflow-x: clip; }
 
-/* signature dotted stage */
+/* Signature ground: light falling from the top of the table onto cream paper.
+   Replaces the blue dotted casino stage — no pattern, the warmth carries it. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(rgba(255, 255, 255, 0.07) 2.4px, transparent 2.8px),
-    linear-gradient(180deg, #4565d8 0%, var(--bg) 40%, var(--bg-2) 100%);
-  background-size: 30px 30px, 100% 100%;
+  background: radial-gradient(120% 60% at 50% 0%, var(--bg-hi) 0%, var(--bg) 55%, var(--bg-2) 100%);
 }
 
 .card, .streak, .mini, .modal__card, .paynote, .toast { color: var(--txt); }

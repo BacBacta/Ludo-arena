@@ -35,4 +35,8 @@
 
 ## UI tone
 
-Playful premium (revised from the original dark-forest direction): royal-blue board-game background (#4666CF), white cards, gold accent #F5B301, player green #2E9E6B. Fredoka display type over system-ui body. Subtle micro-animations, never casino-style flashing — no artificial-urgency badges before a first game. EN default; FR/PT/ES/SW opt-in via `?lang=`.
+**"The premium table"** (Organic pass, 2026 — replaces the royal-blue candy direction, which read as a mobile casino). The app should look like a beautiful board game sitting on a table: cream ground `#F5EAD8` lit from the top, sand surfaces, raised paper panels `#FFFDF8`, and **one** accent — terracotta `#C67139`. Ceramic pieces, Caprasimo on headings and every number treated as a figure, Figtree for body. Real money gets its own dark surface (`#201E1D`), never gold-on-blue.
+
+Four seat colours extend the system, which only ships two accents: red-clay `#C8371B`, green `#3F7D2F`, yellow `#F2B307`, blue `#1F5FA8` — pulled apart in both hue and value so four pieces stay legible at 12 px. Board cosmetics never re-skin them.
+
+No emoji anywhere in the product surface: the icon set is vendored inline SVG (`components/icons.tsx`). Subtle micro-animations, never casino-style flashing — no artificial-urgency badges before a first game. EN default; FR/PT/ES/SW opt-in via `?lang=`.
