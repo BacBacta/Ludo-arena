@@ -19,8 +19,10 @@ import { PEG_COLORS } from './Board';
    end up two different greens. The base [1] is the real flat panel colour. */
 const { red: RED, green: GREEN, yellow: YELLOW, blue: BLUE } = PEG_COLORS;
 
-/** seat → colour triple (matches ludo4 seat order). */
-const SEAT_COLORS = [BLUE, RED, GREEN, YELLOW] as const;
+/** seat → colour triple (matches ludo4 seat order). The board is always spun so
+ *  the local player sits bottom-left, so seat 0 carries `--me` (green) exactly
+ *  like the 1v1 board; blue moves to the bottom-right corner. */
+const SEAT_COLORS = [GREEN, RED, YELLOW, BLUE] as const;
 /** seat → quadrant origin. */
 const SEAT_QUAD: ReadonlyArray<readonly [number, number]> = [
   [0, 9],
@@ -28,12 +30,13 @@ const SEAT_QUAD: ReadonlyArray<readonly [number, number]> = [
   [9, 0],
   [9, 9],
 ];
-/** quadrant origin → colour (for drawing the four panels). */
+/** quadrant origin → colour (for drawing the four panels) — the inverse of
+ *  SEAT_QUAD above, and it must stay in step with it. */
 const QUADS: Array<{ o: readonly [number, number]; c: readonly [string, string, string] }> = [
-  { o: [0, 0], c: RED },
-  { o: [9, 0], c: GREEN },
-  { o: [0, 9], c: BLUE },
-  { o: [9, 9], c: YELLOW },
+  { o: [0, 9], c: SEAT_COLORS[0] },
+  { o: [0, 0], c: SEAT_COLORS[1] },
+  { o: [9, 0], c: SEAT_COLORS[2] },
+  { o: [9, 9], c: SEAT_COLORS[3] },
 ];
 
 export interface PlayerBanner4 {
@@ -45,18 +48,14 @@ export interface PlayerBanner4 {
   you?: boolean;
 }
 
-function homeCenter(qx: number, qy: number): [number, number] {
-  const isTop = qy === 0;
-  const hy = isTop ? qy + 1.05 : qy + 0.45; // label band sits on the OUTER edge
-  return [qx + 3, hy + 2.25];
-}
+/** The four resting-slot centres inside a quadrant's yard — a plain 2/4 grid on
+ *  the 4x4 yard, identical to the 1v1 board (see Board.tsx). */
 function quadSlots(qx: number, qy: number): Array<[number, number]> {
-  const [cx, cy] = homeCenter(qx, qy);
   return [
-    [cx - 0.85, cy - 0.85],
-    [cx + 0.85, cy - 0.85],
-    [cx - 0.85, cy + 0.85],
-    [cx + 0.85, cy + 0.85],
+    [qx + 2, qy + 2],
+    [qx + 4, qy + 2],
+    [qx + 2, qy + 4],
+    [qx + 4, qy + 4],
   ];
 }
 function starPoints(cx: number, cy: number, r: number): string {
@@ -92,22 +91,22 @@ function Pawn({ seat, pattern }: { seat: number; pattern?: TokenPattern }) {
   return (
     <>
       <defs>
-        {/* body: thin light rim at the very top, then the TRUE colour dominates
-            (compressed highlight so the peg reads saturated, not washed) */}
+        {/* body: ceramic, not plastic — narrow lit rim, long gentle falloff
+            (kept identical to the 1v1 peg, which is the canonical shape) */}
         <linearGradient id={gid} x1="0" y1="0" x2="0.12" y2="1">
           <stop offset="0%" stopColor={c[0]} />
-          <stop offset="20%" stopColor={c[1]} />
+          <stop offset="26%" stopColor={c[1]} />
           <stop offset="100%" stopColor={c[2]} />
         </linearGradient>
-        {/* head: radial glossy sphere, hot-spot upper-left, true colour body */}
+        {/* head: glazed sphere, hot-spot upper-left, softened the same way */}
         <radialGradient id={hid} cx="34%" cy="27%" r="82%">
           <stop offset="0%" stopColor={c[0]} />
-          <stop offset="34%" stopColor={c[1]} />
+          <stop offset="45%" stopColor={c[1]} />
           <stop offset="100%" stopColor={c[2]} />
         </radialGradient>
       </defs>
-      {/* soft contact shadow, directly under the foot */}
-      <ellipse cx={0.02} cy={0.36} rx={0.3} ry={0.08} fill="url(#pawnCast4)" />
+      {/* contact shadow: one flat ink ellipse, as the design draws it */}
+      <ellipse cx={0.02} cy={0.36} rx={0.3} ry={0.075} fill="rgba(32,30,29,.2)" />
       {/* Ludo-Club teardrop: ball top blending smoothly into a flared cone foot */}
       <path
         d="M -0.3 0.28 C -0.3 0.06 -0.17 -0.06 -0.13 -0.24 C -0.1 -0.4 0.1 -0.4 0.13 -0.24 C 0.17 -0.06 0.3 0.06 0.3 0.28 Q 0.3 0.36 0 0.36 Q -0.3 0.36 -0.3 0.28 Z"
@@ -120,29 +119,37 @@ function Pawn({ seat, pattern }: { seat: number; pattern?: TokenPattern }) {
       {/* ball top overlapping the cone (no pinched chess neck) */}
       <circle cx={0} cy={-0.28} r={0.17} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.026} />
       <path d="M -0.13 -0.24 Q 0 -0.14 0.13 -0.24" fill={`url(#${hid})`} stroke="none" />
-      {/* glossy highlights: hot-spot on the ball + streak down the cone */}
-      <ellipse cx={-0.065} cy={-0.34} rx={0.065} ry={0.05} fill="#ffffff" opacity={0.95} />
-      <path d="M -0.12 0.26 C -0.16 0.08 -0.09 -0.06 -0.06 -0.16" fill="none" stroke="#ffffff" strokeWidth={0.045} strokeLinecap="round" opacity={0.45} />
-      <path d="M 0.145 -0.33 A 0.17 0.17 0 0 1 0.06 -0.13" fill="none" stroke={rim} strokeWidth={0.03} strokeLinecap="round" opacity={0.85} />
+      {/* the single bright specular, then two whispers of form — glazed ceramic.
+          The candy peg lit these with pure #ffffff, which punched a cold hole in
+          a board whose lightest paper is #fffdf8. */}
+      <ellipse cx={-0.065} cy={-0.34} rx={0.06} ry={0.046} fill="#fffdf8" opacity={0.85} />
+      <path d="M -0.12 0.26 C -0.16 0.08 -0.09 -0.06 -0.06 -0.16" fill="none" stroke="#fffdf8" strokeWidth={0.045} strokeLinecap="round" opacity={0.2} />
+      <path d="M 0.145 -0.33 A 0.17 0.17 0 0 1 0.06 -0.13" fill="none" stroke={rim} strokeWidth={0.03} strokeLinecap="round" opacity={0.5} />
     </>
   );
 }
 
+/** Organic quadrant — identical treatment to the 1v1 board: a knocked-back wash
+ *  of the seat colour, a yard of the theme's paper ringed in that colour, and
+ *  four discs tinted from it. All four seats play here, so all four are drawn. */
 function Quadrant({ x, y, colors, theme }: { x: number; y: number; colors: readonly [string, string, string]; theme: BoardTheme }) {
-  const isTop = y === 0;
-  const hy = isTop ? y + 1.05 : y + 0.45;
-  const slots = quadSlots(x, y);
+  const crisp = theme.crisp === true;
   return (
     <g>
-      {/* flat solid quadrant, square edges — the board reads as ONE continuous surface */}
-      <rect x={x} y={y} width={6} height={6} fill={colors[1]} />
-      {/* home square with a soft drop edge — themed neutral surface (phase 2 ext) */}
-      <rect x={x + 0.77} y={hy + 0.07} width={4.5} height={4.5} rx={0.45} fill={theme.homeEdge} />
-      <rect x={x + 0.75} y={hy} width={4.5} height={4.5} rx={0.45} fill={theme.home} />
-      {/* All four resting discs — the 4-player engine gives each seat four base
-          tokens, so every disc frames an actual peg foot (Ludo Club). */}
-      {slots.map(([sx, sy], i) => (
-        <circle key={i} cx={sx} cy={sy} r={0.56} fill={theme.slot} />
+      <rect x={x + 0.12} y={y + 0.12} width={5.76} height={5.76} rx={crisp ? 0.15 : 0.9} fill={colors[1]} opacity={theme.quadOpacity} />
+      <rect
+        x={x + 1}
+        y={y + 1}
+        width={4}
+        height={4}
+        rx={crisp ? 0.1 : 0.6}
+        fill={theme.yard}
+        stroke={colors[1]}
+        strokeWidth={crisp ? 0.12 : 0.07}
+        opacity={0.95}
+      />
+      {quadSlots(x, y).map(([sx, sy], i) => (
+        <circle key={i} cx={sx} cy={sy} r={0.52} fill={colors[1]} opacity={0.15} />
       ))}
     </g>
   );
@@ -217,6 +224,8 @@ export interface Board4Props {
 
 export function Board4({ game, mySeat, onTokenTap, banners, themeId, tokenPatterns }: Board4Props) {
   const theme = boardThemeById(themeId);
+  const crisp = theme.crisp === true;
+  const cellRx = crisp ? 0.04 : 0.2;
   const movable = game.turn === mySeat && game.phase === 'awaiting-move' ? game.legal : [];
   const positions = useAnimated4(game.positions);
 
@@ -272,109 +281,106 @@ export function Board4({ game, mySeat, onTokenTap, banners, themeId, tokenPatter
     );
   }, [game.positions]);
 
-  const edgeChevron = (cx: number, cy: number, deg: number, color: string, key: string) => (
-    <g key={key} transform={`rotate(${deg} ${cx} ${cy})`}>
-      <path
-        d={`M ${cx - 0.17} ${cy - 0.3} L ${cx + 0.2} ${cy} L ${cx - 0.17} ${cy + 0.3}`}
-        fill="none"
-        stroke={color}
-        strokeWidth={0.22}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </g>
-  );
-
   return (
-    <div className={`boardwrap${shake ? ' boardwrap--shake' : ''}`}>
-      <svg viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ludo board" shapeRendering="geometricPrecision">
-        <defs>
-          <clipPath id="board4clip">
-            <rect x={0} y={0} width={15} height={15} rx={0.35} />
-          </clipPath>
-          <radialGradient id="pawnCast4" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#0f1f4d" stopOpacity="0.42" />
-            <stop offset="58%" stopColor="#0f1f4d" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="#0f1f4d" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="socket4" cx="50%" cy="36%" r="66%">
-            <stop offset="0%" stopColor="#c4cddc" />
-            <stop offset="60%" stopColor="#d9dfea" />
-            <stop offset="100%" stopColor="#eef2f9" />
-          </radialGradient>
-        </defs>
-        <g clipPath="url(#board4clip)" transform={rot ? `rotate(${rot} 7.5 7.5)` : undefined}>
-        <rect x={0} y={0} width={15} height={15} fill={theme.cell} />
+    <div className={`boardwrap${shake ? ' boardwrap--shake' : ''}`} style={{ ['--plabel-ink' as string]: theme.onGround }}>
+      <svg
+        viewBox="-0.4 -0.4 15.8 15.8"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="Ludo board"
+        shapeRendering="geometricPrecision"
+        style={{ borderRadius: theme.radius, boxShadow: theme.shadow }}
+      >
+        <g transform={rot ? `rotate(${rot} 7.5 7.5)` : undefined}>
+        {/* the plate: the same paper the rest of the app sits on */}
+        <rect
+          x={-0.35}
+          y={-0.35}
+          width={15.7}
+          height={15.7}
+          rx={crisp ? 0.3 : 1.1}
+          fill={theme.ground}
+          stroke={theme.edge}
+          strokeWidth={crisp ? 0.1 : 0.06}
+        />
 
         {QUADS.map((q) => (
           <Quadrant key={`${q.o[0]}-${q.o[1]}`} x={q.o[0]} y={q.o[1]} colors={q.c} theme={theme} />
         ))}
 
-        {/* track cells: continuous grid, shared hairline borders (no gaps) */}
+        {/* track cells: inset and rounded, so the plate breathes between them */}
         {TRACK.map(([x, y], i) => (
-          <rect key={i} x={x} y={y} width={1} height={1} fill={theme.cell} stroke={theme.cellStroke} strokeWidth={0.05} />
+          <rect
+            key={i}
+            x={x + 0.06}
+            y={y + 0.06}
+            width={0.88}
+            height={0.88}
+            rx={cellRx}
+            fill={theme.cell}
+            stroke={theme.cellStroke}
+            strokeWidth={crisp ? 0.07 : 0.05}
+          />
         ))}
 
-        {/* safe cells: filled cell carrying a star (Ludo Club) — themed */}
-        {[...SAFE_CELLS].map((i) => {
-          const cell = TRACK[i];
-          if (!cell) return null;
-          const cx = cell[0] + 0.5;
-          const cy = cell[1] + 0.5;
-          return (
-            <g key={`s${i}`}>
-              <rect x={cell[0]} y={cell[1]} width={1} height={1} fill={theme.safe} stroke={theme.cellStroke} strokeWidth={0.05} />
-              <polygon points={starPoints(cx, cy, 0.36)} fill={theme.safeStar} strokeLinejoin="round" />
-            </g>
-          );
-        })}
-
-        {/* home-run columns for all four seats — flat solid (Ludo Club matte) */}
-        {HOME_COLUMNS4.map((col, seat) =>
-          col.map(([x, y], i) => (
-            <rect
-              key={`h${seat}-${i}`}
-              x={x}
-              y={y}
-              width={1}
-              height={1}
-              fill={SEAT_COLORS[seat]![1]}
-              stroke={SEAT_COLORS[seat]![2]}
-              strokeWidth={0.035}
-            />
-          )),
-        )}
-
-        {/* coloured start cells for all four seats — flat solid */}
+        {/* start cells: the seat colour, held back so the pawn still wins the cell */}
         {SEAT_START4.map((idx, seat) => {
           const cell = TRACK[idx];
           if (!cell) return null;
           return (
             <rect
               key={`d${seat}`}
-              x={cell[0]}
-              y={cell[1]}
-              width={1}
-              height={1}
+              x={cell[0] + 0.06}
+              y={cell[1] + 0.06}
+              width={0.88}
+              height={0.88}
+              rx={cellRx}
               fill={SEAT_COLORS[seat]![1]}
-              stroke={SEAT_COLORS[seat]![2]}
-              strokeWidth={0.035}
+              opacity={crisp ? 0.85 : 0.66}
             />
           );
         })}
 
-        {/* home-run entry chevrons (each arm coloured for the seat that enters there) */}
-        {edgeChevron(0.5, 7.5, 0, RED[1], 'er')}
-        {edgeChevron(7.5, 0.5, 90, GREEN[1], 'eg')}
-        {edgeChevron(14.5, 7.5, 180, YELLOW[1], 'ey')}
-        {edgeChevron(7.5, 14.5, 270, BLUE[1], 'eb')}
+        {/* safe cells: a bare star, no filled tile — the mark, not a second surface */}
+        {[...SAFE_CELLS].map((i) => {
+          const cell = TRACK[i];
+          if (!cell) return null;
+          return (
+            <polygon
+              key={`s${i}`}
+              points={starPoints(cell[0] + 0.5, cell[1] + 0.5, 0.3)}
+              fill={theme.star}
+              opacity={0.5}
+              strokeLinejoin="round"
+            />
+          );
+        })}
 
-        {/* centre pinwheel — each triangle matches its adjacent arm:
-            top=green, left=red, right=yellow, bottom=blue (Ludo Club) */}
-        <polygon points="6,6 9,6 7.5,7.5" fill={GREEN[1]} />
-        <polygon points="9,6 9,9 7.5,7.5" fill={YELLOW[1]} />
-        <polygon points="6,9 9,9 7.5,7.5" fill={BLUE[1]} />
-        <polygon points="6,6 6,9 7.5,7.5" fill={RED[1]} />
+        {/* home columns: the seat colour fading as it runs in to the centre */}
+        {HOME_COLUMNS4.map((col, seat) =>
+          col.map(([x, y], i) => (
+            <rect
+              key={`h${seat}-${i}`}
+              x={x + 0.06}
+              y={y + 0.06}
+              width={0.88}
+              height={0.88}
+              rx={cellRx}
+              fill={SEAT_COLORS[seat]![1]}
+              opacity={(crisp ? 0.9 : 0.66) - i * 0.05}
+            />
+          )),
+        )}
+
+        {/* centre: a rosette of the theme's own surface, then one triangle per
+            seat pointing down its own arm (seat 0 bottom, 1 left, 2 top, 3
+            right — the order HOME_COLUMNS4 lays out), capped by a paper dot */}
+        <rect x={6} y={6} width={3} height={3} rx={crisp ? 0.1 : 0.5} fill={theme.centre} />
+        <polygon points="6,6 9,6 7.5,7.5" fill={SEAT_COLORS[2]![1]} opacity={crisp ? 1 : 0.85} />
+        <polygon points="9,6 9,9 7.5,7.5" fill={SEAT_COLORS[3]![1]} opacity={crisp ? 1 : 0.85} />
+        <polygon points="6,9 9,9 7.5,7.5" fill={SEAT_COLORS[0]![1]} opacity={crisp ? 1 : 0.85} />
+        <polygon points="6,6 6,9 7.5,7.5" fill={SEAT_COLORS[1]![1]} opacity={crisp ? 1 : 0.85} />
+        <circle cx={7.5} cy={7.5} r={0.42} fill={theme.yard} stroke={theme.edge} strokeWidth={0.05} />
 
         {/* pieces */}
         {positions.map((row, seat) =>

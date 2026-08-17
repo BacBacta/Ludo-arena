@@ -2199,7 +2199,8 @@ small.muted { font-size: 12px; }
   aspect-ratio: 1;
   background: transparent;
   padding: 0;
-  filter: drop-shadow(0 10px 22px rgba(15, 26, 68, 0.42));
+  /* The shadow now rides the <svg> itself, from the board theme (a night board
+     casts a different shadow than a paper one), so the wrapper adds none. */
 }
 .boardwrap--shake { animation: boardshake 0.3s ease; }
 @keyframes boardshake {
@@ -3130,35 +3131,43 @@ small.muted { font-size: 12px; }
 }
 
 /* plain white player labels painted on each quadrant */
+/* Labels sit on the board PLATE, so they take their ink from the equipped board
+   theme (--plabel-ink, set on .boardwrap): near-black on paper, warm sand on the
+   night table. They used to be white with a hard drop shadow, which was only
+   legible because the candy plate was saturated blue. */
 .plabel {
   position: absolute;
   transform: translate(-50%, -50%);
-  color: #ffffff;
+  color: var(--plabel-ink, #3b352c);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 14px;
   letter-spacing: 0.4px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
   z-index: 3;
   pointer-events: none;
 }
-.plabel--active { text-shadow: 0 0 9px rgba(255, 255, 255, 0.7), 0 1px 3px rgba(0, 0, 0, 0.45); }
-/* Gold "YOU" chip after the local player's name — MiniPay testers couldn't
-   tell which side was theirs, and on a 15s clock that hesitation costs turns. */
+/* Held back via the colour, NOT via opacity: opacity on the label would drag the
+   YOU chip down with it, and that chip is the cue testers needed to find their
+   own side inside a 15s clock. */
+.plabel { color: color-mix(in srgb, var(--plabel-ink, #3b352c) 62%, transparent); }
+/* Whose turn it is reads as full presence, not as a glow. */
+.plabel--active { color: var(--plabel-ink, #3b352c); }
+/* "YOU" chip after the local player's name — MiniPay testers couldn't tell which
+   side was theirs, and on a 15s clock that hesitation costs turns. Now the one
+   accent on paper instead of the candy gold gradient. */
 .plabel__you {
   display: inline-block;
   margin-left: 6px;
   padding: 1px 6px 0;
   border-radius: 999px;
-  background: linear-gradient(180deg, #ffd94d, #f5b301);
-  color: #4a3400;
+  background: var(--accent);
+  color: var(--card);
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-shadow: none;
   vertical-align: 1.5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 .plabel--q0 { left: 25%; top: 96.6%; }
 .plabel--q1 { left: 25%; top: 3.4%; }
