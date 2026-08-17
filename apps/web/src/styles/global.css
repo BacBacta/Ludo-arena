@@ -88,6 +88,9 @@
   --candy-light: #d67f48;
   --candy-deep: #8c491a;
   --danger: #c8371b;
+  /* Shell width + board cap. Mobile (MiniPay) values; stepped up near #root. */
+  --shell: 420px;
+  --board-cap: 340px;
   --radius: 22px;
   --radius-s: 16px;
   --font-display: 'Caprasimo', Georgia, serif;
@@ -145,9 +148,27 @@ body::before {
 
 .card, .streak, .mini, .modal__card, .paynote, .toast { color: var(--txt); }
 
+/* The app is designed for MiniPay — a 360-430px Android webview — and that stays
+   the reference. On anything wider it steps up instead of sitting as a phone
+   column marooned in the middle of a desktop. `--shell` is the single source of
+   truth for that width: #root and the fixed tab bar both read it, so they can
+   never disagree again (the bar used to span the whole viewport). */
 #root {
   width: 100%;
-  max-width: 420px;
+  max-width: var(--shell);
+}
+@media (min-width: 600px) {
+  :root { --shell: 480px; --board-cap: 400px; }
+  /* Off the phone the bar no longer reaches the screen edges, so it needs to
+     read as a panel rather than a strip someone cut off. */
+  .tabbar {
+    border-radius: 20px 20px 0 0;
+    border-left: 1px solid rgba(32, 30, 29, 0.08);
+    border-right: 1px solid rgba(32, 30, 29, 0.08);
+  }
+}
+@media (min-width: 1000px) {
+  :root { --shell: 560px; --board-cap: 480px; }
 }
 
 .screen {
@@ -170,8 +191,10 @@ body::before {
   height: 100svh;
   overflow: hidden;
 }
+/* On the game screen the height is usually the binding constraint — the rows and
+   the tray have to fit under the board — so the shorter axis wins. */
 .screen--game .boardwrap {
-  max-height: calc(100svh - 300px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  width: min(100%, var(--board-cap), calc(100svh - 300px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
 }
 
 /* The lobby scrolls above a fixed footer tab bar — clear its height. */
@@ -181,8 +204,14 @@ body::before {
    Fixed, thumb-reach, safe-area aware; glassy plate over the candy backdrop. */
 .tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
+  /* Centred on the shell, not stretched across the viewport: past 420px the
+     active pill became a lozenge parked at the far left, a screen away from the
+     content it belongs to. On a phone this resolves to the full width, exactly
+     as before. */
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--shell);
   bottom: 0;
   z-index: 40;
   display: flex;
@@ -2187,8 +2216,7 @@ small.muted { font-size: 12px; }
    Capped at the design's 340px so it stays a board ON a table, not wall-to-wall. */
 .boardwrap {
   position: relative;
-  width: 100%;
-  max-width: 340px;
+  width: min(100%, var(--board-cap));
   margin: 0 auto;
   aspect-ratio: 1;
   background: transparent;
