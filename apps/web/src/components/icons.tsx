@@ -685,3 +685,71 @@ export function IconSmile({ className }: { className?: string }) {
     </L>
   );
 }
+export function IconGlobe({ className }: { className?: string }) {
+  return (
+    <L className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
+    </L>
+  );
+}
+
+export function IconHelp({ className }: { className?: string }) {
+  return (
+    <L className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </L>
+  );
+}
+
+export function IconMail({ className }: { className?: string }) {
+  return (
+    <L className={className}>
+      <path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7" />
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+    </L>
+  );
+}
+
+export function IconSettings({ className }: { className?: string }) {
+  return (
+    <L className={className}>
+      <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+      <circle cx="12" cy="12" r="3" />
+    </L>
+  );
+}
+
+export function IconCopy({ className }: { className?: string }) {
+  return (
+    <L className={className}>
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </L>
+  );
+}
+
+export function IconHourglass({ className }: { className?: string }) {
+  return (
+    <L className={className}>
+      <path d="M5 22h14" />
+      <path d="M5 2h14" />
+      <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
+      <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
+    </L>
+  );
+}
+export function IconVolumeOff({ className }: { className?: string }) {
+  return (
+    <L className={className}>
+      <path d="M16 9a5 5 0 0 1 .95 2.293" />
+      <path d="M19.364 5.636a9 9 0 0 1 1.889 9.96" />
+      <path d="m2 2 20 20" />
+      <path d="m7 7-.587.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298V11" />
+      <path d="M9.828 4.172A.686.686 0 0 1 11 4.657v.686" />
+    </L>
+  );
+}

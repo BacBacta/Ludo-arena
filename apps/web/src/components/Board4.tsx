@@ -12,13 +12,12 @@ import { boardThemeById, type BoardTheme } from '../lib/boardThemes';
 import { PegPattern } from './Board';
 import { playHop } from '../lib/sound';
 import { t } from '../lib/i18n';
+import { PEG_COLORS } from './Board';
 
-/* True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — saturated,
-   not washed. The base [1] is the real flat panel colour. */
-const RED = ['#FF7B6E', '#E62E2A', '#AC1C1A'] as const;
-const GREEN = ['#5FCE79', '#25A544', '#16792E'] as const;
-const YELLOW = ['#FFDD4A', '#F6C200', '#C08A00'] as const;
-const BLUE = ['#63C4EC', '#1F8FD4', '#105F97'] as const;
+/* Seat colours [lit rim, TRUE base, shadow]. Single source: Board.tsx. This
+   file used to keep its own copy, which is how a 1v1 board and a 4-player board
+   end up two different greens. The base [1] is the real flat panel colour. */
+const { red: RED, green: GREEN, yellow: YELLOW, blue: BLUE } = PEG_COLORS;
 
 /** seat → colour triple (matches ludo4 seat order). */
 const SEAT_COLORS = [BLUE, RED, GREEN, YELLOW] as const;
@@ -416,7 +415,7 @@ export function Board4({ game, mySeat, onTokenTap, banners, themeId, tokenPatter
                 }
               >
                 {isMovable && (
-                  <circle cx={0} cy={0} r={0.58} fill="none" stroke="#F5B301" strokeWidth={0.09}>
+                  <circle cx={0} cy={0} r={0.58} fill="none" stroke="#C67139" strokeWidth={0.09}>
                     <animate attributeName="r" values=".52;.64;.52" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}

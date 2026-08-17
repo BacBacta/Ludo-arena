@@ -1,9 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
-import { ALLOWED_STAKES_CENTS, FREEROLL, SEASON_PREMIUM, crownsForTier, potCents, type StakeCents } from '@ludo/shared';
+import { ALLOWED_STAKES_CENTS, FREEROLL, SEASON_PREMIUM, crownsForTier, potCents, rakeBpsFor, type StakeCents } from '@ludo/shared';
 import { cosmeticsCusdAvailable } from '../lib/deployments';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { SUPPORT_EMAIL, TopBar, Table4Modal } from '../components/ui';
-import { IconShield, IconTicket, IconTrophy, IconUsers } from '../components/icons';
+import {
+  IconBell,
+  IconBookOpen,
+  IconBot,
+  IconCheckCircle,
+  IconChevronRight,
+  IconCoins,
+  IconCopy,
+  IconCrown,
+  IconDice5,
+  IconFlag,
+  IconFlame2,
+  IconGift,
+  IconGlobe,
+  IconHelp,
+  IconHourglass,
+  IconLink,
+  IconMail,
+  IconPencil,
+  IconPlay,
+  IconScale,
+  IconLock,
+  IconShieldCheck,
+  IconStore,
+  IconSwords,
+  IconTicket2,
+  IconTrophy2,
+  IconUserPlus,
+  IconUserRound,
+  IconUsers2,
+  IconUsersRound,
+  IconVolume,
+  IconVolumeOff,
+  IconWallet,
+  IconX,
+} from '../components/icons';
 import { HeroPeg, PEG_COLORS } from '../components/Board';
 import { Die3D } from '../components/Die3D';
 import { DieFace } from '../components/Die';
@@ -63,7 +98,7 @@ export function Lobby({
    *  game wallet, so API quests verify me via Zealy Connect. */
   onBindZealy(zealyId: string): Promise<'ok' | 'taken' | 'wallet_taken' | 'no_wallet' | 'failed'>;
 }) {
-  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, walletAddress, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceJoining, friends, friendRequests, sentRequests } = useAppState();
+  const { stakeCents, streak, tickets, limits, stakingBlocked, balanceCents, walletBacked, walletAddress, profile, avatarFrame, avatar, recentOpponents, diceSkin, season, race, raceJoining, friends, friendRequests, sentRequests, soundOn } = useAppState();
   const dispatch = useAppDispatch();
 
   /** Recent opponents I can still invite: wallet-linked (have a pid) and not
@@ -216,11 +251,28 @@ export function Lobby({
   /** Actionable social count → red badge on the Friends tab. */
   const friendsBadge = friendRequests.length;
 
-  // Stakes are secondary in the hero (Option A): a "Play for USDT" toggle reveals
-  // the tiers, so the dominant CTA can be a plain free online 1v1.
+  // Money is a MODE, not a disclosure: Free is the default floor, Stakes is the
+  // second one and takes over the page when picked (see the .stakemode block).
   const [showStakes, setShowStakes] = useState(false);
+  // Geo-blocked players can never reach the staked floor — don't offer the tab.
+  const staking = showStakes && !stakingBlocked;
   // Real-money tiers only (Free is the primary CTA, not a tile anymore).
   const stakedTiers = lobbyStakes.filter((s) => s > 0);
+  /** Table fee as a whole percent, straight from the shared rake table. */
+  const feePctFor = (s: number): number => rakeBpsFor(s) / 100;
+  /** How much of the self-set daily cap today's staking has used. */
+  const limitPct = limits.dailyLimitCents > 0
+    ? Math.min(100, Math.round((limits.stakedTodayCents / limits.dailyLimitCents) * 100))
+    : 0;
+  /** Crowns into the CURRENT tier, as a percent of what the next one costs —
+   *  same arithmetic as the season card on the profile tab. */
+  const seasonPct = ((): number => {
+    if (!season) return 0;
+    if (season.tier >= season.tierCount) return 100;
+    const prev = crownsForTier(season.tier);
+    const next = crownsForTier(Math.min(season.tier + 1, season.tierCount));
+    return Math.min(100, Math.round(((season.crowns - prev) / Math.max(1, next - prev)) * 100));
+  })();
   // PERSONAL history only — a brand-new visitor must not be shown a "Today 0/0/0"
   // card just because the GLOBAL league happens to have other players in it. The
   // league leaderboard renders on its own below (as social proof), decoupled.
@@ -247,7 +299,7 @@ export function Lobby({
     <div className="screen screen--lobby">
       <TopBar onConnect={onConnectWallet} onDisconnect={onDisconnectWallet} />
 
-      {stakingBlocked && <div className="reconnectbar">🌍 {t('geoBlocked')}</div>}
+      {stakingBlocked && <div className="reconnectbar"><IconGlobe /> {t('geoBlocked')}</div>}
 
       {/* keyed per tab: switching replays the staggered entrance, so every
           page ARRIVES with the same premium rhythm the landing has */}
@@ -274,51 +326,100 @@ export function Lobby({
           </div>
         </div>
         <h1 className="hero__tagline">{t('tagline')}</h1>
+        <p className="hero__sub">{t('taglineSub')}</p>
       </div>
 
-      <button className="btn btn--hero" onClick={() => { playTap(); onPlay(0); }}>
-        {t('play')}
-        <small>{t('playFreeSub')}</small>
-      </button>
+      {/* MONEY, TWO FLOORS. Free is the default and needs no decision; Stakes is
+          a mode you choose, and choosing it changes the whole surface (dark
+          ground, escrow and the daily cap always on screen). The old inline
+          "Play for USDT" disclosure put real money one accidental tap under the
+          free CTA, on the same cream surface — nothing marked the boundary. */}
+      <div className="moneytabs" role="tablist" aria-label={t('moneyModeLabel')}>
+        <button
+          role="tab"
+          aria-selected={!staking}
+          className={`moneytab${!staking ? ' moneytab--on' : ''}`}
+          onClick={() => { playTap(); setShowStakes(false); }}
+        >
+          {t('freePlay')}
+        </button>
+        <button
+          role="tab"
+          aria-selected={staking}
+          className={`moneytab${staking ? ' moneytab--on' : ''}`}
+          onClick={() => { playTap(); setShowStakes(true); }}
+        >
+          <IconCoins />
+          {t('stakes')}
+        </button>
+      </div>
 
-      {/* Secondary money path: reveal the USDT stake tiles on demand. */}
-      <button
-        className={`btn btn--usdt${showStakes ? ' btn--usdt-open' : ''}`}
-        onClick={() => { playTap(); setShowStakes((v) => !v); }}
-        aria-expanded={showStakes}
-      >
-        <span className="btn--usdt__lead">
-          <span className="btn--usdt__coin" aria-hidden="true">$</span>
-          {t('playForUsdt')}
-        </span>
-        <span className="btn--usdt__hint">{t('winUpTo')} {fmtUsd(potCents(500 as StakeCents))} {showStakes ? '▲' : '▾'}</span>
-      </button>
-      {showStakes && (
-        <div className="gstakes gstakes--reveal">
-          {stakedTiers.map((s) => {
-            const locked = !walletBacked;
-            return (
-              <button
-                key={s}
-                className={`gstake${locked ? ' gstake--locked' : ''}`}
-                onClick={() => { playTap('select'); playStaked(s); }}
-              >
-                <b>{s >= 100 ? `$${s / 100}` : `${s}¢`}</b>
-                <small>
-                  {locked ? (<><IconShield className="gstake__lock" /> {t('needsWallet')}</>) : `${t('win')} ${fmtUsd(potCents(s))}`}
-                </small>
-              </button>
-            );
-          })}
-          {/* The amounts above are NET (potCents subtracts the rake) — say so,
-              or a player doing 2×stake mental math reads the gap as skimming. */}
-          <small className="gstakes__rakenote">{t('rakeNote')}</small>
-        </div>
+      {!staking && (
+        <button className="playnow" onClick={() => { playTap(); onPlay(0); }}>
+          <span className="playnow__txt">
+            <b>{t('playNow')}</b>
+            <small>{t('playFreeSub')}</small>
+          </span>
+          <span className="playnow__go" aria-hidden="true"><IconPlay /></span>
+        </button>
       )}
-      {walletBacked && limits.stakedTodayCents > 0 && (
-        <small className="stagehint" style={{ display: 'block', marginTop: 6 }}>
-          {t('realityStaked')} {fmtUsd(limits.stakedTodayCents)} / {fmtUsd(limits.dailyLimitCents)}
-        </small>
+
+      {/* STAKES — the second floor. Dark ground, tables as rows, and the two
+          things a staking player must never have to go looking for (escrow,
+          the self-set daily cap) pinned under them. */}
+      {staking && (
+        <div className="stakemode">
+          <h2 className="stakemode__head">{t('pickTable')}</h2>
+          <p className="stakemode__sub">{t('pickTableSub')}</p>
+          <div className="stakemode__tables">
+            {stakedTiers.map((s) => {
+              const locked = !walletBacked;
+              const featured = s === 100;
+              return (
+                <button
+                  key={s}
+                  className={`stakerow${featured ? ' stakerow--featured' : ''}${locked ? ' stakerow--locked' : ''}`}
+                  onClick={() => { playTap('select'); playStaked(s); }}
+                >
+                  <span className="stakerow__amt">{s >= 100 ? `$${s / 100}` : `${s}¢`}</span>
+                  <span className="stakerow__txt">
+                    <b>
+                      {t(s === 25 ? 'tableStarter' : s === 100 ? 'tableStandard' : 'tableHigh')}
+                      {featured && <em className="stakerow__flag">{t('mostPlayed')}</em>}
+                    </b>
+                    <small>
+                      {locked ? (
+                        <><IconLock className="gstake__lock" /> {t('needsWallet')}</>
+                      ) : (
+                        <>{t('tableFee')} {feePctFor(s)}% · {t('win')} <span className="stakerow__win">{fmtUsd(potCents(s))}</span></>
+                      )}
+                    </small>
+                  </span>
+                  <IconChevronRight className="stakerow__chev" />
+                </button>
+              );
+            })}
+          </div>
+          <div className="stakenote">
+            <IconShieldCheck className="stakenote__ic" />
+            <span className="stakenote__txt">
+              <b>{t('escrowTitle')}</b>
+              <small>{t('escrowSub')}</small>
+            </span>
+          </div>
+          {walletBacked && (
+            <div className="stakelimit">
+              <div className="stakelimit__row">
+                <span>{t('dailyLimit')}</span>
+                <span>{fmtUsd(limits.stakedTodayCents)} / {fmtUsd(limits.dailyLimitCents)}</span>
+              </div>
+              <div className="stakelimit__bar">
+                <i style={{ width: `${limitPct}%` }} />
+              </div>
+              <div className="stakelimit__foot">{t('dailyLimitFoot')}</div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* The promise in three steps — FIRST VISIT ONLY. For returning players
@@ -336,7 +437,7 @@ export function Lobby({
           but a live event must stay discoverable from the landing tab. */}
       {raceLive && (
         <button className="racestrip" onClick={() => switchTab('race')}>
-          <span className="racestrip__flag" aria-hidden="true">🏁</span>
+          <span className="racestrip__flag" aria-hidden="true"><IconFlag /></span>
           <b>{t('raceCardTitle')}</b>
           <em className="racecard__live">● {t('raceLiveBadge')}</em>
           <span className="mrow__chev" aria-hidden="true">›</span>
@@ -356,7 +457,7 @@ export function Lobby({
           stay; the campaign relaunches with its own rules. */}
       {tab === 'race' && (
         <div className="pagehead pagehead--race">
-          <span className="pagehead__ic" aria-hidden="true">🏁</span>
+          <span className="pagehead__ic" aria-hidden="true"><IconFlag /></span>
           <div className="pagehead__txt">
             <b>{t('raceTitle')}</b>
             <small>{t('raceCardSub')}</small>
@@ -366,27 +467,27 @@ export function Lobby({
       )}
       {tab === 'race' && !raceLive && (
         <div className="card friendteaser">
-          <span className="friendteaser__ic">🏁</span>
+          <span className="friendteaser__ic"><IconFlag /></span>
           <span className="friendrow__meta"><b>{t('raceTitle')}</b><small>{t('raceNoEvent')}</small></span>
         </div>
       )}
       {tab === 'race' && race?.active && (
         <div className="card racecard">
           <div className="racecard__top">
-            <span className="racecard__flag" aria-hidden="true">🏁</span>
+            <span className="racecard__flag" aria-hidden="true"><IconFlag /></span>
             <div className="racecard__id">
               <b>
                 {t('raceCardTitle')}
                 <em className="racecard__live">● {t('raceLiveBadge')}</em>
               </b>
-              <small>{race.funded ? `✅ ${t('raceFundedLabel')}` : t('raceCardSub')}</small>
+              <small>{race.funded ? <><IconCheckCircle /> {t('raceFundedLabel')}</> : t('raceCardSub')}</small>
             </div>
           </div>
 
           <div className="racecard__actions">
             {race.funded ? (
               <button className="btn btn--race btn--race-play" onClick={() => { playTap('select'); onPlayRace(); }}>
-                🎲 {t('racePlayCta')} <small>{fmtUsd(1)} · {t('racePlaySub')}</small>
+                <IconDice5 /> {t('racePlayCta')} <small>{fmtUsd(1)} · {t('racePlaySub')}</small>
               </button>
             ) : (
               <button
@@ -394,7 +495,7 @@ export function Lobby({
                 disabled={raceJoining}
                 onClick={() => { playTap('select'); onJoinRace(); }}
               >
-                {raceJoining ? `⏳ ${t('raceJoining')}` : <>🎟️ {t('raceMintCta')} <small>{t('raceMintSub')}</small></>}
+                {raceJoining ? <><IconHourglass /> {t('raceJoining')}</> : <><IconTicket2 /> {t('raceMintCta')} <small>{t('raceMintSub')}</small></>}
               </button>
             )}
           </div>
@@ -413,7 +514,7 @@ export function Lobby({
                 );
               }}
             >
-              👛 {t('racePlayingAs')} <b>{walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}</b> ⧉
+              <IconWallet /> {t('racePlayingAs')} <b>{walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}</b> <IconCopy />
             </button>
           )}
 
@@ -422,7 +523,7 @@ export function Lobby({
               profile link once, and the sprint's API quests verify this wallet
               via Zealy Connect identity. Permanent, 1 account ↔ 1 wallet. */}
           <details className="racezealy">
-            <summary className="racehow__sum">🔗 {t('zealyLinkTitle')}</summary>
+            <summary className="racehow__sum"><IconLink /> {t('zealyLinkTitle')}</summary>
             <p className="racezealy__hint">{t('zealyLinkHint')}</p>
             <div className="racezealy__row">
               <input
@@ -441,7 +542,7 @@ export function Lobby({
 
           {/* How to play — no ranking, no timer, no pool: entry + subsidised games. */}
           <details className="racehow">
-            <summary className="racehow__sum">ℹ️ {t('raceHowToTitle')}</summary>
+            <summary className="racehow__sum"><IconHelp /> {t('raceHowToTitle')}</summary>
             <ol className="racehow__steps">
               <li>{t('raceHowStep1')}</li>
               <li>{t('raceHowStep2')}</li>
@@ -459,7 +560,7 @@ export function Lobby({
           you're not accepting blind. */}
       {tab === 'friends' && (
         <div className="pagehead pagehead--friends">
-          <span className="pagehead__ic" aria-hidden="true">🤝</span>
+          <span className="pagehead__ic" aria-hidden="true"><IconUsersRound /></span>
           <div className="pagehead__txt">
             <b>{t('friendsTitle')}</b>
             <small>{onlineCount > 0 ? `● ${onlineCount} ${t('friendOnline')}` : t('friendsPageSub')}</small>
@@ -469,7 +570,7 @@ export function Lobby({
       {tab === 'friends' && friendRequests.length > 0 && (
         <div className="card friendreqcard">
           <div className="friendhead">
-            <b>🔔 {t('friendRequestsTitle')}</b>
+            <b><IconBell /> {t('friendRequestsTitle')}</b>
             <span className="friendhead__count">{friendRequests.length}</span>
           </div>
           {friendRequests.map((r, i) => (
@@ -485,7 +586,7 @@ export function Lobby({
                 </span>
               </button>
               <button className="frbtn frbtn--gold" onClick={() => { playTap('select'); void onAcceptFriend(r.pid); }}>
-                ✓ {t('friendAccept')}
+                <IconCheckCircle /> {t('friendAccept')}
               </button>
               <button className="frbtn frbtn--danger" aria-label={`${t('friendRemove')} ${r.name}`} onClick={() => { playTap(); onRemoveFriendEdge(r.pid); }}>
                 ✕
@@ -521,7 +622,7 @@ export function Lobby({
                 aria-label={`${t('sentWithdraw')} ${r.name}`}
                 onClick={() => { playTap(); onRemoveFriendEdge(r.pid); }}
               >
-                ✕ {t('sentWithdraw')}
+                <IconX /> {t('sentWithdraw')}
               </button>
             </div>
           ))}
@@ -537,7 +638,7 @@ export function Lobby({
           a numbers-free version (default stats read as fake data — reported). */}
       {tab === 'profile' && (<>
       <div className="pagehead pagehead--profile">
-        <span className="pagehead__ic" aria-hidden="true">👤</span>
+        <span className="pagehead__ic" aria-hidden="true"><IconUserRound /></span>
         <div className="pagehead__txt">
           <b>{t('tabProfile')}</b>
           <small>{t('profilePageSub')}</small>
@@ -548,7 +649,7 @@ export function Lobby({
         onClick={() => { playTap(); dispatch({ type: 'PROFILE_EDIT', open: true }); }}
         aria-label={t('editProfile')}
       >
-        <span className="profilehero__edit" aria-hidden="true">✏️</span>
+        <span className="profilehero__edit" aria-hidden="true"><IconPencil /></span>
         <span className={`profilehero__avatar ${frameClass(avatarFrame)}`}>
           {avatarSrc(avatar) ? <img className="profilecard__img" src={avatarSrc(avatar)!} alt="" /> : <span className="profilehero__flag">{walletBacked && profile.name ? profile.flag : '🌍'}</span>}
           <PremiumFrame frame={avatarFrame} />
@@ -575,23 +676,23 @@ export function Lobby({
         const openSheet = (): void => { playTap(); dispatch({ type: 'SEASON_MODAL', open: true }); };
         return (
           <>
-            <div className="seclabel">👑 {t('seasonTitle')}</div>
+            <div className="seclabel"><IconCrown /> {t('seasonTitle')}</div>
             <button className="card seasoncard" onClick={openSheet}>
               <div className="seasoncard__top">
-                <span className="seasoncard__crown" aria-hidden="true">👑</span>
+                <span className="seasoncard__crown" aria-hidden="true"><IconCrown /></span>
                 <div className="seasoncard__id">
                   <b>{t('seasonTier')} {reached}/{season.tierCount}</b>
                   <small>{season.premium ? `✓ ${t('seasonPremiumOwned')}` : t('seasonCardValue')}</small>
                 </div>
-                <span className="seasoncard__crowns">👑 {season.crowns}{maxed ? '' : ` / ${nextCost}`}</span>
+                <span className="seasoncard__crowns"><IconCrown /> {season.crowns}{maxed ? '' : ` / ${nextCost}`}</span>
               </div>
               <div className="seasonbar__track seasoncard__bar"><span className="seasonbar__fill" style={{ width: `${pct}%` }} /></div>
               <div className="seasoncard__foot">
                 {claimable > 0
-                  ? <span className="seasoncard__claim">🎁 {claimable} {t('seasonClaim')}</span>
+                  ? <span className="seasoncard__claim"><IconGift /> {claimable} {t('seasonClaim')}</span>
                   : <span className="seasoncard__hint">{t('seasonCardCta')}</span>}
                 {!season.premium && cosmeticsCusdAvailable && (
-                  <span className="seasoncard__prem">👑 {t('seasonPremiumTitle')} · {fmtUsd(SEASON_PREMIUM.cents)}</span>
+                  <span className="seasoncard__prem"><IconCrown /> {t('seasonPremiumTitle')} · {fmtUsd(SEASON_PREMIUM.cents)}</span>
                 )}
               </div>
             </button>
@@ -600,24 +701,24 @@ export function Lobby({
       })()}
 
       {tab === 'play' && (<>
-      <div className="seclabel">{t('gameModes')}</div>
+      <div className="seclabel">{t('otherWaysToPlay')}</div>
       {/* MODES as a 2×2 game-style tile grid (was a verbose 3-row list — the
           landing's densest block). Practice gets a landing tile of its own:
           the instant offline game was buried inside the 4-player sheet, and
           it's the single best churn-killer for a hesitant first-timer. */}
       <div className="modegrid">
         <button className="modetile" onClick={() => { playTap(); onPractice4(); }}>
-          <span className="modetile__ic modetile__ic--bot" aria-hidden="true">🤖</span>
+          <span className="modetile__ic modetile__ic--sage" aria-hidden="true"><IconBot /></span>
           <b>{t('t4Practice')}</b>
           <small>{t('t4PracticeD')}</small>
         </button>
         <button className="modetile" onClick={() => { playTap(); dispatch({ type: 'TABLE4_MODAL', open: true }); }}>
-          <span className="modetile__ic modetile__ic--gold" aria-hidden="true"><IconUsers /></span>
+          <span className="modetile__ic modetile__ic--clay" aria-hidden="true"><IconUsers2 /></span>
           <b>{t('fourPlayer')}</b>
           <small>{`${t('t4FreeOnline')} · ${t('t4Real')}`}</small>
         </button>
         <button className="modetile" onClick={() => { playTap(); createTable(); }}>
-          <span className="modetile__ic modetile__ic--me" aria-hidden="true"><IconUsers /></span>
+          <span className="modetile__ic modetile__ic--sand" aria-hidden="true"><IconLink /></span>
           <b>{t('privateTable')}</b>
           <small>{t('privateTableDesc')}</small>
         </button>
@@ -629,12 +730,31 @@ export function Lobby({
             else onFreeroll();
           }}
         >
-          <span className="modetile__badge"><IconTicket className="mrow__ticket" /> {tickets}</span>
-          <span className="modetile__ic modetile__ic--gold" aria-hidden="true"><IconTrophy /></span>
+          <span className="modetile__badge"><IconTicket2 className="mrow__ticket" /> {tickets}</span>
+          <span className="modetile__ic modetile__ic--clay" aria-hidden="true"><IconTrophy2 /></span>
           <b>{t('freeroll')}</b>
           <small>{t('freerollDesc')}</small>
         </button>
       </div>
+
+      {/* Season, as a strip on the landing rather than a card buried in the
+          profile tab: progression is the reason to come back tomorrow, so it
+          has to be visible on the page the player actually lands on. */}
+      {season && (
+        <button className="seasonstrip" onClick={() => { playTap(); dispatch({ type: 'SEASON_MODAL', open: true }); }}>
+          <span className="seasonstrip__ic" aria-hidden="true"><IconCrown /></span>
+          <span className="seasonstrip__txt">
+            <span className="seasonstrip__row">
+              <b>{t('seasonTier')} {season.tier}</b>
+              <em>{season.crowns}{season.tier >= season.tierCount ? '' : ` / ${crownsForTier(Math.min(season.tier + 1, season.tierCount))}`}</em>
+            </span>
+            <span className="seasonstrip__bar">
+              <i style={{ width: `${seasonPct}%` }} />
+            </span>
+          </span>
+          <IconChevronRight className="seasonstrip__chev" />
+        </button>
+      )}
 
       </>)}
 
@@ -645,7 +765,7 @@ export function Lobby({
           collection album and the premium pass, plus the ticket balance. */}
       {tab === 'shop' && (<>
       <div className="pagehead pagehead--shop">
-        <span className="pagehead__ic" aria-hidden="true">🛍️</span>
+        <span className="pagehead__ic" aria-hidden="true"><IconStore /></span>
         <div className="pagehead__txt">
           <b>{t('shopCardTitle')}</b>
           <small>{t('shopCardSub')}</small>
@@ -672,25 +792,25 @@ export function Lobby({
       </button>
       <div className="card modelist">
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'DICE_MODAL', open: true }); }}>
-          <span className="mrow__ic mrow__ic--gold">🎲</span>
+          <span className="mrow__ic mrow__ic--clay"><IconDice5 /></span>
           <span className="mrow__txt"><b>{t('shopOpenCatalog')}</b><small>{t('shopCardSub')}</small></span>
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'COLLECTION_MODAL', open: true }); }}>
-          <span className="mrow__ic mrow__ic--me">📔</span>
+          <span className="mrow__ic mrow__ic--sand"><IconBookOpen /></span>
           <span className="mrow__txt"><b>{t('collectionTitle')}</b><small>{t('collectionIntro')}</small></span>
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
         {season && !season.premium && cosmeticsCusdAvailable && (
           <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'SEASON_MODAL', open: true }); }}>
-            <span className="mrow__ic mrow__ic--gold">👑</span>
+            <span className="mrow__ic mrow__ic--clay"><IconCrown /></span>
             <span className="mrow__txt"><b>{t('seasonPremiumTitle')}</b><small>{t('seasonPremiumBlurb')}</small></span>
             <span className="mrow__badge">{fmtUsd(SEASON_PREMIUM.cents)}</span>
           </button>
         )}
       </div>
       <div className="card ticketstrip">
-        <span className="ticketstrip__ic" aria-hidden="true"><IconTicket /></span>
+        <span className="ticketstrip__ic" aria-hidden="true"><IconTicket2 /></span>
         <b>{tickets}</b>
         <span className="ticketstrip__label">{t('ticketsLabel')}</span>
         <small>{t('hTicketsBody')}</small>
@@ -706,7 +826,7 @@ export function Lobby({
       {tab === 'friends' && walletBacked && addableOpponents.length > 0 && (
         <div className="card friendscard">
           <div className="friendhead">
-            <b>➕ {t('addFriendsTitle')}</b>
+            <b><IconUserPlus /> {t('addFriendsTitle')}</b>
             <span className="friendhead__count">{addableOpponents.length}</span>
           </div>
           {addableOpponents.map((o, i) => (
@@ -726,7 +846,7 @@ export function Lobby({
                 aria-label={`${t('addFriend')} ${o.name}`}
                 onClick={() => { playTap('select'); void onAcceptFriend(o.pid); }}
               >
-                ➕ {t('addFriend')}
+                <IconUserPlus /> {t('addFriend')}
               </button>
             </div>
           ))}
@@ -762,17 +882,17 @@ export function Lobby({
                 aria-label={`${t('giftTitle')} ${f.name}`}
                 onClick={() => { playTap(); dispatch({ type: 'GIFT_MODAL', friend: f }); }}
               >
-                🎁
+                <IconGift />
               </button>
               <button className="frbtn frbtn--gold" onClick={() => { playTap(); setChallengeTarget({ pid: f.pid, name: f.name }); }}>
-                ⚔️ {t('friendChallenge')}
+                <IconSwords /> {t('friendChallenge')}
               </button>
               <button
                 className={`frbtn frbtn--danger${confirmRemove === f.pid ? ' frbtn--armed' : ''}`}
                 aria-label={`${t('friendRemove')} ${f.name}`}
                 onClick={() => armRemove(f.pid)}
               >
-                {confirmRemove === f.pid ? t('friendRemoveConfirm') : '✕'}
+                {confirmRemove === f.pid ? t('friendRemoveConfirm') : <IconX />}
               </button>
             </div>
           ))}
@@ -787,7 +907,7 @@ export function Lobby({
           button on the crowded landing; the teaser has none). */}
       {tab === 'friends' && friends.length === 0 && friendRequests.length === 0 && sentRequests.length === 0 && addableOpponents.length === 0 && (
         <div className="card friendteaser">
-          <span className="friendteaser__ic">🤝</span>
+          <span className="friendteaser__ic"><IconUsersRound /></span>
           <span className="friendrow__meta">
             <b>{t('emptyFriendsTitle')}</b>
             <small>{t('emptyFriendsBody')}</small>
@@ -802,7 +922,7 @@ export function Lobby({
       {challengeTarget && (
         <div className="modal" onClick={() => setChallengeTarget(null)}>
           <div className="modal__card challengesheet" onClick={(e) => e.stopPropagation()}>
-            <h3>⚔️ {t('friendChallenge')} {challengeTarget.name}</h3>
+            <h3><IconSwords /> {t('friendChallenge')} {challengeTarget.name}</h3>
             <div className="challengesheet__opts">
               {lobbyStakes.map((s) => (
                 <button
@@ -837,7 +957,7 @@ export function Lobby({
           landing stays focused on Play + Season. The weekly league was retired. */}
       {tab === 'play' && !hasHistory && (
         <div className="card firstwin">
-          <span className="chip-ic chip-ic--opp"><IconTrophy /></span>
+          <span className="chip-ic chip-ic--opp"><IconTrophy2 /></span>
           <span>{t('firstWin')}</span>
         </div>
       )}
@@ -848,35 +968,43 @@ export function Lobby({
       {tab === 'profile' && (<>
       <div className="card modelist">
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'PROGRESSION_MODAL', open: true }); }}>
-          <span className="mrow__ic mrow__ic--gold">🔥</span>
+          <span className="mrow__ic mrow__ic--clay"><IconFlame2 /></span>
           <span className="mrow__txt"><b>{t('progressionTitle')}</b><small>{t('progressionEmpty')}</small></span>
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
       </div>
       <div className="seclabel">{t('profileInfoLabel')}</div>
       <div className="card modelist">
+        {/* Sound lives here now: the top bar was cut back to the two numbers
+            that earn a permanent slot (streak, balance), and in a game the
+            toggle sits on the in-game toolbar where it is actually needed. */}
+        <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'TOGGLE_SOUND' }); }}>
+          <span className="mrow__ic mrow__ic--sage">{soundOn ? <IconVolume /> : <IconVolumeOff />}</span>
+          <span className="mrow__txt"><b>{soundOn ? t('soundOn') : t('soundOff')}</b></span>
+          <span className="mrow__chev" aria-hidden="true">›</span>
+        </button>
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'HOWTO_MODAL', open: true }); }}>
-          <span className="mrow__ic mrow__ic--me">🎮</span>
+          <span className="mrow__ic mrow__ic--sage"><IconDice5 /></span>
           <span className="mrow__txt"><b>{t('footRules')}</b></span>
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'HELP_MODAL', open: true }); }}>
-          <span className="mrow__ic mrow__ic--me">❓</span>
+          <span className="mrow__ic mrow__ic--sand"><IconHelp /></span>
           <span className="mrow__txt"><b>{t('footHelp')}</b></span>
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'FAIR_MODAL', open: true }); }}>
-          <span className="mrow__ic mrow__ic--me">🛡️</span>
+          <span className="mrow__ic mrow__ic--sage"><IconShieldCheck /></span>
           <span className="mrow__txt"><b>{t('howItWorks')}</b><small>{t('fairnote')}</small></span>
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
         <button className="mrow" onClick={() => { playTap(); dispatch({ type: 'SETTINGS', open: true }); }}>
-          <span className="mrow__ic mrow__ic--opp">⚖️</span>
+          <span className="mrow__ic mrow__ic--sand"><IconScale /></span>
           <span className="mrow__txt"><b>{t('rgLink')}</b></span>
           <span className="mrow__chev" aria-hidden="true">›</span>
         </button>
         <a className="mrow" href={`mailto:${SUPPORT_EMAIL}`}>
-          <span className="mrow__ic mrow__ic--me">📮</span>
+          <span className="mrow__ic mrow__ic--sand"><IconMail /></span>
           <span className="mrow__txt"><b>{t('footSupport')}</b></span>
           <span className="mrow__chev" aria-hidden="true">›</span>
         </a>
@@ -898,23 +1026,26 @@ export function Lobby({
 
       {/* FOOTER TAB BAR — the requested navigation menu. Fixed, thumb-reach,
           safe-area aware; the Race tab appears only during a live event. */}
+      {/* Four tabs, not five: Race is a live strip inside Play (above), so it
+          never sits in the bar as a ghost between events. Icons are the
+          vendored line set — no emoji anywhere in the chrome. */}
       <nav className="tabbar" aria-label="Lobby">
         <button className={`tabbar__btn${tab === 'play' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'play'} onClick={() => switchTab('play')}>
-          <span className="tabbar__ic" aria-hidden="true">🎲</span>{t('tabPlay')}
+          <span className="tabbar__ic" aria-hidden="true"><IconDice5 /></span>{t('tabPlay')}
         </button>
         {raceLive && (
           <button className={`tabbar__btn${tab === 'race' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'race'} onClick={() => switchTab('race')}>
-            <span className="tabbar__ic" aria-hidden="true">🏁<i className="tabbar__live" /></span>{t('tabRace')}
+            <span className="tabbar__ic" aria-hidden="true"><IconFlag /><i className="tabbar__live" /></span>{t('tabRace')}
           </button>
         )}
         <button className={`tabbar__btn${tab === 'friends' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'friends'} onClick={() => switchTab('friends')}>
-          <span className="tabbar__ic" aria-hidden="true">🤝{friendsBadge > 0 && <i className="tabbar__badge">{friendsBadge}</i>}</span>{t('tabFriends')}
+          <span className="tabbar__ic" aria-hidden="true"><IconUsersRound />{friendsBadge > 0 && <i className="tabbar__badge">{friendsBadge}</i>}</span>{t('tabFriends')}
         </button>
         <button className={`tabbar__btn${tab === 'shop' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'shop'} onClick={() => switchTab('shop')}>
-          <span className="tabbar__ic" aria-hidden="true">🛍️</span>{t('tabShop')}
+          <span className="tabbar__ic" aria-hidden="true"><IconStore /></span>{t('tabShop')}
         </button>
         <button className={`tabbar__btn${tab === 'profile' ? ' tabbar__btn--on' : ''}`} aria-current={tab === 'profile'} onClick={() => switchTab('profile')}>
-          <span className="tabbar__ic" aria-hidden="true">👤</span>{t('tabProfile')}
+          <span className="tabbar__ic" aria-hidden="true"><IconUserRound /></span>{t('tabProfile')}
         </button>
       </nav>
     </div>

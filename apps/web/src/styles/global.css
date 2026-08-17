@@ -52,6 +52,8 @@
   --bg-hi: #fdf6e9; /* lit top of the ground gradient */
   --card: #fffdf8; /* raised paper — every panel, tile and row */
   --card-2: #f0e4cf; /* recessed sand — selected tabs, locked tiles */
+  --sand: #ebddc5; /* the table surface itself (hero, board plate) */
+  --sand-deep: #e2d0b2;
   --line: rgba(32, 30, 29, 0.1);
   --glass: rgba(253, 246, 233, 0.9);
   --txt: #201e1d;
@@ -186,39 +188,41 @@ body::before {
   display: flex;
   justify-content: space-around;
   gap: 2px;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.94);
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: var(--glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(23, 43, 99, 0.12);
-  box-shadow: 0 -6px 18px rgba(23, 43, 99, 0.14);
+  border-top: 1px solid rgba(32, 30, 29, 0.08);
+  box-shadow: none;
 }
 .tabbar__btn {
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 3px;
   border: none;
   background: none;
-  padding: 4px 2px 3px;
-  border-radius: 12px;
-  font-family: var(--font-display);
+  padding: 8px 2px;
+  border-radius: 16px;
+  font-family: var(--font-body);
   font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--label);
   cursor: pointer;
 }
 .tabbar__btn { transition: background 0.18s ease, color 0.18s ease; }
+/* The selected tab is a recessed sand pill, not a glossy gold lozenge. */
 .tabbar__btn--on {
-  color: #6b4d00;
-  background: linear-gradient(180deg, rgba(255, 217, 77, 0.55), rgba(245, 179, 1, 0.38));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 2px 6px rgba(245, 179, 1, 0.35);
+  color: var(--accent-deep);
+  background: var(--card-2);
+  font-weight: 700;
+  box-shadow: none;
 }
 .tabbar__btn:active { transform: translateY(1px); }
-.tabbar__ic { position: relative; font-size: 19px; line-height: 1.1; transition: transform 0.18s ease; }
-.tabbar__btn--on .tabbar__ic { transform: translateY(-1px) scale(1.12); }
+.tabbar__ic { position: relative; display: block; line-height: 0; }
+.tabbar__ic .icon { width: 21px; height: 21px; vertical-align: 0; }
 /* red pulsing LIVE dot on the Race tab */
 .tabbar__live {
   position: absolute;
@@ -227,8 +231,8 @@ body::before {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #e5484d;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-hi);
   animation: rushpulse 1.2s ease-in-out infinite;
 }
 /* numeric badge (pending friend requests) */
@@ -240,14 +244,14 @@ body::before {
   height: 15px;
   padding: 0 4px;
   border-radius: 999px;
-  background: #e5484d;
-  color: #fff;
+  background: var(--accent);
+  color: var(--bg-hi);
   font-style: normal;
   font-size: 9.5px;
   font-weight: 800;
   line-height: 15px;
   text-align: center;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 2px var(--bg-hi);
 }
 
 /* Slim LIVE-event pointer on the Play tab (full Race card lives on its tab). */
@@ -448,9 +452,10 @@ a.mrow { text-decoration: none; color: inherit; }
   font-size: 20px;
 }
 .modetile__ic .icon { width: 19px; height: 19px; }
-.modetile__ic--gold { background: rgba(245, 179, 1, 0.16); color: var(--accent); }
-.modetile__ic--me { background: rgba(46, 158, 107, 0.14); color: var(--me); }
-.modetile__ic--bot { background: rgba(62, 99, 221, 0.13); }
+/* Tinted chips from the ramps — the tint names the family, never the brand. */
+.modetile__ic--clay { background: var(--a-100); color: var(--a-600); }
+.modetile__ic--sage { background: var(--a2-100); color: var(--a2-700); }
+.modetile__ic--sand { background: var(--n-200); color: var(--n-700); }
 .modetile__badge {
   position: absolute;
   top: 10px;
@@ -566,12 +571,12 @@ a.mrow { text-decoration: none; color: inherit; }
   align-items: center;
   justify-content: center;
   flex: 0 0 30px;
-  background: rgba(245, 179, 1, 0.13);
-  color: var(--accent);
+  background: var(--a-100);
+  color: var(--a-600);
 }
 .chip-ic .icon { width: 16px; height: 16px; vertical-align: 0; }
-.chip-ic--me { background: rgba(46, 158, 107, 0.15); color: var(--me); }
-.chip-ic--opp { background: rgba(232, 131, 58, 0.15); color: var(--opp); }
+.chip-ic--me { background: var(--a2-100); color: var(--a2-700); }
+.chip-ic--opp { background: var(--a-100); color: var(--a-600); }
 
 /* candy 3D button: light top, saturated body, thick dark lip */
 .btn {
@@ -606,38 +611,85 @@ a.btn {
 /* casino-chip stake picker */
 .hero { margin-bottom: 14px; }
 /* hero tagline: the one-line promise a first-time user reads before anything */
+/* The promise is now the biggest type on the page — it earned display size the
+   moment it stopped being a feature list ("Fast 1v1 Ludo · 2–3 min · Free or
+   real USDT") and became a sentence. */
 .hero__tagline {
   font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: 0 2px 0 rgba(23, 43, 99, 0.3);
+  font-size: 23px;
+  line-height: 1.12;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--txt);
+  text-shadow: none;
   text-align: center;
   text-wrap: balance;
-  margin: 8px 0 12px;
+  margin: 10px 0 2px;
+}
+.hero__sub {
+  margin: 5px 0 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-align: center;
+  text-wrap: balance;
 }
 
 /* hero game table: four seat-colour pegs flanking the REAL 3D die (tappable).
    The one bold moment of the page — everything below stays calm. */
 .hero--table { margin-bottom: 10px; }
+/* The hero is a TABLE now, not pieces floating on the page ground: a sand
+   surface with a lit centre and a dashed ring, so the die reads as thrown onto
+   something. "TAP TO ROLL" is the only instruction the landing gives. */
 .herotable {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  gap: 14px;
-  padding: 12px 0 4px;
+  gap: 18px;
+  height: 124px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 28px;
+  background: linear-gradient(165deg, var(--sand), var(--sand-deep));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.herotable::after {
+  content: 'TAP TO ROLL';
+  position: absolute;
+  bottom: 7px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: rgba(32, 30, 29, 0.42);
+  pointer-events: none;
 }
 .herotable__glow {
   position: absolute;
   left: 50%;
-  bottom: 0;
-  width: 250px;
-  height: 78px;
-  transform: translateX(-50%);
-  background: radial-gradient(55% 62% at 50% 100%, rgba(255, 255, 255, 0.16), transparent 72%);
+  top: 50%;
+  width: 230px;
+  height: 230px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 70%);
   pointer-events: none;
+}
+/* the dashed ring that makes the surface read as a playing field */
+.herotable__glow::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 168px;
+  height: 168px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px dashed rgba(32, 30, 29, 0.16);
 }
 .herotable__pegs { display: flex; align-items: flex-end; gap: 8px; }
 .heropeg {
@@ -680,27 +732,19 @@ a.btn {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1.4px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: 0 1px 0 rgba(23, 43, 99, 0.3);
-  margin: 4px 2px 8px;
+  color: var(--label);
+  text-shadow: none;
+  margin: 14px 2px 8px;
 }
-/* the four seat colours as a 2x2 quad-dot — the page's Ludo signature */
-.seclabel::before {
-  content: '';
-  flex: 0 0 11px;
-  width: 11px;
-  height: 11px;
-  background:
-    radial-gradient(circle at 27% 27%, #1f8fd4 2.3px, transparent 2.8px),
-    radial-gradient(circle at 73% 27%, #25a544 2.3px, transparent 2.8px),
-    radial-gradient(circle at 27% 73%, #f6c200 2.3px, transparent 2.8px),
-    radial-gradient(circle at 73% 73%, #e62e2a 2.3px, transparent 2.8px);
-}
+/* The 2×2 quad-dot signature is retired: on cream it read as clutter beside a
+   label that is already quiet, and the four seat colours now earn their keep on
+   the board, where they carry meaning. */
+.seclabel .icon { width: 14px; height: 14px; color: var(--label); }
 
 /* game modes: one clean row per mode (icon · title/sub · chevron/badge) */
 .modelist { padding: 4px 6px; }
@@ -758,13 +802,13 @@ a.btn {
 }
 .howstrip span {
   flex: 1; display: flex; align-items: center; gap: 7px;
-  background: rgba(255, 255, 255, 0.09); border-radius: 12px; padding: 8px 9px;
-  font-size: 10.5px; line-height: 1.25; color: rgba(255, 255, 255, 0.9);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background: var(--card); border-radius: 16px; padding: 9px 10px;
+  font-size: 10.5px; line-height: 1.3; color: var(--muted);
+  box-shadow: var(--shadow-sm);
 }
 .howstrip i {
   font-style: normal; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--accent); color: #5d4300; font-weight: 800; font-size: 11px;
+  background: var(--a-100); color: var(--a-700); font-weight: 800; font-size: 11px;
   display: flex; align-items: center; justify-content: center;
 }
 /* candy stake tiles: white 3D chips, selected turns gold and lifts */
@@ -1016,57 +1060,79 @@ small.muted { font-size: 12px; }
   min-width: 0;
   margin-bottom: 14px;
 }
+/* Wordmark set in the display face, sentence case — the shouty all-caps
+   "LUDO ARENA" belonged to the casino direction. */
 .topbar__logo {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 20px;
-  letter-spacing: 0.5px;
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: -0.01em;
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #ffffff;
-  text-shadow: 0 2px 0 rgba(23, 43, 99, 0.35);
+  gap: 9px;
+  color: var(--txt);
+  text-shadow: none;
 }
-.topbar__logo span { color: var(--accent-2); }
 .logomark {
-  width: 27px;
-  height: 27px;
-  border-radius: 8px;
-  background: linear-gradient(150deg, #ffd94d, #e09b00);
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--bg-hi);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(245, 179, 1, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow: 0 3px 10px rgba(140, 73, 26, 0.3);
 }
-.logomark svg { width: 17px; height: 17px; display: block; }
-.topbar__balance {
-  background: #ffffff;
-  color: var(--txt);
-  border-radius: 20px;
-  padding: 6px 12px;
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  display: flex;
+.logomark .icon { width: 19px; height: 19px; vertical-align: 0; }
+/* Streak: a light chip, because it is a fact and not an alarm. */
+.streakchip {
+  position: relative;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 6px 11px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
 }
-.topbar__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--me); }
+.streakchip .icon { width: 14px; height: 14px; color: var(--accent); vertical-align: -0.15em; }
+.streakchip b { font-size: 13px; font-weight: 700; color: var(--txt); }
+/* Balance: the ONE dark object in the bar. Money should be the only thing on
+   this row that reads as heavy. */
+.topbar__balance {
+  background: var(--ink);
+  color: var(--on-ink);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-shadow: none;
+}
+.topbar__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--a2-500); }
 /* Compact top bar on phone-width viewports (MiniPay's target device is 360px):
    icon-only brand — the wordmark alone costs ~140px, and with streak + shop +
    sound + wallet the row can NEVER fit 360 with it. The golden logomark stays;
    the name still lives in MiniPay's own title bar and the hero right below. */
 @media (max-width: 430px) {
-  .topbar__word { display: none; }
+  /* The wordmark used to be dropped here to make room for five controls; the
+     bar now carries three, so the brand fits at 360px. */
   .topbar__right { gap: 6px; }
   .topbar__balance { font-size: 12px; padding: 5px 10px; }
 }
 /* Low-balance top-up chip inside the balance pill. */
+/* Never an error message: a balance too low for the picked table turns itself
+   into the MiniPay top-up route, inside the pill it belongs to. */
 .topbar__add {
-  margin-left: 3px; padding: 2px 8px; border-radius: 999px;
-  background: var(--accent); color: #3a2b00; font-size: 11px; font-weight: 800;
+  margin-left: 3px; padding: 4px 10px; border-radius: 999px;
+  background: var(--accent); color: var(--bg-hi); font-size: 11.5px; font-weight: 700;
   text-decoration: none; cursor: pointer;
 }
 /* No wallet yet: the balance slot becomes an honest connect CTA (no demo number). */
@@ -1074,12 +1140,17 @@ small.muted { font-size: 12px; }
    pair a different one. Muted until hover so it never competes with the balance. */
 .topbar__disconnect {
   margin-left: 2px; padding: 0; border: none; background: none; cursor: pointer;
-  display: inline-flex; align-items: center; color: var(--muted); line-height: 0;
+  display: inline-flex; align-items: center; color: rgba(249, 244, 237, 0.5); line-height: 0;
 }
 .topbar__disconnect .icon { width: 15px; height: 15px; }
-.topbar__disconnect:hover { color: #c0392b; }
+.topbar__disconnect:hover { color: var(--danger); }
 .topbar__disconnect:active { transform: scale(0.9); }
-.topbar__connect { border: none; cursor: pointer; background: var(--accent); color: #3a2b00; }
+/* Guest: an outlined pill, not a filled one — there is no balance to show yet,
+   and a demo number would read as fake money. */
+.topbar__connect {
+  cursor: pointer; background: transparent; color: var(--txt);
+  border: 1px solid rgba(32, 30, 29, 0.16); font-weight: 700;
+}
 .topbar__connect:active { transform: scale(0.96); }
 
 /* Staked tier locked until a real wallet backs the balance (no demo money). */
@@ -3310,3 +3381,276 @@ small.muted { font-size: 12px; }
   animation: crownpop 0.5s ease;
 }
 @keyframes crownpop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ORGANIC PASS — lobby. Money as two floors: Free is the default, Stakes is a
+   mode you choose, and choosing it changes the ground under your feet.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Segmented control. The unselected half must not look disabled — both are
+   real destinations, one just happens to be where you already are. */
+.moneytabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 0 9px;
+  border-radius: 999px;
+  background: #e6d8bf;
+}
+.moneytab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 9px 0;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.moneytab .icon { width: 15px; height: 15px; vertical-align: -0.2em; }
+.moneytab--on {
+  background: var(--card);
+  color: var(--txt);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+.moneytab:active { transform: translateY(1px); }
+
+/* The one CTA. A card, not a glossy 3D lozenge: the accent block alone carries
+   enough weight on cream, and the sub-line does the reassuring. */
+.playnow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: none;
+  padding: 14px 18px;
+  border-radius: 26px;
+  background: var(--accent);
+  box-shadow: var(--shadow-accent);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, background 0.18s ease;
+}
+.playnow:active { transform: translateY(2px); }
+.playnow__txt b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 21px;
+  line-height: 1;
+  font-weight: 400;
+  color: var(--bg-hi);
+}
+.playnow__txt small {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(253, 246, 233, 0.8);
+}
+.playnow__go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(253, 246, 233, 0.16);
+  color: var(--bg-hi);
+}
+.playnow__go .icon { width: 20px; height: 20px; vertical-align: 0; }
+
+/* ---- Stakes: the second floor ---- */
+.stakemode {
+  margin-top: 2px;
+  padding: 18px 16px 16px;
+  border-radius: 28px;
+  background: var(--ink);
+  color: var(--on-ink);
+  background-image: radial-gradient(110% 55% at 50% 0%, var(--ink-2) 0%, var(--ink) 60%);
+}
+.stakemode__head {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 25px;
+  line-height: 1.15;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--on-ink);
+}
+.stakemode__sub {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(249, 244, 237, 0.55);
+}
+.stakemode__tables {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 16px;
+}
+.stakerow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(249, 244, 237, 0.1);
+  background: rgba(249, 244, 237, 0.06);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.stakerow:active { transform: translateY(1px); }
+/* The most-played table is the recommendation, so it gets the accent — one
+   suggested choice, not three equal ones a first-timer has to price out. */
+.stakerow--featured {
+  background: rgba(198, 113, 57, 0.14);
+  border-color: rgba(246, 160, 107, 0.35);
+}
+.stakerow--locked { opacity: 0.75; }
+.stakerow__amt {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 400;
+  background: rgba(198, 113, 57, 0.18);
+  color: var(--accent-2);
+}
+.stakerow--featured .stakerow__amt { background: var(--accent); color: var(--bg-hi); }
+.stakerow__txt { flex: 1; min-width: 0; }
+.stakerow__txt b {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--on-ink);
+}
+.stakerow__txt small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: rgba(249, 244, 237, 0.5);
+}
+.stakerow__win { color: var(--a2-400); font-weight: 700; }
+.stakerow__flag {
+  flex: none;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  vertical-align: 2px;
+  background: var(--accent-2);
+  color: var(--a-900);
+}
+.stakerow__chev { flex: none; width: 18px; height: 18px; color: rgba(249, 244, 237, 0.4); }
+.stakerow--featured .stakerow__chev { color: rgba(249, 244, 237, 0.55); }
+
+/* Escrow + the self-set cap stay on screen with the tables. A staking player
+   should never have to remember where the guarantees live. */
+.stakenote {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 18px;
+  padding: 13px 15px;
+  border-radius: 20px;
+  background: rgba(143, 160, 115, 0.12);
+  border: 1px solid rgba(143, 160, 115, 0.25);
+}
+.stakenote__ic { flex: none; width: 19px; height: 19px; color: var(--a2-400); }
+.stakenote__txt { flex: 1; min-width: 0; }
+.stakenote__txt b { display: block; font-size: 12.5px; font-weight: 700; color: var(--on-ink); }
+.stakenote__txt small { display: block; font-size: 11px; color: rgba(249, 244, 237, 0.5); }
+.stakelimit {
+  margin-top: 10px;
+  padding: 13px 15px;
+  border-radius: 20px;
+  background: rgba(249, 244, 237, 0.06);
+}
+.stakelimit__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(249, 244, 237, 0.75);
+}
+.stakelimit__row span:last-child { color: rgba(249, 244, 237, 0.55); }
+.stakelimit__bar {
+  margin-top: 8px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(249, 244, 237, 0.14);
+  overflow: hidden;
+}
+.stakelimit__bar i { display: block; height: 100%; border-radius: 999px; background: var(--a2-500); }
+.stakelimit__foot { margin-top: 9px; font-size: 11px; color: rgba(249, 244, 237, 0.42); }
+
+/* ---- Season strip on the landing ---- */
+.seasonstrip {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  margin-top: 11px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 22px;
+  background: var(--ink);
+  color: var(--on-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.seasonstrip:active { transform: translateY(1px); }
+.seasonstrip__ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(245, 234, 216, 0.12);
+  color: var(--accent-2);
+}
+.seasonstrip__ic .icon { width: 18px; height: 18px; vertical-align: 0; }
+.seasonstrip__txt { flex: 1; min-width: 0; }
+.seasonstrip__row { display: flex; justify-content: space-between; align-items: baseline; }
+.seasonstrip__row b { font-family: var(--font-display); font-size: 14px; font-weight: 400; }
+.seasonstrip__row em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: rgba(249, 244, 237, 0.6);
+}
+.seasonstrip__bar {
+  display: block;
+  margin-top: 7px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(249, 244, 237, 0.16);
+  overflow: hidden;
+}
+.seasonstrip__bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent-2); }
+.seasonstrip__chev { flex: none; width: 17px; height: 17px; color: rgba(249, 244, 237, 0.5); }

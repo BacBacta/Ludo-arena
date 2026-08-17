@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useFocusTrap } from './useFocusTrap';
 import { fmtCents, fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { verifyFairness, type FairnessReport } from '../lib/fairnessVerify';
-import { IconSoundOff, IconSoundOn } from './icons';
+import { IconDice5, IconFlame2 } from './icons';
 import { DieFace } from './Die';
 import { DICE_SKINS, loadStats, skinSound } from '../lib/diceSkins';
 import { FRAMES, frameById, frameClass } from '../lib/avatarFrames';
@@ -44,7 +44,7 @@ function CloseHint({ onClose, top = 10 }: { onClose(): void; top?: number }) {
 }
 
 export function TopBar({ onConnect, onDisconnect }: { onConnect?: () => Promise<boolean>; onDisconnect?: () => Promise<void> }) {
-  const { balanceCents, walletBacked, soundOn, streak, challenge, tickets, profile } = useAppState();
+  const { balanceCents, walletBacked, streak, challenge, tickets, profile } = useAppState();
   const dispatch = useAppDispatch();
   // Draw the eye to Progression when there's something to do there: an unfinished
   // daily challenge, or a live streak worth protecting. Only for a RETURNING
@@ -55,57 +55,22 @@ export function TopBar({ onConnect, onDisconnect }: { onConnect?: () => Promise<
   return (
     <div className="topbar">
       <div className="topbar__logo">
-        <i className="logomark" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <rect x={3} y={3} width={18} height={18} rx={5.5} fill="#0c130f" />
-            <circle cx={8.4} cy={8.4} r={1.8} fill="#f5b301" />
-            <circle cx={12} cy={12} r={1.8} fill="#f5b301" />
-            <circle cx={15.6} cy={15.6} r={1.8} fill="#f5b301" />
-          </svg>
-        </i>
-        <span className="topbar__word">LUDO <span>ARENA</span></span>
+        <i className="logomark" aria-hidden="true"><IconDice5 /></i>
+        <span className="topbar__word">Ludo Arena</span>
       </div>
       <div className="topbar__right">
-        {/* Progression: the daily loop + rivals moved off the landing so the home
-            screen stays focused on Play + Season. Accent-styled + a nudge so it
-            never reads as a mere toggle users can miss. */}
+        {/* Streak is the progression entry point: it is the one number that
+            changes daily, and tapping it opens the sheet the chart button used
+            to. A zero streak still shows — "0" is the nudge. */}
         <button
-          className="progbtn"
+          className="streakchip"
           title={t('progressionTitle')}
           aria-label={t('progressionTitle')}
           onClick={() => dispatch({ type: 'PROGRESSION_MODAL', open: true })}
         >
-          {streak.days > 0 ? (
-            <span className="progbtn__streak">🔥 {streak.days}</span>
-          ) : (
-            <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 20V10M10 20V4M16 20v-7M20 20H3" />
-            </svg>
-          )}
+          <IconFlame2 />
+          <b>{streak.days}</b>
           {progNudge && <span className="progbtn__dot" aria-hidden="true" />}
-        </button>
-        {/* Cosmetics shop entry — accent-tinted + a sparkle so it reads as a SHOP,
-            not a settings toggle (it used to reuse .soundtoggle and vanish). */}
-        <button
-          className="shopbtn"
-          title={t('diceTitle')}
-          aria-label={t('diceTitle')}
-          onClick={() => dispatch({ type: 'DICE_MODAL', open: true })}
-        >
-          <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round">
-            <rect x={3} y={3} width={18} height={18} rx={5} />
-            <circle cx={8.5} cy={8.5} r={1.3} fill="currentColor" stroke="none" />
-            <circle cx={15.5} cy={15.5} r={1.3} fill="currentColor" stroke="none" />
-            <circle cx={12} cy={12} r={1.3} fill="currentColor" stroke="none" />
-          </svg>
-          <span className="shopbtn__spark" aria-hidden="true">✦</span>
-        </button>
-        <button
-          className="soundtoggle"
-          title={soundOn ? t('soundOn') : t('soundOff')}
-          onClick={() => dispatch({ type: 'TOGGLE_SOUND' })}
-        >
-          {soundOn ? <IconSoundOn /> : <IconSoundOff className="icon--muted" />}
         </button>
         {walletBacked ? (
           <div className="topbar__balance">

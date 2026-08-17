@@ -26,10 +26,15 @@ import { t } from '../lib/i18n';
 
 /** True vivid Ludo-Club palette [highlight, TRUE base, deep shade] — matches the
  *  4-player board (Board4) so the staked board reads with the same premium look. */
-const RED = ['#FF7B6E', '#E62E2A', '#AC1C1A'] as const;
-const GREEN = ['#5FCE79', '#25A544', '#16792E'] as const;
-const YELLOW = ['#FFDD4A', '#F6C200', '#C08A00'] as const;
-const BLUE = ['#63C4EC', '#1F8FD4', '#105F97'] as const;
+/* Seat colours, Organic pass — [lit rim, true colour, shadow]. The middle stop
+   is the token value quoted in global.css (--seat-*); the outer two are that
+   colour lifted and dropped by a fixed step, the same way the design generates
+   its ceramic pieces. Pulled apart in hue AND value so four pawns stay legible
+   at 12px on cream. A board cosmetic never re-skins these (golden rule). */
+const RED = ['#E2512F', '#C8371B', '#9A2712'] as const;
+const GREEN = ['#5A9B46', '#3F7D2F', '#2A5420'] as const;
+const YELLOW = ['#FFD04A', '#F2B307', '#B8860A'] as const;
+const BLUE = ['#3F83CF', '#1F5FA8', '#133F73'] as const;
 
 const SEAT_COLOR: ReadonlyArray<readonly [string, string, string]> = [BLUE, GREEN];
 
@@ -244,9 +249,9 @@ function PegShape({ c, idKey, pattern = 'none' }: { c: readonly [string, string,
         </radialGradient>
         {/* soft radial cast shadow (Board4's pawnCast, per-instance id) */}
         <radialGradient id={`${idKey}-cast`} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#0f1f4d" stopOpacity="0.42" />
-          <stop offset="58%" stopColor="#0f1f4d" stopOpacity="0.2" />
-          <stop offset="100%" stopColor="#0f1f4d" stopOpacity="0" />
+          <stop offset="0%" stopColor="#201e1d" stopOpacity="0.34" />
+          <stop offset="58%" stopColor="#201e1d" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="#201e1d" stopOpacity="0" />
         </radialGradient>
       </defs>
       {/* soft contact shadow, directly under the foot */}
@@ -262,8 +267,8 @@ function PegShape({ c, idKey, pattern = 'none' }: { c: readonly [string, string,
       <circle cx={0} cy={-0.28} r={0.17} fill={`url(#${hid})`} stroke={dark} strokeWidth={0.026} />
       <path d="M -0.13 -0.24 Q 0 -0.14 0.13 -0.24" fill={`url(#${hid})`} stroke="none" />
       {/* glossy highlights: hot-spot on the ball + streak down the cone + rim reflection */}
-      <ellipse cx={-0.065} cy={-0.34} rx={0.065} ry={0.05} fill="#ffffff" opacity={0.95} />
-      <path d="M -0.12 0.26 C -0.16 0.08 -0.09 -0.06 -0.06 -0.16" fill="none" stroke="#ffffff" strokeWidth={0.045} strokeLinecap="round" opacity={0.45} />
+      <ellipse cx={-0.065} cy={-0.34} rx={0.062} ry={0.048} fill="#fffdf8" opacity={0.85} />
+      <path d="M -0.12 0.26 C -0.16 0.08 -0.09 -0.06 -0.06 -0.16" fill="none" stroke="#fffdf8" strokeWidth={0.045} strokeLinecap="round" opacity={0.34} />
       <path d="M 0.145 -0.33 A 0.17 0.17 0 0 1 0.06 -0.13" fill="none" stroke={rim} strokeWidth={0.03} strokeLinecap="round" opacity={0.85} />
     </>
   );
@@ -564,7 +569,7 @@ export function Board({ game, mySeat, onTokenTap, locked, banners, tokenPatterns
                 }
               >
                 {isMovable && (
-                  <circle cx={0} cy={0} r={0.58} fill="none" stroke="#F5B301" strokeWidth={0.09}>
+                  <circle cx={0} cy={0} r={0.58} fill="none" stroke="#C67139" strokeWidth={0.09}>
                     <animate attributeName="r" values=".52;.64;.52" dur="1s" repeatCount="indefinite" />
                   </circle>
                 )}
