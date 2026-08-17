@@ -43,7 +43,8 @@ export function DieFace({ value, skin }: { value: number; skin: DiceSkin }) {
         )}
       </defs>
       {skin.glow && <rect x={2} y={2} width={96} height={96} rx={26} fill={skin.glow} opacity={0.6} />}
-      <rect x={5} y={7} width={90} height={90} rx={22} fill="rgba(0,0,0,.3)" />
+      {/* cast shadow, warmed to the table's ink — flat black read as a hole on cream */}
+      <rect x={5} y={8} width={90} height={90} rx={22} fill="rgba(46,43,37,.22)" />
       <rect x={5} y={5} width={90} height={90} rx={22} fill={`url(#${gid})`} stroke={skin.stroke} strokeWidth={2} />
       {metal && <rect x={5} y={5} width={90} height={90} rx={22} fill={`url(#${gid}-sheen)`} />}
       {gem && (
@@ -56,7 +57,7 @@ export function DieFace({ value, skin }: { value: number; skin: DiceSkin }) {
       {skin.material ? (
         <rect x={8} y={8} width={84} height={84} rx={18} fill="none" stroke="rgba(255,255,255,.4)" strokeWidth={1.3} />
       ) : (
-        <rect x={9} y={8} width={82} height={38} rx={19} fill="#ffffff" opacity={0.22} />
+        <rect x={9} y={8} width={82} height={38} rx={19} fill="#fffdf8" opacity={0.5} />
       )}
       {(PIPS[value] ?? []).map(([x, y], i) => (
         <circle key={i} cx={x} cy={y} r={8.5} fill={skin.pip} filter={glowPip ? `url(#${gid}-glow)` : undefined} />

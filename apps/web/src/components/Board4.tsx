@@ -470,4 +470,7 @@ export function Board4({ game, mySeat, onTokenTap, banners, themeId, tokenPatter
 
 /** Re-exported so screens can map seat → colour without duplicating the palette. */
 export const SEAT_HEX = SEAT_COLORS.map((c) => c[1]);
+/** Ink that stays legible ON each seat colour — board yellow needs dark text
+ *  where the other three take paper (design 1d's seat chips). */
+export const SEAT_ON_HEX: readonly string[] = ['#f9f4ed', '#fdf6e9', '#402310', '#f9f4ed'];
 export { SEAT_QUAD };

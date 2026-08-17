@@ -1214,7 +1214,6 @@ small.muted { font-size: 12px; }
 .pe__avbtn--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245, 179, 1, 0.35); }
 .pe__avbtn:active { transform: scale(0.9); }
 /* avatar image filling each render target (all circular) */
-.seatav__img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .avcard__img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .profilecard__img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; display: block; }
 .profilesheet__img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: block; }
@@ -1965,19 +1964,56 @@ small.muted { font-size: 12px; }
   flex: 1;
   display: flex;
   flex-direction: column;
+  /* The design pins its tray to the bottom of an 844px frame it very nearly
+     fills; our column is shorter (no OS status bar, tighter header), so pinning
+     opened a dead band under the turn row. Centre the whole stack instead — the
+     tray still lands low enough for a thumb. */
   justify-content: center;
   gap: 6px;
   position: relative; /* positioning context for the gift-flight overlay */
 }
-/* nest each seat's avatar cluster into its board corner (Ludo-Club) */
-.gamecorner--top { position: relative; z-index: 4; margin-bottom: -14px; }
-.gamecorner--bottom { position: relative; z-index: 4; margin-top: -14px; }
-/* corner rows above/below the board (Ludo-Club: players live at their corners) */
-.gamecorner { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+/* Design 1c: the players sit in rows ABOVE and BELOW the board, not nested into
+   its corners — the board is a discrete object on the table now, and overlapping
+   it with avatars fought its own drop shadow. */
+.gamecorner--top { position: relative; z-index: 4; }
+.gamecorner--bottom { position: relative; z-index: 4; margin-top: 14px; }
+.gamecorner { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 /* reserve the tallest state's height so the board never shifts between turns */
-.gamecorner--top { min-height: 66px; }
-.gamecorner--bottom { min-height: 96px; }
-.cornerstack { display: flex; align-items: center; gap: 10px; }
+.gamecorner--top { min-height: 62px; }
+.gamecorner--bottom { min-height: 72px; }
+.cornerstack { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cornerstack--die { flex: none; }
+
+/* name + rating beside an avatar */
+.pident { min-width: 0; }
+.pident b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 1.1;
+  color: var(--txt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pident small {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--label);
+  white-space: nowrap;
+}
+/* the stake, and how far into the game we are */
+.potstack { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.rollno {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--label);
+  white-space: nowrap;
+}
 
 /* framed avatar with conic countdown ring while active */
 .avcard {
@@ -1988,34 +2024,34 @@ small.muted { font-size: 12px; }
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 .avcard--turn { transform: scale(1.06); opacity: 1; }
+/* Paper disc carrying a Caprasimo initial in the player's OWN colour (design
+   1c): the conic ring around it is the clock, so the face itself stays quiet.
+   `--seat-ink` is set per card by the screen. */
 .avcard__face {
-  width: 56px;
-  height: 56px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
-  font-size: 26px;
-  font-weight: 600;
-  color: #ffffff;
-  text-shadow: 0 2px 0 rgba(16, 24, 48, 0.3);
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 6px 14px rgba(15, 26, 68, 0.35);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--seat-ink, var(--accent-deep));
+  background: var(--card);
 }
-/* country flag on a light inner disc — the seat colour reads as a premium frame */
+/* country flag fills the paper disc — identity content, not decoration */
 .avcard__flag {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #ffffff, #e7ecf7);
+  background: var(--card);
   font-size: 23px;
   line-height: 1;
-  text-shadow: none;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.85), inset 0 -2px 4px rgba(15, 26, 68, 0.18);
 }
 
 /* tap-on-avatar: an invisible button wrapper (keeps the avatar's own layout) */
@@ -2070,9 +2106,6 @@ small.muted { font-size: 12px; }
 .avcard, .profilecard__flag, .profilesheet__flag, .pe__flag { position: relative; }
 /* 4-player seat: the tile clips its content, so the frame lives on a wrapper
    OUTSIDE it; a premium frame also rounds the tile so the ring fits snugly */
-.seatav-framed { position: relative; display: inline-flex; }
-.seatav--circ { border-radius: 50%; }
-.seatav--circ .seatav__flag { align-self: center; }
 
 /* frame picker (in the cosmetics modal) */
 .framegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -2092,16 +2125,18 @@ small.muted { font-size: 12px; }
 .frametile .skin__lock { position: absolute; top: 6px; right: 8px; font-size: 12px; }
 
 /* bottom action bar: sound · verify · balance · dice skins · menu */
+/* A raised paper tray of quiet controls (design 1c/1d) — the only tinted one is
+   the resign flag, because it is the only one that ends something. */
 .gamebar {
   margin-top: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  background: rgba(23, 37, 84, 0.55);
-  border-radius: 16px;
-  padding: 6px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 14px rgba(15, 26, 68, 0.3);
+  gap: 6px;
+  background: var(--card);
+  border-radius: 22px;
+  padding: 9px 12px;
+  box-shadow: 0 1px 3px rgba(46, 43, 37, 0.14);
 }
 /* The bar packs 8 controls; on a narrow (MiniPay) width they must SHRINK to fit —
    otherwise the last ones (menu, and critically the leave ✕) overflow and, under
@@ -2109,43 +2144,47 @@ small.muted { font-size: 12px; }
    shrink toward a still-tappable floor instead of pushing the exit off-screen. */
 .gamebar__btn {
   flex: 0 1 auto;
-  width: 44px;
-  min-width: 30px;
-  height: 44px;
+  width: 38px;
+  min-width: 28px;
+  height: 38px;
   border: none;
-  border-radius: 12px;
+  border-radius: 13px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: transparent;
+  color: var(--n-700);
   cursor: pointer;
 }
-.gamebar__btn .icon { width: 22px; height: 22px; }
+.gamebar__btn .icon { width: 19px; height: 19px; }
 .gamebar__btn:active { transform: scale(0.94); }
-.gamebar__die { width: 30px; height: 30px; display: block; }
+.gamebar__gap { flex: 1; }
+.gamebar__die { width: 24px; height: 24px; display: block; }
 .gamebar__die .die { width: 100%; height: 100%; }
+/* The centre slot of the tray: a quiet caption, not a lit money widget. In 1d it
+   reads "Free table"; here it carries the balance. */
 .gamebar__coins {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 16px;
-  color: #ffffff;
-  background: rgba(16, 24, 48, 0.4);
-  border-radius: 12px;
-  height: 44px;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  height: 38px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .gamebar__coin {
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe27a, #f5b301 60%, #c98f00);
-  box-shadow: inset 0 -2px 3px rgba(140, 95, 0, 0.55);
+  background: var(--accent);
+  flex: none;
 }
 
 /* turn-timer ring around the active player's chip */
@@ -2182,20 +2221,29 @@ small.muted { font-size: 12px; }
   justify-content: center;
   font-size: 13px;
 }
+/* Money gets the dark surface, never gold-on-blue (GAME_DESIGN §UI tone). */
 .pot {
-  background: #ffffff;
-  border-radius: var(--radius-s);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--ink);
+  border-radius: 999px;
   padding: 6px 12px;
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  color: #cf9200;
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.3);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--on-ink);
+  white-space: nowrap;
 }
+.pot .icon { width: 13px; height: 13px; color: var(--accent-2); flex: none; }
+/* Inset, not full-bleed: the board now carries its own radius and drop shadow
+   from the equipped theme, and bleeding it past the screen edge sheared both off.
+   Capped at the design's 340px so it stays a board ON a table, not wall-to-wall. */
 .boardwrap {
   position: relative;
-  width: calc(100% + 32px);
-  margin: 0 -16px;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
   aspect-ratio: 1;
   background: transparent;
   padding: 0;
@@ -2232,22 +2280,25 @@ small.muted { font-size: 12px; }
 /* Discreet roll control: the bold blue button read as heavy next to the premium
    die, so it's now a faint translucent tile — still a clear tap target (soft
    inset ring + the die's own nudge pulse invite the tap), just far less loud. */
+/* The die IS the surface (design 1c): the button is a bare 66px tap target and
+   the die face draws its own paper tile, so there is no glass box around it. */
 .dicebtn {
-  flex: 0 0 90px;
-  height: 90px;
-  border-radius: 22px;
+  flex: 0 0 66px;
+  height: 66px;
+  border-radius: 20px;
   border: none;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   cursor: pointer;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.14);
-  transition: transform 0.1s ease, background 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.1s ease;
 }
-.dicebtn:active:not(:disabled) { transform: translateY(2px); background: rgba(255, 255, 255, 0.09); }
+.dicebtn .die { width: 66px; height: 66px; }
+.dicebtn:active:not(:disabled) { transform: translateY(2px); }
 /* disabled only occurs mid-turn (picking a token): inert, no tap ring */
-.dicebtn:disabled { cursor: default; box-shadow: none; background: transparent; }
+.dicebtn:disabled { cursor: default; background: transparent; }
 /* Hidden-but-MOUNTED between turns (same trick as .huddie--idle): the die element
    must exist before its roll arrives or the Die3D tumble transition can't play,
    which made the first roll after each turn just pop to the result. */
@@ -2283,19 +2334,19 @@ small.muted { font-size: 12px; }
   left: -9999px;
 }
 
+/* The opponent's die, kept from the candy build so their roll (and their premium
+   skin) stays visible — the design's 1c has no slot for it, so it rides the top
+   row as a plain small die rather than a ringed green badge. */
 .huddie {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-  padding: 4px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #eef4ec, #d3e4d5);
-  box-shadow: 0 3px 9px rgba(15, 26, 68, 0.35), 0 0 0 2px rgba(46, 167, 88, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: transparent;
 }
-.huddie .die { width: 100%; height: 100%; }
+.huddie .die { width: 40px; height: 40px; }
 
 .die { width: 52px; height: 52px; display: block; }
 /* idle nudge invites the tap; the tumble plays while faces cycle */
@@ -2316,14 +2367,31 @@ small.muted { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .dicebtn .die, .dicebtn--rolling .die, .huddie--rolling .die, .ring--low { animation: none !important; }
 }
-.gamemsg { flex: 1; font-size: 15px; line-height: 1.35; color: #ffffff; text-shadow: 0 1px 0 rgba(23, 43, 99, 0.3); }
-/* ≤5s on MY clock: the message becomes an amber pulsing countdown that names
-   the auto-play consequence (the rule that surprised every MiniPay tester). */
-.gamemsg--rush span { color: #ffe27a; font-weight: 800; animation: rushpulse 0.8s ease-in-out infinite; display: inline-block; }
+/* Turn state, design 1c: the headline in Caprasimo, the instruction beneath it
+   in muted Figtree. It used to be white text on the blue stage. */
+.gamemsg { flex: 1; min-width: 0; }
+.gamemsg > span {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 1.15;
+  color: var(--txt);
+}
+/* ≤5s on MY clock: the message counts down and names the auto-play consequence
+   (the rule that surprised every MiniPay tester). */
+.gamemsg--rush > span { color: var(--danger); animation: rushpulse 0.8s ease-in-out infinite; }
 @keyframes rushpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-@media (prefers-reduced-motion: reduce) { .gamemsg--rush span { animation: none; } }
-.gamemsg small { display: block; color: rgba(255, 255, 255, 0.75); font-size: 11px; margin-top: 3px; }
-.gamemsg small a { color: #ffe27a; cursor: pointer; text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) { .gamemsg--rush > span { animation: none; } }
+.gamemsg small {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.gamemsg small a { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
 /* End */
 .screen--end { position: relative; overflow: hidden; }
@@ -2543,17 +2611,21 @@ small.muted { font-size: 12px; }
 
 /* ---- in-game emotes ---- */
 .emotebar { position: relative; display: inline-flex; }
+/* Sits IN the paper tray, so it is one of its quiet icons — design 1c draws this
+   exact button as a `smile` glyph. The palette it opens stays emoji: those are
+   content the players send, not chrome. */
 .emotebar__toggle {
-  width: 40px; height: 40px; min-width: 30px; flex-shrink: 1; border-radius: 50%; border: none; cursor: pointer;
-  font-size: 20px; line-height: 1; background: var(--surface); color: var(--txt);
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; min-width: 28px; flex-shrink: 1; border-radius: 13px; border: none; cursor: pointer;
+  line-height: 1; background: transparent; color: var(--n-700);
+  display: flex; align-items: center; justify-content: center;
 }
+.emotebar__toggle .icon { width: 19px; height: 19px; }
 .emotebar__toggle:active { transform: scale(0.92); }
 /* popover sheet: emoji row + quick-chat pill row */
 .emotebar__sheet {
   position: absolute; z-index: 20; width: 224px; max-width: calc(100vw - 20px); box-sizing: border-box;
   display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--surface);
-  border-radius: 18px; box-shadow: 0 12px 30px rgba(23, 43, 99, 0.5);
+  border-radius: 18px; box-shadow: var(--shadow-lg);
   animation: emoteRow 0.14s ease-out;
 }
 /* Anchor to the button's RIGHT edge so the sheet opens toward the board centre and
@@ -2621,15 +2693,16 @@ small.muted { font-size: 12px; }
 /* ---- in-game gifts (directed treats: coffee, rose, cake…) ---- */
 .giftbar { position: relative; display: inline-flex; }
 .giftbar__toggle {
-  width: 40px; height: 40px; min-width: 30px; flex-shrink: 1; border-radius: 50%; border: none; cursor: pointer;
-  font-size: 20px; line-height: 1; color: var(--txt); background: rgba(245, 179, 1, 0.16);
-  box-shadow: 0 4px 12px rgba(23, 43, 99, 0.28); display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; min-width: 28px; flex-shrink: 1; border-radius: 13px; border: none; cursor: pointer;
+  line-height: 1; color: var(--n-700); background: transparent;
+  display: flex; align-items: center; justify-content: center;
 }
+.giftbar__toggle .icon { width: 19px; height: 19px; }
 .giftbar__toggle:active { transform: scale(0.92); }
 .giftbar__sheet {
   position: absolute; z-index: 20; width: 236px; box-sizing: border-box;
   display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--surface);
-  border-radius: 18px; box-shadow: 0 12px 30px rgba(23, 43, 99, 0.5); animation: emoteRow 0.14s ease-out;
+  border-radius: 18px; box-shadow: var(--shadow-lg); animation: emoteRow 0.14s ease-out;
 }
 /* anchored to the button's right edge so the sheet never overhangs the board */
 .emotebar--up .giftbar__sheet { bottom: 100%; margin-bottom: 8px; right: 0; transform-origin: bottom right; }
@@ -3082,52 +3155,15 @@ small.muted { font-size: 12px; }
 
 
 /* ---- 4-player Ludo-Club chrome (flat, no heavy bar) ---- */
+/* The table, lit from the top (design 1c/1d) — not a dotted casino stage. The
+   board brings its own paper, so the ground under it only has to be warm. */
 .screen--game::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(rgba(8, 16, 44, 0.35) 2.2px, transparent 2.6px),
-    radial-gradient(120% 90% at 50% 40%, #2c4890 0%, #1c3170 48%, #0e1a3e 100%);
-  background-size: 22px 22px, 100% 100%;
-}
-.gametop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.chromebtn {
-  width: 46px;
-  height: 46px;
-  border: none;
-  border-radius: 13px;
-  background: linear-gradient(180deg, #5b8bff, #2f6bf0);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 4px 10px rgba(15, 26, 68, 0.4);
-  color: #ffffff;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.chromebtn .icon { width: 22px; height: 22px; }
-.coinchip {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(12, 20, 46, 0.45);
-  border-radius: 20px;
-  padding: 7px 15px 7px 10px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 15px;
-  color: #ffffff;
-}
-.coinchip__c {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe27a, #f5b301 60%, #c98f00);
-  box-shadow: inset 0 -2px 3px rgba(140, 95, 0, 0.55);
+  background: radial-gradient(120% 55% at 50% 0%, var(--bg-hi), var(--bg-2));
 }
 
 /* plain white player labels painted on each quadrant */
@@ -3178,24 +3214,53 @@ small.muted { font-size: 12px; }
 /* corner avatar rows hugging the board (Ludo-Club 4-player structure) */
 /* reserve the die's full height (64px) on EVERY row so the board never shifts
    when the active die appears/moves between the top and bottom rows */
-.avrow { display: flex; justify-content: space-between; align-items: center; min-height: 68px; padding: 2px 4px; }
-.avrow__side { display: flex; align-items: center; gap: 8px; }
-.seatav {
-  width: 54px;
-  height: 54px;
-  border-radius: 14px;
-  background: #e3e9f3;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 4px 10px rgba(8, 16, 44, 0.4);
-  overflow: hidden;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  transition: transform 0.2s ease;
+/* Design 1d: two seat chips per row, hugging the board's own corners. */
+.avrow { display: flex; justify-content: space-between; align-items: center; min-height: 44px; padding: 6px 2px 0; gap: 8px; }
+.avrow__side { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+/* A seat chip: paper pill, a disc in the seat's colour, the name, and a pulsing
+   dot while it is their turn. The local player's chip inverts onto the dark
+   surface — that inversion is what answers "which one am I" at a glance. */
+.seatchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border-radius: 999px;
+  padding: 6px 12px 6px 6px;
+  box-shadow: 0 1px 3px rgba(46, 43, 37, 0.12);
+  min-width: 0;
 }
-.seatav svg { width: 78%; height: 78%; }
-.seatav__flag { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 30px; line-height: 1; text-shadow: 0 1px 2px rgba(8, 16, 44, 0.25); }
-.seatav--active { transform: scale(1.1); box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.9), 0 5px 12px rgba(8, 16, 44, 0.45); }
+.seatchip--you { background: var(--ink); box-shadow: none; }
+.seatchip__disc {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1;
+  overflow: hidden;
+  flex: none;
+}
+.seatchip__img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.seatchip__framed { position: relative; display: inline-flex; flex: none; }
+.seatchip__name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--txt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.seatchip--you .seatchip__name { color: var(--on-ink); }
+.seatchip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; animation: seatpulse 1.6s ease-in-out infinite; }
+.seatchip--you .seatchip__dot { background: var(--a2-400); }
+@keyframes seatpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .seatchip__dot { animation: none; } }
 /* the die is a clean floating 3D cube (no navy slot) — matches Ludo Club */
 
 
@@ -3260,8 +3325,10 @@ small.muted { font-size: 12px; }
 .crash__sub { font-size: 13px; color: #6b7794; margin-bottom: 6px; }
 
 /* leave/forfeit button in the staked game bar */
-.gamebar__btn--leave { color: #ffd7d2; }
-.gamebar__btn--leave:active { color: #ff9b90; }
+/* Resign: the one control in the tray that carries a tint, because it is the one
+   that ends the game (design 1c/1d draw it as a flag on a blush square). */
+.gamebar__btn--leave { background: #f9e9e2; color: var(--a-600); }
+.gamebar__btn--leave:active { background: var(--a-200); }
 
 /* ---- legal / age-consent gate ---- */
 .legal__draft { background: #fff4d6; color: #7a5b00; border-radius: 8px; padding: 8px 10px; font-size: 11.5px; font-weight: 600; margin: 6px 0 12px; }

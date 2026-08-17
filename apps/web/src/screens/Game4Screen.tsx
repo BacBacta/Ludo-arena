@@ -4,18 +4,18 @@
  * renders the Ludo-Club-style 4-player board.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Board4 } from '../components/Board4';
+import { Board4, SEAT_HEX, SEAT_ON_HEX } from '../components/Board4';
 import { Die } from '../components/DiePremium';
 import { SeatAvatar, SeatDie } from '../components/Seat4';
 import { skinById, skinSound } from '../lib/diceSkins';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFlight, type GiftTarget } from '../components/Emote';
-import { IconMenu } from '../components/icons';
+import { IconFlag, IconMenu } from '../components/icons';
 import { applyMove4, applyRoll4, legalMoves4, newGame4, pickAutoMove4, type Game4 } from '@ludo/game-engine';
 import { EMOTES } from '@ludo/shared';
 import { BOT_MOVE_MS, BOT_ROLL_MS, DIE_SETTLE_MS, FORCED_MOVE_MS, TURN_BEAT_MS, WALK_STEP_MS, WALK_TWEEN_MS } from '../lib/pacing';
 import { playCapture, playDice, playPawnHome, playWin } from '../lib/sound';
 import { countFinished, homeTier } from '../lib/homeCelebration';
-import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
+import { useAppDispatch, useAppState } from '../state/store';
 import { tokenSkinById } from '../lib/tokenSkins';
 import { VictoryFxOverlay } from '../components/CosmeticFx';
 import { t } from '../lib/i18n';
@@ -32,7 +32,7 @@ const PLAYERS = [
 const die6 = (): number => 1 + Math.floor(Math.random() * 6);
 
 export function Game4Screen({ onLeave }: { onLeave(): void }) {
-  const { balanceCents, profile, avatarFrame, avatar, diceSkin, tokenSkin, boardTheme, victoryFx } = useAppState();
+  const { profile, avatarFrame, avatar, diceSkin, tokenSkin, boardTheme, victoryFx } = useAppState();
   const dispatch = useAppDispatch();
   const mySeat = 0;
   const mySkin = skinById(diceSkin); // my equipped die reflects my cosmetic (my rolls)
@@ -172,62 +172,67 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
       <div className="gamewrap">
         {/* one overlay flies each gift from the sender's quadrant to the recipient's */}
         <GiftFlight />
-        <div className="gametop">
-          <button className="chromebtn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
-            <IconMenu />
-          </button>
-          <div className="coinchip">
-            <span className="coinchip__c" />
-            {fmtUsd(balanceCents)}
-          </div>
-          <EmoteBar onEmote={sendEmote} dir="down" />
-          <GiftBar recipients={giftTargets} onGift={sendGift} dir="down" />
-          <button className="chromebtn" aria-label="leave" onClick={onLeave}>
-            ✕
-          </button>
-        </div>
-
-        {/* top corner avatars: Ana (left) / Young (right); die appears beside the active one */}
+        {/* top seat chips: Ana (top-left quadrant) / Young (top-right) */}
         <div className="avrow">
-          <div className="avrow__side">
-            <span className="emoteanchor" data-seat-anchor={1}><EmoteFloat seat={1} /><SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} avatar={seatAvatar(1)} active={activeSeat === 1} /></span>
-            {activeSeat === 1 && <SeatDie value={dieValue} rollKey={rollKey} />}
-          </div>
-          <div className="avrow__side">
-            {activeSeat === 2 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <span className="emoteanchor" data-seat-anchor={2}><EmoteFloat seat={2} /><SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} avatar={seatAvatar(2)} active={activeSeat === 2} /></span>
-          </div>
+          <span className="emoteanchor" data-seat-anchor={1}><EmoteFloat seat={1} /><SeatAvatar name="Ana" flag={seatFlag(1)} frame={seatFrame(1)} avatar={seatAvatar(1)} active={activeSeat === 1} color={SEAT_HEX[1]!} onColor={SEAT_ON_HEX[1]!} /></span>
+          <span className="emoteanchor" data-seat-anchor={2}><EmoteFloat seat={2} /><SeatAvatar name="Young" flag={seatFlag(2)} frame={seatFrame(2)} avatar={seatAvatar(2)} active={activeSeat === 2} color={SEAT_HEX[2]!} onColor={SEAT_ON_HEX[2]!} /></span>
         </div>
 
         <Board4
           game={game}
           mySeat={mySeat}
           onTokenTap={(token) => myTurn && game.phase === 'awaiting-move' && doMove(gameRef.current, mySeat, token)}
-          banners={PLAYERS.map((p, seat) => ({ seat, name: p.name, flag: seatFlag(seat), active: seat === activeSeat, you: seat === mySeat }))}
+          // Identity lives in the seat chips above and below the board (design
+          // 1d), so the plate carries no names — see the note in GameScreen.
           // Practice cosmetics: my theme + my pawn skin; the bots stay classic.
           themeId={boardTheme}
           tokenPatterns={{ [mySeat]: tokenSkinById(tokenSkin).pattern }}
         />
 
-        {/* bottom corner avatars: YOU (left) / Dragan (right) */}
+        {/* bottom seat chips: YOU (bottom-left quadrant) / Dragan (bottom-right) */}
         <div className="avrow">
-          <div className="avrow__side">
-            <span className="emoteanchor" data-seat-anchor={0}><EmoteFloat seat={0} /><SeatAvatar name="YOU" flag={seatFlag(0)} frame={seatFrame(0)} avatar={seatAvatar(0)} active={myTurn} /></span>
-            {myTurn && (
-              <button
-                className="ludodie ludodie--tap"
-                disabled={!canRoll}
-                onClick={() => canRoll && doRoll(gameRef.current, mySeat)}
-                aria-label="your die"
-              >
-                <Die value={dieValue} rollKey={rollKey} skin={mySkin} />
-              </button>
-            )}
+          <span className="emoteanchor" data-seat-anchor={0}><EmoteFloat seat={0} /><SeatAvatar name={t('you')} flag={seatFlag(0)} frame={seatFrame(0)} avatar={seatAvatar(0)} active={myTurn} color={SEAT_HEX[0]!} onColor={SEAT_ON_HEX[0]!} you /></span>
+          <span className="emoteanchor" data-seat-anchor={3}><EmoteFloat seat={3} /><SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} avatar={seatAvatar(3)} active={activeSeat === 3} color={SEAT_HEX[3]!} onColor={SEAT_ON_HEX[3]!} /></span>
+        </div>
+
+        {/* turn state + the die (design 1d) */}
+        <div className="gamecorner gamecorner--bottom">
+          <div className="gamemsg">
+            <span>{myTurn ? t('yourTurn') : PLAYERS[activeSeat]?.name ?? ''}</span>
+            <small>
+              {myTurn
+                ? game.phase === 'awaiting-move'
+                  ? t('pickToken').replace('{n}', String(dieValue))
+                  : t('tapDie')
+                : t('oppTurn')}
+            </small>
           </div>
-          <div className="avrow__side">
-            {activeSeat === 3 && <SeatDie value={dieValue} rollKey={rollKey} />}
-            <span className="emoteanchor" data-seat-anchor={3}><EmoteFloat seat={3} /><SeatAvatar name="Dragan" flag={seatFlag(3)} frame={seatFrame(3)} avatar={seatAvatar(3)} active={activeSeat === 3} /></span>
-          </div>
+          {myTurn ? (
+            <button
+              className="dicebtn"
+              disabled={!canRoll}
+              onClick={() => canRoll && doRoll(gameRef.current, mySeat)}
+              aria-label="your die"
+            >
+              <Die value={dieValue} rollKey={rollKey} skin={mySkin} />
+            </button>
+          ) : (
+            <SeatDie value={dieValue} rollKey={rollKey} />
+          )}
+        </div>
+
+        {/* the tray of quiet controls (design 1d) */}
+        <div className="gamebar">
+          <EmoteBar onEmote={sendEmote} />
+          <GiftBar recipients={giftTargets} onGift={sendGift} />
+          {/* 1d puts a quiet caption in the middle of the tray naming the table */}
+          <div className="gamebar__coins">{t('training')}</div>
+          <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
+            <IconMenu />
+          </button>
+          <button className="gamebar__btn gamebar__btn--leave" aria-label="leave" onClick={onLeave}>
+            <IconFlag />
+          </button>
         </div>
       </div>
 

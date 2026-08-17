@@ -9,46 +9,67 @@ import { frameRing } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
 import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
 
-/** Ludo Club uses one WHITE die with black pips for everyone; the active player
- *  is identified by the die's POSITION at their corner, not by colour. */
+/** The shared table die. Organic pass: paper with sage pips, matching the free
+ *  `classic` skin — a pure-white cube with black pips punched a hole in a board
+ *  whose lightest paper is #fffdf8. A seat that owns a premium skin still passes
+ *  it, so the flagship dice are seen at every corner. */
 export const WHITE_DIE: DiceSkin = {
   id: 'ludo-white',
   name: '',
   unlocked: () => true,
-  body1: '#ffffff',
-  body2: '#eef0f5',
-  pip: '#161b28',
-  stroke: '#c7cdd9',
+  body1: '#fffdf8',
+  body2: '#efe2cb',
+  pip: '#7a8a5e',
+  stroke: 'rgba(32,30,29,.10)',
 };
 
-/** Grey placeholder avatar tile at a board corner; the active seat lifts slightly.
- *  A chosen 3D avatar takes precedence over the flag. */
-export function SeatAvatar({ name, flag, frame, avatar, active }: { name: string; flag?: string; frame?: string; avatar?: string; active: boolean }) {
+/**
+ * Seat chip (design 1d): a paper pill carrying a disc in the seat's own colour
+ * with the player's initial, their name, and — while it is their turn — a
+ * pulsing dot. The local player's chip is inverted onto the dark surface, which
+ * is what makes "which one am I" answerable at a glance.
+ */
+export function SeatAvatar({
+  name,
+  flag,
+  frame,
+  avatar,
+  active,
+  color,
+  onColor,
+  you,
+}: {
+  name: string;
+  flag?: string;
+  frame?: string;
+  avatar?: string;
+  active: boolean;
+  /** The seat's canonical colour (SEAT_HEX). */
+  color: string;
+  /** Ink that stays legible on top of `color` (SEAT_ON_HEX). */
+  onColor: string;
+  you?: boolean;
+}) {
   const src = avatarSrc(avatar);
   const premium = isPremiumFrame(frame);
-  // A premium frame turns the tile circular so the ornamental ring fits snugly.
-  const tile = (
-    <div className={`seatav${active ? ' seatav--active' : ''}${premium ? ' seatav--circ' : ''} ${frameRing(frame)}`} aria-label={name}>
-      {src ? (
-        <img className="seatav__img" src={src} alt="" />
-      ) : flag ? (
-        <span className="seatav__flag">{flag}</span>
-      ) : (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx={12} cy={9} r={4.4} fill="#aab6c9" />
-          <path d="M3.5 21c1.4-4 5-6 8.5-6s7.1 2 8.5 6z" fill="#aab6c9" />
-        </svg>
-      )}
-    </div>
-  );
-  // The frame overlay lives OUTSIDE the tile (which clips its content) so the
-  // ornamental ring is never cut off by the tile's overflow.
-  if (!premium) return tile;
-  return (
-    <span className="seatav-framed">
-      {tile}
-      <PremiumFrame frame={frame} />
+  const disc = (
+    <span className={`seatchip__disc ${frameRing(frame)}`} style={{ background: color, color: onColor }} aria-hidden="true">
+      {src ? <img className="seatchip__img" src={src} alt="" /> : flag ? flag : name.slice(0, 1).toUpperCase()}
     </span>
+  );
+  return (
+    <div className={`seatchip${active ? ' seatchip--active' : ''}${you ? ' seatchip--you' : ''}`} aria-label={name}>
+      {premium ? (
+        <span className="seatchip__framed">
+          {disc}
+          <PremiumFrame frame={frame} />
+        </span>
+      ) : (
+        disc
+      )}
+      <span className="seatchip__name">{name}</span>
+      {active && <span className="seatchip__dot" aria-hidden="true" />}
+    </div>
   );
 }
 
