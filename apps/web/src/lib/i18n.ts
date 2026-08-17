@@ -218,7 +218,7 @@ const en = {
   setClaim: 'Claim', setClaimed: 'Claimed', setBonus: 'Set bonus', setClaimedToast: 'Set bonus claimed!',
   featuredSet: 'Set of the season',
   sentRequestsTitle: 'Sent invitations',
-  buyTicketsBtn: 'Unlock with tickets', buyUsdtBtn: 'Pay with USDT', yourTickets: 'Your tickets', notEnoughTickets: 'not enough yet', sentPending: 'Waiting for their answer', sentWithdraw: 'Withdraw', friendAccepted: 'accepted your invitation!',
+  buyTicketsBtn: 'Unlock with tickets', buyUsdtBtn: 'Pay with USDT', ticketOne: 'ticket', ticketMany: 'tickets', yourTickets: 'Your tickets', notEnoughTickets: 'not enough yet', sentPending: 'Waiting for their answer', sentWithdraw: 'Withdraw', friendAccepted: 'accepted your invitation!',
   h2h: 'Head-to-head vs you',
   profileUnavailable: 'Profile unavailable — try again in a moment.',
   qcGg: 'Good game!',
@@ -648,7 +648,7 @@ const fr: Dict = {
   setClaim: 'Réclamer', setClaimed: 'Réclamé', setBonus: 'Bonus de set', setClaimedToast: 'Bonus de set réclamé !',
   featuredSet: 'Set de la saison',
   sentRequestsTitle: 'Invitations envoyées',
-  buyTicketsBtn: 'Débloquer avec des tickets', buyUsdtBtn: 'Payer en USDT', yourTickets: 'Tes tickets', notEnoughTickets: 'pas encore assez', sentPending: 'En attente de sa réponse', sentWithdraw: 'Retirer', friendAccepted: 'a accepté ton invitation !',
+  buyTicketsBtn: 'Débloquer avec des tickets', buyUsdtBtn: 'Payer en USDT', ticketOne: 'ticket', ticketMany: 'tickets', yourTickets: 'Tes tickets', notEnoughTickets: 'pas encore assez', sentPending: 'En attente de sa réponse', sentWithdraw: 'Retirer', friendAccepted: 'a accepté ton invitation !',
   h2h: 'Face-à-face contre toi',
   profileUnavailable: 'Profil indisponible — réessaie dans un instant.',
   qcGg: 'Bien joué !',
@@ -1067,7 +1067,7 @@ const pt: Dict = {
   setClaim: 'Resgatar', setClaimed: 'Resgatado', setBonus: 'Bônus do conjunto', setClaimedToast: 'Bônus do conjunto resgatado!',
   featuredSet: 'Conjunto da temporada',
   sentRequestsTitle: 'Convites enviados',
-  buyTicketsBtn: 'Desbloquear com tickets', buyUsdtBtn: 'Pagar em USDT', yourTickets: 'Seus tickets', notEnoughTickets: 'ainda não é suficiente', sentPending: 'Aguardando a resposta', sentWithdraw: 'Retirar', friendAccepted: 'aceitou seu convite!',
+  buyTicketsBtn: 'Desbloquear com tickets', buyUsdtBtn: 'Pagar em USDT', ticketOne: 'ticket', ticketMany: 'tickets', yourTickets: 'Seus tickets', notEnoughTickets: 'ainda não é suficiente', sentPending: 'Aguardando a resposta', sentWithdraw: 'Retirar', friendAccepted: 'aceitou seu convite!',
   h2h: 'Frente a frente contra você',
   profileUnavailable: 'Perfil indisponível — tente novamente em instantes.',
   qcGg: 'Bom jogo!',
@@ -1486,7 +1486,7 @@ const es: Dict = {
   setClaim: 'Reclamar', setClaimed: 'Reclamado', setBonus: 'Bono del set', setClaimedToast: '¡Bono del set reclamado!',
   featuredSet: 'Set de la temporada',
   sentRequestsTitle: 'Invitaciones enviadas',
-  buyTicketsBtn: 'Desbloquear con tickets', buyUsdtBtn: 'Pagar con USDT', yourTickets: 'Tus tickets', notEnoughTickets: 'aún no alcanza', sentPending: 'Esperando su respuesta', sentWithdraw: 'Retirar', friendAccepted: '¡aceptó tu invitación!',
+  buyTicketsBtn: 'Desbloquear con tickets', buyUsdtBtn: 'Pagar con USDT', ticketOne: 'ticket', ticketMany: 'tickets', yourTickets: 'Tus tickets', notEnoughTickets: 'aún no alcanza', sentPending: 'Esperando su respuesta', sentWithdraw: 'Retirar', friendAccepted: '¡aceptó tu invitación!',
   h2h: 'Cara a cara contra ti',
   profileUnavailable: 'Perfil no disponible — inténtalo de nuevo en un momento.',
   qcGg: '¡Buen juego!',
@@ -1905,7 +1905,7 @@ const sw: Dict = {
   setClaim: 'Chukua', setClaimed: 'Imechukuliwa', setBonus: 'Bonasi ya seti', setClaimedToast: 'Bonasi ya seti imechukuliwa!',
   featuredSet: 'Seti ya msimu',
   sentRequestsTitle: 'Mialiko iliyotumwa',
-  buyTicketsBtn: 'Fungua kwa tikiti', buyUsdtBtn: 'Lipa kwa USDT', yourTickets: 'Tikiti zako', notEnoughTickets: 'bado hazitoshi', sentPending: 'Inasubiri jibu lake', sentWithdraw: 'Ondoa', friendAccepted: 'amekubali mwaliko wako!',
+  buyTicketsBtn: 'Fungua kwa tikiti', buyUsdtBtn: 'Lipa kwa USDT', ticketOne: 'tikiti', ticketMany: 'tikiti', yourTickets: 'Tikiti zako', notEnoughTickets: 'bado hazitoshi', sentPending: 'Inasubiri jibu lake', sentWithdraw: 'Ondoa', friendAccepted: 'amekubali mwaliko wako!',
   h2h: 'Ana kwa ana dhidi yako',
   profileUnavailable: 'Wasifu haupatikani — jaribu tena baadaye kidogo.',
   qcGg: 'Mchezo mzuri!',
@@ -2133,6 +2133,12 @@ export const lang: Lang = resolveLang();
 // Keep the document language in sync with the resolved locale (screen readers,
 // translation prompts, search engines). index.html ships lang="en" statically.
 if (typeof document !== 'undefined') document.documentElement.lang = lang;
+
+/** "3 tickets" / "1 ticket", in the active language. Ticket amounts used to be
+ *  written as `${n} 🎟️`, which is why the emoji outlived every other one. */
+export function tickets(n: number): string {
+  return `${n} ${n === 1 ? t('ticketOne') : t('ticketMany')}`;
+}
 
 export function t(key: TKey): string {
   return dict[lang][key] ?? en[key];

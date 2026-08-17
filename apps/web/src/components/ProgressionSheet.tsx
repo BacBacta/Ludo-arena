@@ -9,7 +9,7 @@ import { STREAK_FREEZE } from '@ludo/shared';
 import { IconFlame, IconTarget, IconTicket } from './icons';
 import { frameClass } from '../lib/avatarFrames';
 import { playTap } from '../lib/sound';
-import { t } from '../lib/i18n';
+import { t, tickets as fmtTickets } from '../lib/i18n';
 
 export function ProgressionSheet({ onViewProfile, onBuyFreeze }: { onViewProfile(pid: string): void; onBuyFreeze(): void }) {
   const { progressionOpen, streak, challenge, tickets, walletBacked, recentOpponents } = useAppState();
@@ -57,7 +57,7 @@ export function ProgressionSheet({ onViewProfile, onBuyFreeze }: { onViewProfile
               }}
             >
               ❄️ {t('freezeTitle')} {streak.freezes ?? 0}/{STREAK_FREEZE.max}
-              <span className="freezechip__buy">+{STREAK_FREEZE.ticketCost}🎟️</span>
+              <span className="freezechip__buy">+{fmtTickets(STREAK_FREEZE.ticketCost)}</span>
             </button>
           )}
         </div>

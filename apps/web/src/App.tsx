@@ -36,7 +36,7 @@ import type { StakeStatus } from './lib/escrow';
 import { playCapture, playDice, playPawnHome, playWelcome, playWin, startMusic, stopMusic } from './lib/sound';
 import { countFinished, homeTier } from './lib/homeCelebration';
 import { recordGameResult, skinById, skinSound } from './lib/diceSkins';
-import { t } from './lib/i18n';
+import { t, tickets as fmtTickets } from './lib/i18n';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:8787';
 /** Failsafe for the in-flight action lock: if the server never echoes a roll/move
@@ -630,7 +630,7 @@ export default function App() {
         } else if (streak.rewardGranted > 0) {
           dispatch({
             type: 'TOAST',
-            message: `🔥 ${streak.days} ${t('days')} — +${streak.rewardGranted} 🎟️`,
+            message: `${streak.days} ${t('days')} — +${fmtTickets(streak.rewardGranted)}`,
           });
         }
       },
@@ -641,7 +641,7 @@ export default function App() {
         dispatch({ type: 'TICKETS', total });
         if (granted > 0) {
           const label = reason === 'anti-tilt' ? t('antiTiltTicket') : t('freerollWonToast');
-          dispatch({ type: 'TOAST', message: `${label} +${granted} 🎟️` });
+          dispatch({ type: 'TOAST', message: `${label} +${fmtTickets(granted)}` });
         }
       },
       onLimits: (limits) => dispatch({ type: 'LIMITS_UPDATE', limits }),
@@ -910,7 +910,7 @@ export default function App() {
         return false;
       }
       dispatch({ type: 'CLAIMED_SETS', setIds: res.claimedSets, tickets: res.tickets });
-      dispatch({ type: 'TOAST', message: `📚 ${t('setClaimedToast')} +${res.granted} 🎟️` });
+      dispatch({ type: 'TOAST', message: `${t('setClaimedToast')} +${fmtTickets(res.granted)}` });
       return true;
     },
     [dispatch],
