@@ -25,6 +25,7 @@ import {
   type Hex,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { PREMIUM_COSMETICS, SEASON_PREMIUM } from '../../shared/src/protocol.js';
 import { compileAll } from './compile.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -89,10 +90,12 @@ const ERC20_DECIMALS_ABI = [
   { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
 ] as const;
 
-// mirrors shared PREMIUM_COSMETICS (id → cUSD price in cents)
+// The FULL shared catalogue — imported, never hand-mirrored. This list used to
+// carry two hardcoded items while PREMIUM_COSMETICS grew past twenty, so every
+// switch silently left the rest of the shop at price 0 (NotForSale).
 const COSMETIC_SEED: Array<{ id: string; cents: number }> = [
-  { id: 'obsidian', cents: 100 },
-  { id: 'aurora', cents: 200 },
+  ...PREMIUM_COSMETICS.filter((c) => c.cents > 0).map((c) => ({ id: c.id, cents: c.cents })),
+  { id: SEASON_PREMIUM.itemId, cents: SEASON_PREMIUM.cents },
 ];
 
 console.log(`[switch] network=${networkName} deployer=${account.address} store=${store}`);
