@@ -182,7 +182,11 @@ export async function privatePair(nameA = 'AuditHost', nameB = 'AuditGuest', sta
 
 export async function launchBrowser() {
   const pw = await import('playwright');
-  return pw.chromium.launch({ headless: true, args: ['--disable-gpu', '--no-sandbox'] });
+  // PW_CHROMIUM_PATH lets a sandbox with a PREINSTALLED chromium (whose build
+  // number does not match the locally resolved playwright package) run the
+  // harness without re-downloading a browser. Unset everywhere else.
+  const executablePath = process.env.PW_CHROMIUM_PATH || undefined;
+  return pw.chromium.launch({ headless: true, executablePath, args: ['--disable-gpu', '--no-sandbox'] });
 }
 
 export async function newPlayer(browser, ctxOpts = {}) {
