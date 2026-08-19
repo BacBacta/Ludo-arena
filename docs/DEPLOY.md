@@ -382,3 +382,61 @@ flyctl secrets set STAKE_BLOCK_SAME_DEVICE=false -a ludo-arena
 # …puis REMETTRE la protection avant de rouvrir l'événement
 flyctl secrets unset STAKE_BLOCK_SAME_DEVICE -a ludo-arena
 ```
+
+## 5. Bascule cUSD → USD₮ (jeton de mise mainnet)
+
+`deployments.json` pointe désormais sur l'**USD₮ mainnet** — `0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e`,
+**6 décimales**, adaptateur de fee-currency CIP-64 `0x0e2a3e05bc9a16f5292a6170456a710cb89c6f72`
+(l'adaptateur 18-déc est obligatoire : le nœud valide le plafond de frais en unités de fee-currency,
+un jeton 6-déc passé directement est rejeté).
+
+Les escrows sont **agnostiques au jeton** — il est choisi par partie au `join` — donc **aucun
+redéploiement de contrat n'est nécessaire**. Le `CosmeticsStore`, lui, n'a qu'un seul jeton.
+
+### Le piège d'ordonnancement
+
+`join` révoque `TokenNotAllowed` pour un jeton non allowlisté. **Merger cette config avant
+l'étape 1 casse toutes les mises en production**, puisque Vercel rebuild sur `main`.
+
+L'allowlist est en revanche **additive et idempotente** : elle ne désactive pas le cUSD. Les deux
+jetons coexistent donc entre l'étape 1 et le déploiement, ce qui rend la bascule réversible sans
+transaction — il suffit de remettre l'ancienne adresse dans `deployments.json`.
+
+Les scripts d'ops lisent le `deployments.json` **local** : les étapes on-chain se pilotent depuis
+la branche, avant tout merge.
+
+### Étapes, dans cet ordre
+
+```bash
+# 1. Allowlister l'USD₮ sur LudoEscrow + LudoEscrowN (clé OWNER = treasury).
+NETWORK=celo TOKEN_ADDRESS=0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e \
+  DEPLOYER_PRIVATE_KEY=0x<owner> npm run allow-token -w packages/contracts
+
+# 2. Re-seeder les rakes par palier. Ils sont indexés (jeton, montant BRUT) : aucun
+#    palier cUSD ne s'applique à l'USD₮, donc sans cette étape TOUT retombe sur les
+#    900 bps globaux — le palier Race 1¢ repasserait de ~0 à 9%, et les paliers
+#    dégressifs seraient perdus. Le script convertit TIER_CENTS avec les décimales
+#    lues dans deployments.json (1¢ → 10000 unités en 6-déc).
+NETWORK=celo TIER_CENTS=1   TIER_BPS=1    DEPLOYER_PRIVATE_KEY=0x<owner> npm run set-tier-rake -w packages/contracts
+NETWORK=celo TIER_CENTS=25  TIER_BPS=1000 DEPLOYER_PRIVATE_KEY=0x<owner> npm run set-tier-rake -w packages/contracts
+NETWORK=celo TIER_CENTS=100 TIER_BPS=800  DEPLOYER_PRIVATE_KEY=0x<owner> npm run set-tier-rake -w packages/contracts
+NETWORK=celo TIER_CENTS=500 TIER_BPS=600  DEPLOYER_PRIVATE_KEY=0x<owner> npm run set-tier-rake -w packages/contracts
+
+# 3. Repointer le CosmeticsStore : setToken(USD₮) puis setPrices en 6 décimales.
+#    Sans cette étape la boutique continue d'encaisser en cUSD alors que l'app
+#    affiche USD₮. `switch-stablecoin` ne couvre que le testnet (il déploie un
+#    MockUSDT) — à étendre au mainnet ou à exécuter à la main.
+
+# 4. Merger → Vercel rebuild le web avec le nouveau jeton.
+# 5. Redéployer le serveur : son image rebake deployments.json (décimales du
+#    faucet Race, dotation JIT).
+```
+
+### Vérifications post-bascule
+
+- une mise de 25¢ passe de bout en bout (approve → join → settle) ;
+- le solde d'en-tête affiche un montant cohérent — les décimales sont lues **on-chain**,
+  `stablecoinDecimals` ne sert qu'au serveur et aux scripts ;
+- `RAKE_BPS_BY_STAKE` (`packages/shared/src/protocol.ts`) reflète toujours la config on-chain —
+  cette table n'est qu'un affichage, le contrat fait foi ;
+- le faucet Race détient de l'**USD₮** et non plus du cUSD, sans quoi les dotations JIT échouent.
