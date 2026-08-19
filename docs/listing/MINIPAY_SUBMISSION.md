@@ -14,7 +14,7 @@ commande derrière est une case qui périme en silence.
 | 3 captures d'écran ≤ 500 Ko | ✅ | `node e2e/listing-shots.mjs` |
 | Engagement SLA 24 h | ✅ affiché in-app | fiche d'aide → Support |
 | Manifeste des origines réseau | ✅ | rapport d'audit |
-| Score PageSpeed ≥ 90 mobile | ❌ à mesurer | URL de production requise |
+| Score PageSpeed ≥ 90 mobile | ⚠️ à mesurer hors sandbox ; 1 défaut de cache corrigé | `npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile` |
 | CGU / confidentialité | ⚠️ `TOS_DRAFT` / `PRIVACY_DRAFT` | relecture juridique avant listing |
 
 ---
@@ -94,17 +94,62 @@ Périmètre : **première réponse** sous 24 h sur les incidents critiques (mise
 bloquée, gain non versé, impossibilité de jouer), pas une résolution garantie
 sous 24 h. Contact : `SUPPORT_EMAIL` dans `apps/web/src/components/ui.tsx`.
 
-## 5. Score PageSpeed — non mesuré
+## 5. Score PageSpeed — non mesurable depuis le dépôt, une cause réparée
 
-Cible : 90+ mobile sur l'**URL de production**. Non mesurable depuis ce dépôt :
-il faut l'URL déployée, et un `python3 -m http.server` local ne compresse rien
-(`e2e/ui-perf.mjs` le dit explicitement et échoue dessus par construction — ce
-n'est pas une régression).
+URL de production : **https://www.ludoarena.xyz** (Vercel, HTTP/2, HSTS).
 
-Ce que la build donne aujourd'hui, gzip, hors serveur : chemin critique
-≈ 240 Ko, chunk 3D différé ≈ 118 Ko — sous les deux budgets de la règle d'or 4.
-Les avatars WebP de #186 (−82 %) ne sont pas encore reflétés dans une mesure
-terrain.
+### Ce qui empêche la mesure ici
+
+Deux blocages d'environnement, aucun côté application :
+
+1. **API PageSpeed Insights** → `429 Quota exceeded` sur le projet anonyme
+   partagé. Il faut une clé d'API Google, ou lancer PSI depuis un navigateur.
+2. **Lighthouse en local** → Chromium n'émet jamais l'entrée
+   `first-contentful-paint` dans ce conteneur (headless sans compositeur réel) :
+   la page s'affiche bel et bien — le DOM est peint et lisible — mais Lighthouse
+   abandonne sur `NO_FCP`. Et de toute façon Chromium ne peut pas joindre
+   l'hôte de production à travers le proxy d'egress (`ERR_CONNECTION_RESET`),
+   alors que `curl` y arrive.
+
+**Pour obtenir le chiffre qui fait foi**, depuis une machine à réseau normal :
+
+```bash
+npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile --view
+# ou : https://pagespeed.web.dev/analysis?url=https://www.ludoarena.xyz
+```
+
+### Ce que la production sert réellement (mesuré par `curl`)
+
+| Ressource | Encodage | Transféré | Brut | `Cache-Control` |
+|---|---|---|---|---|
+| `/` (HTML) | brotli | — | — | `no-cache, no-store` (correct) |
+| `/assets/index-*.js` | brotli | **243,8 Ko** | 801,8 Ko | ⚠️ voir ci-dessous |
+| `/assets/index-*.css` | brotli | **22,6 Ko** | 101,0 Ko | ⚠️ voir ci-dessous |
+
+Chemin critique réel : **266,4 Ko** sur le fil — sous le budget de 300 Ko de la
+règle d'or 4. La compression et le HTTP/2 sont en place.
+
+### Le défaut trouvé, et corrigé
+
+`vercel.json` ne déclarait **aucune règle de cache pour `/assets/*`**. Les
+fichiers y sont pourtant nommés par le HASH de leur contenu — le cas d'école du
+cache immuable — mais le défaut Vercel s'appliquait :
+
+```
+cache-control: public, max-age=0, must-revalidate
+```
+
+Chaque visite revalidait donc l'intégralité des 266 Ko du chemin critique.
+C'est exactement l'audit « Serve static assets with an efficient cache policy »
+que PageSpeed pénalise, et un coût de rechargement à chaque retour d'un joueur.
+
+Corrigé : `/assets/(.*)` → `public, max-age=31536000, immutable`. Sans risque de
+code périmé, puisqu'un nouveau build produit de nouveaux noms de fichiers ;
+`index.html`, `sw.js` et `version.json` restent en `no-store`, et ce sont eux
+qui font qu'un déploiement prend effet.
+
+**Le gain n'apparaîtra qu'après le prochain déploiement Vercel.** Mesurer le
+score *après*, pas avant.
 
 ## 6. Réserve : CGU et confidentialité
 
