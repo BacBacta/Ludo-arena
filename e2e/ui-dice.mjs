@@ -59,17 +59,52 @@ const boardQuiet = (page, quiet = 400) => page.evaluate((q) => new Promise((res)
   requestAnimationFrame(tick);
 }), quiet);
 
-const firstPawnMove = (page, ms) => page.evaluate((dur) => new Promise((res) => {
-  const pos0 = [...document.querySelectorAll('.token')].map((x) => x.style.transform);
+/**
+ * First move time PER OWN PAWN, keyed by its token index — not "any pawn moved".
+ * Two things otherwise land in this window and have nothing to do with my roll:
+ * the OPPONENT's relayed move (excluded by `[data-mine]`), and one of my own
+ * pawns being sent back to base by their capture. Only the pawn I actually
+ * TAPPED answers R21's question, so the caller pairs this map with the index
+ * `tapWhenMovable` reports.
+ */
+const pawnMoveTimes = (page, ms) => page.evaluate((dur) => new Promise((res) => {
+  const mine = () => [...document.querySelectorAll('.token[data-token]')];
+  const key = (el) => el.getAttribute('data-token');
+  const pos0 = new Map(mine().map((el) => [key(el), el.style.transform]));
+  const seen = {};
   const t0 = performance.now();
   const tick = () => {
-    const now = performance.now() - t0;
-    const cur = [...document.querySelectorAll('.token')].map((x) => x.style.transform);
-    if (cur.some((v, i) => pos0[i] !== undefined && v !== pos0[i])) return res(Math.round(now));
-    if (now < dur) requestAnimationFrame(tick); else res(null);
+    const now = Math.round(performance.now() - t0);
+    for (const el of mine()) {
+      const k = key(el);
+      if (seen[k] === undefined && pos0.has(k) && el.style.transform !== pos0.get(k)) seen[k] = now;
+    }
+    if (now < dur) requestAnimationFrame(tick); else res(seen);
   };
   requestAnimationFrame(tick);
 }), ms);
+
+/**
+ * Tap the first movable pawn as soon as one appears, WITHIN the observation
+ * window. R21's oracle is "the pawn must not move before the die settles" — so
+ * the stimulus has to be an EARLY tap. The harness used to tap only after the
+ * watcher had already closed, which meant the watcher almost never saw a move
+ * at all: R21 kept failing its `tested >= 2` guard on 1 sample rather than on
+ * any real finding.
+ */
+const tapWhenMovable = async (page, ms) => {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const tk = page.locator('.token--movable').first();
+    if (await tk.count()) {
+      const idx = await tk.getAttribute('data-token').catch(() => null);
+      await tk.click({ timeout: 500, force: true }).catch(() => {});
+      return idx;
+    }
+    await page.waitForTimeout(60);
+  }
+  return null;
+};
 
 try {
   const { host, guest } = await uiPrivatePair(browser);
@@ -78,6 +113,7 @@ try {
   let phantom = { tested: 0, bad: 0 };
   let readable = [];
   let pawn = { tested: 0, early: 0 };
+  const pawnAt = [];
 
   for (let i = 0; i < 60 && (phantom.tested < 3 || readable.length < 3 || pawn.tested < 3); i++) {
     for (const p of pages) {
@@ -91,15 +127,17 @@ try {
 
       await boardQuiet(p);
       if (!(await btn.count())) continue;
-      const [mat, vis, moveAt] = await Promise.all([
+      const [mat, vis, moveAt, tapped] = await Promise.all([
         carriesTurns && phantom.tested < 3 ? watchOppMatrices(p, 800) : Promise.resolve(null),
         readable.length < 3 ? watchOppVisibility(other, 2600) : Promise.resolve(undefined),
-        pawn.tested < 3 ? firstPawnMove(p, 2500) : Promise.resolve(undefined),
-        btn.first().click({ timeout: 800 }).catch(() => {}),
+        pawn.tested < 3 ? pawnMoveTimes(p, 2500) : Promise.resolve(undefined),
+        btn.first().click({ timeout: 800 }).then(() => (pawn.tested < 3 ? tapWhenMovable(p, 2200) : null)).catch(() => null),
       ]);
       if (mat) { phantom.tested++; if (mat.matrices > 2 && mat.visibleWhileChanging) phantom.bad++; }
       if (typeof vis === 'number') readable.push(vis);
-      if (typeof moveAt === 'number') { pawn.tested++; if (moveAt < TUMBLE) pawn.early++; }
+      // `tapped` is the 4th entry of the Promise.all above (the roll-then-tap arm).
+      const at = moveAt && tapped != null ? moveAt[tapped] : undefined;
+      if (typeof at === 'number') { pawn.tested++; pawnAt.push(at); if (at < TUMBLE) pawn.early++; }
 
       const tk = p.locator('.token--movable');
       if (await tk.count()) { await p.waitForTimeout(250); await tk.first().click({ timeout: 700, force: true }).catch(() => {}); }
@@ -109,7 +147,7 @@ try {
 
   t.check('R19 opponent die is static during my roll', phantom.tested >= 2 && phantom.bad === 0, `${phantom.bad}/${phantom.tested} phantom spins`);
   t.check('R20 opponent result readable ≥1200ms', readable.length >= 2 && readable.every((v) => v >= 1200), `spans: ${readable.join(', ')}ms`);
-  t.check('R21 no pawn moves before the die settles', pawn.tested >= 2 && pawn.early === 0, `${pawn.early}/${pawn.tested} early (tumble ${TUMBLE}ms)`);
+  t.check('R21 no pawn moves before the die settles', pawn.tested >= 2 && pawn.early === 0, `${pawn.early}/${pawn.tested} early (tumble ${TUMBLE}ms) — moveAt: ${pawnAt.join(', ')}ms`);
 } catch (e) {
   t.check('ui-dice ran to completion', false, e.message);
 } finally {

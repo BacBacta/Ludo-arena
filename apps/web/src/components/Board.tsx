@@ -566,6 +566,11 @@ export function Board({ game, mySeat, onTokenTap, locked, banners, tokenPatterns
               <g
                 key={`t${seat}-${token}`}
                 className={`token${isMovable ? ' token--movable' : ''}`}
+                // Ownership in the DOM: the audit harness has to tell MY pawn
+                // moving from the opponent's relayed move, and `token--movable`
+                // cannot serve — it clears the moment the pawn is played.
+                data-mine={isMine ? 'true' : undefined}
+                data-token={isMine ? token : undefined}
                 style={{
                   transform: `translate(${x}px, ${y}px)`,
                   transition: `transform ${WALK_TWEEN_MS}ms cubic-bezier(0.35, 0, 0.25, 1)`,

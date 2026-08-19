@@ -5,7 +5,7 @@
  * bottom-left), R10 (my die outlives the turn handoff), R14 (no native focus
  * ring on pawn taps). See docs/QA-GAME-AUDIT-PROMPT.md §6.
  */
-import { launchBrowser, uiPrivatePair, banners2p, tally, WEB } from './lib/common.mjs';
+import { launchBrowser, uiPrivatePair, identity2p, tally, WEB } from './lib/common.mjs';
 
 const t = tally('ui-2p');
 const browser = await launchBrowser();
@@ -14,11 +14,21 @@ try {
   const { host, guest } = await uiPrivatePair(browser);
   t.check('M5 pairing via deep link', host.wire.seat !== null && guest.wire.seat !== null, `host seat ${host.wire.seat}, guest seat ${guest.wire.seat}`);
 
-  // R7/R8 — both players read the board from the bottom-left, names agree across screens
-  const [hb, gb] = [await banners2p(host.page), await banners2p(guest.page)];
+  // R8 — each screen names the OTHER player, and both agree with the identity
+  // that player announced in their own hello.
+  //
+  // R7 ("both see THEMSELVES bottom-left") is NOT asserted here any more: the
+  // 2p board stopped painting name labels in the game-screen redesign, and the
+  // reader's own name is no longer rendered at all, so the property is not
+  // observable from this DOM. It is still covered, on the board that does paint
+  // labels, by ui-4p R9. Asserting it from '' === '' — which is what this file
+  // did for as long as the labels have been gone — is worse than not asserting it.
+  const [hb, gb] = [await identity2p(host.page), await identity2p(guest.page)];
   const strip = (s) => (s ?? '').replace(/[^\p{L}\p{N} ]/gu, '').trim().toUpperCase();
-  t.check('R7/R8 both see THEMSELVES bottom-left', strip(hb['0']) === strip(gb['1']) && strip(gb['0']) === strip(hb['1']),
-    `host ${JSON.stringify(hb)} guest ${JSON.stringify(gb)}`);
+  t.check('R8 each screen names the other player, matching their hello',
+    !!strip(hb.opponent) && !!strip(gb.opponent) &&
+      strip(hb.opponent) === strip(guest.wire.helloName) && strip(gb.opponent) === strip(host.wire.helloName),
+    `host sees "${hb.opponent}" (guest hello "${guest.wire.helloName}") · guest sees "${gb.opponent}" (host hello "${host.wire.helloName}")`);
 
   // R6 — the client heartbeat pings within 12s even when idle (the lib counts
   // ping frames from socket open, so the delta over this window is reliable)
@@ -28,7 +38,11 @@ try {
 
   // play the FULL game through the UI, sampling R10 + R14 as we go
   let dieChecks = 0, dieViolations = 0, taps = 0, outlineBad = 0, over = false;
-  for (let i = 0; i < 300 && !over; i++) {
+  // Budget, not a timeout: a full Blitz game costs more tap-ticks now that a
+  // pawn tapped mid-tumble is REPLAYED when the die settles (R21) instead of
+  // moving straight away. The loop still exits the moment the result screen
+  // appears; 300 simply ran out before the win.
+  for (let i = 0; i < 500 && !over; i++) {
     for (const p of [host.page, guest.page]) {
       const rb = p.locator('button.dicebtn:not([disabled])');
       if (await rb.count()) {
@@ -74,13 +88,24 @@ try {
 
   // rematch through the UI: host clicks FIRST, guest LAST (the old seat-swap trigger)
   if (over) {
-    await host.page.getByText(/REMATCH|REVANCHE/i).first().click({ timeout: 4000 }).catch(() => {});
+    // Target the BUTTON by role, never by text. Once the first player has asked,
+    // the other's end screen also shows a status banner — "<name> wants a
+    // rematch" — which matches /rematch/i too and, being a non-interactive
+    // animated <div role="status">, is what `getByText(...).first()` resolved to:
+    // Playwright then waited for it to become stable and clickable until it timed
+    // out, so the accept never landed and the asker sat in matchmaking. The
+    // button's own label flips REMATCH → ACCEPT REMATCH, so match both.
+    const rematchBtn = (page) => page.getByRole('button', { name: /rematch|revanche/i }).first();
+    await rematchBtn(host.page).click({ timeout: 4000 }).catch(() => {});
     await host.page.waitForTimeout(700);
-    await guest.page.getByText(/REMATCH|REVANCHE/i).first().click({ timeout: 4000 }).catch(() => {});
+    await rematchBtn(guest.page).click({ timeout: 4000 }).catch(() => {});
     await host.page.waitForTimeout(4500);
-    const [hb2, gb2] = [await banners2p(host.page), await banners2p(guest.page)];
-    const sameLayout = strip(hb2['0']) === strip(hb['0']) && strip(gb2['0']) === strip(gb['0']);
-    t.check('rematch keeps every banner where it was', sameLayout, `g2 host ${JSON.stringify(hb2)} guest ${JSON.stringify(gb2)}`);
+    const [hb2, gb2] = [await identity2p(host.page), await identity2p(guest.page)];
+    // The rematch used to SWAP seats; the oracle is that each screen still names
+    // the same opponent it named in game 1 (and still names one at all).
+    const sameIdent = !!strip(hb2.opponent) && !!strip(gb2.opponent) &&
+      strip(hb2.opponent) === strip(hb.opponent) && strip(gb2.opponent) === strip(gb.opponent);
+    t.check('rematch keeps each screen pointed at the same opponent', sameIdent, `g2 host "${hb2.opponent}" guest "${gb2.opponent}"`);
     // and game 2 is actually playable: someone rolls within 20s
     let rolled = false;
     for (let k = 0; k < 66 && !rolled; k++) {

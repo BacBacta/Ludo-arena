@@ -33,8 +33,14 @@
 # every 1¢ race pot settled at the 900 bps global default (winner underpaid 9%).
 # Reads the owner key from repo secrets (ESCROW_OWNER_PRIVATE_KEY /
 # TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY); the script verifies on-chain
-# ownership and is idempotent. Rake snapshots per game at join — only games
-# created after the call settle rake-free.
+# ownership and is idempotent. ARBITER_PRIVATE_KEY is NOT in that chain: it is
+# the HOT key the running server uses to sign every settlement, and today it is
+# ALSO the escrow owner (docs/KEY_CUSTODY.md, R-KEY-1) — so a silent fallback
+# onto it would let a routine ops run reach the settlement key, which is exactly
+# the role cumulation R-KEY-1 exists to unwind. Naming the owner key explicitly
+# costs one repo secret and keeps the two roles separable.
+# Rake snapshots per game at join — only games created after the call settle
+# rake-free.
 #
 # arm-mainnet: flips the running server to Celo MAINNET and sets the Race Week
 # faucet/JIT secrets in ONE atomic `flyctl secrets import` (single restart). The
@@ -49,6 +55,12 @@
 # the chain.
 name: fly-ops
 on:
+  # HARD LIMIT: GitHub allows at most 25 `workflow_dispatch` inputs. Exceeding it
+  # does not disable one operation — it makes the WHOLE workflow undispatchable
+  # ("failed to parse workflow: you may only define up to 25 inputs"), read-only
+  # operations included. This file has hit that ceiling once already and the
+  # cUSD→USD₮ cutover sat untouched because of it. Adding an operation that needs
+  # a new input means MERGING two existing ones, not appending a 26th.
   workflow_dispatch:
     inputs:
       operation:
@@ -157,12 +169,8 @@ on:
         required: false
         default: '1'
         type: string
-      mints_day:
-        description: 'race-pass-mints only: a single UTC day (YYYY-MM-DD). Empty = today.'
-        required: false
-        type: string
-      mints_days:
-        description: 'race-pass-mints only: how many days back to report (ignored when mints_day is set)'
+      mints_window:
+        description: 'race-pass-mints only: either a single UTC day (YYYY-MM-DD) or a NUMBER of days back. Empty = today.'
         required: false
         default: '1'
         type: string
@@ -224,18 +232,17 @@ jobs:
           RAW_CENTS: ${{ inputs.tier_cents }}
           # The escrow OWNER's key (the TREASURY when roles were split at deploy).
           # First configured secret wins; the on-chain owner check is the real gate.
-          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY }}
           # Presence booleans (values never printed) — lets a failed-ownership run
           # distinguish "secret not visible" from "secret holds the wrong key":
           # the script prints caller=<address derived from the key that was used>.
           HAS_OWNER: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY != '' }}
           HAS_TREASURY: ${{ secrets.TREASURY_PRIVATE_KEY != '' }}
           HAS_DEPLOYER: ${{ secrets.DEPLOYER_PRIVATE_KEY != '' }}
-          HAS_ARBITER: ${{ secrets.ARBITER_PRIVATE_KEY != '' }}
         run: |
-          echo "secrets present — ESCROW_OWNER_PRIVATE_KEY: $HAS_OWNER · TREASURY_PRIVATE_KEY: $HAS_TREASURY · DEPLOYER_PRIVATE_KEY: $HAS_DEPLOYER · ARBITER_PRIVATE_KEY: $HAS_ARBITER"
+          echo "secrets present — ESCROW_OWNER_PRIVATE_KEY: $HAS_OWNER · TREASURY_PRIVATE_KEY: $HAS_TREASURY · DEPLOYER_PRIVATE_KEY: $HAS_DEPLOYER"
           if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
-            echo "::error::No owner key configured — add one repo secret among ESCROW_OWNER_PRIVATE_KEY / TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY (must be the escrow owner)."; exit 1
+            echo "::error::No owner key configured — add the ESCROW_OWNER_PRIVATE_KEY repo secret (or TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY). It must hold the escrow OWNER. ARBITER_PRIVATE_KEY is deliberately NOT a fallback — see docs/KEY_CUSTODY.md (R-KEY-1)."; exit 1
           fi
           TIER_BPS=$(printf '%s' "${RAW_BPS:-1}" | tr -cd '0-9')
           export TIER_BPS="${TIER_BPS:-1}"
@@ -260,10 +267,16 @@ jobs:
         env:
           NETWORK: celo
           RAW_TOKEN: ${{ inputs.token_address }}
-          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY }}
+          # Presence booleans only (values never printed), so a failed run says
+          # WHICH secret was picked up without ever revealing a key.
+          HAS_OWNER: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY != '' }}
+          HAS_TREASURY: ${{ secrets.TREASURY_PRIVATE_KEY != '' }}
+          HAS_DEPLOYER: ${{ secrets.DEPLOYER_PRIVATE_KEY != '' }}
         run: |
+          echo "secrets present — ESCROW_OWNER_PRIVATE_KEY: $HAS_OWNER · TREASURY_PRIVATE_KEY: $HAS_TREASURY · DEPLOYER_PRIVATE_KEY: $HAS_DEPLOYER"
           if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
-            echo "::error::No owner key configured — add ESCROW_OWNER_PRIVATE_KEY / TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY (must be the escrow owner)."; exit 1
+            echo "::error::No owner key configured — add the ESCROW_OWNER_PRIVATE_KEY repo secret (or TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY). It must hold the escrow OWNER. ARBITER_PRIVATE_KEY is deliberately NOT a fallback — see docs/KEY_CUSTODY.md (R-KEY-1)."; exit 1
           fi
           TOKEN=$(printf '%s' "$RAW_TOKEN" | grep -oiE '0x[0-9a-f]{40}' | head -n1)
           if [ -z "$TOKEN" ]; then echo "::error::set token_address to the 0x stake token to whitelist"; exit 1; fi
@@ -290,10 +303,16 @@ jobs:
         env:
           NETWORK: celo
           DRY_RUN: ${{ inputs.cosmetics_dry_run }}
-          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY }}
+          # Presence booleans only (values never printed), so a failed run says
+          # WHICH secret was picked up without ever revealing a key.
+          HAS_OWNER: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY != '' }}
+          HAS_TREASURY: ${{ secrets.TREASURY_PRIVATE_KEY != '' }}
+          HAS_DEPLOYER: ${{ secrets.DEPLOYER_PRIVATE_KEY != '' }}
         run: |
+          echo "secrets present — ESCROW_OWNER_PRIVATE_KEY: $HAS_OWNER · TREASURY_PRIVATE_KEY: $HAS_TREASURY · DEPLOYER_PRIVATE_KEY: $HAS_DEPLOYER"
           if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
-            echo "::error::No owner key configured — add ESCROW_OWNER_PRIVATE_KEY / TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY (must be the CosmeticsStore owner)."; exit 1
+            echo "::error::No owner key configured — add the ESCROW_OWNER_PRIVATE_KEY repo secret (or TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY). It must hold the CosmeticsStore OWNER. ARBITER_PRIVATE_KEY is deliberately NOT a fallback — see docs/KEY_CUSTODY.md (R-KEY-1)."; exit 1
           fi
           if [ "$DRY_RUN" = "true" ]; then
             echo "DRY RUN — printing the plan, writing nothing."
@@ -465,12 +484,22 @@ jobs:
         if: ${{ inputs.operation == 'race-pass-mints' }}
         env:
           NETWORK: celo
-          MINTS_DAY: ${{ inputs.mints_day }}
-          MINTS_DAYS: ${{ inputs.mints_days }}
+          MINTS_WINDOW: ${{ inputs.mints_window }}
         run: |
           set -eu
-          DAY=$(printf '%s' "${MINTS_DAY:-}" | tr -cd '0-9-')
-          DAYS=$(printf '%s' "${MINTS_DAYS:-1}" | tr -cd '0-9')
+          # One input, two meanings, told apart by SHAPE: YYYY-MM-DD is a single
+          # day, a bare number is "how many days back". They were two inputs
+          # until the file hit GitHub's 25-input ceiling — see the note above.
+          W=$(printf '%s' "${MINTS_WINDOW:-}" | tr -cd '0-9-')
+          # Match DIGITS explicitly, not `?`: `????-??-??` also accepted a
+          # non-zero-padded date, and anything shaped like a date that misses
+          # this arm falls through to the numeric one, where `2026-8-1` becomes
+          # DAYS=202681 — a 200k-day window silently reported as a day.
+          case "$W" in
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) DAY="$W"; DAYS=1 ;;
+            *-*) echo "::error::mints_window looks like a date but is not YYYY-MM-DD: '$W'"; exit 1 ;;
+            *) DAY=""; DAYS=$(printf '%s' "$W" | tr -cd '0-9') ;;
+          esac
           npm ci
           DAY="$DAY" DAYS="${DAYS:-1}" npm run race-pass-mints -w packages/contracts
       # onchain-activity: READ-ONLY — counts the transactions our mainnet

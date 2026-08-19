@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BLITZ, type Seat } from '@ludo/game-engine';
 import { fmtUsd, useAppDispatch, useAppState } from '../state/store';
 import { tokenSkinById } from '../lib/tokenSkins';
@@ -8,7 +8,7 @@ import { DieFace } from '../components/Die';
 import { Die } from '../components/DiePremium';
 import { IconCoins, IconFlag, IconMenu, IconShieldCheck, IconSoundOff, IconSoundOn } from '../components/icons';
 import { EmoteBar, EmoteFloat, GiftBar, GiftFlight } from '../components/Emote';
-import { DIE_HOLD_MS } from '../lib/pacing';
+import { DIE_HOLD_MS, DIE_TUMBLE_MS } from '../lib/pacing';
 import { skinById, skinSound, type DiceSkin } from '../lib/diceSkins';
 import { frameRing } from '../lib/avatarFrames';
 import { avatarSrc } from '../lib/avatars';
@@ -184,6 +184,57 @@ export function GameScreen({
   // ticks only while it is genuinely my turn to act.
   const myClockFrac = useCountdown(activeTurn === mySeat && game?.turn === mySeat ? turnDeadlineTs : null);
 
+  // R21 — a pawn must never start walking while MY die is still tumbling: the
+  // move reads as the outcome of a roll the player has not been shown yet. The
+  // pawns become legal the instant the server's result lands (~80 ms), well
+  // inside the ~700 ms tumble, so a quick tapper used to move under a spinning
+  // die.
+  //
+  // Swallowing the tap for 700 ms would make the board feel dead, so the tap is
+  // REMEMBERED and replayed the moment the die settles. The replay re-checks the
+  // authoritative state — a deferred token that is no longer legal (turn moved
+  // on, pawn captured meanwhile) is dropped rather than sent.
+  //
+  // Gated on the ROLL CLOCK, not on `useTumble`'s sampled face: that hook only
+  // produces its first face on its first 90 ms interval tick and returns null
+  // until then, so the 80 ms window in which a fast tap actually arrives read as
+  // "not tumbling" and sailed straight through.
+  const [tumblingMove, setTumblingMove] = useState(false);
+  const deferredMove = useRef<number | null>(null);
+  useEffect(() => {
+    // `myRollIndex` falls back to 0 whenever the last die is no longer MINE —
+    // the opponent rolled, or the match was cleared. Returning early there left
+    // the gate latched ON (the cleanup had already cancelled the timer that
+    // would have lowered it), so every later tap was swallowed into
+    // `deferredMove` and a stale token got auto-played at the end of some
+    // future roll's tumble. Lower the gate and drop the pending tap instead.
+    if (myRollIndex === 0) {
+      setTumblingMove(false);
+      deferredMove.current = null;
+      return;
+    }
+    setTumblingMove(true);
+    const id = setTimeout(() => setTumblingMove(false), DIE_TUMBLE_MS);
+    return () => clearTimeout(id);
+  }, [myRollIndex]);
+  const onTokenTap = useCallback(
+    (token: number) => {
+      if (tumblingMove) {
+        deferredMove.current = token;
+        return;
+      }
+      onMove(token);
+    },
+    [tumblingMove, onMove],
+  );
+  useEffect(() => {
+    if (tumblingMove) return;
+    const token = deferredMove.current;
+    if (token === null) return;
+    deferredMove.current = null;
+    if (game && game.turn === mySeat && game.phase === 'awaiting-move' && game.legal.includes(token)) onMove(token);
+  }, [tumblingMove, game, mySeat, onMove]);
+
   if (!game || !match) return null;
 
   // The HUD follows activeTurn (deferred until a move finishes animating), while
@@ -192,6 +243,7 @@ export function GameScreen({
   // the movable pawns lock until it resolves, so a slow RTT can't be re-tapped into
   // a duplicate intent. (Always null for the local bot — it resolves synchronously.)
   const locked = pendingAction !== null;
+
   const myTurn = activeTurn === mySeat;
   const canRoll = myTurn && game.turn === mySeat && game.phase === 'awaiting-roll' && !locked;
   const needPick = myTurn && game.turn === mySeat && game.phase === 'awaiting-move' && game.legal.length > 1;
@@ -301,7 +353,7 @@ export function GameScreen({
         <Board
           game={game}
           mySeat={mySeat}
-          onTokenTap={onMove}
+          onTokenTap={onTokenTap}
           locked={locked}
           // No name banners painted on the plate: design 1c moves identity into
           // the chrome — the opponent's avatar + name + ELO sit above the board,

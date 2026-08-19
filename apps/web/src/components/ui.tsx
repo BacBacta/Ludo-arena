@@ -1081,6 +1081,10 @@ export function HelpModal() {
             <p>
               {t('hSupportBody')} <a className="help__link" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
             </p>
+            {/* The response-time commitment the MiniPay listing asks operators to
+                state. Kept next to the address it applies to, so a player reading
+                it never has to look for the terms elsewhere. */}
+            <p>{t('hSupportSla')}</p>
           </section>
         </div>
         <button className="btn btn--ghost" onClick={() => { playTap(); close(); }}>{t('close')}</button>
