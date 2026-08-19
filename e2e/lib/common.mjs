@@ -209,9 +209,16 @@ export async function newPlayer(browser, ctxOpts = {}) {
   return { ctx, page, wire };
 }
 
-/** Android low-end webview emulation (MiniPay's target): 360x800, touch. */
+/**
+ * Android low-end webview emulation (MiniPay's target): 360x640, touch.
+ *
+ * 640 — not 800 — is the HARD MINIMUM from MiniPay's readiness requirements, and
+ * it is the height that actually finds bugs: 800 leaves 160px of slack, so a
+ * layout that pushes its primary CTA below the fold on a real low-end handset
+ * still passes. Validate against the floor, not against a comfortable device.
+ */
 export const MOBILE_CONTEXT = {
-  viewport: { width: 360, height: 800 },
+  viewport: { width: 360, height: 640 },
   userAgent: 'Mozilla/5.0 (Linux; Android 10; SM-A105F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
   isMobile: true,
   hasTouch: true,

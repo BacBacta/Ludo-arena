@@ -1,7 +1,7 @@
 /**
  * Phase 3 — wallet integration + mobile UI, with a MOCKED MiniPay provider (for
  * CI). Covers: MiniPay detection + zero-click connect, a REFUSED connection, an
- * ABSENT provider (demo fallback), all on an Android 360x800 webview viewport.
+ * ABSENT provider (demo fallback), all on an Android 360x640 webview viewport.
  * Real transaction signing → settlement is exercised manually on Celo Sepolia
  * (e2e/staked/). Run against the local stack (see e2e/README.md).
  */
@@ -18,7 +18,7 @@ try {
     await openLobby(page);
 
     const vp = page.viewportSize();
-    t.check('renders at Android 360x800 viewport', vp.width === 360 && vp.height === 800, `${vp.width}x${vp.height}`);
+    t.check('renders at Android 360x640 viewport', vp.width === 360 && vp.height === 640, `${vp.width}x${vp.height}`);
 
     const isMini = await page.evaluate(() => Boolean(window.ethereum && window.ethereum.isMiniPay));
     t.check('app sees window.ethereum.isMiniPay', isMini);

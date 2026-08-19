@@ -2,7 +2,7 @@
  * Phase 6 — real MiniPay conditions on the E2E path:
  *   - 3G throttling (750 kb/s, 100 ms RTT) via CDP Network.emulateNetworkConditions
  *   - low-end CPU profile (4x slowdown) via CDP Emulation.setCPUThrottlingRate
- *   - Android 360x800 webview viewport
+ *   - Android 360x640 webview viewport
  * Budgets (the single source of truth — AGENTS.md golden rule 4 mirrors these):
  *   - CRITICAL PATH (all JS+CSS except the lazily-loaded 3D dice engine chunk)
  *     < 300 KB gzipped — this is what gates interactivity;
@@ -62,7 +62,7 @@ try {
   await cta.waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
   const tti = Date.now() - t0;
 
-  t.check('renders at Android 360x800 under 3G + 4x CPU', page.viewportSize().width === 360);
+  t.check('renders at Android 360x640 under 3G + 4x CPU', page.viewportSize().width === 360);
   // Guard the measurement itself: an origin that doesn't compress makes the two
   // budgets below meaningless (they'd measure raw bytes, not what users download).
   t.check('origin serves COMPRESSED assets (production-like)', assets > 0 && compressed === assets, `${compressed}/${assets} assets gzip/br — use a compressing server, not python http.server`);

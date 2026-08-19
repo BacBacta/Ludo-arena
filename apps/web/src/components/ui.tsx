@@ -10,6 +10,7 @@ import { FRAMES, frameById, frameClass } from '../lib/avatarFrames';
 import { TOKEN_SKINS, ENTRANCE_FX, VICTORY_FX, tokenSkinById, entranceFxById, victoryFxById } from '../lib/tokenSkins';
 import { BOARD_THEMES, boardThemeById } from '../lib/boardThemes';
 import { toastDurationMs } from '../lib/toast';
+import { fetchStats, fmtRatio, fmtVolume, type StatsPayload } from '../lib/stats';
 import { TokenPreview, BoardThemePreview } from './Board';
 import { avatarSrc, AVATAR_ORIGINALS, AVATAR_FACES, AVATAR_CHARACTERS } from '../lib/avatars';
 import { PremiumFrame, isPremiumFrame } from './PremiumFrame';
@@ -1100,6 +1101,85 @@ export function DocModal() {
       <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
         <h3>{legalDoc === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h3>
         <p className="legal__body">{legalDoc === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
+        <button className="btn btn--ghost" onClick={close}>{t('close')}</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Public activity stats, reachable from the lobby footer without a wallet —
+ * MiniPay's listing review wants the usage numbers fresh and reachable from
+ * inside the Mini App. Aggregates only (no addresses, no balances).
+ *
+ * Fetched on open rather than at boot: it is a footer sheet almost nobody opens,
+ * and the critical path is budgeted (rule 4). An unreachable server renders the
+ * unavailable state — never a half-filled sheet of zeroes, which would read as
+ * "this app has no players" rather than "the numbers did not load".
+ */
+export function StatsModal({ serverUrl }: { serverUrl: string }) {
+  const { statsOpen } = useAppState();
+  const dispatch = useAppDispatch();
+  const close = (): void => void dispatch({ type: 'STATS_MODAL', open: false });
+  const trapRef = useFocusTrap<HTMLDivElement>(statsOpen, close);
+  const [data, setData] = useState<StatsPayload | null>(null);
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+
+  useEffect(() => {
+    if (!statsOpen) return;
+    const ac = new AbortController();
+    setState('loading');
+    void fetchStats(serverUrl, 30, ac.signal).then((d) => {
+      if (ac.signal.aborted) return;
+      setData(d);
+      setState(d ? 'idle' : 'error');
+    });
+    return () => ac.abort();
+  }, [statsOpen, serverUrl]);
+
+  if (!statsOpen) return null;
+  const s = data?.summary;
+  const peak = Math.max(1, ...(data?.daily ?? []).map((d) => d.players));
+
+  return (
+    <div className="modal" onClick={close}>
+      <div className="modal__card stats" ref={trapRef} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('statsTitle')}>
+        <h3>{t('statsTitle')}</h3>
+
+        {state === 'loading' && <p className="stats__note">{t('statsLoading')}</p>}
+        {state === 'error' && <p className="stats__note">{t('statsUnavailable')}</p>}
+
+        {s && state !== 'error' && (<>
+          <div className="stats__grid">
+            <div className="stats__cell"><b>{s.activePlayers}</b><span>{t('statsPlayers')}</span></div>
+            <div className="stats__cell"><b>{s.games}</b><span>{t('statsGames')}</span></div>
+            <div className="stats__cell"><b>{s.stakedGames}</b><span>{t('statsStaked')}</span></div>
+            <div className="stats__cell"><b>{fmtVolume(s.stakedVolumeCents)}</b><span>{t('statsVolume')}</span></div>
+          </div>
+
+          <h4 className="stats__h">{t('statsRetention')}</h4>
+          <div className="stats__grid stats__grid--3">
+            <div className="stats__cell"><b>{fmtRatio(s.retention.d1)}</b><span>D1</span></div>
+            <div className="stats__cell"><b>{fmtRatio(s.retention.d7)}</b><span>D7</span></div>
+            <div className="stats__cell"><b>{fmtRatio(s.retention.d30)}</b><span>D30</span></div>
+          </div>
+
+          {/* A single day is not a trend — one bar reads as a broken block
+              rather than a chart, so the strip only appears with 2+ days. */}
+          {data && data.daily.length > 1 && (<>
+            <h4 className="stats__h">{t('statsDaily')}</h4>
+            {/* Bars, not a chart lib: rule 4 budgets the critical path, and a
+                30-bar sparkline is a flex row of divs. */}
+            <div className="stats__spark" aria-hidden="true">
+              {data.daily.map((d) => (
+                <i key={d.day} style={{ height: `${Math.max(6, (d.players / peak) * 100)}%` }} title={`${d.day}: ${d.players}`} />
+              ))}
+            </div>
+          </>)}
+
+          <p className="stats__note">{t('statsFoot')}</p>
+        </>)}
+
         <button className="btn btn--ghost" onClick={close}>{t('close')}</button>
       </div>
     </div>

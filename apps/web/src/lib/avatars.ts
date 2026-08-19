@@ -1,7 +1,9 @@
 /**
  * Profile avatars (E-social): a premium character picture a player may set as
  * their identity instead of a bare flag. The id set is the shared AVATARS
- * allowlist; the images ship as static assets (`public/avatars/av_<id>.png`):
+ * allowlist; the images ship as static assets (`public/avatars/av_<id>.webp`
+ * — WebP, not PNG: MiniPay's asset rule, and it took the set from 1.37 MB to
+ * 0.24 MB, which is what the PageSpeed floor actually measures):
  * the `ludo_*` ORIGINALS are first-party brand mascots (project-owned art,
  * masters + generator in apps/web/art/avatars), the rest are Microsoft Fluent
  * Emoji 3D (MIT). Chosen locally + sent in hello (same client-authoritative,
@@ -14,7 +16,7 @@ const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '
 /** Image URL for an avatar id, or null for 'none'/unknown (→ fall back to flag). */
 export function avatarSrc(id: string | undefined | null): string | null {
   if (!id || id === 'none' || !isAvatar(id)) return null;
-  return `${BASE}avatars/av_${id}.png`;
+  return `${BASE}avatars/av_${id}.webp`;
 }
 
 /** True when this id resolves to a real avatar image (not 'none'). */

@@ -20,7 +20,7 @@ const SUITES = [
   ['ui-4p.mjs', 4 * 60_000],
   ['ui-practice.mjs', 6 * 60_000],
   ['ui-wallet.mjs', 4 * 60_000], // Phase 3: mocked MiniPay + mobile viewport
-  ['ui-mobile.mjs', 5 * 60_000], // Phase 3: full journey on Android 360x800
+  ['ui-mobile.mjs', 5 * 60_000], // Phase 3: full journey on Android 360x640
   ['wire-security.mjs', 3 * 60_000], // Phase 0: R-RT-1 / R-AUTH-2 regressions
   ['wire-anticheat.mjs', 4 * 60_000], // Phase 7: explicit cheat attempts (dice/seat/victory)
 ];
