@@ -38,8 +38,9 @@
 # ALSO the escrow owner (docs/KEY_CUSTODY.md, R-KEY-1) — so a silent fallback
 # onto it would let a routine ops run reach the settlement key, which is exactly
 # the role cumulation R-KEY-1 exists to unwind. Naming the owner key explicitly
-# costs one repo secret and keeps the two roles separable. Rake snapshots per game at join — only games
-# created after the call settle rake-free.
+# costs one repo secret and keeps the two roles separable.
+# Rake snapshots per game at join — only games created after the call settle
+# rake-free.
 #
 # arm-mainnet: flips the running server to Celo MAINNET and sets the Race Week
 # faucet/JIT secrets in ONE atomic `flyctl secrets import` (single restart). The
@@ -54,6 +55,12 @@
 # the chain.
 name: fly-ops
 on:
+  # HARD LIMIT: GitHub allows at most 25 `workflow_dispatch` inputs. Exceeding it
+  # does not disable one operation — it makes the WHOLE workflow undispatchable
+  # ("failed to parse workflow: you may only define up to 25 inputs"), read-only
+  # operations included. This file has hit that ceiling once already and the
+  # cUSD→USD₮ cutover sat untouched because of it. Adding an operation that needs
+  # a new input means MERGING two existing ones, not appending a 26th.
   workflow_dispatch:
     inputs:
       operation:
@@ -162,12 +169,8 @@ on:
         required: false
         default: '1'
         type: string
-      mints_day:
-        description: 'race-pass-mints only: a single UTC day (YYYY-MM-DD). Empty = today.'
-        required: false
-        type: string
-      mints_days:
-        description: 'race-pass-mints only: how many days back to report (ignored when mints_day is set)'
+      mints_window:
+        description: 'race-pass-mints only: either a single UTC day (YYYY-MM-DD) or a NUMBER of days back. Empty = today.'
         required: false
         default: '1'
         type: string
@@ -481,12 +484,17 @@ jobs:
         if: ${{ inputs.operation == 'race-pass-mints' }}
         env:
           NETWORK: celo
-          MINTS_DAY: ${{ inputs.mints_day }}
-          MINTS_DAYS: ${{ inputs.mints_days }}
+          MINTS_WINDOW: ${{ inputs.mints_window }}
         run: |
           set -eu
-          DAY=$(printf '%s' "${MINTS_DAY:-}" | tr -cd '0-9-')
-          DAYS=$(printf '%s' "${MINTS_DAYS:-1}" | tr -cd '0-9')
+          # One input, two meanings, told apart by SHAPE: YYYY-MM-DD is a single
+          # day, a bare number is "how many days back". They were two inputs
+          # until the file hit GitHub's 25-input ceiling — see the note above.
+          W=$(printf '%s' "${MINTS_WINDOW:-}" | tr -cd '0-9-')
+          case "$W" in
+            ????-??-??) DAY="$W"; DAYS=1 ;;
+            *) DAY=""; DAYS=$(printf '%s' "$W" | tr -cd '0-9') ;;
+          esac
           npm ci
           DAY="$DAY" DAYS="${DAYS:-1}" npm run race-pass-mints -w packages/contracts
       # onchain-activity: READ-ONLY — counts the transactions our mainnet
