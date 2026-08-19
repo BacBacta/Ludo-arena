@@ -38,7 +38,11 @@ try {
 
   // play the FULL game through the UI, sampling R10 + R14 as we go
   let dieChecks = 0, dieViolations = 0, taps = 0, outlineBad = 0, over = false;
-  for (let i = 0; i < 300 && !over; i++) {
+  // Budget, not a timeout: a full Blitz game costs more tap-ticks now that a
+  // pawn tapped mid-tumble is REPLAYED when the die settles (R21) instead of
+  // moving straight away. The loop still exits the moment the result screen
+  // appears; 300 simply ran out before the win.
+  for (let i = 0; i < 500 && !over; i++) {
     for (const p of [host.page, guest.page]) {
       const rb = p.locator('button.dicebtn:not([disabled])');
       if (await rb.count()) {
