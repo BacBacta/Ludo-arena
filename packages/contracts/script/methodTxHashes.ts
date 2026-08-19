@@ -127,13 +127,14 @@ const CONTRACTS: ContractDef[] = [
 ];
 
 const CAP = 10_000; // etherscan-compat txlist page cap
+const MAX_PAGES = 20; // 200k txs — a backstop, not an expected bound
 
-type Tx = { hash: string; input: string; isError?: string; txreceipt_status?: string; timeStamp?: string; from?: string };
+type Tx = { hash: string; input: string; isError?: string; txreceipt_status?: string; timeStamp?: string; from?: string; blockNumber?: string };
 
-/** Every top-level transaction sent TO `addr`, oldest first. */
-async function txlist(addr: Address): Promise<Tx[] | null> {
+/** One ascending page of top-level transactions sent TO `addr`. */
+async function txPage(addr: Address, startblock: number): Promise<Tx[] | null> {
   try {
-    const url = `${BLOCKSCOUT}/api?module=account&action=txlist&address=${addr}&startblock=0&endblock=99999999&page=1&offset=${CAP}&sort=asc`;
+    const url = `${BLOCKSCOUT}/api?module=account&action=txlist&address=${addr}&startblock=${startblock}&endblock=99999999&page=1&offset=${CAP}&sort=asc`;
     const res = await fetch(url, { headers: { accept: 'application/json' } });
     if (!res.ok) return null;
     const j = (await res.json()) as { status?: string; message?: string; result?: unknown };
@@ -144,6 +145,44 @@ async function txlist(addr: Address): Promise<Tx[] | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * EVERY top-level transaction sent TO `addr`, oldest first — paged.
+ *
+ * A single 10k page is not enough: the mainnet escrow is already past 3k and
+ * climbing, and a silent truncation here does not degrade gracefully — it
+ * reports the wrong "latest call" hash, and prints MANQUANT for any method
+ * first used after the cut-off. That is a false negative in a document whose
+ * whole job is to prove a journey ran.
+ *
+ * Pages by block number (the explorer's own ordering key) rather than by page
+ * index, which these endpoints cap; the last block is re-requested and
+ * de-duplicated by hash so a block straddling a page boundary is never lost.
+ */
+async function txlist(addr: Address): Promise<Tx[] | null> {
+  const seen = new Set<string>();
+  const all: Tx[] = [];
+  let startblock = 0;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const rows = await txPage(addr, startblock);
+    if (rows === null) return all.length ? all : null;
+    let added = 0;
+    for (const t of rows) {
+      if (seen.has(t.hash)) continue;
+      seen.add(t.hash);
+      all.push(t);
+      added++;
+    }
+    if (rows.length < CAP) return all;
+    const last = Number(rows[rows.length - 1]?.blockNumber);
+    // No progress possible (a single block wider than a page, or no block
+    // numbers at all): stop rather than loop forever on the same rows.
+    if (!Number.isFinite(last) || added === 0) return all;
+    startblock = last;
+  }
+  console.error(`method-tx-hashes: ${addr} exceeded ${MAX_PAGES} pages — results may be truncated.`);
+  return all;
 }
 
 /** A reverted call is not evidence that a journey works — only count successes. */

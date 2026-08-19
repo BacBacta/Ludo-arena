@@ -200,13 +200,23 @@ export function GameScreen({
   // until then, so the 80 ms window in which a fast tap actually arrives read as
   // "not tumbling" and sailed straight through.
   const [tumblingMove, setTumblingMove] = useState(false);
+  const deferredMove = useRef<number | null>(null);
   useEffect(() => {
-    if (myRollIndex === 0) return;
+    // `myRollIndex` falls back to 0 whenever the last die is no longer MINE —
+    // the opponent rolled, or the match was cleared. Returning early there left
+    // the gate latched ON (the cleanup had already cancelled the timer that
+    // would have lowered it), so every later tap was swallowed into
+    // `deferredMove` and a stale token got auto-played at the end of some
+    // future roll's tumble. Lower the gate and drop the pending tap instead.
+    if (myRollIndex === 0) {
+      setTumblingMove(false);
+      deferredMove.current = null;
+      return;
+    }
     setTumblingMove(true);
     const id = setTimeout(() => setTumblingMove(false), DIE_TUMBLE_MS);
     return () => clearTimeout(id);
   }, [myRollIndex]);
-  const deferredMove = useRef<number | null>(null);
   const onTokenTap = useCallback(
     (token: number) => {
       if (tumblingMove) {

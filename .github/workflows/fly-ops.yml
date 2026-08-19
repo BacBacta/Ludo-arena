@@ -491,8 +491,13 @@ jobs:
           # day, a bare number is "how many days back". They were two inputs
           # until the file hit GitHub's 25-input ceiling — see the note above.
           W=$(printf '%s' "${MINTS_WINDOW:-}" | tr -cd '0-9-')
+          # Match DIGITS explicitly, not `?`: `????-??-??` also accepted a
+          # non-zero-padded date, and anything shaped like a date that misses
+          # this arm falls through to the numeric one, where `2026-8-1` becomes
+          # DAYS=202681 — a 200k-day window silently reported as a day.
           case "$W" in
-            ????-??-??) DAY="$W"; DAYS=1 ;;
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) DAY="$W"; DAYS=1 ;;
+            *-*) echo "::error::mints_window looks like a date but is not YYYY-MM-DD: '$W'"; exit 1 ;;
             *) DAY=""; DAYS=$(printf '%s' "$W" | tr -cd '0-9') ;;
           esac
           npm ci

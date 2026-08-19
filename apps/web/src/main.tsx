@@ -57,7 +57,14 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     // Return to the URL the page BOOTED with, not the one App rewrote: a real
     // update landing on a visitor who just opened an invite link must still
     // carry `#/g/CODE` across the reload.
-    window.location.replace(BOOT_HREF);
+    //
+    // Restore the URL first, THEN reload. `location.replace(BOOT_HREF)` looks
+    // equivalent and is not: when the only difference is the fragment — exactly
+    // our case, App having just stripped `#/g/CODE` — the browser treats it as a
+    // same-document navigation and never reloads. The update would then be
+    // swallowed silently, with `reloading` latched so nothing retries.
+    history.replaceState(null, '', BOOT_HREF);
+    window.location.reload();
   });
   window.addEventListener('load', () => {
     navigator.serviceWorker
