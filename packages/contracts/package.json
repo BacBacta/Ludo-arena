@@ -18,6 +18,7 @@
     "migration-status": "tsx script/migrationStatus.ts",
     "race-status": "tsx script/raceStatus.ts",
     "onchain-activity": "tsx script/onchainActivity.ts",
+    "method-tx-hashes": "tsx script/methodTxHashes.ts",
     "wallet-status": "tsx script/walletStatus.ts",
     "race-pass-mints": "tsx script/racePassMints.ts"
   },
