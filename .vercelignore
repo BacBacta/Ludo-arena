@@ -7,3 +7,6 @@ node_modules
 **/dist
 **/node_modules
 .git
+# Agent skills (markdown reference docs, editor-side only — never built).
+.agents
+.claude
