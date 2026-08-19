@@ -64,6 +64,8 @@ on:
           - end-race-week
           - set-tier-rake
           - allow-token
+          - list-cosmetics
+          - migration-status
           - race-status
           - onchain-activity
           - race-pass-mints
@@ -120,6 +122,11 @@ on:
         description: 'wallet-status only: the address to probe (cUSD + CELO balance). e.g. the house-bot wallet.'
         required: false
         type: string
+      cosmetics_dry_run:
+        description: 'list-cosmetics only: print the plan (token repoint + price diff) and write NOTHING. Leave ON for a first look.'
+        required: false
+        default: true
+        type: boolean
       unstick_wallets:
         description: 'race-unstick only: wallets wrongly told "already funded" (comma-separated 0x…). LEAVE EMPTY to DISCOVER every stuck wallet (report only). DRY RUN unless confirm=UNSTICK.'
         required: false
@@ -140,8 +147,13 @@ on:
         description: 'race-funding only: RACE_POOL_CENTS — TOTAL campaign cap (prizes + cUSD gas seeds), in cents. e.g. 8000 = $80. Empty = leave unchanged.'
         required: false
         type: string
+      tier_cents:
+        description: 'set-tier-rake only: WHICH stake tier, in cents (1 = Race micro-tier, 25 / 100 / 500 = the visible tiers). Default 1. Tier rakes are keyed by (token, RAW amount), so each token needs its own pass.'
+        required: false
+        default: '1'
+        type: string
       tier_bps:
-        description: 'set-tier-rake only: rake in basis points for the 1c Race tier (0..2000; e.g. 1000 = 10%, 1 = ~rake-free). Default 1.'
+        description: 'set-tier-rake only: rake in basis points for the chosen tier (0..2000; e.g. 1000 = 10%, 1 = ~rake-free). Default 1. Live table: RAKE_BPS_BY_STAKE in packages/shared/src/protocol.ts — 1c:1 · 25c:1000 · 100c:800 · 500c:600.'
         required: false
         default: '1'
         type: string
@@ -190,9 +202,12 @@ jobs:
     steps:
       - uses: superfly/flyctl-actions/setup-flyctl@master
       # set-tier-rake: an ON-CHAIN owner call, not a Fly operation — the runner
-      # (unlike the dev sandbox) can reach Celo RPC. Fixes the deployed escrows'
-      # missing 1¢ Race tier rake (fell back to the 900 bps global: every race
-      # winner was paid 1.82¢ of an announced 2¢). Idempotent; the script
+      # (unlike the dev sandbox) can reach Celo RPC. Originally added for the
+      # missing 1¢ Race tier (it fell back to the 900 bps global: every race
+      # winner was paid 1.82¢ of an announced 2¢); tier_cents now selects ANY
+      # tier, because rakes are keyed by (token, RAW amount) — after a token
+      # switch NO tier carries over and all four need one pass each, or every
+      # stake silently reverts to the 900 bps global. Idempotent; the script
       # verifies the caller IS the escrow owner and aborts loudly otherwise,
       # printing the owner address so the right key can be configured.
       - uses: actions/checkout@v4
@@ -201,11 +216,12 @@ jobs:
         if: ${{ inputs.operation == 'set-tier-rake' }}
         with:
           node-version: 22
-      - name: set-tier-rake (rake-free 1c race tier on the DEPLOYED escrows)
+      - name: set-tier-rake (per-tier rake on the DEPLOYED escrows)
         if: ${{ inputs.operation == 'set-tier-rake' }}
         env:
           NETWORK: celo
           RAW_BPS: ${{ inputs.tier_bps }}
+          RAW_CENTS: ${{ inputs.tier_cents }}
           # The escrow OWNER's key (the TREASURY when roles were split at deploy).
           # First configured secret wins; the on-chain owner check is the real gate.
           DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
@@ -223,7 +239,9 @@ jobs:
           fi
           TIER_BPS=$(printf '%s' "${RAW_BPS:-1}" | tr -cd '0-9')
           export TIER_BPS="${TIER_BPS:-1}"
-          echo "Setting 1c tier rake to $TIER_BPS bps"
+          TIER_CENTS=$(printf '%s' "${RAW_CENTS:-1}" | tr -cd '0-9')
+          export TIER_CENTS="${TIER_CENTS:-1}"
+          echo "Setting the ${TIER_CENTS}c tier rake to $TIER_BPS bps"
           npm ci
           npm run set-tier-rake -w packages/contracts
       # allow-token: on-chain OWNER call — whitelist a stake token on the DEPLOYED
@@ -251,6 +269,56 @@ jobs:
           if [ -z "$TOKEN" ]; then echo "::error::set token_address to the 0x stake token to whitelist"; exit 1; fi
           npm ci
           TOKEN_ADDRESS="$TOKEN" npm run allow-token -w packages/contracts
+      # list-cosmetics: on-chain OWNER calls — points the CosmeticsStore at the
+      # stake token from deployments.json, then syncs the whole shared catalogue
+      # at that token's decimals. Both writes in ONE run because the order is a
+      # money-safety property: prices are stored in the token's BASE UNITS, so
+      # repricing BEFORE the repoint would briefly list every item at a fraction
+      # of a cent (a $1 item priced 1e6 while the store still pulls 18-dec cUSD).
+      # Token first is merely broken-but-safe (buys revert on balance), and the
+      # script re-reads the token on-chain before setPrices so a partial run can
+      # never price against a stale token. Idempotent; owner-checked. Start with
+      # cosmetics_dry_run ON.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'list-cosmetics' }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.operation == 'list-cosmetics' }}
+        with:
+          node-version: 22
+      - name: list-cosmetics (repoint the store token + sync the catalogue)
+        if: ${{ inputs.operation == 'list-cosmetics' }}
+        env:
+          NETWORK: celo
+          DRY_RUN: ${{ inputs.cosmetics_dry_run }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.ESCROW_OWNER_PRIVATE_KEY || secrets.TREASURY_PRIVATE_KEY || secrets.DEPLOYER_PRIVATE_KEY || secrets.ARBITER_PRIVATE_KEY }}
+        run: |
+          if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
+            echo "::error::No owner key configured — add ESCROW_OWNER_PRIVATE_KEY / TREASURY_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY (must be the CosmeticsStore owner)."; exit 1
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN — printing the plan, writing nothing."
+          else
+            echo "LIVE — setToken (if needed) then setPrices will be sent."
+          fi
+          npm ci
+          npm run list-cosmetics -w packages/contracts
+      # migration-status: READ-ONLY — no key, every call is an eth_call. Reports
+      # how far the cUSD→USD₮ cutover has got: allowlist per escrow, the four
+      # tier rakes, the store's token and how many catalogue prices match. Run it
+      # between the steps above to see what is still outstanding.
+      - uses: actions/checkout@v4
+        if: ${{ inputs.operation == 'migration-status' }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.operation == 'migration-status' }}
+        with:
+          node-version: 22
+      - name: migration-status (read-only cutover progress)
+        if: ${{ inputs.operation == 'migration-status' }}
+        env:
+          NETWORK: celo
+        run: |
+          npm ci
+          npm run migration-status -w packages/contracts
       # server-logs: READ-ONLY — fetches the recent Fly machine logs and prints
       # ONLY the operationally relevant lines (house-bot / stake-gate / settlement
       # / boot warnings), so a mainnet stake-lock failure can be diagnosed from
