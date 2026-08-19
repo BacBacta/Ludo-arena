@@ -1,13 +1,13 @@
-Profile avatars (av_*.png)
+Profile avatars (av_*.webp)
 ==========================
 
-Ludo Arena ORIGINALS (av_ludo_*.png)
+Ludo Arena ORIGINALS (av_ludo_*.webp)
 ------------------------------------
 First-party brand mascots, 100% original work owned by the Ludo Arena project.
 Drawn from the brand palette (icon.svg / global.css); SVG masters + generator:
 apps/web/art/avatars (generate.mjs → render.mjs). All rights reserved.
 
-Fluent set (all other av_*.png)
+Fluent set (all other av_*.webp)
 -------------------------------
 Source: Microsoft Fluent Emoji — https://github.com/microsoft/fluentui-emoji
 Licence: MIT (commercial use permitted, no attribution required; this notice is
@@ -22,5 +22,5 @@ kept as good practice).
 
 Set: Person / Man / Woman across 6 skin tones (Default + Light→Dark) plus the
 character variants Artist, Astronaut, Student, Person-with-crown, Older person,
-Ninja, Health worker — the "3D" render variant. File id = av_<id>.png where <id>
+Ninja, Health worker — the "3D" render variant. File id = av_<id>.webp where <id>
 is the shared AVATARS allowlist (packages/shared/src/protocol.ts).

@@ -1,5 +1,5 @@
 /**
- * Phase 3 — full journey on the Android 360x800 webview viewport (MiniPay's
+ * Phase 3 — full journey on the Android 360x640 webview viewport (MiniPay's
  * target device). Two mobile players pair via a private table (matchmaking),
  * reach the board, and play real turns (roll + move land and the state advances).
  * Full-to-victory + abandon + timeout journeys are covered over the wire by
@@ -17,7 +17,7 @@ try {
   const pageErrors = [];
   host.page.on('pageerror', (e) => pageErrors.push(`host: ${e}`));
   await openLobby(host.page);
-  t.check('host renders at 360x800', host.page.viewportSize().width === 360);
+  t.check('host renders at 360x640', host.page.viewportSize().width === 360);
 
   await host.page.getByText(/Private table|Table privée/i).first().click({ timeout: 6000 }).catch(() => {});
   await host.page.waitForTimeout(1500);
