@@ -52,15 +52,15 @@ Relevé du 2026-08-19 :
 
 ### Le trou : l'achat de cosmétique
 
-Le `CosmeticsStore` mainnet n'a reçu que **2 transactions**, toutes deux
-administratives (`setPrices` au déploiement). Aucun `buy` n'a jamais abouti, donc
-**il n'existe aucun hash à citer** pour ce parcours.
+Le `CosmeticsStore` mainnet n'avait reçu que **2 transactions**, toutes deux
+administratives. Aucun `buy` n'a jamais abouti, donc **il n'existe aucun hash à
+citer** pour ce parcours.
 
-Ce n'est pas une lacune de collecte, c'est l'état du contrat : il pointe encore
-sur le cUSD (`setToken` n'a jamais été appelé) et son catalogue est prixé en
-unités 18-décimales. Le parcours ne peut pas produire de preuve tant que
-l'étape `list-cosmetics` de la bascule USD₮ (`DEPLOY.md §5`) n'a pas tourné.
-**Ordre imposé : d'abord la bascule, puis un achat réel, puis le hash.**
+Ce n'est pas une lacune de collecte : le parcours n'a littéralement jamais
+tourné en production. La bascule USD₮ a depuis été exécutée (`setToken` +
+`setPrices`, voir §7), mais elle ne crée pas de preuve par elle-même —
+**il faut un achat réel**, une fois le serveur redéployé, puis relancer
+`method-tx-hashes` pour récupérer le hash.
 
 `LudoEscrowN` (tables 4 joueurs) est dans le même cas — aucun `join` mainnet.
 Si le formulaire ne demande une preuve que par *méthode utilisateur exposée*, la
@@ -112,3 +112,40 @@ terrain.
 « DRAFT » dans leur nom. Ils sont affichés aux joueurs derrière la porte de
 consentement 18+. **À faire relire avant listing** — c'est le seul livrable de
 cette liste qui engage juridiquement l'opérateur.
+
+## 7. État de la bascule cUSD → USD₮ (mainnet)
+
+Exécutée le 2026-08-19 via `fly-ops`, clé owner = `ESCROW_OWNER_PRIVATE_KEY`
+(signataire `0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B`, le **treasury** — pas
+l'arbitre). `migration-status` : **plus rien en attente on-chain**.
+
+| Étape | État |
+|---|---|
+| `allow-token` USD₮ sur LudoEscrow + LudoEscrowN | ✅ |
+| `set-tier-rake` 1¢ → 1 bps | ✅ |
+| `set-tier-rake` 25¢ → 1000 bps | ✅ |
+| `set-tier-rake` 100¢ → 800 bps | ✅ |
+| `set-tier-rake` 500¢ → 600 bps | ✅ |
+| `list-cosmetics` (setToken puis setPrices, 22/22) | ✅ |
+| Redéploiement du serveur | ⛔ **bloqué : voir ci-dessous** |
+
+Revérification : `NETWORK=celo npm run migration-status -w packages/contracts`
+(lecture seule, aucune clé).
+
+### Pourquoi le redéploiement ne peut pas suivre tout de suite
+
+`main` est à `ff4e70b` (#179). **#183 à #186 ne sont PAS mergés** — sur `main`,
+`deployments.json` pointe encore sur le cUSD. Redéployer le serveur maintenant
+rebakerait donc l'ancien jeton et défairait la bascule côté applicatif.
+
+**Ordre restant : merger d'abord, redéployer ensuite.**
+
+En attendant, rien n'est cassé côté mises : l'allowlist est *additive*, le cUSD
+reste autorisé, et le serveur en production continue de jouer en cUSD.
+
+La seule conséquence à connaître : le `CosmeticsStore` pointe désormais sur
+l'USD₮ alors que le client déployé approuve encore du cUSD — les achats de
+cosmétiques échoueront jusqu'au merge + redéploiement. C'est sans perte : ce
+parcours n'a jamais abouti une seule fois en production (§2), et l'ordre
+inverse (reprixer avant de repointer) aurait bradé les 22 articles à une
+fraction de centime.
