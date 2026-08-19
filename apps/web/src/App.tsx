@@ -17,7 +17,7 @@ import { GameScreen } from './screens/GameScreen';
 import { Game4Screen } from './screens/Game4Screen';
 import { Game4OnlineScreen } from './screens/Game4OnlineScreen';
 import { EndScreen } from './screens/EndScreen';
-import { ChallengeOfferModal, CollectionSheet, ComebackModal, DiceModal, DocModal, FairnessModal, GiftCosmeticModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, Toast } from './components/ui';
+import { ChallengeOfferModal, CollectionSheet, ComebackModal, DiceModal, DocModal, FairnessModal, GiftCosmeticModal, HelpModal, LegalModal, NoWalletSheet, ProfileEditor, ProfileSheet, RealityCheckModal, SettingsModal, StakingOverlay, StatsModal, Toast } from './components/ui';
 import { SeasonSheet } from './components/SeasonSheet';
 import { ProgressionSheet } from './components/ProgressionSheet';
 import { HowToPlayModal, howToSeen } from './components/HowToPlay';
@@ -1723,6 +1723,7 @@ export default function App() {
       <ProgressionSheet onViewProfile={onViewProfile} onBuyFreeze={buyFreeze} />
       <SeasonSheet onClaim={claimSeason} onBuyPremium={purchasePremium} />
       <DocModal />
+      <StatsModal serverUrl={SERVER_URL} />
       <Toast />
     </>
   );

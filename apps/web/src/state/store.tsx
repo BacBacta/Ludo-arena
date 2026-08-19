@@ -267,6 +267,9 @@ export interface AppState {
   howToOpen: boolean;
   /** Read-only Terms/Privacy viewer (outside the staking consent gate). */
   legalDoc: 'tos' | 'privacy' | null;
+  /** Public activity stats sheet (no wallet needed) — MiniPay's listing review
+   *  wants the usage numbers reachable from inside the app. */
+  statsOpen: boolean;
   profileEditOpen: boolean;
   /** Age (18+) + Terms/Privacy consent, required once before staked play. */
   legalAccepted: boolean;
@@ -355,6 +358,7 @@ export const initialState: AppState = {
   helpOpen: false,
   howToOpen: false,
   legalDoc: null,
+  statsOpen: false,
   profileEditOpen: false,
   soundOn: soundEnabled(),
   diceSkin: loadSkinId(),
@@ -401,6 +405,7 @@ export type Action =
   | { type: 'HELP_MODAL'; open: boolean }
   | { type: 'HOWTO_MODAL'; open: boolean }
   | { type: 'LEGAL_DOC'; doc: 'tos' | 'privacy' | null }
+  | { type: 'STATS_MODAL'; open: boolean }
   | { type: 'TABLE_CREATED'; code: string }
   | { type: 'TICKETS'; total: number }
   | { type: 'OWNED_SKINS'; ownedIds: string[]; tickets?: number }
@@ -555,6 +560,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, howToOpen: a.open };
     case 'LEGAL_DOC':
       return { ...s, legalDoc: a.doc };
+    case 'STATS_MODAL':
+      return { ...s, statsOpen: a.open };
     case 'TABLE_CREATED':
       return { ...s, screen: 'matchmaking', privateCode: a.code };
     case 'TICKETS':

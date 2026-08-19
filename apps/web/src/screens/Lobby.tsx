@@ -1009,6 +1009,10 @@ export function Lobby({
         <button type="button" className="linklike" onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'tos' })}>{t('legalReadTos')}</button>
         {' · '}
         <button type="button" className="linklike" onClick={() => dispatch({ type: 'LEGAL_DOC', doc: 'privacy' })}>{t('legalReadPrivacy')}</button>
+        {/* Public activity numbers, no wallet needed — a MiniPay listing
+            requirement, and the honest counterpart to the marketing copy. */}
+        {' · '}
+        <button type="button" className="linklike" onClick={() => dispatch({ type: 'STATS_MODAL', open: true })}>{t('statsLink')}</button>
         {/* Build id — support can instantly tell whether a report comes from a
             stale cached bundle (webview/service-worker) or the current deploy. */}
         {' · '}

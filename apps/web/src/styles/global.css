@@ -3344,6 +3344,28 @@ small.muted { font-size: 12px; }
 .legal__doc { max-height: 80vh; overflow-y: auto; }
 .legal__body { font-size: 12.5px; line-height: 1.5; white-space: pre-line; color: var(--txt); margin-bottom: 14px; text-align: left; }
 
+/* Public activity sheet (MiniPay listing requirement). Plain grid + CSS bars —
+   no chart library: the critical path is budgeted (AGENTS.md rule 4). */
+.stats { max-height: 80vh; overflow-y: auto; text-align: left; }
+.stats__h { margin: 14px 0 6px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--label); }
+.stats__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.stats__grid--3 { grid-template-columns: repeat(3, 1fr); }
+.stats__cell {
+  background: var(--sand);
+  border-radius: var(--radius-s);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stats__cell b { font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stats__cell span { font-size: 11.5px; color: var(--muted); }
+.stats__spark { display: flex; align-items: flex-end; gap: 2px; height: 56px; margin-top: 4px; }
+/* max-width matters: with only a couple of days of history `flex: 1` stretches
+   a bar into a full-width slab that reads as a broken block, not a chart. */
+.stats__spark i { flex: 1 1 0; background: var(--accent); border-radius: 2px 2px 0 0; min-width: 2px; max-width: 20px; }
+.stats__note { font-size: 11.5px; color: var(--muted); line-height: 1.45; margin: 12px 0 14px; }
+
 /* the staked board now uses the 3D cube die too — neutralise the old flat-die
    nudge/tumble on the 6 cube faces (they target descendant .die elements) */
 .dicebtn .die3d__face .die, .huddie .die3d__face .die { animation: none !important; }

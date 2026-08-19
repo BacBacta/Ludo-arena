@@ -78,7 +78,7 @@ import { applyHelloCosmetics } from './sessionCosmetics.js';
 import { awardGameCrowns, buildSeasonState, buySeasonPremium, claimSeasonTier } from './season.js';
 import { telemetry, tpid } from './telemetry.js';
 import { parseZealyCheck, zealyPayloadKeys, zealyStats, zealyUserIdFromBody, zealyVerdict, zealyWalletFromBody, type ZealyGame } from './zealy.js';
-import { aggregateDailyStats, parseDaysParam, type DailyStatRow } from './stats.js';
+import { aggregateDailyStats, parseDaysParam, summariseStats, type DailyStatRow, type StatsSummary } from './stats.js';
 import { createStore, pidFor, playerId, type RoomSnapshot, type SessionRecord } from './store/index.js';
 
 try {
@@ -1171,14 +1171,21 @@ const http = createServer((req, res) => {
       const days = parseDaysParam(new URL(req.url ?? '/', 'http://x').searchParams.get('days'));
       const now = Date.now();
       const hit = statsCache.get(days);
-      const rows = hit && now - hit.at < STATS_TTL_MS ? hit.rows : aggregateDailyStats(await store.listRecentGames(days), new Date(now - days * 86_400_000).toISOString());
-      if (!hit || now - hit.at >= STATS_TTL_MS) statsCache.set(days, { at: now, rows });
+      const since = new Date(now - days * 86_400_000).toISOString();
+      let rows = hit && now - hit.at < STATS_TTL_MS ? hit.rows : null;
+      let summary = hit && now - hit.at < STATS_TTL_MS ? hit.summary : null;
+      if (!rows || !summary) {
+        const games = await store.listRecentGames(days);
+        rows = aggregateDailyStats(games, since);
+        summary = summariseStats(games, since, now);
+        statsCache.set(days, { at: now, rows, summary });
+      }
       res.writeHead(200, {
         'content-type': 'application/json',
         'access-control-allow-origin': '*',
         'cache-control': 'public, max-age=300',
       });
-      res.end(JSON.stringify({ days, generatedAt: new Date(now).toISOString(), daily: rows }));
+      res.end(JSON.stringify({ days, generatedAt: new Date(now).toISOString(), summary, daily: rows }));
     })().catch((e) => {
       console.error('[stats] daily', e);
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
@@ -1291,7 +1298,7 @@ const ZEALY_VERIFY_KEY = (process.env.ZEALY_VERIFY_KEY ?? '').trim();
 
 // /stats/daily in-process cache: one games-table walk per window per 5 minutes.
 const STATS_TTL_MS = 5 * 60_000;
-const statsCache = new Map<number, { at: number; rows: DailyStatRow[] }>();
+const statsCache = new Map<number, { at: number; rows: DailyStatRow[]; summary: StatsSummary }>();
 
 /** Reject a promise that takes longer than `ms` (keeps the readiness probe from
  *  hanging on a wedged store/RPC connection). */
