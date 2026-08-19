@@ -176,7 +176,7 @@ body::before {
   flex-direction: column;
   min-height: 100dvh;
   padding: calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
-  animation: fade 0.25s ease;
+  animation: var(--entrance-screen, none);
 }
 
 /* The game screen must fit the VISIBLE viewport without scrolling. MiniPay's webview
@@ -309,7 +309,7 @@ body::before {
 
 /* Keyed per tab: remounting replays the staggered entrance on every switch. */
 .tabpage { display: flex; flex-direction: column; min-height: 0; }
-.tabpage > * { animation: fadeup 0.35s ease both; }
+.tabpage > * { animation: var(--entrance-item-fast, none); }
 .tabpage > *:nth-child(1) { animation-delay: 0.02s; }
 .tabpage > *:nth-child(2) { animation-delay: 0.06s; }
 .tabpage > *:nth-child(3) { animation-delay: 0.1s; }
@@ -531,7 +531,7 @@ a.mrow { text-decoration: none; color: inherit; }
 .shopfeat__more i { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--label); }
 
 /* staggered lobby entrance */
-.screen--lobby > * { animation: fadeup 0.4s ease both; }
+.screen--lobby > * { animation: var(--entrance-item, none); }
 .screen--lobby > *:nth-child(1) { animation-delay: 0.02s; }
 .screen--lobby > *:nth-child(2) { animation-delay: 0.06s; }
 .screen--lobby > *:nth-child(3) { animation-delay: 0.1s; }
@@ -541,6 +541,26 @@ a.mrow { text-decoration: none; color: inherit; }
 .screen--lobby > *:nth-child(7) { animation-delay: 0.26s; }
 .screen--lobby > *:nth-child(8) { animation-delay: 0.3s; }
 .screen--lobby > *:nth-child(9) { animation-delay: 0.34s; }
+
+/* Entrance animations are held back until the first paint has landed (main.tsx
+   adds `.booted` two frames in).
+
+   They all start at `opacity: 0`, which put EVERY piece of content fully
+   transparent in the very first frame. Chromium's paint timing ignores a fully
+   transparent paint, and an opacity animation runs on the compositor — so no
+   new main-thread paint ever follows, and `first-contentful-paint` was NEVER
+   reported. The page rendered fine and looked right; it simply could not be
+   SCORED: Lighthouse and PageSpeed abort such a page with NO_FCP, a hard
+   blocker for the MiniPay listing's 90+ mobile target.
+
+   Gating on `.booted` makes the first screen paint opaque (FCP fires on it)
+   while every later screen change still animates. `.screen--end` keeps its own
+   orchestrated entrance: it is never the first paint of a session. */
+:root.booted {
+  --entrance-screen: fade 0.25s ease;
+  --entrance-item: fadeup 0.4s ease both;
+  --entrance-item-fast: fadeup 0.35s ease both;
+}
 
 @keyframes fade {
   from { opacity: 0; transform: translateY(6px); }

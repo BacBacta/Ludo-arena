@@ -1033,6 +1033,19 @@ export default function App() {
     return () => clearInterval(id);
   }, [dispatch]);
 
+  // Arm the entrance animations only once the first screen has actually been
+  // PAINTED (see the `.booted` note in global.css). They start at opacity 0, and
+  // a first frame whose every element is fully transparent is a frame Chromium
+  // refuses to count as contentful — the page then never reports a
+  // `first-contentful-paint` and Lighthouse/PageSpeed abort with NO_FCP.
+  // This has to hang off a committed effect, not module scope: React mounts
+  // asynchronously, so two raw frames from `main.tsx` elapsed before the first
+  // render and armed the animations right back in time to swallow it again.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('booted')));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   // Join a table from a #/g/CODE link on first load.
   useEffect(() => {
     const m = /[#/]g\/([A-Z2-9]{6})/i.exec(window.location.hash || window.location.pathname);
