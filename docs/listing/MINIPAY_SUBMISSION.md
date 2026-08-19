@@ -172,25 +172,25 @@ l'arbitre). `migration-status` : **plus rien en attente on-chain**.
 | `set-tier-rake` 100¢ → 800 bps | ✅ |
 | `set-tier-rake` 500¢ → 600 bps | ✅ |
 | `list-cosmetics` (setToken puis setPrices, 22/22) | ✅ |
-| Redéploiement du serveur | ⛔ **bloqué : voir ci-dessous** |
+| Redéploiement du serveur | ⏳ **étape suivante** |
 
 Revérification : `NETWORK=celo npm run migration-status -w packages/contracts`
 (lecture seule, aucune clé).
 
-### Pourquoi le redéploiement ne peut pas suivre tout de suite
+### Ce qui reste : redéployer le serveur
 
-`main` est à `ff4e70b` (#179). **#183 à #186 ne sont PAS mergés** — sur `main`,
-`deployments.json` pointe encore sur le cUSD. Redéployer le serveur maintenant
-rebakerait donc l'ancien jeton et défairait la bascule côté applicatif.
+`main` est à `61b0986` : #183 à #186 sont mergés et `deployments.json` y pointe
+sur l'USD₮. Il ne reste qu'à redéployer le serveur — son image rebake
+`deployments.json` (décimales du faucet Race, dotation JIT) — et à redéployer
+le web si Vercel ne l'a pas déjà fait sur le merge.
 
-**Ordre restant : merger d'abord, redéployer ensuite.**
-
-En attendant, rien n'est cassé côté mises : l'allowlist est *additive*, le cUSD
-reste autorisé, et le serveur en production continue de jouer en cUSD.
+Tant que ce n'est pas fait, le serveur en production tourne encore sur l'image
+précédente. Les mises ne risquent rien : l'allowlist est *additive*, le cUSD
+reste autorisé.
 
 La seule conséquence à connaître : le `CosmeticsStore` pointe désormais sur
 l'USD₮ alors que le client déployé approuve encore du cUSD — les achats de
-cosmétiques échoueront jusqu'au merge + redéploiement. C'est sans perte : ce
-parcours n'a jamais abouti une seule fois en production (§2), et l'ordre
-inverse (reprixer avant de repointer) aurait bradé les 22 articles à une
-fraction de centime.
+cosmétiques échoueront jusqu'au redéploiement. C'est sans perte : ce parcours
+n'a jamais abouti une seule fois en production (§2), et l'ordre inverse
+(reprixer avant de repointer) aurait bradé les 22 articles à une fraction de
+centime.
