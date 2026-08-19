@@ -12,7 +12,11 @@ const browser = await launchBrowser();
 const join4 = async () => {
   const player = await newPlayer(browser);
   await openLobby(player.page);
-  await player.page.locator('.mrow').first().click({ timeout: 5000 });
+  // Entry point is the "4-Player Table" tile in OTHER WAYS TO PLAY. Matched by
+  // its COPY, not its class: it used to be a `.mrow` list row and the lobby
+  // redesign turned it into a `.modetile`, which made this click time out — the
+  // whole file then failed at 0/1 before a single 4-player assertion ran.
+  await player.page.getByText(/4-Player Table|Table 4 joueurs/i).first().click({ timeout: 5000 });
   await player.page.waitForTimeout(800);
   await player.page.locator('button.t4mode').nth(1).click({ timeout: 5000 }); // "Free online"
   return player;

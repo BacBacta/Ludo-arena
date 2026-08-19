@@ -297,21 +297,35 @@ export async function uiPrivatePair(browser) {
 }
 
 /** 2p banner labels by displayed corner (s0 = my bottom-left after board spin). */
-export const banners2p = (page) => page.evaluate(() => {
-  const out = {};
-  document.querySelectorAll('.pbanner').forEach((b) => {
-    const cls = [...b.classList].find((c) => /^pbanner--s\d$/.test(c));
-    if (cls) out[cls.slice(-1)] = (b.textContent || '').trim();
+/**
+ * The 2p game screen's identity HUD. Since the game-screen redesign the board
+ * paints NO name labels: only the OPPONENT's name is rendered, in `.pident`.
+ * (The reader's own name is not on screen at all — which is why the old
+ * `.pbanner--s{seat}` reader here returned {} on every call, quietly turning
+ * every assertion built on it into '' === ''.)
+ */
+export const identity2p = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector('.pident b');
+    const elo = document.querySelector('.pident small');
+    return { opponent: (el?.textContent || '').trim() || null, elo: (elo?.textContent || '').trim() || null };
   });
-  return out;
-});
 
 /** 4p quadrant labels (q0 = bottom-left). */
 export const labels4p = (page) => page.evaluate(() => {
   const out = {};
   document.querySelectorAll('.plabel').forEach((l) => {
     const cls = [...l.classList].find((c) => /^plabel--q\d$/.test(c));
-    if (cls) out[cls.slice(-1)] = (l.textContent || '').trim();
+    if (!cls) return;
+    // The own-seat label carries a "YOU" badge in a child element. textContent
+    // glues it to the name ("TundeYOU"), which broke every exact-match check on
+    // the reader's own quadrant. Read the NAME only — the badge is markup, not
+    // part of the player's name.
+    const name = [...l.childNodes]
+      .filter((n) => n.nodeType === Node.TEXT_NODE || !n.classList?.contains('plabel__you'))
+      .map((n) => n.textContent || '')
+      .join('');
+    out[cls.slice(-1)] = name.trim();
   });
   return out;
 });
