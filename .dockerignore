@@ -12,3 +12,6 @@ packages/contracts
 **/*.log
 .turbo
 **/*.tsbuildinfo
+# Agent skills (markdown reference docs, editor-side only — never built).
+.agents
+.claude

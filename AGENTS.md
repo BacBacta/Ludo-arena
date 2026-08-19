@@ -53,6 +53,13 @@ npm run dev:server          # server ws://localhost:8787
 | `apps/web/src/lib/minipay.ts` | MiniPay wallet integration via viem |
 | `packages/contracts/src/LudoEscrow.sol` | Stake escrow + signed settlement |
 
+## Agent skills
+
+Installed via `npx skills add celo-org/celopedia-skills` into `.agents/skills/`, exposed to Claude Code through the `.claude/skills/` symlinks. Versions are pinned in `skills-lock.json`; re-run the command to update. Both are markdown reference docs — no scripts.
+
+- **`celopedia-skill`** — Celo/MiniPay reference: fee abstraction (CIP-64), verified contract addresses, MiniPay listing requirements and UI copy rules, ODIS/SocialConnect. Useful for golden rule 5 and anything touching `apps/web/src/lib/minipay.ts` or `packages/contracts`. Treat its contract addresses as a snapshot — verify against `docs.celo.org` before use.
+- **`docs-watch`** — upstream maintenance skill for the `celo-org/celopedia-skills` repo itself; it opens PRs there, not here. Not applicable to Ludo Arena; ignore it unless you are maintaining that upstream repo.
+
 ## Backlog
 
 Implementation tasks live in `docs/BACKLOG.md`, ordered by priority, with acceptance criteria. Pick the first unchecked task of the current epic unless instructed otherwise.
