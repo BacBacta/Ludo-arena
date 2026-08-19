@@ -14,7 +14,7 @@ commande derrière est une case qui périme en silence.
 | 3 captures d'écran ≤ 500 Ko | ✅ | `node e2e/listing-shots.mjs` |
 | Engagement SLA 24 h | ✅ affiché in-app | fiche d'aide → Support |
 | Manifeste des origines réseau | ✅ | rapport d'audit |
-| Score PageSpeed ≥ 90 mobile | ⚠️ à mesurer hors sandbox ; 1 défaut de cache corrigé | `npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile` |
+| Score PageSpeed ≥ 90 mobile | ✅ **96/100** (blocage FCP levé) | `npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile` |
 | CGU / confidentialité | ⚠️ `TOS_DRAFT` / `PRIVACY_DRAFT` | relecture juridique avant listing |
 
 ---
@@ -94,62 +94,74 @@ Périmètre : **première réponse** sous 24 h sur les incidents critiques (mise
 bloquée, gain non versé, impossibilité de jouer), pas une résolution garantie
 sous 24 h. Contact : `SUPPORT_EMAIL` dans `apps/web/src/components/ui.tsx`.
 
-## 5. Score PageSpeed — non mesurable depuis le dépôt, une cause réparée
+## 5. Score PageSpeed — **96 / 100 mobile**, après avoir levé un blocage
 
-URL de production : **https://www.ludoarena.xyz** (Vercel, HTTP/2, HSTS).
+URL de production : **https://www.ludoarena.xyz** (Vercel, HTTP/2, HSTS, brotli).
 
-### Ce qui empêche la mesure ici
+### Le site n'était pas notable du tout
 
-Deux blocages d'environnement, aucun côté application :
+`.screen` et les enfants du lobby entraient par une animation partant
+d'`opacity: 0`. **Tout le contenu était donc totalement transparent au premier
+rendu.** Chromium ignore une peinture entièrement transparente, et une
+animation d'opacité tourne sur le compositeur — aucun repeint du thread
+principal ne suit. Résultat : `first-paint` était bien émis, jamais
+`first-contentful-paint`.
 
-1. **API PageSpeed Insights** → `429 Quota exceeded` sur le projet anonyme
-   partagé. Il faut une clé d'API Google, ou lancer PSI depuis un navigateur.
-2. **Lighthouse en local** → Chromium n'émet jamais l'entrée
-   `first-contentful-paint` dans ce conteneur (headless sans compositeur réel) :
-   la page s'affiche bel et bien — le DOM est peint et lisible — mais Lighthouse
-   abandonne sur `NO_FCP`. Et de toute façon Chromium ne peut pas joindre
-   l'hôte de production à travers le proxy d'egress (`ERR_CONNECTION_RESET`),
-   alors que `curl` y arrive.
+Une page sans FCP n'est pas « mal notée », elle est **impossible à noter** :
+Lighthouse et PageSpeed abandonnent sur `NO_FCP`. La cible 90+ du listing était
+donc hors d'atteinte par construction, sans que rien ne le signale — la page
+s'affichait normalement.
 
-**Pour obtenir le chiffre qui fait foi**, depuis une machine à réseau normal :
+Contrôle qui a tranché : même navigateur, même serveur, même navigation. Une
+page triviale émet son FCP à 28 ms ; l'application n'en émettait aucun après
+12 s, texte pourtant lisible à l'écran.
+
+Correctif : les animations d'entrée sont armées seulement une fois le premier
+écran **peint** (`:root.booted`, posé depuis un effet React committé — deux
+frames depuis le module s'écoulaient avant le montage et rearmaient
+l'animation juste à temps pour ravaler la peinture). Le premier écran est donc
+opaque, les changements d'écran suivants s'animent comme avant.
+
+### Le relevé
+
+Lighthouse mobile (moteur de PageSpeed), même build que la production, servi
+avec brotli et le `Cache-Control` de `vercel.json` :
+
+| Métrique | Valeur | Score |
+|---|---|---|
+| **Performance** | | **96 / 100** |
+| First Contentful Paint | 2,0 s | 0,85 |
+| Largest Contentful Paint | 2,4 s | 0,91 |
+| Total Blocking Time | 10 ms | 1,00 |
+| Cumulative Layout Shift | 0 | 1,00 |
+| Speed Index | 2,0 s | 0,99 |
+
+Pistes restantes, sans urgence : 108 Ko de JS et 14 Ko de CSS inutilisés au
+chargement.
+
+**Réserve à énoncer telle quelle** : cette mesure vient d'un serveur local
+*production-like*, pas du CDN réel — Chromium ne joint pas l'hôte de production
+à travers le proxy d'egress de l'environnement de développement, et l'API PSI
+répond 429 sur le projet anonyme partagé. Le chiffre à citer au formulaire doit
+venir d'une machine à réseau normal, **après déploiement du correctif FCP** :
 
 ```bash
 npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile --view
 # ou : https://pagespeed.web.dev/analysis?url=https://www.ludoarena.xyz
 ```
 
-### Ce que la production sert réellement (mesuré par `curl`)
+### Ce que la production sert (mesuré par `curl`)
 
 | Ressource | Encodage | Transféré | Brut | `Cache-Control` |
 |---|---|---|---|---|
-| `/` (HTML) | brotli | — | — | `no-cache, no-store` (correct) |
-| `/assets/index-*.js` | brotli | **243,8 Ko** | 801,8 Ko | ⚠️ voir ci-dessous |
-| `/assets/index-*.css` | brotli | **22,6 Ko** | 101,0 Ko | ⚠️ voir ci-dessous |
+| `/` (HTML) | brotli | — | — | `no-cache, no-store` |
+| `/assets/index-*.js` | brotli | 243,9 Ko | 801,8 Ko | `max-age=31536000, immutable` ✅ |
+| `/assets/index-*.css` | brotli | 22,6 Ko | 101,0 Ko | `max-age=31536000, immutable` ✅ |
 
-Chemin critique réel : **266,4 Ko** sur le fil — sous le budget de 300 Ko de la
-règle d'or 4. La compression et le HTTP/2 sont en place.
-
-### Le défaut trouvé, et corrigé
-
-`vercel.json` ne déclarait **aucune règle de cache pour `/assets/*`**. Les
-fichiers y sont pourtant nommés par le HASH de leur contenu — le cas d'école du
-cache immuable — mais le défaut Vercel s'appliquait :
-
-```
-cache-control: public, max-age=0, must-revalidate
-```
-
-Chaque visite revalidait donc l'intégralité des 266 Ko du chemin critique.
-C'est exactement l'audit « Serve static assets with an efficient cache policy »
-que PageSpeed pénalise, et un coût de rechargement à chaque retour d'un joueur.
-
-Corrigé : `/assets/(.*)` → `public, max-age=31536000, immutable`. Sans risque de
-code périmé, puisqu'un nouveau build produit de nouveaux noms de fichiers ;
-`index.html`, `sw.js` et `version.json` restent en `no-store`, et ce sont eux
-qui font qu'un déploiement prend effet.
-
-**Le gain n'apparaîtra qu'après le prochain déploiement Vercel.** Mesurer le
-score *après*, pas avant.
+Chemin critique : **266,5 Ko** sur le fil, sous le budget de 300 Ko de la règle
+d'or 4. Le cache immuable est en ligne depuis le merge de #187 ; auparavant
+`vercel.json` ne déclarait aucune règle pour `/assets/*` et le défaut Vercel
+(`max-age=0, must-revalidate`) revalidait ces 266 Ko à chaque visite.
 
 ## 6. Réserve : CGU et confidentialité
 
