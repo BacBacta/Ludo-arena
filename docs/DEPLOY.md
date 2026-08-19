@@ -422,10 +422,12 @@ NETWORK=celo TIER_CENTS=25  TIER_BPS=1000 DEPLOYER_PRIVATE_KEY=0x<owner> npm run
 NETWORK=celo TIER_CENTS=100 TIER_BPS=800  DEPLOYER_PRIVATE_KEY=0x<owner> npm run set-tier-rake -w packages/contracts
 NETWORK=celo TIER_CENTS=500 TIER_BPS=600  DEPLOYER_PRIVATE_KEY=0x<owner> npm run set-tier-rake -w packages/contracts
 
-# 3. Repointer le CosmeticsStore : setToken(USD₮) puis setPrices en 6 décimales.
-#    Sans cette étape la boutique continue d'encaisser en cUSD alors que l'app
-#    affiche USD₮. `switch-stablecoin` ne couvre que le testnet (il déploie un
-#    MockUSDT) — à étendre au mainnet ou à exécuter à la main.
+# 3. Repointer le CosmeticsStore + re-prixer tout le catalogue. `list-cosmetics`
+#    fait les deux dans le SEUL ordre sûr (setToken puis setPrices) : l'ordre
+#    inverse listerait brièvement les 22 articles à une fraction de centime.
+#    Idempotent, et les décimales sont lues sur le jeton lui-même.
+NETWORK=celo DRY_RUN=true DEPLOYER_PRIVATE_KEY=0x<owner> npm run list-cosmetics -w packages/contracts   # plan
+NETWORK=celo            DEPLOYER_PRIVATE_KEY=0x<owner> npm run list-cosmetics -w packages/contracts   # exécution
 
 # 4. Merger → Vercel rebuild le web avec le nouveau jeton.
 # 5. Redéployer le serveur : son image rebake deployments.json (décimales du
