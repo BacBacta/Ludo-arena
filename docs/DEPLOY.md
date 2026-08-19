@@ -411,14 +411,22 @@ Les trois étapes on-chain sont exposées comme opérations du workflow **`fly-o
 (`workflow_dispatch`) : `allow-token`, `set-tier-rake`, `list-cosmetics`, plus
 `migration-status` en lecture seule. La clé owner est lue depuis les **secrets de
 dépôt** (`ESCROW_OWNER_PRIVATE_KEY`, puis `TREASURY_PRIVATE_KEY`, puis
-`DEPLOYER_PRIVATE_KEY`, puis `ARBITER_PRIVATE_KEY`) et **jamais depuis un input** —
-elle ne transite donc par aucun poste de travail, aucun presse-papier, aucune
-transcription d'outil.
+`DEPLOYER_PRIVATE_KEY`) et **jamais depuis un input** — elle ne transite donc par
+aucun poste de travail, aucun presse-papier, aucune transcription d'outil.
 
-Définis explicitement `ESCROW_OWNER_PRIVATE_KEY` : il est premier dans l'ordre de
-priorité, et sans lui le repli peut aller jusqu'à `ARBITER_PRIVATE_KEY`, la clé
-chaude qui signe tous les règlements — exactement le cumul que `KEY_CUSTODY.md`
-(R-KEY-1) identifie comme le risque à fermer.
+**Prérequis bloquant : le secret `ESCROW_OWNER_PRIVATE_KEY` doit exister.**
+`ARBITER_PRIVATE_KEY` **n'est plus** un repli pour ces trois opérations. Il l'était,
+et c'était le cumul que `KEY_CUSTODY.md` (R-KEY-1) veut fermer : cette clé chaude
+signe *tous* les règlements, et sur le déploiement actuel elle est *aussi* l'owner
+des escrows — un run d'ops de routine y accédait donc en silence. Les trois
+opérations échouent maintenant avec un message explicite plutôt que de descendre
+jusqu'à elle. Sur le déploiement actuel, `ESCROW_OWNER_PRIVATE_KEY` porte la même
+clé : le nommage explicite ne change pas le signataire, il rend le cumul **visible**
+et permet de le défaire (étape 1 de la checklist R-KEY-1) sans toucher au workflow.
+
+Chaque opération on-chain imprime au démarrage la **présence** (jamais la valeur) de
+chacun des trois secrets, pour distinguer « secret absent » de « secret présent mais
+mauvaise clé » sans exposer quoi que ce soit.
 
 `npm run migration-status -w packages/contracts` (ou l'opération du même nom) dit
 à tout moment ce qui reste : il n'écrit rien et ne demande aucune clé.
