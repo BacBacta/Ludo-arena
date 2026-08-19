@@ -10,7 +10,7 @@ commande derrière est une case qui périme en silence.
 | Livrable | État | Revérification |
 |---|---|---|
 | Vérification Celoscan des 4 contrats mainnet | ✅ les 4 vérifiés | tableau ci-dessous |
-| Hashes de transaction par méthode utilisateur | ⚠️ 3 parcours sur 4 | `NETWORK=celo npm run method-tx-hashes -w packages/contracts` |
+| Hashes de transaction par méthode utilisateur | ✅ les 4 parcours | `NETWORK=celo npm run method-tx-hashes -w packages/contracts` |
 | 3 captures d'écran ≤ 500 Ko | ✅ | `node e2e/listing-shots.mjs` |
 | Engagement SLA 24 h | ✅ affiché in-app | fiche d'aide → Support |
 | Manifeste des origines réseau | ✅ | rapport d'audit |
@@ -48,24 +48,32 @@ Relevé du 2026-08-19 :
 | Règlement du gagnant | LudoEscrow · `settle` | 812 appels — 1er `0xe13e93fbe8a10a568148d1f85b70c81ff42009a4e001c15674ec69458e2daa50` |
 | Mint du Race Pass | RacePass · `mint` | 162 appels — 1er `0xd70fc736a986403aa351c2ff952c75b01b1a763e8b0865031e5f912b640b9a26` |
 | Remboursement d'une partie expirée | LudoEscrow · `refundExpired` | 198 appels — 1er `0xc8a884dab1676c2159cc00f92bce72d67bfe98beb53b26cd532c616ecb077818` |
-| **Achat d'un cosmétique** | CosmeticsStore · `buy` | ❌ **jamais appelé sur mainnet** |
+| Achat d'un cosmétique | CosmeticsStore · `buy` | 1 appel — `0x88a58732a9fa43767d1b9d058acf1533db40214f8dc28ae58e1f767c8e3d97e9` |
 
-### Le trou : l'achat de cosmétique
+### L'achat de cosmétique — et la validation de la bascule
 
-Le `CosmeticsStore` mainnet n'avait reçu que **2 transactions**, toutes deux
-administratives. Aucun `buy` n'a jamais abouti, donc **il n'existe aucun hash à
-citer** pour ce parcours.
+Ce parcours n'avait **jamais** tourné en production : le `CosmeticsStore`
+mainnet n'avait reçu que des transactions administratives. Un achat réel a été
+effectué le 2026-08-19 à 22:16:49 UTC.
 
-Ce n'est pas une lacune de collecte : le parcours n'a littéralement jamais
-tourné en production. La bascule USD₮ a depuis été exécutée (`setToken` +
-`setPrices`, voir §7), mais elle ne crée pas de preuve par elle-même —
-**il faut un achat réel**, une fois le serveur redéployé, puis relancer
-`method-tx-hashes` pour récupérer le hash.
+| | |
+|---|---|
+| Transaction | `0x88a58732a9fa43767d1b9d058acf1533db40214f8dc28ae58e1f767c8e3d97e9` |
+| Méthode | `buy(bytes32 itemId)` |
+| Statut | succès (bloc 75277051) |
+| Transfert | **0,49 USD₮** → treasury `0x947Fa33C5A2157Bc3618Cc7B66a32A3A4b14951B` |
 
-`LudoEscrowN` (tables 4 joueurs) est dans le même cas — aucun `join` mainnet.
-Si le formulaire ne demande une preuve que par *méthode utilisateur exposée*, la
-table 4 joueurs en est une : soit on produit une partie misée réelle, soit on la
-déclare hors périmètre de la soumission.
+Le montant vaut confirmation, pas seulement preuve : 0,49 USD₮ est exactement le
+prix de `tok-wax` dans le catalogue tel que `list-cosmetics` l'a reprixé en 6
+décimales. **C'est la validation de bout en bout de la bascule cUSD → USD₮** —
+le store pointe sur le bon jeton, les prix sont dans les bonnes unités de base,
+et un achat réel se règle au prix affiché. Un ordre inverse (`setPrices` avant
+`setToken`) aurait ici prélevé une fraction de centime.
+
+`LudoEscrowN` (tables 4 joueurs) reste le seul parcours exposé sans preuve
+on-chain : aucun `join` mainnet. Ce n'est pas une panne — `e2e/ui-4p.mjs` passe
+6/6, l'appariement 4 joueurs fonctionne. Soit une partie misée réelle est
+jouée, soit la table 4 joueurs est déclarée hors périmètre de la soumission.
 
 ## 3. Captures d'écran
 
