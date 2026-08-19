@@ -14,7 +14,7 @@ commande derrière est une case qui périme en silence.
 | 3 captures d'écran ≤ 500 Ko | ✅ | `node e2e/listing-shots.mjs` |
 | Engagement SLA 24 h | ✅ affiché in-app | fiche d'aide → Support |
 | Manifeste des origines réseau | ✅ | rapport d'audit |
-| Score PageSpeed ≥ 90 mobile | ✅ **96/100** (blocage FCP levé) | `npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile` |
+| Score PageSpeed ≥ 90 mobile | ✅ **96/100** sur les octets déployés (blocage FCP levé) | `npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile` |
 | CGU / confidentialité | ⚠️ `TOS_DRAFT` / `PRIVACY_DRAFT` | relecture juridique avant listing |
 
 ---
@@ -124,26 +124,39 @@ opaque, les changements d'écran suivants s'animent comme avant.
 
 ### Le relevé
 
-Lighthouse mobile (moteur de PageSpeed), même build que la production, servi
-avec brotli et le `Cache-Control` de `vercel.json` :
+Le correctif est **déployé** (`www.ludoarena.xyz`, vérifié dans le bundle servi :
+`booted` dans le JS, `--entrance-screen` armé sous `:root.booted` dans le CSS).
+
+Mesure effectuée sur les **octets réellement déployés** — index, JS, CSS, chunk
+3D différé et polices récupérés depuis la production par `curl`, puis resservis
+localement en brotli avec le `Cache-Control` de `vercel.json`. Aucun 404, FCP
+émis à 160 ms sans étranglement.
+
+Lighthouse mobile (le moteur de PageSpeed) :
 
 | Métrique | Valeur | Score |
 |---|---|---|
 | **Performance** | | **96 / 100** |
 | First Contentful Paint | 2,0 s | 0,85 |
-| Largest Contentful Paint | 2,4 s | 0,91 |
-| Total Blocking Time | 10 ms | 1,00 |
+| Largest Contentful Paint | 2,5 s | 0,90 |
+| Total Blocking Time | 80 ms | 0,99 |
 | Cumulative Layout Shift | 0 | 1,00 |
 | Speed Index | 2,0 s | 0,99 |
 
 Pistes restantes, sans urgence : 108 Ko de JS et 14 Ko de CSS inutilisés au
 chargement.
 
-**Réserve à énoncer telle quelle** : cette mesure vient d'un serveur local
-*production-like*, pas du CDN réel — Chromium ne joint pas l'hôte de production
-à travers le proxy d'egress de l'environnement de développement, et l'API PSI
-répond 429 sur le projet anonyme partagé. Le chiffre à citer au formulaire doit
-venir d'une machine à réseau normal, **après déploiement du correctif FCP** :
+**Réserve, à énoncer telle quelle.** Ce sont les octets de production, mais pas
+le réseau de production : le CDN Vercel est remplacé par un serveur local, et
+l'étranglement mobile de Lighthouse est simulé. Les temps réels seront
+différents — vraisemblablement meilleurs, la latence CDN étant inférieure à
+celle de ce montage, mais c'est une attente et non un résultat.
+
+Le chiffre à porter au formulaire doit venir d'une machine à réseau normal.
+Depuis cet environnement c'est impossible : Chromium reçoit `ERR_CONNECTION_RESET`
+sur l'hôte de production comme sur les previews (le proxy d'egress ne laisse
+passer que `curl`), et l'API PageSpeed Insights répond `429 Quota exceeded` sur
+le projet anonyme partagé.
 
 ```bash
 npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile --view
