@@ -15,6 +15,7 @@
     "set-mint-open": "tsx script/setMintOpen.ts",
     "set-tier-rake": "tsx script/setTierRake.ts",
     "allow-token": "tsx script/allowToken.ts",
+    "migration-status": "tsx script/migrationStatus.ts",
     "race-status": "tsx script/raceStatus.ts",
     "onchain-activity": "tsx script/onchainActivity.ts",
     "wallet-status": "tsx script/walletStatus.ts",

@@ -405,6 +405,26 @@ transaction — il suffit de remettre l'ancienne adresse dans `deployments.json`
 Les scripts d'ops lisent le `deployments.json` **local** : les étapes on-chain se pilotent depuis
 la branche, avant tout merge.
 
+### Où exécuter : GitHub Actions, pas une machine locale
+
+Les trois étapes on-chain sont exposées comme opérations du workflow **`fly-ops`**
+(`workflow_dispatch`) : `allow-token`, `set-tier-rake`, `list-cosmetics`, plus
+`migration-status` en lecture seule. La clé owner est lue depuis les **secrets de
+dépôt** (`ESCROW_OWNER_PRIVATE_KEY`, puis `TREASURY_PRIVATE_KEY`, puis
+`DEPLOYER_PRIVATE_KEY`, puis `ARBITER_PRIVATE_KEY`) et **jamais depuis un input** —
+elle ne transite donc par aucun poste de travail, aucun presse-papier, aucune
+transcription d'outil.
+
+Définis explicitement `ESCROW_OWNER_PRIVATE_KEY` : il est premier dans l'ordre de
+priorité, et sans lui le repli peut aller jusqu'à `ARBITER_PRIVATE_KEY`, la clé
+chaude qui signe tous les règlements — exactement le cumul que `KEY_CUSTODY.md`
+(R-KEY-1) identifie comme le risque à fermer.
+
+`npm run migration-status -w packages/contracts` (ou l'opération du même nom) dit
+à tout moment ce qui reste : il n'écrit rien et ne demande aucune clé.
+
+Les commandes ci-dessous sont l'équivalent local, pour un poste de confiance.
+
 ### Étapes, dans cet ordre
 
 ```bash
