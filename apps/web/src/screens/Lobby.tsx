@@ -901,13 +901,24 @@ export function Lobby({
       {/* On the dedicated Friends tab the teaser also shows for guests — a
           blank page would read as broken (the old wallet gate avoided a dead
           button on the crowded landing; the teaser has none). */}
+      {/* MiniPay feedback: the empty Friends page explained itself but offered
+          NOTHING to do. Both routes into having friends get a button — invite
+          someone you know (free private table, share link on the next screen)
+          or go meet an opponent (the add-friend flow starts from a played
+          match). Explanation stays; it just stops being the only thing here. */}
       {tab === 'friends' && friends.length === 0 && friendRequests.length === 0 && sentRequests.length === 0 && addableOpponents.length === 0 && (
-        <div className="card friendteaser">
-          <span className="friendteaser__ic"><IconUsersRound /></span>
-          <span className="friendrow__meta">
-            <b>{t('emptyFriendsTitle')}</b>
-            <small>{t('emptyFriendsBody')}</small>
-          </span>
+        <div className="card friendteaser friendteaser--actions">
+          <div className="friendteaser__row">
+            <span className="friendteaser__ic"><IconUsersRound /></span>
+            <span className="friendrow__meta">
+              <b>{t('emptyFriendsTitle')}</b>
+              <small>{t('emptyFriendsBody')}</small>
+            </span>
+          </div>
+          <div className="friendteaser__ctas">
+            <button className="btn" onClick={() => { playTap(); onCreateTable(0); }}>{t('emptyFriendsCta')}</button>
+            <button className="btn btn--ghost" onClick={() => { playTap(); switchTab('play'); }}>{t('emptyFriendsCta2')}</button>
+          </div>
         </div>
       )}
 

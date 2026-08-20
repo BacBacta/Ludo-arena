@@ -93,6 +93,23 @@
   --board-cap: 340px;
   --radius: 22px;
   --radius-s: 16px;
+  /* FONT SYSTEM (MiniPay feedback: "fonts are just too bold — really define
+     your font system"). Two faces, two jobs, one rule:
+
+       Caprasimo (--font-display) — IDENTITY & MOMENTS only: wordmark, hero
+       (tagline + Play-now CTA), page/sheet titles, a person's name at full
+       size (profile hero/sheet, in-game HUD, board labels, avatar initials),
+       and celebration (victory titles, ELO reveal, winnings, podium, crown
+       gain, the VS matchup, the table share code).
+
+       Figtree (--font-body, variable 400–700) — EVERYTHING FUNCTIONAL: every
+       button and control, list rows, tiles, chips, stats, prices, season and
+       shop UI. Bold here means Figtree 700, never the display face.
+
+     Before this rule the display face sat on ~70 selectors, buttons and list
+     rows included — which is what "too bold" was pointing at. Adding the
+     display face to a functional control is a design decision, not a styling
+     tweak: it must move the element into the identity/moments tier. */
   --font-display: 'Caprasimo', Georgia, serif;
   --font-body: 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --shadow-accent: 0 8px 20px rgba(140, 73, 26, 0.28);
@@ -374,7 +391,7 @@ body::before {
 .shopfeat__stage .die3d-stage { z-index: 1; }
 .shopfeat__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .shopfeat__txt small { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--label); }
-.shopfeat__txt b { font-family: var(--font-display); font-size: 18px; color: var(--txt); }
+.shopfeat__txt b { font-weight: 700; font-size: 18px; color: var(--txt); }
 .shopfeat__txt em { font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--accent); }
 
 /* Ticket balance strip (shop): the free-currency counter, storefront-styled. */
@@ -386,7 +403,7 @@ body::before {
   padding: 12px 14px;
 }
 .ticketstrip__ic { align-self: center; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--a-100); color: var(--a-600); }
-.ticketstrip b { font-family: var(--font-display); font-size: 20px; color: var(--txt); }
+.ticketstrip b { font-weight: 700; font-size: 20px; color: var(--txt); }
 .ticketstrip__label { font-weight: 700; font-size: 13px; color: var(--txt); }
 .ticketstrip small { flex: 1 1 100%; margin-top: 2px; font-size: 11px; line-height: 1.45; color: var(--muted); }
 .ticketstrip { flex-wrap: wrap; }
@@ -435,7 +452,7 @@ body::before {
   font-weight: 700;
   color: var(--muted);
 }
-.statchip b { font-family: var(--font-display); font-size: 14px; color: var(--txt); }
+.statchip b { font-weight: 700; font-size: 14px; color: var(--txt); }
 .statchip--w b { color: var(--me); }
 .statchip--l b { color: var(--danger); }
 
@@ -465,7 +482,7 @@ a.mrow { text-decoration: none; color: inherit; }
 }
 .modetile:active { transform: translateY(2px) scale(0.99); }
 .modetile--dim { opacity: 0.65; }
-.modetile b { font-family: var(--font-display); font-size: 14.5px; line-height: 1.15; }
+.modetile b { font-weight: 700; font-size: 14.5px; line-height: 1.15; }
 .modetile small { font-size: 10.5px; line-height: 1.35; color: var(--muted); }
 .modetile__ic {
   display: grid;
@@ -628,7 +645,6 @@ a.mrow { text-decoration: none; color: inherit; }
   border: none;
   border-radius: 18px;
   padding: 15px 16px 13px;
-  font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
   letter-spacing: 0.4px;
@@ -810,7 +826,7 @@ a.btn {
 .mrow__ic--me { background: rgba(46, 158, 107, 0.14); color: var(--me); }
 .mrow__ic--opp { background: rgba(232, 131, 58, 0.14); color: var(--opp); }
 .mrow__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.mrow__txt b { font-family: var(--font-display); font-size: 15px; display: block; }
+.mrow__txt b { font-weight: 700; font-size: 15px; display: block; }
 /* Sentence-case every row title: several i18n labels are lowercase inline
    phrases ("comment ça marche ?") and read sloppy as list entries. */
 .mrow__txt b::first-letter { text-transform: uppercase; }
@@ -827,7 +843,7 @@ a.btn {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
   background: var(--card-2); border-radius: 14px; padding: 10px 4px;
 }
-.dstat b { font-family: var(--font-display); font-size: 18px; font-variant-numeric: tabular-nums; }
+.dstat b { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
 .dstat small { font-size: 10px; color: var(--muted); letter-spacing: 0.4px; text-transform: uppercase; }
 .dstat__ic { width: 26px; height: 26px; border-radius: 9px; display: flex; align-items: center; justify-content: center; }
 .dstat__ic .icon { width: 15px; height: 15px; }
@@ -880,7 +896,7 @@ a.btn {
   box-shadow: 0 6px 14px rgba(46, 43, 37, 0.25);
   transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.18s ease, background 0.18s ease;
 }
-.gstake b { display: block; font-family: var(--font-display); font-size: 16px; font-weight: 600; }
+.gstake b { display: block; font-size: 16px; font-weight: 600; }
 .gstake small { display: block; margin-top: 1px; font-size: 10px; color: var(--muted); white-space: nowrap; }
 .gstake--free b { color: var(--candy); }
 .gstake--sel {
@@ -906,7 +922,7 @@ a.btn {
   padding: 12px 14px;
   border-radius: 14px;
   cursor: pointer;
-  font-family: var(--font-display);
+  font-weight: 700;
   color: #ffffff;
   background: var(--ink);
   /* Louder than the old hairline: the money path was reading as a footnote
@@ -960,7 +976,7 @@ a.btn {
   text-align: left;
   font-size: 14px;
 }
-.guestrow b { font-family: var(--font-display); }
+.guestrow b { font-weight: 700; }
 .guestrow small { color: var(--muted); font-size: 12px; margin-left: auto; }
 .guestrow__flag { font-size: 20px; line-height: 1; display: flex; }
 .guestrow__flag .profilecard__img { width: 26px; height: 26px; border-radius: 50%; }
@@ -993,7 +1009,7 @@ a.btn {
   transition: transform 0.15s ease, border-color 0.15s ease;
 }
 .skin .die { width: 44px; height: 44px; margin: 0 auto; display: block; }
-.skin b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 12.5px; margin-top: 8px; }
+.skin b { display: block; font-weight: 400; font-size: 12.5px; margin-top: 8px; }
 .skin small { display: block; font-family: var(--font-body); font-weight: 600; font-size: 10.5px; color: var(--muted); margin-top: 2px; min-height: 20px; }
 .skin--on { border: 2px solid var(--accent); padding: 11px 7px; }
 .skin--on small { color: var(--a-600); font-weight: 700; }
@@ -1221,22 +1237,22 @@ small.muted { font-size: 12px; }
 .profilecard__edit { position: absolute; top: 8px; right: 10px; font-size: 12px; opacity: 0.55; }
 .profilecard__id { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .profilecard__flag { font-size: 22px; line-height: 1; }
-.profilecard__id b { font-family: var(--font-display); font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profilecard__id b { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profilecard__div { font-size: 10px; color: var(--muted); background: var(--card-2); border-radius: 6px; padding: 2px 7px; letter-spacing: 0.3px; }
 .profilecard__stats { display: flex; gap: 12px; font-size: 13px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.profilecard__stats b { color: var(--txt); font-family: var(--font-display); }
+.profilecard__stats b { color: var(--txt); font-weight: 700; }
 .profilecard__w { color: var(--me); font-weight: 700; }
 .profilecard__l { color: var(--opp); font-weight: 700; }
 
 /* profile editor (edit name / country flag) */
 .pe__preview { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .pe__flag { font-size: 34px; line-height: 1; }
-.pe__preview b { font-family: var(--font-display); font-size: 18px; }
+.pe__preview b { font-weight: 700; font-size: 18px; }
 .pe__label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--label); margin: 10px 0 5px; }
 .pe__input {
   width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 12px;
   border: 1.5px solid var(--line); background: var(--card-2); color: var(--txt);
-  font-size: 16px; font-family: var(--font-display); outline: none;
+  font-size: 16px; font-weight: 700; outline: none;
 }
 .pe__input:focus { border-color: var(--accent); }
 .pe__flags {
@@ -1291,7 +1307,7 @@ small.muted { font-size: 12px; }
 }
 /* Section header inside social cards: title + count pill + live-online hint. */
 .friendhead { display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px; }
-.friendhead b { font-family: var(--font-display); font-size: 14.5px; }
+.friendhead b { font-weight: 700; font-size: 14.5px; }
 .friendhead__count {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1323,7 +1339,7 @@ small.muted { font-size: 12px; }
    ghost = secondary, danger = destructive (2-tap confirm arms it red). */
 .frbtn {
   flex-shrink: 0; border: none; border-bottom: 3px solid rgba(0, 0, 0, 0.18);
-  border-radius: 12px; padding: 8px 12px; font-family: var(--font-display);
+  border-radius: 12px; padding: 8px 12px; 
   font-size: 12.5px; font-weight: 700; cursor: pointer;
   transition: transform 0.12s ease, background 0.15s ease;
 }
@@ -1350,8 +1366,11 @@ small.muted { font-size: 12px; }
    social circle yet — the feature must not be invisible. */
 .friendteaser { display: flex; align-items: center; gap: 12px; padding: 14px; }
 .friendteaser__ic { font-size: 28px; }
-.friendteaser b { font-family: var(--font-display); font-size: 14px; display: block; }
+.friendteaser b { font-weight: 700; font-size: 14px; display: block; }
 .friendteaser small { font-size: 12px; color: var(--muted); }
+.friendteaser--actions { flex-direction: column; align-items: stretch; }
+.friendteaser__row { display: flex; align-items: center; gap: 12px; }
+.friendteaser__ctas { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 /* Challenge stake picker (⚔️ on a friend). */
 .challengesheet__opts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .challengesheet__opts .frbtn { width: 100%; padding: 12px; font-size: 14px; }
@@ -1385,12 +1404,12 @@ small.muted { font-size: 12px; }
   .friendrow__dot::after { animation: none; }
 }
 .friendrow__meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.friendrow__meta b { font-family: var(--font-display); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friendrow__meta b { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .friendrow__meta small { font-size: 11px; color: var(--muted); }
 .friendrow__btn {
   flex-shrink: 0; border: 1.5px solid var(--line); border-bottom-width: 3px;
   background: linear-gradient(180deg, #ffffff, #f0f3fa); color: var(--txt);
-  border-radius: 12px; padding: 7px 12px; font-family: var(--font-display);
+  border-radius: 12px; padding: 7px 12px; 
   font-size: 12.5px; font-weight: 600; cursor: pointer;
   transition: transform 0.12s ease;
 }
@@ -1421,7 +1440,7 @@ small.muted { font-size: 12px; }
   background: radial-gradient(circle at 50% 35%, #ffffff, #e7ecf7);
   border: 1.5px solid rgba(46, 43, 37, 0.12);
 }
-.rival__name { font-size: 11px; max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); }
+.rival__name { font-size: 11px; max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .rival__wl { font-size: 11px; font-variant-numeric: tabular-nums; }
 .rival--rival .rival__name { color: var(--accent); }
 .rival__badge { position: absolute; top: -2px; right: 10px; font-size: 14px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3)); }
@@ -1445,7 +1464,7 @@ small.muted { font-size: 12px; }
 .streak__fire { color: var(--accent); display: flex; }
 .streak__fire .icon { width: 26px; height: 26px; }
 .ticketcount { margin-left: auto; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 4px; }
-.streak b { font-family: var(--font-display); font-size: 15.5px; font-weight: 600; }
+.streak b { font-size: 15.5px; font-weight: 600; }
 .streak small { color: var(--muted); display: block; font-size: 12px; margin-top: 2px; }
 
 /* flex + centered wrap: an odd tile centers instead of orphaning left */
@@ -1461,7 +1480,7 @@ small.muted { font-size: 12px; }
   cursor: pointer;
   transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
-.stake b { display: block; font-family: var(--font-display); font-size: 15px; font-weight: 700; }
+.stake b { display: block; font-size: 15px; font-weight: 700; }
 .stake small { color: var(--muted); font-size: 9.5px; white-space: nowrap; }
 .stake--sel {
   border-color: var(--accent);
@@ -1488,7 +1507,7 @@ small.muted { font-size: 12px; }
   align-items: center;
   gap: 6px;
   color: var(--txt);
-  font-family: var(--font-display);
+  font-weight: 700;
   font-size: 13.5px;
   margin-bottom: 3px;
 }
@@ -1522,7 +1541,7 @@ small.muted { font-size: 12px; }
   display: flex; align-items: center; justify-content: center; font-size: 22px;
   background: rgba(245, 179, 1, 0.16);
 }
-.shopcard .mrow__txt b { font-family: var(--font-display); font-size: 15px; }
+.shopcard .mrow__txt b { font-weight: 700; font-size: 15px; }
 .shopcard__previews { flex-shrink: 0; font-size: 15px; letter-spacing: 3px; opacity: 0.9; }
 
 /* ---- Race Week (event) — premium "racing" surface ---------------------------
@@ -1567,7 +1586,7 @@ small.muted { font-size: 12px; }
 }
 .racecard__id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .racecard__id b {
-  font-family: var(--font-display); font-size: 16px; color: #fff;
+  font-weight: 700; font-size: 16px; color: #fff;
   display: inline-flex; align-items: center; gap: 8px;
 }
 .racecard__id small { font-size: 12px; color: rgba(249, 244, 237, 0.68); line-height: 1.4; }
@@ -1626,7 +1645,7 @@ small.muted { font-size: 12px; }
 .btn--race {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 1px; padding: 13px; border: none; border-radius: 14px; cursor: pointer;
-  font-family: var(--font-display); font-size: 15.5px; color: #06301f;
+  font-weight: 700; font-size: 15.5px; color: #06301f;
   background: linear-gradient(180deg, var(--race-green-2), var(--race-green));
   box-shadow: 0 10px 22px -8px rgba(0, 200, 130, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition: transform 0.12s ease, filter 0.12s ease;
@@ -1801,7 +1820,7 @@ small.muted { font-size: 12px; }
 /* How-to-play sheet: stacked CTAs (practice first on a fresh install). */
 .howto__actions { display: grid; gap: 9px; }
 .help__sec { margin-bottom: 14px; }
-.help__sec h4 { font-family: var(--font-display); font-size: 14.5px; margin-bottom: 4px; color: var(--txt); }
+.help__sec h4 { font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--txt); }
 .help__sec p { font-size: 13px; line-height: 1.55; color: var(--txt); }
 .help__link { color: var(--p1); text-decoration: underline; cursor: pointer; }
 .fairnote a, .fairnote .linklike { color: #ffffff; text-decoration: underline; cursor: pointer; }
@@ -1852,10 +1871,10 @@ small.muted { font-size: 12px; }
 .collset__ribbon {
   margin: -10px -12px 8px; padding: 5px 12px; border-radius: 12px 12px 0 0;
   background: linear-gradient(90deg, #ffca3a, #ffde7a); color: #4a3400;
-  font-family: var(--font-display); font-size: 12px; font-weight: 700;
+  font-size: 12px; font-weight: 700;
 }
 .collset__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
-.collset__head b { font-family: var(--font-display); font-size: 14px; }
+.collset__head b { font-weight: 700; font-size: 14px; }
 .collset__items { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .collset__item { width: 48px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: #f0f3fa; position: relative; }
 .collset__item .frametile__ring { width: 40px; height: 40px; display: block; position: relative; }
@@ -2063,7 +2082,7 @@ small.muted { font-size: 12px; }
 .profilesheet__name { display: block; font-family: var(--font-display); font-size: 20px; }
 .profilesheet__stats { display: flex; gap: 8px; }
 .pstat { flex: 1; text-align: center; background: rgba(23, 37, 84, 0.08); border-radius: 12px; padding: 8px 4px; }
-.pstat b { display: block; font-size: 18px; font-family: var(--font-display); }
+.pstat b { display: block; font-size: 18px; font-weight: 700; }
 .pstat small { color: var(--muted); font-size: 11px; }
 .pstat--w b { color: var(--accent); }
 .pstat--l b { color: var(--danger); }
@@ -2113,7 +2132,7 @@ small.muted { font-size: 12px; }
 }
 .frametile__ring { width: 40px; height: 40px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #ffffff, #dce3ef); }
 .frametile__ring.avframe { padding: 0; } /* the swatch IS the ring */
-.frametile b { font-family: var(--font-display); font-size: 12px; }
+.frametile b { font-weight: 700; font-size: 12px; }
 .frametile small { font-size: 9px; color: var(--muted); min-height: 20px; }
 .frametile--on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(198, 113, 57, 0.35); }
 .frametile--locked { opacity: 0.6; cursor: default; }
@@ -2152,6 +2171,15 @@ small.muted { font-size: 12px; }
   cursor: pointer;
 }
 .gamebar__btn .icon { width: 19px; height: 19px; }
+/* MiniPay feedback (desktop test): the flag-only leave control read as
+   decoration, not as "the way back" — the tester couldn't find an exit from a
+   game. On a wide pointer screen there is room to SAY what the button does;
+   the 360px webview keeps the icon-only tray untouched. */
+.gamebar__leavelabel { display: none; }
+@media (min-width: 900px) {
+  .gamebar__leavelabel { display: inline; font-size: 13px; font-weight: 700; margin-left: 2px; }
+  .gamebar__btn--leave { width: auto; padding: 0 14px; gap: 6px; }
+}
 .gamebar__btn:active { transform: scale(0.94); }
 .gamebar__gap { flex: 1; }
 .gamebar__die { width: 24px; height: 24px; display: block; }
@@ -2615,7 +2643,7 @@ small.muted { font-size: 12px; }
 .t4mode:active { transform: scale(0.98); }
 .t4mode__ic { font-size: 22px; line-height: 1; flex: 0 0 auto; }
 .t4mode__txt { display: flex; flex-direction: column; gap: 2px; }
-.t4mode__txt b { font-family: var(--font-display); font-size: 14px; }
+.t4mode__txt b { font-weight: 700; font-size: 14px; }
 .t4mode__txt small { font-size: 11px; color: var(--muted); line-height: 1.35; }
 .t4mode--real {
   flex-direction: column; align-items: stretch; gap: 10px; cursor: default;
@@ -2628,7 +2656,7 @@ small.muted { font-size: 12px; }
   text-align: center; color: var(--txt); background: linear-gradient(180deg, #ffffff, #eef2f9);
   border-bottom: 3px solid #ccd6e8; transition: transform 0.15s ease, background 0.15s ease;
 }
-.t4chip b { display: block; font-family: var(--font-display); font-size: 14px; }
+.t4chip b { display: block; font-weight: 700; font-size: 14px; }
 .t4chip small { display: block; font-size: 8px; color: var(--muted); white-space: nowrap; margin-top: 1px; }
 .t4chip--sel { background: var(--accent); border-bottom-color: var(--accent-deep); color: var(--card); }
 .t4chip--sel b, .t4chip--sel small { color: #6b4d00; }
@@ -2653,12 +2681,15 @@ small.muted { font-size: 12px; }
   border-radius: 18px; box-shadow: var(--shadow-lg);
   animation: emoteRow 0.14s ease-out;
 }
-/* Anchor to the button's RIGHT edge so the sheet opens toward the board centre and
-   never overhangs the screen edge (the emote toggle sits right-of-centre in the
-   1v1 bottom bar; left-aligning pushed the 224px sheet off the right edge, where the
-   game screen's overflow:hidden clipped it to half). Matches the gift sheet. */
-.emotebar--up .emotebar__sheet { bottom: 100%; margin-bottom: 8px; right: 0; left: auto; transform-origin: bottom right; }
-.emotebar--down .emotebar__sheet { top: 100%; margin-top: 8px; right: 0; transform-origin: top right; }
+/* Anchor to the button's LEFT edge so the sheet opens toward the screen centre.
+   The tray was rearranged since the old right-anchoring was chosen: emote and
+   gift now sit at the LEFT end of the bar ("things you do" left, "ways out"
+   right), so `right: 0` grew the 224px sheet leftward from a button ~30px off
+   the screen edge — at the 360px MiniPay viewport the sheet opened at
+   left:-158px, two thirds OFF SCREEN, quick-chats untappable (MiniPay-team
+   test report). The max-width guard still caps it on the narrowest screens. */
+.emotebar--up .emotebar__sheet { bottom: 100%; margin-bottom: 8px; left: 0; right: auto; transform-origin: bottom left; }
+.emotebar--down .emotebar__sheet { top: 100%; margin-top: 8px; left: 0; right: auto; transform-origin: top left; }
 /* compact grids: 4 emojis / 2 quick-chats per row → half the height it was */
 .emotebar__row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .emotebar__row--chat { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
@@ -2725,13 +2756,13 @@ small.muted { font-size: 12px; }
 .giftbar__toggle .icon { width: 19px; height: 19px; }
 .giftbar__toggle:active { transform: scale(0.92); }
 .giftbar__sheet {
-  position: absolute; z-index: 20; width: 236px; box-sizing: border-box;
+  position: absolute; z-index: 20; width: 236px; max-width: calc(100vw - 20px); box-sizing: border-box;
   display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--surface);
   border-radius: 18px; box-shadow: var(--shadow-lg); animation: emoteRow 0.14s ease-out;
 }
-/* anchored to the button's right edge so the sheet never overhangs the board */
-.emotebar--up .giftbar__sheet { bottom: 100%; margin-bottom: 8px; right: 0; transform-origin: bottom right; }
-.emotebar--down .giftbar__sheet { top: 100%; margin-top: 8px; right: 0; transform-origin: top right; }
+/* left-anchored like the emote sheet (same tray position, same off-screen bug) */
+.emotebar--up .giftbar__sheet { bottom: 100%; margin-bottom: 8px; left: 0; right: auto; transform-origin: bottom left; }
+.emotebar--down .giftbar__sheet { top: 100%; margin-top: 8px; left: 0; right: auto; transform-origin: top left; }
 /* recipient picker: a horizontal chip row (only rendered with >1 opponent) */
 .giftbar__to { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .giftbar__toc {
@@ -2941,7 +2972,7 @@ small.muted { font-size: 12px; }
   border-bottom: 1px solid var(--line);
 }
 .board li:last-child { border-bottom: none; }
-.board b { color: var(--txt); font-family: var(--font-display); font-variant-numeric: tabular-nums; }
+.board b { color: var(--txt); font-weight: 700; font-variant-numeric: tabular-nums; }
 .board__who { display: flex; align-items: center; gap: 7px; }
 .board__rank {
   font-style: normal;
@@ -3418,7 +3449,7 @@ small.muted { font-size: 12px; }
 .seasonsheet { max-width: min(460px, 100%); }
 .seasonbar { background: var(--card-2); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
 .seasonbar__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 13px; }
-.seasonbar__head b { font-family: var(--font-display); }
+.seasonbar__head b { font-weight: 700; }
 .seasonbar__head span { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
 .seasonbar__track { height: 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.08); overflow: hidden; }
 .seasonbar__fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 0.5s ease; }
@@ -3428,7 +3459,7 @@ small.muted { font-size: 12px; }
 .seasontier--on { opacity: 1; }
 .seasontier__n {
   flex: 0 0 30px; display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-display); font-size: 15px; font-weight: 800; color: var(--muted);
+  font-size: 15px; font-weight: 800; color: var(--muted);
   background: var(--card-2); border-radius: 10px;
 }
 .seasontier--on .seasontier__n { color: var(--accent); background: rgba(245, 179, 1, 0.14); }
@@ -3456,7 +3487,7 @@ small.muted { font-size: 12px; }
 .seasoncard__top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .seasoncard__crown { font-size: 22px; line-height: 1; }
 .seasoncard__id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.seasoncard__id b { font-family: var(--font-display); font-size: 16px; }
+.seasoncard__id b { font-weight: 700; font-size: 16px; }
 .seasoncard__id small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .seasoncard__crowns { font-weight: 800; font-size: 13px; color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .seasoncard__bar { margin-bottom: 10px; }
@@ -3488,10 +3519,10 @@ small.muted { font-size: 12px; }
   text-align: left; cursor: pointer;
 }
 .seasonpremium__txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.seasonpremium__txt b { font-family: var(--font-display); font-size: 15px; }
+.seasonpremium__txt b { font-weight: 700; font-size: 15px; }
 .seasonpremium__txt small { font-size: 11.5px; color: var(--muted); }
 .seasonpremium__cta {
-  flex: 0 0 auto; font-family: var(--font-display); font-weight: 800; font-size: 15px;
+  flex: 0 0 auto; font-weight: 800; font-size: 15px;
   color: #5d4300; background: var(--accent); border-radius: 999px; padding: 8px 16px; white-space: nowrap;
 }
 .seasonpremium--owned { justify-content: center; cursor: default; }
@@ -3649,7 +3680,6 @@ small.muted { font-size: 12px; }
   width: 46px;
   height: 46px;
   border-radius: 15px;
-  font-family: var(--font-display);
   font-size: 15px;
   font-weight: 400;
   background: rgba(198, 113, 57, 0.18);
@@ -3661,7 +3691,6 @@ small.muted { font-size: 12px; }
   display: flex;
   align-items: baseline;
   gap: 5px;
-  font-family: var(--font-display);
   font-size: 15px;
   font-weight: 400;
   color: var(--on-ink);
@@ -3760,7 +3789,7 @@ small.muted { font-size: 12px; }
 .seasonstrip__ic .icon { width: 18px; height: 18px; vertical-align: 0; }
 .seasonstrip__txt { flex: 1; min-width: 0; }
 .seasonstrip__row { display: flex; justify-content: space-between; align-items: baseline; }
-.seasonstrip__row b { font-family: var(--font-display); font-size: 14px; font-weight: 400; }
+.seasonstrip__row b { font-size: 14px; font-weight: 400; }
 .seasonstrip__row em {
   font-style: normal;
   font-size: 11.5px;
