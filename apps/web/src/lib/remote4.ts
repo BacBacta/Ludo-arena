@@ -76,6 +76,11 @@ export class Remote4 {
   private readonly entropy: string;
   private entropyCommit = ''; // sha256(entropy); computed once, reused on reconnect
   private revealedGameId = ''; // gameId we last revealed raw entropy for (once per game)
+  /** This connection still owes the server a `queue.join4`. Set per connect (a
+   *  RESUME owes none — the server reattaches us to our live seat) and cleared
+   *  the moment the join goes out, so the wallet-proof detour below can never
+   *  make us join twice. */
+  private joinPending = false;
   private gameOver = false; // set on game.over4 — a close after this is expected
   private reconnects = 0; // consecutive reconnect attempts (bounded)
   private initialAttempts = 0; // initial-connect retries before onGone (3G jitter)
@@ -149,9 +154,12 @@ export class Remote4 {
         avatar: loadAvatarId(), // chosen 3D profile avatar (broadcast to others)
         ...loadCustomIdentity(), // edited display name / country flag
       });
+      // The join is NOT sent here: on a staked table it has to follow the wallet
+      // proof, and `hello.ok` is the first point where we know whether the server
+      // wants one. See the `hello.ok` case below.
       // On a RESUME the server reattaches us to our live seat from the token and
       // resyncs (R-WEB-1); joining the queue again would try to start a new game.
-      if (!resume) this.send({ t: 'queue.join4', stakeCents: this.stakeCents });
+      this.joinPending = !resume;
       this.reconnects = 0; // a successful open resets the retry budget
       this.initialAttempts = 0; // reachable → later drops retry, not instant onGone
     };
@@ -183,14 +191,32 @@ export class Remote4 {
         // Guests: pin the first server-assigned name so it stays the same in
         // every later game/mode (the server derives a NEW one per connection).
         adoptServerIdentity(msg.name);
-        // Wallet ownership proof (SIWE) for a staked table: sign the server's nonce.
+        // Wallet ownership proof (SIWE) for a staked table: sign the server's
+        // nonce and only THEN join the queue.
+        //
+        // The join used to leave in the same tick as `hello`, so it always
+        // reached the server ahead of the proof — which needs a full round trip
+        // (hello.ok → sign → wallet.prove). The staked gate reads
+        // `wallet && !walletProven` and refused every staked 4p entry with
+        // "Verify your wallet ownership to play staked games." Inside MiniPay the
+        // server auto-proves on hello, so the race was invisible there and the
+        // bug only ever showed on desktop/browser wallets. The 1v1 path already
+        // sequenced action-after-proof; this brings 4p in line.
+        //
+        // No fallback timer on purpose: a decline REJECTS, so we join and let the
+        // server give its own honest refusal. Joining on a timeout instead would
+        // race a slow-but-real signature and show the refusal to someone who did
+        // sign — the exact bug this replaces.
         if (msg.walletNonce && this.stakeCents > 0 && this.auth?.signMessage) {
           void this.auth
             .signMessage(walletProofMessage(msg.walletNonce))
-            .then((signature) => this.send({ t: 'wallet.prove', signature }))
-            .catch(() => {
-              /* user declined — server keeps staking gated */
-            });
+            .then((signature) => {
+              this.send({ t: 'wallet.prove', signature });
+              this.sendJoin(); // same tick, after the proof: the server sees them in order
+            })
+            .catch(() => this.sendJoin()); // declined → let the server say why
+        } else {
+          this.sendJoin(); // free table, MiniPay (auto-proven), or nothing to sign
         }
         break;
       case 'queue.ok':
@@ -280,6 +306,13 @@ export class Remote4 {
     setTimeout(() => {
       if (!this.disposed && !this.gameOver) this.connect(true);
     }, delay);
+  }
+
+  /** Join the queue at most once per connection, and never on a resume. */
+  private sendJoin(): void {
+    if (!this.joinPending) return;
+    this.joinPending = false;
+    this.send({ t: 'queue.join4', stakeCents: this.stakeCents });
   }
 
   private token(): string | null {
