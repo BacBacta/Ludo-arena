@@ -1116,7 +1116,7 @@ export function DocModal() {
     <div className="modal" onClick={close}>
       <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
         <h2>{legalDoc === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h2>
-        <p className="legal__body">{legalDoc === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
+        <p className="legal__body">{legalDoc === 'tos' ? TOS_TEXT : PRIVACY_TEXT}</p>
         <button className="btn btn--ghost" onClick={close}>{t('close')}</button>
       </div>
     </div>
@@ -1263,20 +1263,42 @@ export function Table4Modal({ onPractice, onFree, onStaked }: {
  * summary of how staked play works; the operator should have counsel review before
  * a mainnet real-money launch, but this reads as the live policy (no draft banner).
  */
-const TOS_DRAFT = `1. Ludo Arena is a skill-and-chance 1v1 game. Staked matches wager
-stablecoins held in a non-custodial escrow smart contract; the operator never
-custodies player funds. 2. You must be at least 18 years old and legally
-permitted to wager where you live. Staked play is void where prohibited.
-3. A house fee (rake) is deducted from each settled pot. 4. Outcomes are
-determined by provably-fair dice; disputes are resolved from the on-chain
-record. 5. No refunds except the on-chain escrow's own refund paths.
-6. Play responsibly — set a daily limit or self-exclude in Settings.`;
+/* Validated against the codebase on 2026-08-21 — every claim below was checked
+   against what the contracts and server actually do, and every personal-data
+   processing found in the code is disclosed:
+   - escrow: settle/refund/void pay PLAYERS only; `withdraw` is strict
+     pull-payment of one's own credited balance — no operator sweep exists;
+   - the app offers 1v1 AND 4-player staked tables (the old text said "1v1");
+   - rake rates are shown in the Help sheet (hMoneyBody) before staking;
+   - server stores: wallet address, display name/flag/avatar, friends list,
+     games/ELO, RG limits, and the hashed device signal from fingerprint.ts;
+   - geo.ts reads the network country solely for the staking allowlist;
+   - burner.ts keeps the play-wallet key in localStorage outside MiniPay;
+   - support address + the 24h first-reply commitment match the Help sheet.
+   English-only, like the rest of the legal gate. No governing-law clause is
+   asserted — that choice belongs to the operator's counsel. */
+const TOS_TEXT = `1. Ludo Arena offers 1v1 and 4-player Ludo matches. Staked
+matches wager stablecoins locked in an escrow smart contract: settlements and
+refunds can only pay players, and the operator cannot move your stake to
+itself. 2. You must be at least 18 years old and legally permitted to wager
+where you live. Staked play is void where prohibited. 3. A house fee (rake) is
+deducted from each settled pot; the current rates are shown in the Help sheet
+before you stake. 4. Outcomes are determined by provably-fair dice; disputes
+are resolved from the on-chain record. 5. No refunds except the escrow's own
+refund paths (expired, aborted or voided games). 6. Play responsibly — set a
+daily limit or self-exclude in Settings. 7. Support: ${SUPPORT_EMAIL} —
+anything blocking play or money gets a first reply within 24 hours.`;
 
-const PRIVACY_DRAFT = `We store only what the game needs: a wallet address (if
-you connect one), gameplay/ELO records, and responsible-gaming limits. We do not
-sell personal data. On-chain stakes and settlements are public by nature of the
-blockchain. Local device storage keeps your preferences and consent. Contact the
-operator to request deletion of off-chain records.`;
+const PRIVACY_TEXT = `We store server-side: your wallet address, your chosen
+name, flag and avatar, your friends list, gameplay/ELO records,
+responsible-gaming limits, and a coarse hashed device signal (browser and
+screen characteristics) used to limit multi-accounting and reward abuse. Your
+network country may be checked to apply staking rules; it is used for nothing
+else. We do not sell personal data. On-chain stakes, settlements and purchases
+are public by nature of the blockchain. Local device storage keeps your
+preferences, your consent and — outside MiniPay — the key of your in-app play
+wallet: clearing site data deletes that wallet. To request deletion of
+off-chain records, write to ${SUPPORT_EMAIL}.`;
 
 /** Age (18+) + Terms/Privacy consent gate, shown once before any staked play. */
 export function LegalModal({ onAccept }: { onAccept(): void }) {
@@ -1294,7 +1316,7 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
       <div className="modal" onClick={() => setView('gate')}>
         <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
           <h2>{view === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h2>
-          <p className="legal__body">{view === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
+          <p className="legal__body">{view === 'tos' ? TOS_TEXT : PRIVACY_TEXT}</p>
           <button className="btn btn--ghost" onClick={() => setView('gate')}>
             {t('cancel')}
           </button>
