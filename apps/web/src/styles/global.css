@@ -3051,7 +3051,8 @@ small.muted { font-size: 12px; }
   overflow: hidden;
   max-width: min(460px, calc(100vw - 28px));
   color: var(--txt);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(239, 244, 252, 0.94));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(249, 244, 237, 0.94)); /* --n-100 en rgba : le toast finissait sur #eff4fc, dernier reste bleu.
+     Écrit en rgba, il avait échappé au premier relevé qui filtrait sur les hex. */
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
   backdrop-filter: blur(10px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.92);
