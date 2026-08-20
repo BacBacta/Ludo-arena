@@ -57,13 +57,26 @@
   --line: rgba(32, 30, 29, 0.1);
   --glass: rgba(253, 246, 233, 0.9);
   --txt: #201e1d;
-  --muted: rgba(32, 30, 29, 0.58);
-  --label: rgba(32, 30, 29, 0.45);
+  /* AA (4.5:1) sur toutes les surfaces de l'app, du papier #fffdf8 au sable
+     #e6d8bf des onglets de mise. À 0.58 ce token rendait 3.69 à 4.09 selon le
+     fond : sous-titre du hero, bande « comment jouer », sous-libellés de tuiles
+     et onglets Gratuit/Mises échouaient tous ensemble. */
+  --muted: rgba(32, 30, 29, 0.72);
+  /* Idem, en plus discret que --muted mais toujours ≥ 4.5:1 (pire fond 4.63).
+     À 0.45 il rendait 2.62 à 2.80 : libellés de section et onglets inactifs de
+     la barre du bas étaient les pires contrastes de l'app. */
+  --label: rgba(32, 30, 29, 0.66);
   --ink: #201e1d; /* the dark surface: stakes mode, end screen, season card */
   --ink-2: #2e2b25;
   --ink-3: #3b352c;
   --on-ink: #f9f4ed;
-  --accent: #c67139; /* terracotta — the single accent */
+  /* Terracotta assombri de #c67139 : l'accent sert de FOND à six surfaces qui
+     portent du texte clair (CTA du lobby, badge d'onglet, mise sélectionnée,
+     bouton d'ajout, compteur d'amis), et à #c67139 aucune ne dépassait 3.36.
+     #aa5d2a est la teinte la plus CLAIRE de la rampe qui atteint 4.5:1 avec
+     #fdf6e9 — le minimum de décalage pour sortir de l'échec. En texte sur
+     crème, assombrir ne fait qu'améliorer. */
+  --accent: #aa5d2a; /* terracotta — the single accent */
   --accent-2: #f6a06b; /* its lit step, for text/icons on the dark surface */
   --accent-deep: #8c491a;
 
@@ -84,8 +97,11 @@
   --p1-deep: #2a5420;
   --p2: #c8371b;
   --p2-deep: #8a2412;
-  --candy: #c67139; /* the primary CTA is the accent, not a green */
-  --candy-light: #d67f48;
+  /* Le dégradé du bouton primaire porte du texte BLANC : son sommet était à
+     3.00 et son milieu à 3.61. Les deux passent la barre, le pied (#8c491a,
+     6.81) était déjà bon. */
+  --candy: #b1622e; /* the primary CTA is the accent, not a green */
+  --candy-light: #af6230;
   --candy-deep: #8c491a;
   --danger: #c8371b;
   /* Shell width + board cap. Mobile (MiniPay) values; stepped up near #root. */
@@ -481,7 +497,12 @@ a.mrow { text-decoration: none; color: inherit; }
   transition: transform 0.12s ease, box-shadow 0.15s ease;
 }
 .modetile:active { transform: translateY(2px) scale(0.99); }
-.modetile--dim { opacity: 0.65; }
+/* 0.85, pas 0.65 : l'opacité fait fondre le TEXTE autant que le décor, et à
+   0.65 le sous-libellé retombait à 3.03:1. La tuile n'est pas `disabled` —
+   elle reste cliquable et explique qu'il faut des tickets — donc l'exemption
+   WCAG des contrôles désactivés ne s'applique pas. À 0.85 elle lit toujours
+   comme en retrait et le texte tient 4.65:1. */
+.modetile--dim { opacity: 0.85; }
 .modetile b { font-weight: 700; font-size: 14.5px; line-height: 1.15; }
 .modetile small { font-size: 10.5px; line-height: 1.35; color: var(--muted); }
 .modetile__ic {
@@ -1829,7 +1850,7 @@ small.muted { font-size: 12px; }
 /* How-to-play sheet: stacked CTAs (practice first on a fresh install). */
 .howto__actions { display: grid; gap: 9px; }
 .help__sec { margin-bottom: 14px; }
-.help__sec h4 { font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--txt); }
+.help__sec h3 { font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--txt); }
 .help__sec p { font-size: 13px; line-height: 1.55; color: var(--txt); }
 .help__link { color: var(--p1); text-decoration: underline; cursor: pointer; }
 .fairnote a, .fairnote .linklike { color: #ffffff; text-decoration: underline; cursor: pointer; }
@@ -1858,7 +1879,7 @@ small.muted { font-size: 12px; }
 
 /* Purchase sheet (explicit payment rails): item preview + two labelled buttons */
 .buysheet { text-align: center; max-width: 320px; }
-.buysheet h3 { margin: 8px 0 14px; }
+.buysheet h2 { margin: 8px 0 14px; }
 .buysheet .btn { width: 100%; margin-bottom: 4px; }
 .buysheet__bal { display: block; margin: 0 0 12px; font-size: 12px; }
 /* Paying with real money gets the dark surface, never a gold button. */
@@ -2623,6 +2644,12 @@ small.muted { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .modal, .modal__card { animation: none; }
 }
+/* Les titres de feuille sont des h2 : la page a un h1 (hero) et un modal
+   au-dessus d'elle titrait en h3 — l'audit heading-order échouait sur ce
+   saut. Taille et marges épinglées sur les métriques UA du h3 (1.17em,
+   margin-top 1em) pour que le changement de niveau soit invisible. Les h3
+   restants dans une feuille sont ses EN-TÊTES DE SECTION (catalogue). */
+.modal__card h2 { font-size: 1.17em; font-weight: 700; margin: 1em 0 8px; }
 .modal__card h3 { margin-bottom: 8px; }
 /* Blue-stage typography re-grounded for the WHITE sheets: .seclabel and
    .daily__hint are white-on-blue on the lobby, which turns white-on-white
@@ -3641,7 +3668,9 @@ small.muted { font-size: 12px; }
   margin-top: 5px;
   font-size: 12px;
   font-weight: 500;
-  color: rgba(253, 246, 233, 0.8);
+  /* Opaque, pas 80% : l'opacité la ramenait à 3.50 même sur l'accent assombri.
+     Le contraste vient désormais du fond, plus de la transparence du texte. */
+  color: var(--bg-hi);
 }
 .playnow__go {
   flex: none;

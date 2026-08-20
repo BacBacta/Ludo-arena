@@ -50,7 +50,7 @@ export function SeasonSheet({ onClaim, onBuyPremium }: { onClaim(tier: number, l
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card seasonsheet" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>👑 {t('seasonTitle')}</h3>
+        <h2>👑 {t('seasonTitle')}</h2>
         <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
           {t('seasonIntro')} · {t('seasonEndsIn').replace('{d}', String(daysLeft(season.endsAt)))}
         </p>

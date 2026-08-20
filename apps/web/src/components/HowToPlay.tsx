@@ -62,11 +62,11 @@ export function HowToPlayModal({ onPractice }: {
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card help__card howto__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t('howToTitle')} onClick={(e) => e.stopPropagation()}>
-        <h3>🎮 {t('howToTitle')}</h3>
+        <h2>🎮 {t('howToTitle')}</h2>
         <div className="help__scroll">
           {SECTIONS.map((s) => (
             <section className="help__sec" key={s.title}>
-              <h4>{s.icon} {t(s.title)}</h4>
+              <h3>{s.icon} {t(s.title)}</h3>
               <p>{t(s.body)}</p>
             </section>
           ))}

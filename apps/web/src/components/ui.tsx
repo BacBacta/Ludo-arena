@@ -82,7 +82,10 @@ export function TopBar({ onConnect, onDisconnect }: { onConnect?: () => Promise<
         <button
           className="streakchip"
           title={t('progressionTitle')}
-          aria-label={t('progressionTitle')}
+          // Label-in-name (WCAG 2.5.3) : le texte VISIBLE du bouton est le
+          // compteur — un utilisateur de commande vocale dit ce qu'il voit
+          // (« 3 »), donc le nom accessible doit le contenir.
+          aria-label={`${streak.days} — ${t('progressionTitle')}`}
           onClick={() => dispatch({ type: 'PROGRESSION_MODAL', open: true })}
         >
           <IconFlame2 />
@@ -151,7 +154,7 @@ export function ChallengeOfferModal({ onAccept }: { onAccept(code: string): void
           <span className={`profilecard__flag ${frameClass(from.frame)}`}>
             {avatarSrc(from.avatar) ? <img className="profilecard__img" src={avatarSrc(from.avatar)!} alt="" /> : from.flag}
           </span>
-          <h3>{from.name} {t('challengeTitle')}</h3>
+          <h2>{from.name} {t('challengeTitle')}</h2>
         </div>
         <p className="muted" style={{ fontSize: 13, margin: '6px 0 14px' }}>
           {stakeCents > 0 ? `${fmtUsd(stakeCents)} · ${t('challengeStakedSub')}` : t('challengeFreeSub')}
@@ -213,7 +216,7 @@ export function GiftCosmeticModal({ onSend }: { onSend(pid: string, id: string):
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3><IconGift /> {t('giftTitle')} {giftFriend.name}</h3>
+        <h2><IconGift /> {t('giftTitle')} {giftFriend.name}</h2>
         <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
           {t('giftIntro')} · <Tk n={tickets} />
         </p>
@@ -267,7 +270,7 @@ export function CollectionSheet({ onClaim }: { onClaim(setId: string): Promise<b
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>📚 {t('collectionTitle')}</h3>
+        <h2>📚 {t('collectionTitle')}</h2>
         <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t('collectionIntro')}</p>
         {COSMETIC_SETS.map((set) => {
           const ownedCount = set.itemIds.filter((i) => devAll || ownedSkins.includes(i)).length;
@@ -364,7 +367,7 @@ export function SettingsModal({ onApply }: { onApply(payload: { dailyLimitCents?
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('rgTitle')}</h3>
+        <h2>{t('rgTitle')}</h2>
         <p className="muted" style={{ fontSize: 12 }}>
           {t('rgIntro')}
         </p>
@@ -420,7 +423,7 @@ export function RealityCheckModal({ minutesPlayed, onBreak }: { minutesPlayed: n
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('realityTitle')}</h3>
+        <h2>{t('realityTitle')}</h2>
         <p className="muted" style={{ fontSize: 13 }}>
           {t('realityPlayed')} <b>{minutesPlayed} {t('realityMinutes')}</b>. {t('realityStaked')} <b>{fmtUsd(limits.stakedTodayCents)}</b>.
         </p>
@@ -455,7 +458,7 @@ export function ComebackModal() {
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="end__emoji">👋</div>
-        <h3>{t('comebackTitle')}</h3>
+        <h2>{t('comebackTitle')}</h2>
         <p className="muted" style={{ fontSize: 13 }}>
           {t('comebackBody').replace('{d}', String(comeback.daysAway))}
         </p>
@@ -487,7 +490,7 @@ function PurchaseSheet({ id, tickets, onClose, onBuy, onBuyCusd }: {
     <div className="modal" onClick={onClose}>
       <div className="modal__card buysheet" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <CosmeticPreview id={id} idKey={`buy-${id}`} />
-        <h3>{cosmeticName(id)}</h3>
+        <h2>{cosmeticName(id)}</h2>
         {ticketPrice !== undefined && (
           <>
             <button
@@ -528,7 +531,7 @@ export function DiceModal({ onBuy, onBuyCusd }: { onBuy(skinId: string): void; o
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('diceTitle')}</h3>
+        <h2>{t('diceTitle')}</h2>
         <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
           {t('diceIntro')}
         </p>
@@ -920,7 +923,7 @@ export function ProfileEditor({ onSave }: { onSave(name: string, flag: string, a
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card profileeditor" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('editProfile')}</h3>
+        <h2>{t('editProfile')}</h2>
         <div className="pe__preview">
           <span className={`pe__flag ${frameClass(avatarFrame)}`} aria-hidden="true">
             {previewSrc ? <img className="pe__previmg" src={previewSrc} alt="" /> : flag}
@@ -1015,7 +1018,7 @@ export function NoWalletSheet() {
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('nwTitle')}</h3>
+        <h2>{t('nwTitle')}</h2>
         <p className="muted" style={{ fontSize: 13, margin: '8px 0 14px' }}>{t('nwBody')}</p>
         <a className="btn" href={openInMiniPay} target="_blank" rel="noreferrer">
           {t('nwOpen')}
@@ -1054,39 +1057,39 @@ export function HelpModal() {
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card help__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('helpTitle')}</h3>
+        <h2>{t('helpTitle')}</h2>
         <div className="help__scroll">
           {/* Game rules first — the MiniPay testers' top ask. This sheet only
               covers the meta (tickets, season, money); the rules live in the
               dedicated How-to-play sheet. */}
           <section className="help__sec">
-            <h4>🎮 {t('howToTitle')}</h4>
+            <h3>🎮 {t('howToTitle')}</h3>
             <p><a className="help__link" onClick={openHowTo}>{t('howToTitle')} →</a></p>
           </section>
           <section className="help__sec">
-            <h4><IconTicket /> {t('hTickets')}</h4>
+            <h3><IconTicket /> {t('hTickets')}</h3>
             <p>{t('hTicketsBody')}</p>
           </section>
           <section className="help__sec">
-            <h4>🏆 {t('hFreeroll')}</h4>
+            <h3>🏆 {t('hFreeroll')}</h3>
             <p>{t('hFreerollBody')}</p>
           </section>
           <section className="help__sec">
-            <h4>👑 {t('hSeason')}</h4>
+            <h3>👑 {t('hSeason')}</h3>
             <p>{t('hSeasonBody')}</p>
           </section>
           <section className="help__sec">
-            <h4>🎲 {t('hFair')}</h4>
+            <h3>🎲 {t('hFair')}</h3>
             <p>
               {t('hFairBody')} <a className="help__link" onClick={openFair}>{t('howItWorks')}</a>
             </p>
           </section>
           <section className="help__sec">
-            <h4>💵 {t('hMoney')}</h4>
+            <h3>💵 {t('hMoney')}</h3>
             <p>{t('hMoneyBody')}</p>
           </section>
           <section className="help__sec">
-            <h4>📮 {t('hSupport')}</h4>
+            <h3>📮 {t('hSupport')}</h3>
             <p>
               {t('hSupportBody')} <a className="help__link" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
             </p>
@@ -1112,7 +1115,7 @@ export function DocModal() {
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
-        <h3>{legalDoc === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h3>
+        <h2>{legalDoc === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h2>
         <p className="legal__body">{legalDoc === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
         <button className="btn btn--ghost" onClick={close}>{t('close')}</button>
       </div>
@@ -1157,7 +1160,7 @@ export function StatsModal({ serverUrl }: { serverUrl: string }) {
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card stats" ref={trapRef} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t('statsTitle')}>
-        <h3>{t('statsTitle')}</h3>
+        <h2>{t('statsTitle')}</h2>
 
         {state === 'loading' && <p className="stats__note">{t('statsLoading')}</p>}
         {state === 'error' && <p className="stats__note">{t('statsUnavailable')}</p>}
@@ -1170,7 +1173,7 @@ export function StatsModal({ serverUrl }: { serverUrl: string }) {
             <div className="stats__cell"><b>{fmtVolume(s.stakedVolumeCents)}</b><span>{t('statsVolume')}</span></div>
           </div>
 
-          <h4 className="stats__h">{t('statsRetention')}</h4>
+          <h3 className="stats__h">{t('statsRetention')}</h3>
           <div className="stats__grid stats__grid--3">
             <div className="stats__cell"><b>{fmtRatio(s.retention.d1)}</b><span>D1</span></div>
             <div className="stats__cell"><b>{fmtRatio(s.retention.d7)}</b><span>D7</span></div>
@@ -1180,7 +1183,7 @@ export function StatsModal({ serverUrl }: { serverUrl: string }) {
           {/* A single day is not a trend — one bar reads as a broken block
               rather than a chart, so the strip only appears with 2+ days. */}
           {data && data.daily.length > 1 && (<>
-            <h4 className="stats__h">{t('statsDaily')}</h4>
+            <h3 className="stats__h">{t('statsDaily')}</h3>
             {/* Bars, not a chart lib: rule 4 budgets the critical path, and a
                 30-bar sparkline is a flex row of divs. */}
             <div className="stats__spark" aria-hidden="true">
@@ -1214,7 +1217,7 @@ export function Table4Modal({ onPractice, onFree, onStaked }: {
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('fourPlayer')}</h3>
+        <h2>{t('fourPlayer')}</h2>
         <p className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t('t4Pick')}</p>
         <div className="t4modes">
           <button className="t4mode" onClick={() => { playTap(); onPractice(); }}>
@@ -1290,7 +1293,7 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
     return (
       <div className="modal" onClick={() => setView('gate')}>
         <div className="modal__card legal__doc" onClick={(e) => e.stopPropagation()}>
-          <h3>{view === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h3>
+          <h2>{view === 'tos' ? t('legalReadTos') : t('legalReadPrivacy')}</h2>
           <p className="legal__body">{view === 'tos' ? TOS_DRAFT : PRIVACY_DRAFT}</p>
           <button className="btn btn--ghost" onClick={() => setView('gate')}>
             {t('cancel')}
@@ -1303,7 +1306,7 @@ export function LegalModal({ onAccept }: { onAccept(): void }) {
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('legalTitle')}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-        <h3>{t('legalTitle')}</h3>
+        <h2>{t('legalTitle')}</h2>
         <div className="legal__draft">{t('legalDraft')}</div>
         <label className="legal__check">
           <input type="checkbox" checked={age} onChange={(e) => setAge(e.target.checked)} /> {t('legalAge')}
@@ -1344,7 +1347,7 @@ export function StakingOverlay({ onCancel }: { onCancel?: () => void }) {
     <div className="modal">
       <div className="modal__card" style={{ textAlign: 'center' }}>
         <div className="spinner" style={{ margin: '4px auto 12px' }} />
-        <h3>{staking === 'approving' ? t('stakingApprove') : t('stakingJoin')}</h3>
+        <h2>{staking === 'approving' ? t('stakingApprove') : t('stakingJoin')}</h2>
         {match && (
           <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
             {fmtUsd(match.stakeCents)} · {t('stakingHint')}
@@ -1389,7 +1392,7 @@ export function FairnessModal() {
   return (
     <div className="modal" onClick={closeFair}>
       <div className="modal__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('fairTitle')}</h3>
+        <h2>{t('fairTitle')}</h2>
         {t('fairBody1')}
         <div className="hash">
           {t('commitLabel')} {commit ?? '—'}

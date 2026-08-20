@@ -487,7 +487,7 @@ function ForfeitModal({ stakeCents, onStay, onLeave }: { stakeCents: number; onS
     <div className="modal" onClick={onStay} role="dialog" aria-modal="true" aria-label={t('forfeitTitle')}>
       <div className="modal__card forfeit" onClick={(e) => e.stopPropagation()}>
         <div className="forfeit__glyph" aria-hidden="true">🏳️</div>
-        <h3 className="forfeit__title">{t('forfeitTitle')}</h3>
+        <h2 className="forfeit__title">{t('forfeitTitle')}</h2>
         {staked && (
           <div className="forfeit__stake">
             <span className="forfeit__stakeLabel">{t('stakeAtRisk')}</span>
