@@ -2542,7 +2542,13 @@ small.muted { font-size: 12px; }
   align-items: center;
   justify-content: center;
   padding: 24px;
-  z-index: 10;
+  /* ABOVE the tabbar (40). At 10 the lobby tab bar painted over the bottom
+     ~74px of every sheet — exactly where "Got it — let's play" sits on a
+     640px screen: an elementFromPoint probe at the button's centre returned
+     `tabbar`, so the welcome sheet's primary dismiss was UNTAPPABLE (MiniPay
+     team test feedback; independently diagnosed in PR #182). Toasts sit at 70:
+     they usually confirm what a sheet just did, so they must clear it too. */
+  z-index: 60;
   animation: modalveil 0.2s ease both;
 }
 @keyframes modalveil { from { opacity: 0; } to { opacity: 1; } }
@@ -3032,7 +3038,7 @@ small.muted { font-size: 12px; }
   font-size: 13px;
   font-weight: 600;
   line-height: 1.45;
-  z-index: 20;
+  z-index: 70; /* above modals (60) — a toast often confirms what the sheet did */
   cursor: pointer;
   animation: toastIn 0.38s cubic-bezier(0.2, 0.85, 0.3, 1.18) both;
 }

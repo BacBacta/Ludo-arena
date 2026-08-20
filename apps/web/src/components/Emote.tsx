@@ -42,12 +42,40 @@ const EMOTE_ANIM: Record<string, string> = {
   '🤯': 'gasp',
 };
 
+/**
+ * Close an open popover sheet on any pointerdown OUTSIDE it, and on Escape.
+ * Without this the emote/gift sheets had exactly two exits — re-tapping the
+ * toggle or sending something — so a player who opened one and then clicked
+ * the board to keep playing had a panel stuck over the board and the turn
+ * clock (MiniPay team desktop test: read as a glitch). `pointerdown` (not
+ * click) so the sheet is gone before the underlying tap lands.
+ */
+function useDismiss(open: boolean, ref: React.RefObject<HTMLDivElement | null>, close: () => void): void {
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('pointerdown', onPointer, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, ref, close]);
+}
+
 /** The expression sender: a 😊 toggle that opens the emoji row + quick-chat
  *  pills (popping up by default, or down when the bar sits at the top of the
  *  screen). Client-side cooldown matches the server's per-seat throttle. */
 export function EmoteBar({ onEmote, dir = 'up' }: { onEmote(id: string): void; dir?: 'up' | 'down' }) {
   const [open, setOpen] = useState(false);
   const [cooling, setCooling] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismiss(open, rootRef, () => setOpen(false));
   const send = (id: string): void => {
     if (cooling) return;
     playTap();
@@ -58,7 +86,7 @@ export function EmoteBar({ onEmote, dir = 'up' }: { onEmote(id: string): void; d
     setTimeout(() => setCooling(false), 1200);
   };
   return (
-    <div className={`emotebar emotebar--${dir}`}>
+    <div className={`emotebar emotebar--${dir}`} ref={rootRef}>
       {open && (
         <div className="emotebar__sheet" role="menu">
           <div className="emotebar__row">
@@ -124,6 +152,8 @@ export function GiftBar({
   const [open, setOpen] = useState(false);
   const [cooling, setCooling] = useState(false);
   const [picked, setPicked] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismiss(open, rootRef, () => setOpen(false));
   const target = recipients.some((r) => r.seat === picked) ? picked : recipients[0]?.seat ?? null;
   const send = (id: string): void => {
     if (cooling || target === null) return;
@@ -136,7 +166,7 @@ export function GiftBar({
   };
   if (recipients.length === 0) return null;
   return (
-    <div className={`giftbar emotebar--${dir}`}>
+    <div className={`giftbar emotebar--${dir}`} ref={rootRef}>
       {open && (
         <div className="giftbar__sheet" role="menu">
           {recipients.length > 1 && (
