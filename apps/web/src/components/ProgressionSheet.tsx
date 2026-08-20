@@ -20,7 +20,7 @@ export function ProgressionSheet({ onViewProfile, onBuyFreeze }: { onViewProfile
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card progressionsheet" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3>{t('progressionTitle')}</h3>
+        <h2>{t('progressionTitle')}</h2>
 
         {/* Daily loop */}
         <div className="seclabel">{t('today')}</div>

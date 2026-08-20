@@ -1850,7 +1850,7 @@ small.muted { font-size: 12px; }
 /* How-to-play sheet: stacked CTAs (practice first on a fresh install). */
 .howto__actions { display: grid; gap: 9px; }
 .help__sec { margin-bottom: 14px; }
-.help__sec h4 { font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--txt); }
+.help__sec h3 { font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--txt); }
 .help__sec p { font-size: 13px; line-height: 1.55; color: var(--txt); }
 .help__link { color: var(--p1); text-decoration: underline; cursor: pointer; }
 .fairnote a, .fairnote .linklike { color: #ffffff; text-decoration: underline; cursor: pointer; }
@@ -1879,7 +1879,7 @@ small.muted { font-size: 12px; }
 
 /* Purchase sheet (explicit payment rails): item preview + two labelled buttons */
 .buysheet { text-align: center; max-width: 320px; }
-.buysheet h3 { margin: 8px 0 14px; }
+.buysheet h2 { margin: 8px 0 14px; }
 .buysheet .btn { width: 100%; margin-bottom: 4px; }
 .buysheet__bal { display: block; margin: 0 0 12px; font-size: 12px; }
 /* Paying with real money gets the dark surface, never a gold button. */
@@ -2644,6 +2644,12 @@ small.muted { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .modal, .modal__card { animation: none; }
 }
+/* Les titres de feuille sont des h2 : la page a un h1 (hero) et un modal
+   au-dessus d'elle titrait en h3 — l'audit heading-order échouait sur ce
+   saut. Taille et marges épinglées sur les métriques UA du h3 (1.17em,
+   margin-top 1em) pour que le changement de niveau soit invisible. Les h3
+   restants dans une feuille sont ses EN-TÊTES DE SECTION (catalogue). */
+.modal__card h2 { font-size: 1.17em; font-weight: 700; margin: 1em 0 8px; }
 .modal__card h3 { margin-bottom: 8px; }
 /* Blue-stage typography re-grounded for the WHITE sheets: .seclabel and
    .daily__hint are white-on-blue on the lobby, which turns white-on-white

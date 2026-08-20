@@ -929,7 +929,7 @@ export function Lobby({
       {challengeTarget && (
         <div className="modal" onClick={() => setChallengeTarget(null)}>
           <div className="modal__card challengesheet" onClick={(e) => e.stopPropagation()}>
-            <h3><IconSwords /> {t('friendChallenge')} {challengeTarget.name}</h3>
+            <h2><IconSwords /> {t('friendChallenge')} {challengeTarget.name}</h2>
             <div className="challengesheet__opts">
               {lobbyStakes.map((s) => (
                 <button
