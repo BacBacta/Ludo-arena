@@ -12,6 +12,7 @@
  * finished pawn; three 6s lose the turn; safe stars + protected pairs; exact
  * finish; 15s auto-play; 3 missed turns forfeit.
  */
+import { IconBookOpen, IconBot, IconDice5, IconFlag, IconHourglass, IconSwords, IconUsersRound } from './icons';
 import { useAppDispatch, useAppState } from '../state/store';
 import { useFocusTrap } from './useFocusTrap';
 import { playTap } from '../lib/sound';
@@ -36,12 +37,14 @@ function markHowToSeen(): void {
   }
 }
 
-const SECTIONS: Array<{ icon: string; title: 'htPawns' | 'htDice' | 'htCapture' | 'htFinish' | 'htClock'; body: 'htPawnsBody' | 'htDiceBody' | 'htCaptureBody' | 'htFinishBody' | 'htClockBody' }> = [
-  { icon: '🔵', title: 'htPawns', body: 'htPawnsBody' },
-  { icon: '🎲', title: 'htDice', body: 'htDiceBody' },
-  { icon: '⭐', title: 'htCapture', body: 'htCaptureBody' },
-  { icon: '🎯', title: 'htFinish', body: 'htFinishBody' },
-  { icon: '⏱️', title: 'htClock', body: 'htClockBody' },
+/* Vendored line icons, not emoji: the product surface carries none
+   (docs/GAME_DESIGN.md §UI tone). */
+const SECTIONS: Array<{ icon: (p: { className?: string }) => JSX.Element; title: 'htPawns' | 'htDice' | 'htCapture' | 'htFinish' | 'htClock'; body: 'htPawnsBody' | 'htDiceBody' | 'htCaptureBody' | 'htFinishBody' | 'htClockBody' }> = [
+  { icon: IconUsersRound, title: 'htPawns', body: 'htPawnsBody' },
+  { icon: IconDice5, title: 'htDice', body: 'htDiceBody' },
+  { icon: IconSwords, title: 'htCapture', body: 'htCaptureBody' },
+  { icon: IconFlag, title: 'htFinish', body: 'htFinishBody' },
+  { icon: IconHourglass, title: 'htClock', body: 'htClockBody' },
 ];
 
 export function HowToPlayModal({ onPractice }: {
@@ -62,11 +65,11 @@ export function HowToPlayModal({ onPractice }: {
   return (
     <div className="modal" onClick={close}>
       <div className="modal__card help__card howto__card" ref={trapRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t('howToTitle')} onClick={(e) => e.stopPropagation()}>
-        <h3>🎮 {t('howToTitle')}</h3>
+        <h3><IconBookOpen /> {t('howToTitle')}</h3>
         <div className="help__scroll">
           {SECTIONS.map((s) => (
             <section className="help__sec" key={s.title}>
-              <h4>{s.icon} {t(s.title)}</h4>
+              <h4><s.icon /> {t(s.title)}</h4>
               <p>{t(s.body)}</p>
             </section>
           ))}
@@ -81,7 +84,7 @@ export function HowToPlayModal({ onPractice }: {
                 onPractice();
               }}
             >
-              🤖 {t('htPractice')}
+              <IconBot /> {t('htPractice')}
             </button>
           )}
           <button className={firstRun ? 'btn btn--ghost' : 'btn'} onClick={() => { playTap(); close(); }}>
