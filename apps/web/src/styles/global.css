@@ -651,7 +651,12 @@ a.mrow { text-decoration: none; color: inherit; }
   cursor: pointer;
   color: #ffffff;
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.22);
-  background: linear-gradient(180deg, var(--candy-light) 0%, var(--candy) 55%, #3f9a44 100%);
+  /* Ends on the terracotta's own deep tone, not on #3f9a44. The palette moved
+     to terracotta — the token two lines up literally reads "the primary CTA is
+     the accent, not a green" — but this gradient kept a hardcoded green stop,
+     so EVERY primary button in the app faded orange into green. It is visible
+     in the MiniPay team's own test capture ("Try a free practice game"). */
+  background: linear-gradient(180deg, var(--candy-light) 0%, var(--candy) 55%, var(--candy-deep) 100%);
   border-bottom: 4px solid var(--candy-deep);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.55), 0 8px 18px rgba(46, 43, 37, 0.35);
   transition: transform 0.12s ease, box-shadow 0.2s ease, border-bottom-width 0.08s ease;
@@ -891,7 +896,7 @@ a.btn {
   cursor: pointer;
   text-align: center;
   color: var(--txt);
-  background: linear-gradient(180deg, #ffffff, #eef2f9);
+  background: linear-gradient(180deg, var(--card), var(--card-2));
   border-bottom: 4px solid #ccd6e8;
   box-shadow: 0 6px 14px rgba(46, 43, 37, 0.25);
   transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.18s ease, background 0.18s ease;
@@ -1063,12 +1068,16 @@ a.btn {
   .screen--lobby > * { animation: none !important; }
 }
 
+/* Warm paper, not the pre-terracotta blue-grey. `#eef2f9` on `#c9d3e6` with
+   `#4a5a7a` ink was left over from the old palette and read as a foreign
+   element on every cream surface — the "define your design system" half of the
+   MiniPay feedback. */
 .btn--ghost {
-  background: linear-gradient(180deg, #ffffff, #eef2f9);
-  color: #4a5a7a;
+  background: linear-gradient(180deg, var(--card), var(--card-2));
+  color: var(--txt);
   text-shadow: none;
   box-shadow: 0 6px 14px rgba(46, 43, 37, 0.22);
-  border-bottom: 4px solid #c9d3e6;
+  border-bottom: 4px solid var(--line);
   font-weight: 600;
 }
 
@@ -1350,7 +1359,7 @@ small.muted { font-size: 12px; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 .frbtn--ghost {
-  background: linear-gradient(180deg, #ffffff, #f0f3fa);
+  background: linear-gradient(180deg, var(--card), var(--card-2)); /* was #f0f3fa — same old-palette leftover as .btn--ghost */
   border: 1.5px solid var(--line); border-bottom-width: 3px; color: var(--txt);
 }
 .frbtn--icon {
@@ -1408,7 +1417,7 @@ small.muted { font-size: 12px; }
 .friendrow__meta small { font-size: 11px; color: var(--muted); }
 .friendrow__btn {
   flex-shrink: 0; border: 1.5px solid var(--line); border-bottom-width: 3px;
-  background: linear-gradient(180deg, #ffffff, #f0f3fa); color: var(--txt);
+  background: linear-gradient(180deg, var(--card), var(--card-2)); color: var(--txt);
   border-radius: 12px; padding: 7px 12px; 
   font-size: 12.5px; font-weight: 600; cursor: pointer;
   transition: transform 0.12s ease;
@@ -1876,7 +1885,7 @@ small.muted { font-size: 12px; }
 .collset__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
 .collset__head b { font-weight: 700; font-size: 14px; }
 .collset__items { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-.collset__item { width: 48px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: #f0f3fa; position: relative; }
+.collset__item { width: 48px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--card-2); position: relative; }
 .collset__item .frametile__ring { width: 40px; height: 40px; display: block; position: relative; }
 .collset__item--missing { opacity: 0.35; filter: grayscale(0.9); }
 .collset__bar { margin-bottom: 8px; }
@@ -2124,7 +2133,7 @@ small.muted { font-size: 12px; }
 /* frame picker (in the cosmetics modal) */
 .framegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .frametile {
-  position: relative; background: linear-gradient(180deg, #ffffff, #f0f3fa);
+  position: relative; background: linear-gradient(180deg, var(--card), var(--card-2));
   border: 1.5px solid #e0e6f2; border-bottom: 3px solid #d3dcec; border-radius: 14px;
   padding: 12px 6px 8px; cursor: pointer; text-align: center; color: var(--txt);
   display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -2642,7 +2651,7 @@ small.muted { font-size: 12px; }
 .t4modes { display: grid; gap: 10px; }
 .t4mode {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-  background: linear-gradient(180deg, #ffffff, #f0f3fa); color: var(--txt);
+  background: linear-gradient(180deg, var(--card), var(--card-2)); color: var(--txt);
   border: 1.5px solid #e0e6f2; border-bottom: 3px solid #d3dcec; border-radius: 14px;
   padding: 12px 14px; cursor: pointer; transition: transform 0.12s ease, border-color 0.15s ease;
 }
@@ -2659,7 +2668,7 @@ small.muted { font-size: 12px; }
 .t4chips { display: flex; gap: 7px; }
 .t4chip {
   flex: 1 1 0; padding: 8px 2px 6px; border: none; border-radius: 11px; cursor: pointer;
-  text-align: center; color: var(--txt); background: linear-gradient(180deg, #ffffff, #eef2f9);
+  text-align: center; color: var(--txt); background: linear-gradient(180deg, var(--card), var(--card-2));
   border-bottom: 3px solid #ccd6e8; transition: transform 0.15s ease, background 0.15s ease;
 }
 .t4chip b { display: block; font-weight: 700; font-size: 14px; }
