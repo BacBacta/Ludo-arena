@@ -22,25 +22,34 @@ import { isMiniPay } from '../lib/minipay';
 import { playDice, playTap } from '../lib/sound';
 import { t, tickets } from '../lib/i18n';
 
-/** The "(tap to close)" hint at the bottom of a modal card. It MUST be a real
- *  control: every modal card stops click propagation (so taps on the body don't
- *  dismiss it), which silently swallowed taps on the hint too — the one element
- *  that explicitly PROMISES to close. On a phone there is no Escape key, so a
- *  first-time guest joining via a shared link could be stuck behind the welcome
- *  modal for the whole game (auto-played as "away", rematch unreachable). */
+/** The close control at the bottom of a modal card.
+ *
+ *  It MUST be a real control: every modal card stops click propagation (so taps
+ *  on the body don't dismiss it), which silently swallowed taps on a plain hint
+ *  too — the one element that explicitly PROMISES to close. On a phone there is
+ *  no Escape key, so a first-time guest joining via a shared link could be stuck
+ *  behind the welcome modal for the whole game.
+ *
+ *  It is STICKY, and it looks like a button. The card scrolls internally
+ *  (`max-height` + `overflow-y: auto`), so as a plain line of text at the end of
+ *  the flow it sat below 22 dice tiles — off-screen on open, and never seen
+ *  unless you scrolled to the very end. On desktop that read as a sheet with no
+ *  way out at all: "couldn't see a button to go back" (MiniPay team test).
+ *  Glued to the bottom edge it is visible the moment the sheet opens. */
 function CloseHint({ onClose, top = 10 }: { onClose(): void; top?: number }) {
   return (
-    <button
-      type="button"
-      className="muted closehint"
-      style={{ marginTop: top }}
-      onClick={(e) => {
-        e.stopPropagation(); // the card's handler must not re-swallow it
-        onClose();
-      }}
-    >
-      {t('closeHint')}
-    </button>
+    <div className="closebar" style={{ marginTop: top }}>
+      <button
+        type="button"
+        className="closebar__btn"
+        onClick={(e) => {
+          e.stopPropagation(); // the card's handler must not re-swallow it
+          onClose();
+        }}
+      >
+        ✕ {t('close')}
+      </button>
+    </div>
   );
 }
 
