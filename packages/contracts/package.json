@@ -16,6 +16,7 @@
     "set-tier-rake": "tsx script/setTierRake.ts",
     "allow-token": "tsx script/allowToken.ts",
     "migration-status": "tsx script/migrationStatus.ts",
+    "staked4-dryrun": "tsx script/staked4Dryrun.ts",
     "race-status": "tsx script/raceStatus.ts",
     "onchain-activity": "tsx script/onchainActivity.ts",
     "method-tx-hashes": "tsx script/methodTxHashes.ts",
@@ -28,6 +29,7 @@
     "solc": "0.8.24",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "viem": "^2.21.0"
+    "viem": "^2.21.0",
+    "ws": "^8.18.0"
   }
 }
