@@ -230,8 +230,9 @@ export function Game4Screen({ onLeave }: { onLeave(): void }) {
           <button className="gamebar__btn" aria-label="menu" onClick={() => dispatch({ type: 'SETTINGS', open: true })}>
             <IconMenu />
           </button>
-          <button className="gamebar__btn gamebar__btn--leave" aria-label="leave" onClick={onLeave}>
+          <button className="gamebar__btn gamebar__btn--leave" aria-label={t('leaveGame')} onClick={onLeave}>
             <IconFlag />
+            <span className="gamebar__leavelabel">{t('leaveGame')}</span>
           </button>
         </div>
       </div>

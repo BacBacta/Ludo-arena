@@ -453,6 +453,7 @@ export function GameScreen({
             }}
           >
             <IconFlag />
+            <span className="gamebar__leavelabel">{t('leaveGame')}</span>
           </button>
         </div>
       </div>

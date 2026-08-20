@@ -380,8 +380,9 @@ export function Game4OnlineScreen({
           <EmoteBar onEmote={(id) => remoteRef.current?.emote(id)} />
           <GiftBar recipients={giftTargets} onGift={(to, id) => remoteRef.current?.gift(to, id)} />
           <div className="gamebar__coins">{potCents > 0 ? '' : t('freeMatch')}</div>
-          <button className="gamebar__btn gamebar__btn--leave" aria-label="leave" onClick={onLeave}>
+          <button className="gamebar__btn gamebar__btn--leave" aria-label={t('leaveGame')} onClick={onLeave}>
             <IconFlag />
+            <span className="gamebar__leavelabel">{t('leaveGame')}</span>
           </button>
         </div>
       </div>
