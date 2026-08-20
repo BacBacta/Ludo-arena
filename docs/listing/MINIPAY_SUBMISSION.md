@@ -15,7 +15,7 @@ commande derrière est une case qui périme en silence.
 | Engagement SLA 24 h | ✅ affiché in-app | fiche d'aide → Support |
 | Manifeste des origines réseau | ✅ | rapport d'audit |
 | Score PageSpeed ≥ 90 mobile | ✅ **96/100** sur les octets déployés (blocage FCP levé) | `npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile` |
-| CGU / confidentialité | ⚠️ `TOS_DRAFT` / `PRIVACY_DRAFT` | relecture juridique avant listing |
+| CGU / confidentialité | ✅ validées contre le code (plus de DRAFT) | `TOS_TEXT` / `PRIVACY_TEXT`, `apps/web/src/components/ui.tsx` |
 
 ---
 
@@ -197,12 +197,35 @@ d'or 4. Le cache immuable est en ligne depuis le merge de #187 ; auparavant
 `vercel.json` ne déclarait aucune règle pour `/assets/*` et le défaut Vercel
 (`max-age=0, must-revalidate`) revalidait ces 266 Ko à chaque visite.
 
-## 6. Réserve : CGU et confidentialité
+## 6. CGU et confidentialité — validées le 2026-08-21
 
-`TOS_DRAFT` et `PRIVACY_DRAFT` (`apps/web/src/components/ui.tsx`) portent
-« DRAFT » dans leur nom. Ils sont affichés aux joueurs derrière la porte de
-consentement 18+. **À faire relire avant listing** — c'est le seul livrable de
-cette liste qui engage juridiquement l'opérateur.
+`TOS_DRAFT` / `PRIVACY_DRAFT` sont devenus `TOS_TEXT` / `PRIVACY_TEXT`
+(`apps/web/src/components/ui.tsx`), après validation **contre le code** :
+chaque affirmation a été vérifiée, chaque traitement de données trouvé dans le
+code est déclaré.
+
+Corrigé ou ajouté à cette occasion :
+
+- « jeu 1v1 » → l'app propose aussi la **table 4 joueurs misée** ;
+- « non-custodial » vérifié dans le contrat : `settle`/`refund*`/`voidGame` ne
+  paient que des joueurs, et `withdraw` est un pull-payment strict du solde
+  crédité à l'appelant — aucun retrait opérateur n'existe ;
+- la confidentialité déclare désormais **tout** ce que le serveur stocke :
+  adresse, nom/drapeau/avatar choisis, liste d'amis, parties/ELO, limites de
+  jeu responsable, et le **signal d'appareil haché** (`fingerprint.ts`,
+  anti multi-comptes) qui manquait ;
+- la lecture du **pays réseau** pour l'allowlist de mise est déclarée, avec sa
+  finalité unique ;
+- la **clé du wallet de jeu en localStorage** (hors MiniPay) est déclarée, avec
+  sa conséquence : effacer les données du site efface ce wallet ;
+- l'adresse de support et l'engagement de **première réponse sous 24 h** sont
+  dans les CGU, alignés sur la fiche d'aide.
+
+Limites, dites plutôt que tues : textes en anglais uniquement (comme la porte
+de consentement) ; aucune clause de droit applicable — ce choix appartient au
+conseil de l'opérateur. La validation ici est une validation de **véracité
+technique**, pas un avis juridique ; l'opérateur a tranché qu'elle suffit pour
+le listing.
 
 ## 7. État de la bascule cUSD → USD₮ (mainnet)
 
