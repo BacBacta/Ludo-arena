@@ -73,10 +73,25 @@ const settle = async (): Promise<void> => {
   await new Promise((r) => setTimeout(r, 0));
 };
 
+/** Wait until `probe()` is true, or fail loudly.
+ *
+ *  A fixed number of ticks is not enough here: the entropy commit is a REAL async
+ *  sha256 (WebCrypto), so on a loaded machine the socket is not constructed yet
+ *  when `settle()` returns and the caller dereferences `undefined`. Polling makes
+ *  the wait depend on the thing being waited for instead of on the host's speed. */
+async function until(probe: () => boolean, what: string): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    if (probe()) return;
+    await settle();
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
 async function open(stakeCents: number, signMessage?: (m: string) => Promise<string>): Promise<FakeSocket> {
+  const before = FakeWS.instances.length;
   new Remote4(events() as never, 'ws://x', '0xWallet', stakeCents, { consent: { tosVersion: 1, age18: true }, signMessage } as never);
-  await settle();
-  const ws = FakeWS.instances[FakeWS.instances.length - 1];
+  await until(() => FakeWS.instances.length > before, 'the socket to be constructed');
+  const ws = FakeWS.instances[FakeWS.instances.length - 1]!;
   ws.onopen?.();
   return ws;
 }

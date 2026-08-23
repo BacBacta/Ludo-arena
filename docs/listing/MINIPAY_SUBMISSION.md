@@ -104,6 +104,34 @@ redérivées à chaque exécution, ce qui permet de vérifier que l'argent est a
 Il faut par siège la mise du palier visé (0,25 USD₮ pour 25c) plus un peu de
 CELO pour le gas. Le script ne signe rien ; il ne fait que lire la chaîne.
 
+#### Jouer la partie et produire le hash
+
+```
+NETWORK=celo npm run staked4-live -w packages/contracts                        # plan seul
+NETWORK=celo CONFIRM=oui-depense-vraiment npm run staked4-live -w packages/contracts
+```
+
+C'est **le seul script du dépôt qui dépense**. Sans `CONFIRM` il s'arrête après
+le prévol et n'entre même pas dans la file. Armé, il enchaîne : preuve SIWE des
+quatre sièges, `queue.join4`, puis — et seulement si les quatre sièges se
+retrouvent sur **la même** table — `approve` + `join` en parallèle, révélation
+des entropies, partie jouée automatiquement, et le hash du `settle` de l'arbitre.
+
+Si un joueur réel s'intercale, les `gameId` divergent et le script abandonne
+**avant** de payer : mieux vaut le laisser être remboursé par `refundUnfilled`
+que de l'asseoir à une table qui ne démarrera jamais. À lancer hors heures de
+pointe.
+
+Si le run meurt entre les dépôts, rien n'est perdu — une table non remplie est
+remboursable par n'importe qui après 120 s :
+
+```
+NETWORK=celo RESCUE=<gameId> CONFIRM=oui-depense-vraiment npm run staked4-live -w packages/contracts
+```
+
+Une partie Active jamais réglée se débloque seule après 24 h (`refundActive`).
+Reporte ensuite le hash de `join` dans le tableau du §2.
+
 ## 3. Captures d'écran
 
 `docs/listing/screenshots/` — trois PNG au viewport Android 360×640, tous sous
