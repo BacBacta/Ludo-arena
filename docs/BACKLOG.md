@@ -65,6 +65,13 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
   - **Trigger**: manual Fly ops workflow `race-payout` with `confirm: PAYOUT-<eventId>`, **dry-run by default** (compute + print split, no send); reads `RACE_PRIZE_POOL_PRIVATE_KEY` from Fly secrets (never handled in-repo).
   - **Ship order**: (1)+freeze first (pure calc + gel, zero on-chain), validate the barème/ties on real cases, THEN wire the transfer.
 
+## E-4p — Table 4 joueurs misée
+
+- [ ] **B4P.1 (BUG, observé en mainnet le 2026-08-23) — une table annulée dont les dépôts arrivent juste après laisse l'argent immobilisé 24 h, sans alerte.** `pollStaked4Lock` abandonne au bout de `MAX_LOCK_POLLS` (120 s) et met un job de remboursement en file. Si, à l'instant où ce job s'exécute, l'escrow n'a encore reçu **aucun** `join` (statut `None`), `processOnce` tombe dans la dernière branche — « nobody staked » — marque le job `failed`, écrit un `console.warn` et **retourne terminal** : plus aucun réessai. Les `join` qui minent quelques secondes plus tard font passer l'escrow en `Active` avec le pot dedans, et personne ne le vide jamais. Il faut attendre les 24 h de `refundActive` (permissionless).
+  Observé sur `7761c9b851e42fc56672c1763cbf6f4a` : quatre `join` réussis à 21:36:58–21:37:02 UTC, aucune transaction de l'arbitre vers `LudoEscrowN` (dernière tx de l'arbitre : 15 jours plus tôt), 1,00 USD₮ bloqué. Le chemin `Active → voidGame` existe et est correct — il n'est simplement jamais atteint.
+  Impact réel : un joueur dont le portefeuille signe lentement perd l'accès à sa mise pendant 24 h, en silence (le `console.warn` ne déclenche pas `onAlert`).
+  *AC : un job de remboursement sur un escrow `None` est reprogrammé au lieu d'être abandonné (au moins jusqu'à `JOIN_TIMEOUT` + marge), et l'abandon définitif passe par `onAlert`. Test : job enfilé alors que l'escrow est `None`, l'escrow devient `Active`, le job finit par appeler `voidGame`.*
+
 ## E7 — MiniPay listing
 
 - [ ] **E7.1 ToS + privacy policy** (static pages, required by the Mini Apps ToS).

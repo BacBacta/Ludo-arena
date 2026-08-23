@@ -81,6 +81,7 @@ const env = (n: string): string | undefined => {
 const SEATS = 4;
 const CONFIRM_PHRASE = 'oui-depense-vraiment';
 const JOIN_TIMEOUT_S = 120; // LudoEscrowN.JOIN_TIMEOUT
+const ACTIVE_TIMEOUT_S = 24 * 3600; // LudoEscrowN.ACTIVE_TIMEOUT — the lost-key valve
 
 const NETWORKS: Record<string, { chain: Chain; rpc: string; srv: string }> = {
   celo: {
@@ -202,6 +203,7 @@ const ESCROW_N = [
     ],
   },
   { type: 'function', name: 'refundUnfilled', stateMutability: 'nonpayable', inputs: [{ type: 'bytes32' }], outputs: [] },
+  { type: 'function', name: 'refundActive', stateMutability: 'nonpayable', inputs: [{ type: 'bytes32' }], outputs: [] },
 ] as const;
 
 /** Same encodings the web client uses (apps/web/src/lib/escrow.ts): the gameId is
@@ -218,23 +220,37 @@ if (rescue) {
   const status = Number(g[5]);
   const createdAt = Number(g[4]);
   const age = Math.floor(Date.now() / 1000) - createdAt;
-  console.log(`[rescue] ${rescue}  status=${status} (1=Filling) joined=${String(g[3])}/${String(g[2])}  age=${age}s`);
-  if (status !== 1) {
-    console.error('[rescue] only a Filling table is refundable this way. Active-but-unsettled unlocks after 24 h (refundActive).');
+  console.log(`[rescue] ${rescue}  status=${status} (1=Filling 2=Active) joined=${String(g[3])}/${String(g[2])}  age=${age}s`);
+
+  // Two permissionless valves, one per status. Filling → refundUnfilled after
+  // JOIN_TIMEOUT. Active → refundActive after ACTIVE_TIMEOUT: the escrow filled
+  // but the game never started, and the arbiter's voidGame — the fast path — did
+  // not fire. That happened on mainnet (backlog B4P.1): the server drops its own
+  // refund job when the deposits land a moment after it gave up, so the 24 h valve
+  // is the only way back. Neither call needs a privileged key.
+  const plan =
+    status === 1
+      ? { fn: 'refundUnfilled' as const, readyAt: JOIN_TIMEOUT_S }
+      : status === 2
+        ? { fn: 'refundActive' as const, readyAt: ACTIVE_TIMEOUT_S }
+        : null;
+  if (!plan) {
+    console.error('[rescue] nothing to recover: the table is neither Filling nor Active (already settled or refunded).');
     process.exit(1);
   }
-  if (age < JOIN_TIMEOUT_S) {
-    console.error(`[rescue] not expired yet — wait ${JOIN_TIMEOUT_S - age}s more.`);
+  if (age < plan.readyAt) {
+    const wait = plan.readyAt - age;
+    console.error(`[rescue] ${plan.fn} unlocks in ${wait}s (${Math.ceil(wait / 60)} min).`);
     process.exit(1);
   }
   if (!armed) {
-    console.log(`[rescue] refundUnfilled is ready. Re-run with CONFIRM=${CONFIRM_PHRASE} to send it.`);
+    console.log(`[rescue] ${plan.fn} is ready. Re-run with CONFIRM=${CONFIRM_PHRASE} to send it.`);
     process.exit(0);
   }
   const wc = createWalletClient({ account: accounts[0]!, chain: preset.chain, transport: http(env('CELO_RPC') ?? preset.rpc) });
-  const hash = await wc.writeContract({ address: escrowN, abi: ESCROW_N, functionName: 'refundUnfilled', args: [gameId32] });
+  const hash = await wc.writeContract({ address: escrowN, abi: ESCROW_N, functionName: plan.fn, args: [gameId32] });
   const r = await pc.waitForTransactionReceipt({ hash });
-  console.log(`[rescue] refundUnfilled ${r.status}  ${hash}`);
+  console.log(`[rescue] ${plan.fn} ${r.status}  ${hash}`);
   process.exit(r.status === 'success' ? 0 : 1);
 }
 
