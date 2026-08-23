@@ -507,6 +507,30 @@ const gameId32 = gameIdToBytes32(gameId);
 const commit32 = commitToBytes32(commit);
 const rpcUrl = env('CELO_RPC') ?? preset.rpc;
 
+/**
+ * Block until the approve is visible to the node that will price the join.
+ *
+ * A mined receipt does NOT mean the next read sees the write. Public Celo RPCs
+ * are load balancers over many nodes: the receipt can come from one that is a
+ * block ahead of the one that answers the following `eth_estimateGas`. That node
+ * still sees allowance = 0, prices `join` against it, and the call reverts
+ * `TransferFailed` (0x90b8ec18) during ESTIMATION — no transaction is ever sent,
+ * so nothing shows on-chain and the seat is simply absent from the table.
+ *
+ * This bit us on the first mainnet run: seats 3 and 4 approved fine, then both
+ * died on the estimate while seats 1 and 2 got in, leaving a half-filled table
+ * to refund. Confirming the allowance through the same read path the estimate
+ * uses closes the gap.
+ */
+async function waitForAllowance(owner: Address): Promise<void> {
+  for (let i = 0; i < 30; i++) {
+    const seen = (await pc.readContract({ address: token, abi: ERC20, functionName: 'allowance', args: [owner, escrowN] })) as bigint;
+    if (seen >= stake) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`approve mined but the allowance never became visible for ${owner} — RPC lag`);
+}
+
 const deposits = await Promise.allSettled(
   seats.map(async (s, i) => {
     const wc = createWalletClient({ account: s.account, chain: preset.chain, transport: http(rpcUrl) });
@@ -528,12 +552,25 @@ const deposits = await Promise.allSettled(
       row.approve = await wc.writeContract({ address: token, abi: ERC20, functionName: 'approve', args: [escrowN, stake] });
       const ra = await pc.waitForTransactionReceipt({ hash: row.approve });
       if (ra.status !== 'success') throw new Error(`approve reverted (${row.approve})`);
+      await waitForAllowance(s.account.address);
     }
-    row.join = await wc.writeContract({
-      address: escrowN, abi: ESCROW_N, functionName: 'join',
-      args: [gameId32, token, stake, SEATS, commit32],
-    });
-    const rj = await pc.waitForTransactionReceipt({ hash: row.join });
+    // One retry: `waitForAllowance` narrows the read-after-write window but cannot
+    // pin the estimate to a particular node, so a straggler can still price the
+    // join against a stale state. A second attempt a moment later costs nothing
+    // when the first succeeded and saves the whole table when it did not.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        row.join = await wc.writeContract({
+          address: escrowN, abi: ESCROW_N, functionName: 'join',
+          args: [gameId32, token, stake, SEATS, commit32],
+        });
+        break;
+      } catch (e) {
+        if (attempt >= 1) throw e;
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+    const rj = await pc.waitForTransactionReceipt({ hash: row.join! });
     if (rj.status !== 'success') throw new Error(`join reverted (${row.join})`);
     console.log(`   OK      siège ${i + 1} déposé  join=${row.join}`);
     return row;
