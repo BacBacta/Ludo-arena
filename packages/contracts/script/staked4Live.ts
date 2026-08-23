@@ -333,6 +333,8 @@ let onMatchFailed: ((why: string) => void) | undefined;
 let gameOver: (() => void) | undefined;
 
 const evidence: { seat: number; approve?: Hex; join?: Hex }[] = [];
+/** approve hashes from the pre-approval step, folded into the evidence table. */
+const approvals = new Map<number, Hex>();
 let settleTx: string | undefined;
 let winnerSeat: number | undefined;
 
@@ -385,6 +387,12 @@ function wire(s: Seat, i: number): void {
         s.gameId = m.gameId as string;
         s.seatIndex = m.seat as number;
         s.fairnessCommit = m.fairnessCommit as string;
+        // Reveal NOW, exactly like the real client (apps/web/src/lib/remote4.ts):
+        // the server starts the table only once the escrow is Active AND all four
+        // entropies are in, and it gives up 120 s after the match. Revealing after
+        // the deposits — as this script first did — puts the reveal behind four
+        // on-chain round-trips and blows that window even when every stake lands.
+        send(s, { t: 'game.entropy', entropy: s.entropy });
         if (seats.every((x) => x.gameId)) onMatched?.();
         return;
       }
@@ -456,9 +464,69 @@ if (!armed) {
   process.exit(0);
 }
 
-// ---------------------------------------------------------------- 2 + 3. queue
+/**
+ * Block until the approve is visible to the node that will price the join.
+ *
+ * A mined receipt does NOT mean the next read sees the write. Public Celo RPCs
+ * are load balancers over many nodes: the receipt can come from one that is a
+ * block ahead of the one that answers the following `eth_estimateGas`. That node
+ * still sees allowance = 0, prices `join` against it, and the call reverts
+ * `TransferFailed` (0x90b8ec18) during ESTIMATION — no transaction is ever sent,
+ * so nothing shows on-chain and the seat is simply absent from the table.
+ *
+ * This bit us on the first mainnet run: seats 3 and 4 approved fine, then both
+ * died on the estimate while seats 1 and 2 got in, leaving a half-filled table
+ * to refund. Confirming the allowance through the same read path the estimate
+ * uses closes the gap.
+ */
+async function waitForAllowance(owner: Address): Promise<void> {
+  for (let i = 0; i < 30; i++) {
+    const seen = (await pc.readContract({ address: token, abi: ERC20, functionName: 'allowance', args: [owner, escrowN] })) as bigint;
+    if (seen >= stake) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`approve mined but the allowance never became visible for ${owner} — RPC lag`);
+}
 
-console.log('2. FILE MISÉE — quatre sièges rejoignent la même table');
+const rpcUrl = env('CELO_RPC') ?? preset.rpc;
+
+// -------------------------------------------------------- 2. allowances, up front
+
+/**
+ * Approve BEFORE queuing, not between the match and the deposit.
+ *
+ * The server gives a matched table 120 s to become Active with all four entropies
+ * in, then cancels it. An `approve` inside that window costs a full transaction
+ * round-trip per seat and — as the second mainnet run showed — is what pushes four
+ * otherwise-successful joins past the deadline: every stake landed, and the table
+ * had already been torn down. The approval is not part of the game, so it has no
+ * business being on the clock.
+ */
+console.log('2. AUTORISATIONS — hors de la fenêtre chronométrée du serveur');
+for (const [i, s] of seats.entries()) {
+  const allowance = (await pc.readContract({ address: token, abi: ERC20, functionName: 'allowance', args: [s.account.address, escrowN] })) as bigint;
+  if (allowance >= stake) {
+    console.log(`   ·       siège ${i + 1} déjà autorisé`);
+    continue;
+  }
+  // Exact amount, never unlimited: these seats are throwaway, but an infinite
+  // allowance outliving the test is a standing liability for no benefit.
+  const wc = createWalletClient({ account: s.account, chain: preset.chain, transport: http(rpcUrl) });
+  const hash = await wc.writeContract({ address: token, abi: ERC20, functionName: 'approve', args: [escrowN, stake] });
+  const r = await pc.waitForTransactionReceipt({ hash });
+  if (r.status !== 'success') {
+    console.error(`   ECHEC   siège ${i + 1} approve reverted (${hash})`);
+    process.exit(1);
+  }
+  await waitForAllowance(s.account.address);
+  approvals.set(i, hash);
+  console.log(`   OK      siège ${i + 1} approve ${hash}`);
+}
+console.log('');
+
+// ---------------------------------------------------------------- 3 + 4. queue
+
+console.log('3. FILE MISÉE — quatre sièges rejoignent la même table');
 seats.forEach(wire);
 
 const matched = await new Promise<{ ok: true } | { ok: false; why: string }>((resolve) => {
@@ -502,39 +570,14 @@ stage = 'deposit';
 
 // ---------------------------------------------------------------- 4. money
 
-console.log(`4. DÉPÔT — approve + join, ${SEATS} sièges en parallèle (fenêtre de ${JOIN_TIMEOUT_S}s)`);
+console.log(`4. DÉPÔT — join seul, ${SEATS} sièges en parallèle (fenêtre de ${JOIN_TIMEOUT_S}s)`);
 const gameId32 = gameIdToBytes32(gameId);
 const commit32 = commitToBytes32(commit);
-const rpcUrl = env('CELO_RPC') ?? preset.rpc;
-
-/**
- * Block until the approve is visible to the node that will price the join.
- *
- * A mined receipt does NOT mean the next read sees the write. Public Celo RPCs
- * are load balancers over many nodes: the receipt can come from one that is a
- * block ahead of the one that answers the following `eth_estimateGas`. That node
- * still sees allowance = 0, prices `join` against it, and the call reverts
- * `TransferFailed` (0x90b8ec18) during ESTIMATION — no transaction is ever sent,
- * so nothing shows on-chain and the seat is simply absent from the table.
- *
- * This bit us on the first mainnet run: seats 3 and 4 approved fine, then both
- * died on the estimate while seats 1 and 2 got in, leaving a half-filled table
- * to refund. Confirming the allowance through the same read path the estimate
- * uses closes the gap.
- */
-async function waitForAllowance(owner: Address): Promise<void> {
-  for (let i = 0; i < 30; i++) {
-    const seen = (await pc.readContract({ address: token, abi: ERC20, functionName: 'allowance', args: [owner, escrowN] })) as bigint;
-    if (seen >= stake) return;
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  throw new Error(`approve mined but the allowance never became visible for ${owner} — RPC lag`);
-}
 
 const deposits = await Promise.allSettled(
   seats.map(async (s, i) => {
     const wc = createWalletClient({ account: s.account, chain: preset.chain, transport: http(rpcUrl) });
-    const row: { seat: number; approve?: Hex; join?: Hex } = { seat: i + 1 };
+    const row: { seat: number; approve?: Hex; join?: Hex } = { seat: i + 1, approve: approvals.get(i) };
     evidence.push(row);
 
     // Idempotence: a seat already seated (a retried run, a lost receipt) must not
@@ -545,15 +588,6 @@ const deposits = await Promise.allSettled(
       return row;
     }
 
-    const allowance = (await pc.readContract({ address: token, abi: ERC20, functionName: 'allowance', args: [s.account.address, escrowN] })) as bigint;
-    if (allowance < stake) {
-      // Exact amount, never unlimited: these seats are throwaway, but an infinite
-      // allowance outliving the test is a standing liability for no benefit.
-      row.approve = await wc.writeContract({ address: token, abi: ERC20, functionName: 'approve', args: [escrowN, stake] });
-      const ra = await pc.waitForTransactionReceipt({ hash: row.approve });
-      if (ra.status !== 'success') throw new Error(`approve reverted (${row.approve})`);
-      await waitForAllowance(s.account.address);
-    }
     // One retry: `waitForAllowance` narrows the read-after-write window but cannot
     // pin the estimate to a particular node, so a straggler can still price the
     // join against a stale state. A second attempt a moment later costs nothing
@@ -590,11 +624,11 @@ if (failed.length) {
 }
 console.log(`   → ${SEATS}/${SEATS} mises verrouillées\n`);
 
-// Reveal the entropies: the server starts only when the escrow is Active AND all
-// four seats have revealed (R-DICE-3 binds the dice to these reveals).
-console.log('5. PARTIE — révélation des entropies puis jeu automatique');
+// The entropies were revealed the moment the table was announced (see the
+// `match.found4` handler) — the server needs them and the Active escrow together,
+// within 120 s of the match.
+console.log('5. PARTIE — jeu automatique jusqu\'au règlement');
 stage = 'play';
-for (const s of seats) send(s, { t: 'game.entropy', entropy: s.entropy });
 
 const played = await new Promise<{ ok: true } | { ok: false; why: string }>((resolve) => {
   const timer = setTimeout(() => resolve({ ok: false, why: 'aucun règlement en 10 min' }), 600_000);
