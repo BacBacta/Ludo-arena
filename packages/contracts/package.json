@@ -20,6 +20,7 @@
     "onchain-activity": "tsx script/onchainActivity.ts",
     "method-tx-hashes": "tsx script/methodTxHashes.ts",
     "wallet-status": "tsx script/walletStatus.ts",
+    "seat-addresses": "tsx script/seatAddresses.ts",
     "race-pass-mints": "tsx script/racePassMints.ts"
   },
   "devDependencies": {
