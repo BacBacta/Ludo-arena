@@ -79,6 +79,12 @@ const env = (n: string): string | undefined => {
 };
 
 const SEATS = 4;
+/** Wall-clock origin, so every line can say WHEN it happened relative to the run.
+ *  The server cancels a matched table 120 s after `match.found4`; without stamps
+ *  a failed run cannot tell you which step ate the budget — which is exactly the
+ *  hole the second mainnet run left. */
+const T0 = Date.now();
+const at = (): string => `t+${((Date.now() - T0) / 1000).toFixed(1)}s`;
 const CONFIRM_PHRASE = 'oui-depense-vraiment';
 const JOIN_TIMEOUT_S = 120; // LudoEscrowN.JOIN_TIMEOUT
 const ACTIVE_TIMEOUT_S = 24 * 3600; // LudoEscrowN.ACTIVE_TIMEOUT — the lost-key valve
@@ -409,6 +415,7 @@ function wire(s: Seat, i: number): void {
         // the deposits — as this script first did — puts the reveal behind four
         // on-chain round-trips and blows that window even when every stake lands.
         send(s, { t: 'game.entropy', entropy: s.entropy });
+        console.log(`   ·       ${at()} siège ${i + 1} apparié (table ${s.gameId.slice(0, 8)}…), entropie révélée`);
         if (seats.every((x) => x.gameId)) onMatched?.();
         return;
       }
@@ -449,7 +456,7 @@ function wire(s: Seat, i: number): void {
           // Money is already locked. A rejected action is not a reason to walk
           // away from a game that may still finish — record it and play on.
           lateError ??= why;
-          console.log(`   ·       ${why}`);
+          console.log(`   ·       ${at()} ${why}`);
           return;
         }
         onMatchFailed?.(why);
@@ -542,7 +549,7 @@ console.log('');
 
 // ---------------------------------------------------------------- 3 + 4. queue
 
-console.log('3. FILE MISÉE — quatre sièges rejoignent la même table');
+console.log(`3. FILE MISÉE — quatre sièges rejoignent la même table (${at()})`);
 seats.forEach(wire);
 
 const matched = await new Promise<{ ok: true } | { ok: false; why: string }>((resolve) => {
@@ -580,7 +587,7 @@ if (!seats.every((s) => s.fairnessCommit === commit)) {
   console.error('   ECHEC   commit d\'équité divergent entre les sièges — join révèrterait CommitMismatch.');
   process.exit(1);
 }
-console.log(`   OK      table ${gameId} — les 4 sièges y sont (indices ${seats.map((s) => s.seatIndex).join(',')})`);
+console.log(`   OK      ${at()} table ${gameId} — les 4 sièges y sont (indices ${seats.map((s) => s.seatIndex).join(',')})`);
 console.log(`   ·       commit d'équité ${commit.slice(0, 16)}…\n`);
 stage = 'deposit';
 
@@ -622,7 +629,7 @@ const deposits = await Promise.allSettled(
     }
     const rj = await pc.waitForTransactionReceipt({ hash: row.join! });
     if (rj.status !== 'success') throw new Error(`join reverted (${row.join})`);
-    console.log(`   OK      siège ${i + 1} déposé  join=${row.join}`);
+    console.log(`   OK      ${at()} siège ${i + 1} déposé  join=${row.join}`);
     return row;
   }),
 );
@@ -638,7 +645,17 @@ if (failed.length) {
   );
   process.exit(1);
 }
-console.log(`   → ${SEATS}/${SEATS} mises verrouillées\n`);
+console.log(`   → ${at()} ${SEATS}/${SEATS} mises verrouillées\n`);
+
+// When did the escrow actually reach Active? The server starts the table only
+// once it sees that AND all four reveals, and it stops looking 120 s after the
+// match. Recording the moment separates "our deposits were late" from "the
+// server did not act on a table that was ready in time" — the second run could
+// not tell those apart.
+{
+  const g = (await pc.readContract({ address: escrowN, abi: ESCROW_N, functionName: 'games', args: [gameId32] })) as readonly unknown[];
+  console.log(`   ·       ${at()} escrow statut=${String(g[5])} (2=Active) joined=${String(g[3])}/${String(g[2])}`);
+}
 
 // The entropies were revealed the moment the table was announced (see the
 // `match.found4` handler) — the server needs them and the Active escrow together,
