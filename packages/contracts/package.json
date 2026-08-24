@@ -22,7 +22,8 @@
     "wallet-status": "tsx script/walletStatus.ts",
     "seat-addresses": "tsx script/seatAddresses.ts",
     "race-pass-mints": "tsx script/racePassMints.ts",
-    "staked4-live": "tsx script/staked4Live.ts"
+    "staked4-live": "tsx script/staked4Live.ts",
+    "sweep-seats": "tsx script/sweepSeats.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
