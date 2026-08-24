@@ -1,0 +1,14 @@
+# Ludo Arena — crawl policy.
+#
+# This file exists mainly because its ABSENCE was worse than any rule in it.
+# With no robots.txt, Vercel answers /robots.txt with its 404 page as
+# `text/plain` ("The page could not be found"), which crawlers and Lighthouse
+# parse as a malformed robots.txt — the SEO category scored 91 for that alone.
+#
+# Nothing is disallowed: the app is a single page, and an invite lives in the
+# URL fragment (`#/g/CODE`), which is never sent to a server and so cannot be
+# crawled. No Sitemap line either — there is no sitemap to point at, and naming
+# one that 404s would recreate the problem this file fixes.
+
+User-agent: *
+Allow: /

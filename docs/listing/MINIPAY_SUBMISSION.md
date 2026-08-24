@@ -14,7 +14,7 @@ commande derrière est une case qui périme en silence.
 | 3 captures d'écran ≤ 500 Ko | ✅ | `node e2e/listing-shots.mjs` |
 | Engagement SLA 24 h | ✅ affiché in-app | fiche d'aide → Support |
 | Manifeste des origines réseau | ✅ | rapport d'audit |
-| Score PageSpeed ≥ 90 mobile | ✅ **96/100** sur les octets déployés (blocage FCP levé) | `npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile` |
+| Score PageSpeed ≥ 90 mobile | ✅ **93–96** perf · 100 a11y · 100 bonnes pratiques · 100 SEO | `npx lighthouse https://www.ludoarena.xyz/ --form-factor=mobile` |
 | CGU / confidentialité | ✅ validées contre le code (plus de DRAFT) | `TOS_TEXT` / `PRIVACY_TEXT`, `apps/web/src/components/ui.tsx` |
 
 ---
