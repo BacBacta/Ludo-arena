@@ -185,6 +185,9 @@ const store = await createStore();
  *  Unset (default) disables the flag entirely. */
 const QA_KEY = process.env.QA_KEY ?? '';
 
+/** When this process came up — reported by /health so a restart is visible from
+ *  outside (a redeploy that silently failed to restart looks identical otherwise). */
+const BOOTED_AT = Date.now();
 const sessions = new Map<string, Session>();
 const rooms = new Map<string, Room>();
 // Lost-clock watchdog (production freeze: a live game stuck on "X is
@@ -1130,7 +1133,22 @@ const http = createServer((req, res) => {
     // `friends` = the rolling anonymised friend-flow trace (production diagnosis
     // of "invitation not received / can't accept"); harmless to expose — short
     // pid prefixes only, which are public in-app identifiers anyway.
-    res.end(JSON.stringify({ ok: true, sessions: sessions.size, rooms: rooms.size, friends: friendTrace.slice(-40) }));
+    // `build` = the commit this image was built from (Dockerfile ARG BUILD_SHA,
+    // stamped by the deploy workflow), `machine` = Fly's own per-deploy id, and
+    // `startedAt` = when THIS process came up. Together they answer "is the fix
+    // actually live?" from outside, which nothing here used to: a green deploy
+    // run had to stand in for reading the running code back.
+    res.end(
+      JSON.stringify({
+        ok: true,
+        build: process.env.BUILD_SHA || 'unknown',
+        machine: process.env.FLY_MACHINE_VERSION || undefined,
+        startedAt: new Date(BOOTED_AT).toISOString(),
+        sessions: sessions.size,
+        rooms: rooms.size,
+        friends: friendTrace.slice(-40),
+      }),
+    );
     return;
   }
   // Readiness: only "ready" if we can actually persist and (when settlement is

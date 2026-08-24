@@ -43,4 +43,5 @@ jobs:
         if: env.FLY_API_TOKEN != ''
       - name: Deploy to Fly (remote build)
         if: env.FLY_API_TOKEN != ''
-        run: flyctl deploy --remote-only
+        # Stamp the commit into the image so /health can report which code is live.
+        run: flyctl deploy --remote-only --build-arg BUILD_SHA=${{ github.sha }}

@@ -21,6 +21,13 @@ COPY packages/contracts/deployments.json ./packages/contracts/deployments.json
 # a lenient install. tsx (a devDependency) is required to run the TS entrypoint.
 RUN npm install --no-audit --no-fund
 
+# The commit this image was built from, passed by the deploy workflow. It is the
+# only way to tell from OUTSIDE which code a running server actually carries:
+# /health had no build marker, so confirming a deploy meant trusting that a green
+# workflow implied a restarted machine rather than reading it back.
+ARG BUILD_SHA=unknown
+ENV BUILD_SHA=$BUILD_SHA
+
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
