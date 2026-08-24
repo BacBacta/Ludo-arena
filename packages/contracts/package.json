@@ -20,7 +20,9 @@
     "onchain-activity": "tsx script/onchainActivity.ts",
     "method-tx-hashes": "tsx script/methodTxHashes.ts",
     "wallet-status": "tsx script/walletStatus.ts",
-    "race-pass-mints": "tsx script/racePassMints.ts"
+    "seat-addresses": "tsx script/seatAddresses.ts",
+    "race-pass-mints": "tsx script/racePassMints.ts",
+    "staked4-live": "tsx script/staked4Live.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -28,6 +30,8 @@
     "solc": "0.8.24",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "viem": "^2.21.0"
+    "viem": "^2.21.0",
+    "ws": "^8.18.0",
+    "@types/ws": "^8.5.12"
   }
 }

@@ -190,6 +190,19 @@ export function createArbiterN(env: NodeJS.ProcessEnv = process.env): ArbiterN |
 
 const MAX_ATTEMPTS_4 = 6;
 
+/** How long a refund job keeps watching an escrow that is still EMPTY, and how
+ *  often (B4P.1).
+ *
+ *  A table cancelled for timeout is enqueued for refund, and the escrow can read
+ *  `None` simply because the four deposits are still in flight — a wallet the
+ *  player has not confirmed yet, or a transaction sitting in the mempool. Giving
+ *  up on that first read is what stranded a real pot on mainnet: the deposits
+ *  landed seconds later, the escrow went Active, and nothing was left watching
+ *  it. Ten minutes covers wallet latency and a slow mempool; past that, nobody
+ *  deposited and there is genuinely nothing to recover. */
+const NONE_WATCH_S = 600;
+const NONE_POLL_MS = 15_000;
+
 /** The queue only needs these from the N-player arbiter (stubbable in tests). */
 export interface ArbiterNLike {
   readonly chainId: number;
@@ -339,10 +352,35 @@ export class SettlementQueue4 {
         return true;
       }
 
-      // Already resolved on-chain (Settled/Refunded), or nobody staked (None).
+      // Escrow still EMPTY on a refund job: the deposits may simply not have mined
+      // yet. Keep watching instead of writing the job off — see NONE_WATCH_S. The
+      // window is counted in polls, not read from the chain: while the status is
+      // `None` the contract has no `createdAt` to anchor on (it is 0 until the
+      // first join), so the only usable clock is our own since the cancellation.
+      if (status === GameStatusN.None && job.winnerWallet === '') {
+        const watchedS = attempts * (NONE_POLL_MS / 1_000);
+        if (watchedS < NONE_WATCH_S) {
+          // 'pending', never 'failed': resumePending() only revives pending jobs,
+          // so a restart mid-watch must not lose the escrow.
+          await this.deps.store.markSettlement(job.gameId, 'pending', attempts);
+          this.reschedule({ ...job, attempts }, NONE_POLL_MS);
+          return false;
+        }
+        await this.deps.store.markSettlement(job.gameId, 'refunded', attempts);
+        console.log(`[settlement4] ${job.gameId} nobody deposited within ${NONE_WATCH_S}s; nothing to recover`);
+        return true;
+      }
+
+      // Already resolved on-chain (Settled/Refunded), or a SETTLE job on an empty
+      // escrow — which should be impossible (the game only starts once the stakes
+      // are Active) and therefore deserves a pager, not a console line.
       const terminal = status === GameStatusN.Settled ? 'settled' : status === GameStatusN.Refunded ? 'refunded' : 'failed';
       await this.deps.store.markSettlement(job.gameId, terminal, attempts);
-      if (terminal === 'failed') console.warn(`[settlement4] ${job.gameId} not stakeable (status ${status}); skipping`);
+      if (terminal === 'failed') {
+        const msg = `[settlement4][ALERT] ${job.gameId} not stakeable (status ${status}) on a ${job.winnerWallet ? 'settle' : 'refund'} job; skipping. If a deposit lands later nothing will recover it.`;
+        console.error(msg);
+        this.deps.onAlert?.(msg);
+      }
       return true;
     } catch (e) {
       console.error(`[settlement4] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);

@@ -28,6 +28,79 @@ describe('SettlementQueue4', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it('a refund job on an EMPTY escrow voids once the four deposits land (B4P.1)', async () => {
+    const store = new MemoryStore();
+    const voidFn = vi.fn(async () => VOID_TX);
+    const refunded: Array<[string, string]> = [];
+    // The exact mainnet sequence of 2026-08-23: the server cancels the table for
+    // timeout while the escrow is still empty, and the four joins mine seconds
+    // later. Before this fix the job was written off on that first read and the
+    // pot — 1.00 USD₮, table 7761c9b8… — was left with nobody watching it.
+    let joined = false;
+    const q = new SettlementQueue4({
+      store,
+      arbiter: makeArbiterN({
+        gameStatus: async () =>
+          joined
+            ? { status: GameStatusN.Active, seatCount: 4, joined: 4, createdAt: 1_000 }
+            : { status: GameStatusN.None, seatCount: 0, joined: 0, createdAt: 0 },
+        submitVoid: voidFn,
+      }),
+      onSettled: () => {},
+      onRefunded: (g, tx) => refunded.push([g, tx]),
+    });
+    await q.enqueueRefundUnfilled('late');
+    await vi.runOnlyPendingTimersAsync();
+    expect(voidFn).not.toHaveBeenCalled();
+    // Still pending — the only status resumePending() revives, so a restart here
+    // does not lose the escrow either.
+    expect((await store.listPendingSettlements()).map((j) => j.gameId)).toEqual(['late']);
+
+    joined = true; // the four joins mine
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(voidFn).toHaveBeenCalledWith('late');
+    expect(refunded).toEqual([['late', VOID_TX]]);
+  });
+
+  it('gives up on an escrow that stays empty, without an eternal retry loop', async () => {
+    const store = new MemoryStore();
+    const voidFn = vi.fn(async () => VOID_TX);
+    const q = new SettlementQueue4({
+      store,
+      arbiter: makeArbiterN({
+        gameStatus: async () => ({ status: GameStatusN.None, seatCount: 0, joined: 0, createdAt: 0 }),
+        submitVoid: voidFn,
+      }),
+      onSettled: () => {},
+      onRefunded: () => {},
+    });
+    await q.enqueueRefundUnfilled('empty');
+    await vi.advanceTimersByTimeAsync(11 * 60_000); // past the 10-minute watch
+
+    expect(voidFn).not.toHaveBeenCalled(); // nobody ever deposited
+    expect(await store.listPendingSettlements()).toEqual([]);
+  });
+
+  it('pages an operator when a SETTLE job finds an empty escrow', async () => {
+    const store = new MemoryStore();
+    const alerts: string[] = [];
+    const q = new SettlementQueue4({
+      store,
+      arbiter: makeArbiterN({ gameStatus: async () => ({ status: GameStatusN.None, seatCount: 0, joined: 0, createdAt: 0 }) }),
+      onSettled: () => {},
+      onRefunded: () => {},
+      onAlert: (m) => alerts.push(m),
+    });
+    await q.enqueue('ghost', WINNER);
+    await vi.runOnlyPendingTimersAsync();
+
+    // A finished game whose escrow is empty should be impossible — it must not
+    // pass as a console line the way it used to.
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toContain('ghost');
+  });
+
   it('settles an Active job whose winner is a seat, notifies, and persists the tx', async () => {
     const store = new MemoryStore();
     const settled: Array<[string, string]> = [];
