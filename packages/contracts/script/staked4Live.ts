@@ -212,17 +212,45 @@ const ESCROW_N = [
   { type: 'function', name: 'refundActive', stateMutability: 'nonpayable', inputs: [{ type: 'bytes32' }], outputs: [] },
 ] as const;
 
-/** Same encodings the web client uses (apps/web/src/lib/escrow.ts): the gameId is
- *  an ASCII string right-padded into bytes32, the fairness commit a hex digest. */
-const gameIdToBytes32 = (id: string): Hex => pad(stringToHex(id), { size: 32, dir: 'right' });
+/** The gameId is a HEX string, LEFT-padded into bytes32 — byte-for-byte what
+ *  apps/web/src/lib/escrow.ts and apps/server/src/settlement.ts both do.
+ *
+ *  This was wrong here, and it cost two mainnet pots. Encoding the id as ASCII
+ *  right-padded produces a completely different key:
+ *    hex,  left-padded : 0x00000000000000000000000000000000 20af47f2…
+ *    ASCII, right-padded: 0x3230616634376632…
+ *  The joins landed under the second, the server watches the first — so it saw an
+ *  empty escrow, timed out every table, and its arbiter never had anything to
+ *  settle. Every symptom we chased for two days came from this one line. */
+const gameIdToBytes32 = (id: string): Hex => {
+  const hex = id.startsWith('0x') ? id.slice(2) : id;
+  if (!/^[0-9a-fA-F]{1,64}$/.test(hex)) throw new Error(`gameId is not hex: ${id}`);
+  return pad(`0x${hex}` as Hex, { size: 32 });
+};
 const commitToBytes32 = (c: string): Hex => pad(`0x${c.replace(/^0x/, '')}` as Hex, { size: 32, dir: 'left' });
 
 // ---------------------------------------------------------------- rescue mode
 
+/** The key this script USED to write, before the encoding bug above was found.
+ *  Two mainnet pots are sitting under it, so rescue has to be able to look there
+ *  — a fix that made its own stranded funds unreachable would be no fix. */
+const legacyGameIdToBytes32 = (id: string): Hex => pad(stringToHex(id), { size: 32, dir: 'right' });
+
 const rescue = env('RESCUE');
 if (rescue) {
-  const gameId32 = gameIdToBytes32(rescue);
-  const g = (await pc.readContract({ address: escrowN, abi: ESCROW_N, functionName: 'games', args: [gameId32] })) as readonly unknown[];
+  // Try the correct key first, fall back to the legacy one if the escrow is
+  // empty there. Status 0 (None) means "no game at this key", never "no funds".
+  let gameId32 = gameIdToBytes32(rescue);
+  let g = (await pc.readContract({ address: escrowN, abi: ESCROW_N, functionName: 'games', args: [gameId32] })) as readonly unknown[];
+  if (Number(g[5]) === 0) {
+    const legacy = legacyGameIdToBytes32(rescue);
+    const gl = (await pc.readContract({ address: escrowN, abi: ESCROW_N, functionName: 'games', args: [legacy] })) as readonly unknown[];
+    if (Number(gl[5]) !== 0) {
+      console.log('[rescue] rien sous la clé correcte — fonds trouvés sous l\'ancien encodage (clé héritée)');
+      gameId32 = legacy;
+      g = gl;
+    }
+  }
   const status = Number(g[5]);
   const createdAt = Number(g[4]);
   const age = Math.floor(Date.now() / 1000) - createdAt;

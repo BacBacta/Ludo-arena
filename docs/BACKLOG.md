@@ -67,27 +67,20 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 
 ## E-4p — Table 4 joueurs misée
 
-- [x] **B4P.1 (BUG, observé en mainnet le 2026-08-23) — une mise déposée juste après l'abandon du serveur n'était récupérée par PERSONNE.** *(corrigé : `settlement.ts` + `settlement4.ts` surveillent désormais l'escrow vide pendant 10 min au lieu de clore le job sur une seule lecture ; l'abandon d'un job de règlement passe par `onAlert`.)* Vaut pour le 4p ET le 1v1.
+- [x] **B4P.1 — durcissement du remboursement quand l'escrow est vide.** *(livré en #195.)* Un job de remboursement qui lisait l'escrow vide (`None`) concluait « personne n'a déposé » et se marquait terminal ; `resumePending` ne reprenant que les jobs `pending`, plus rien n'y revenait. Les deux files surveillent désormais l'escrow pendant 10 min avant de conclure, et l'abandon d'un job de RÈGLEMENT sur un escrow vide passe par `onAlert` au lieu d'un `console.warn`.
 
-  **Le déclencheur.** `pollStaked4Lock` abandonne 120 s après `match.found4` et enfile un job de remboursement. `processOnce` lit le statut de l'escrow **une fois, immédiatement**. Si aucun siège n'a encore déposé (`None`), il tombe dans la dernière branche — « nobody staked » — marque le job `failed`, écrit un `console.warn` et retourne terminal.
+  **Correction importante sur la justification.** L'entrée d'origine présentait ce trou comme un défaut de production ayant immobilisé un vrai pot, preuves mainnet à l'appui. C'était faux, et l'erreur était dans notre outil de test, pas dans le serveur : `packages/contracts/script/staked4Live.ts` encodait le `gameId` en ASCII pad-à-droite, alors que le client web (`apps/web/src/lib/escrow.ts`) et le serveur (`apps/server/src/settlement.ts`) l'encodent tous deux en **hex pad-à-gauche**. Les `join` atterrissaient donc sous une clé bytes32 que le serveur ne regarde pas :
 
-  **Terminal veut dire terminal.** `resumePending` ne reprend que les jobs `status === 'pending'` ; un job `failed` n'est jamais revisité, pas même après un redémarrage.
+  ```
+  hex,   pad gauche (client + serveur) : 0x00000000000000000000000000000000 20af47f2…
+  ASCII, pad droite  (le script, faux) : 0x3230616634376632…
+  ```
 
-  **Et rien d'autre ne surveille.** Aucun code client n'appelle de fonction de remboursement (`refundExpired` est dans l'ABI web, sans appelant). Aucun `setInterval` serveur ne réconcilie les escrows (watchdog des rooms, GC des tables privées, sweep du matchmaker, gas, saison, runway du bot — aucun ne regarde la chaîne). Le ré-enfilage au boot ne couvre que les parties arrivées à `game.over`.
+  Le `None` que lisait le serveur était donc **exact** : à la clé qu'il surveille, personne n'avait déposé. Tous les symptômes en découlent — tables annulées à 120 s, arbitre n'ayant jamais rien envoyé à `LudoEscrowN`, pots « bloqués ». Aucun joueur réel n'a jamais été touché : le vrai client a toujours utilisé le bon encodage, ce qui explique que le 1v1 règle normalement depuis des mois.
 
-  **Conséquence : les dépôts qui minent après cette unique lecture sont immobilisés indéfiniment, pas 24 h.** `refundUnfilled` (Filling, après 120 s) et `refundActive` (Active, après 24 h) sont permissionless — mais permissionless signifie *appelable*, pas *appelé*. Preuve vivante : `7761c9b851e42fc56672c1763cbf6f4a`, quatre `join` réussis le 2026-08-23 à 21:36:58–21:37:02 UTC, 1,00 USD₮ toujours dans l'escrow `Active` treize heures plus tard, aucune transaction de l'arbitre vers `LudoEscrowN` (sa dernière remonte à quinze jours). Le chemin `Active → voidGame` existe et est correct : il n'est jamais atteint.
+  Le durcissement reste utile en soi — un dépôt lent à miner peut légitimement faire lire `None` — mais il a été motivé par un incident qui n'existait pas. Le script est corrigé, avec un repli sur l'ancienne clé pour récupérer les pots qu'il a lui-même échoués.
 
-  **Et c'est silencieux.** `console.warn`, pas `onAlert` — alors que la branche voisine « PAYOUT FAILED » alerte, et que `postOpsAlert` est utilisé à onze endroits. L'opérateur n'a aucun signal.
-
-  **Exposition.** La lecture `None` exige qu'*aucun* siège n'ait déposé dans les 120 s. Si un seul l'a fait, le statut est `Filling`, le job se reprogramme et finit par voider — ce chemin-là marche. Il faut donc que tous les sièges soient lents, puis qu'au moins un dépose en retard : quatre humains enchaînant deux confirmations de portefeuille chacun (deux en 1v1, sur le chemin à fort volume — 1969 `join`).
-
-  **Le 1v1 assume l'hypothèse à voix haute** (`settlement.ts`) : « A refund job that finds nobody staked (None) is a clean no-op: neither matched player deposited, so there is nothing to recover. » Vrai seulement si aucun dépôt n'arrive ensuite.
-
-  **Piste de correction.** Un job de remboursement qui lit `None` ne doit pas être terminal : le reprogrammer tant que la fenêtre de dépôt peut encore produire quelque chose. Attention au détail — tant que le statut est `None`, `createdAt` vaut 0 : la fenêtre ne peut pas se calculer depuis la chaîne, il faut l'ancrer sur l'horodatage d'appariement du serveur. Puis borner, et faire passer l'abandon définitif par `onAlert`. En filet, un balayage périodique qui relit le statut des escrows dont le job s'est terminé sans règlement ni remboursement.
-
-  *AC : un job de remboursement enfilé alors que l'escrow est `None` finit par appeler `voidGame`/`refundUnfilled` quand les dépôts arrivent ensuite (test avec un arbitre simulé qui passe `None` → `Active`) ; l'abandon définitif déclenche `onAlert` ; même correction appliquée à `settlement.ts`.*
-
-## E7 — MiniPay listing
+## E7 — MiniPay listing## E7 — MiniPay listing
 
 - [ ] **E7.1 ToS + privacy policy** (static pages, required by the Mini Apps ToS).
 - [ ] **E7.2 Testing inside MiniPay** (dev mode, docs.minipay.xyz checklist), container/viewport fixes.
