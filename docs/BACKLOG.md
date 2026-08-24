@@ -67,7 +67,7 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 
 ## E-4p — Table 4 joueurs misée
 
-- [ ] **B4P.1 (BUG, observé en mainnet le 2026-08-23) — une mise déposée juste après l'abandon du serveur n'est récupérée par PERSONNE.** Vaut pour le 4p ET le 1v1.
+- [x] **B4P.1 (BUG, observé en mainnet le 2026-08-23) — une mise déposée juste après l'abandon du serveur n'était récupérée par PERSONNE.** *(corrigé : `settlement.ts` + `settlement4.ts` surveillent désormais l'escrow vide pendant 10 min au lieu de clore le job sur une seule lecture ; l'abandon d'un job de règlement passe par `onAlert`.)* Vaut pour le 4p ET le 1v1.
 
   **Le déclencheur.** `pollStaked4Lock` abandonne 120 s après `match.found4` et enfile un job de remboursement. `processOnce` lit le statut de l'escrow **une fois, immédiatement**. Si aucun siège n'a encore déposé (`None`), il tombe dans la dernière branche — « nobody staked » — marque le job `failed`, écrit un `console.warn` et retourne terminal.
 

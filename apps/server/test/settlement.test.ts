@@ -217,7 +217,7 @@ describe('SettlementQueue', () => {
     expect(refunded).toEqual([['gr2', REFUND_TX]]);
   });
 
-  it('refund job is a clean no-op when nobody staked (status None)', async () => {
+  it('refund job on an EMPTY escrow keeps watching instead of writing itself off (B4P.1)', async () => {
     const store = new MemoryStore();
     const voidFn = vi.fn(async () => VOID_TX);
     const refund = vi.fn(async () => REFUND_TX);
@@ -237,8 +237,60 @@ describe('SettlementQueue', () => {
 
     expect(voidFn).not.toHaveBeenCalled();
     expect(refund).not.toHaveBeenCalled();
-    expect(refunded).toEqual([]); // nothing to recover
-    expect(await store.listPendingSettlements()).toEqual([]); // marked done, not retried
+    expect(refunded).toEqual([]); // nothing has landed yet
+    // Still PENDING, not closed: a deposit may yet mine, and only a pending job
+    // survives a restart (resumePending ignores every other status).
+    expect((await store.listPendingSettlements()).map((j) => j.gameId)).toEqual(['gr3']);
+  });
+
+  it('a deposit that lands AFTER the give-up is still refunded (B4P.1 — the stranding)', async () => {
+    const store = new MemoryStore();
+    const refund = vi.fn(async () => REFUND_TX);
+    const refunded: string[] = [];
+    // The escrow is empty when the table is cancelled, then the player's deposit
+    // mines: exactly the race that stranded a real pot on mainnet.
+    let staked = false;
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({
+        gameStatus: async () =>
+          staked
+            ? { status: GameStatus.WaitingOpponent, createdAt: 1_000, playerA: WINNER, playerB: PLAYER_B }
+            : { status: GameStatus.None, createdAt: 0, playerA: WINNER, playerB: PLAYER_B },
+        submitRefund: refund,
+      }),
+      onSettled: () => {},
+      onRefunded: (g) => refunded.push(g),
+      now: () => 2_000, // past createdAt + JOIN_TIMEOUT, so the refund is due
+    });
+    await q.enqueueRefund('gr4');
+    await vi.runOnlyPendingTimersAsync();
+    expect(refund).not.toHaveBeenCalled();
+
+    staked = true; // the deposit mines
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(refund).toHaveBeenCalledWith('gr4');
+    expect(refunded).toEqual(['gr4']);
+  });
+
+  it('gives up on an escrow that stays empty, and closes the job cleanly', async () => {
+    const store = new MemoryStore();
+    const refund = vi.fn(async () => REFUND_TX);
+    const q = new SettlementQueue({
+      store,
+      arbiter: makeArbiter({
+        gameStatus: async () => ({ status: GameStatus.None, createdAt: 0, playerA: WINNER, playerB: PLAYER_B }),
+        submitRefund: refund,
+      }),
+      onSettled: () => {},
+      onRefunded: () => {},
+    });
+    await q.enqueueRefund('gr5');
+    await vi.advanceTimersByTimeAsync(11 * 60_000); // past the 10-minute watch
+
+    expect(refund).not.toHaveBeenCalled(); // nobody ever deposited
+    expect(await store.listPendingSettlements()).toEqual([]); // no eternal retry loop
   });
 
   // ---- onTerminal fires on EVERY terminal outcome (no settlementNotify leak) ----
@@ -276,7 +328,7 @@ describe('SettlementQueue', () => {
       onTerminal: (g) => terminal.push(g),
     });
     await q.enqueueRefund('gtr');
-    await vi.runOnlyPendingTimersAsync();
+    await vi.advanceTimersByTimeAsync(11 * 60_000); // the watch has to expire first
     expect(terminal).toEqual(['gtr']);
   });
 

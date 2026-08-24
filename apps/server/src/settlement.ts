@@ -76,6 +76,13 @@ const SETTLE_ABI = [
 ] as const;
 
 const MAX_ATTEMPTS = 6;
+
+/** How long a refund job keeps watching an escrow that is still EMPTY, and how
+ *  often (B4P.1) — see the identical constants in settlement4.ts. An abandoned
+ *  match whose deposit is still in the player's wallet reads `None`; writing the
+ *  job off on that first read leaves nothing watching when the money lands. */
+const NONE_WATCH_S = 600;
+const NONE_POLL_MS = 15_000;
 /** Mirrors LudoEscrow.Status. */
 export enum GameStatus {
   None = 0,
@@ -449,17 +456,36 @@ export class SettlementQueue {
         return true;
       }
 
-      // A refund job that finds nobody staked (None) is a clean no-op: neither
-      // matched player deposited, so there is nothing to recover.
+      // A refund job that finds nobody staked (None) is USUALLY a clean no-op —
+      // neither matched player deposited. But "nobody deposited yet" and "nobody
+      // will deposit" read identically on-chain, and a deposit still sitting in a
+      // wallet or a mempool turns the first into the second only later. So keep
+      // watching for a while instead of closing the job. The clock is our own
+      // (polls since the cancellation): while the status is `None` the contract's
+      // `createdAt` is 0, so there is nothing on-chain to anchor a window to.
       if (isRefund && status === GameStatus.None) {
+        const watchedS = attempts * (NONE_POLL_MS / 1_000);
+        if (watchedS < NONE_WATCH_S) {
+          // 'pending', never 'failed': resumePending() only revives pending jobs,
+          // so a restart mid-watch must not lose the escrow.
+          await this.deps.store.markSettlement(job.gameId, 'pending', attempts);
+          this.reschedule({ ...job, attempts }, NONE_POLL_MS);
+          return false;
+        }
         await this.deps.store.markSettlement(job.gameId, 'refunded', attempts);
+        console.log(`[settlement] ${job.gameId} nobody deposited within ${NONE_WATCH_S}s; nothing to recover`);
         return true;
       }
 
-      // Already resolved on-chain, or nobody staked (None): nothing to do.
+      // Already resolved on-chain, or a SETTLE job on an empty escrow — which the
+      // game flow should make impossible, so it gets a pager rather than a log.
       const terminal = status === GameStatus.Settled ? 'settled' : status === GameStatus.Refunded ? 'refunded' : 'failed';
       await this.deps.store.markSettlement(job.gameId, terminal, attempts);
-      if (terminal === 'failed') console.warn(`[settlement] ${job.gameId} not stakeable (status ${status}); skipping`);
+      if (terminal === 'failed') {
+        const msg = `[settlement][ALERT] ${job.gameId} not stakeable (status ${status}) on a settle job; skipping. If a deposit lands later nothing will recover it.`;
+        console.error(msg);
+        this.deps.onAlert?.(msg);
+      }
       return true;
     } catch (e) {
       console.error(`[settlement] ${job.gameId} attempt ${attempts} failed:`, e instanceof Error ? e.message : e);
