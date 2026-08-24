@@ -10,7 +10,7 @@ commande derrière est une case qui périme en silence.
 | Livrable | État | Revérification |
 |---|---|---|
 | Vérification Celoscan des 4 contrats mainnet | ✅ les 4 vérifiés | tableau ci-dessous |
-| Hashes de transaction par méthode utilisateur | ⚠️ 5 parcours sur 6 — reste la table 4 joueurs | `NETWORK=celo npm run method-tx-hashes -w packages/contracts` |
+| Hashes de transaction par méthode utilisateur | ⚠️ 5 parcours complets sur 6 — la table 4 joueurs a ses `join`, pas son `settle` | `NETWORK=celo npm run method-tx-hashes -w packages/contracts` |
 | 3 captures d'écran ≤ 500 Ko | ✅ | `node e2e/listing-shots.mjs` |
 | Engagement SLA 24 h | ✅ affiché in-app | fiche d'aide → Support |
 | Manifeste des origines réseau | ✅ | rapport d'audit |
@@ -49,7 +49,7 @@ Relevé du 2026-08-19 :
 | Mint du Race Pass | RacePass · `mint` | 162 appels — 1er `0xd70fc736a986403aa351c2ff952c75b01b1a763e8b0865031e5f912b640b9a26` |
 | Remboursement d'une partie expirée | LudoEscrow · `refundExpired` | 198 appels — 1er `0xc8a884dab1676c2159cc00f92bce72d67bfe98beb53b26cd532c616ecb077818` |
 | Achat d'un cosmétique | CosmeticsStore · `buy` | 1 appel — `0x88a58732a9fa43767d1b9d058acf1533db40214f8dc28ae58e1f767c8e3d97e9` |
-| **Table 4 joueurs misée** | LudoEscrowN · `join` | ❌ **jamais appelé sur mainnet** |
+| **Table 4 joueurs misée** | LudoEscrowN · `join` | ⚠️ 10 appels réussis (2026-08-23/24) — pas encore de `settle` |
 
 ### L'achat de cosmétique — comblé le 2026-08-19
 
@@ -72,12 +72,43 @@ l'adaptateur.
 
 Revérification : `NETWORK=celo npm run method-tx-hashes -w packages/contracts`.
 
-### Le trou restant : la table 4 joueurs misée
+### Les `join` 4 joueurs sur mainnet
 
-`LudoEscrowN` n'a **jamais** reçu de `join` sur mainnet — donc ni `settle`, ni
-les chemins de remboursement. Le parcours n'a littéralement jamais tourné en
-production, ce qui s'explique : le join de la file 4p partait avant la preuve de
-portefeuille et chaque entrée hors MiniPay était refusée (corrigé en #189).
+`LudoEscrowN.join` a été appelé avec succès **dix fois** les 23 et 24 août, depuis
+quatre portefeuilles distincts, en USD₮ et à la mise du palier 25c :
+
+| Table | Date (UTC) | `join` |
+|---|---|---|
+| `7a5ddedb…` | 2026-08-23 21:04 | `0x67e0f8203a52f0510eae3ea5d8deb27c70a2e6c957da0027c4b95d9e89858019` |
+| | | `0xc346f4ff05da5599273a934990bae1ce203ace50df3b06b85631b888a5885d24` |
+| `7761c9b8…` | 2026-08-23 21:36 | `0x461e9d2b03cf2b7f20dc79b28ae8064fc743a5de4495f1cb675fb5dde29e28bb` |
+| | | `0xc262f5fafa8ffea0a60cf511f784f4c4c1c67c4f326b4dbf09494b8a43e18869` |
+| | | `0x03f98076c4b49a068d5a748312b1a6561dccd575cf3890e2d43e2e40a9e67ab9` |
+| | | `0x31e40a1e3bda52ed1ddbd833bc450488e25f1f4e1aa7e8d9ce4ecd7bb3c9a361` |
+| `20af47f2…` | 2026-08-24 13:08 | `0x101c9865a359f682c14b2dfcd3e99a586ef270c4ceb4746db17add4829d48658` |
+| | | `0x2d44ac255d645ce602ff04b93674bc95a642fe553678f6e5912038073e286b5f` |
+| | | `0x2eeec0e08b98b1215d66d04aa300bd5dcee0187fbe8e4c586c389c8a989c2921` |
+| | | `0x4094122fe6fc404275e56bacf88a010f829a617f417fb57bbb0063622ce0f4df` |
+
+Un `refundUnfilled` a également été exécuté sur `7a5ddedb…` :
+`0x80fda7ed73daab0366ebab3b6be4ab697369e3e7ff8869f279cf409f25c617ed`.
+
+**Ce que ces hashes prouvent, et ce qu'ils ne prouvent pas.** Ils démontrent que
+le contrat 4 joueurs accepte des mises réelles en USD₮ sur mainnet, au bon
+palier, depuis des portefeuilles distincts, et que le chemin de remboursement
+fonctionne. Ils ne démontrent **pas** le parcours de bout en bout : aucune de ces
+tables n'a démarré, parce que le script de test encodait le `gameId` en bytes32
+autrement que le client et le serveur (voir `B4P.1` dans `docs/BACKLOG.md`). Les
+dépôts sont donc allés sous une clé que le serveur ne surveille pas. Le vrai
+client n'a jamais eu ce défaut.
+
+### Le trou restant : le `settle` 4 joueurs
+
+`LudoEscrowN` a désormais ses `join` et un `refundUnfilled`, mais aucun `settle` :
+aucune partie 4 joueurs misée n'est encore allée jusqu'au bout en production. Le
+blocage initial — le join de la file 4p partait avant la preuve de portefeuille,
+et chaque entrée hors MiniPay était refusée — est corrigé (#189) ; le blocage
+suivant venait de l'encodage du `gameId` dans le script de test, corrigé aussi.
 
 Il faut donc une partie réellement jouée — **4 stakers, 4 portefeuilles
 financés** ; le bot-fill est interdit pour l'argent et les sessions QA sont
