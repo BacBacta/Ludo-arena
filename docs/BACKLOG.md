@@ -67,10 +67,25 @@ Each task is self-contained and sized for an agent. Check off on delivery. Follo
 
 ## E-4p — Table 4 joueurs misée
 
-- [ ] **B4P.1 (BUG, observé en mainnet le 2026-08-23) — une table annulée dont les dépôts arrivent juste après laisse l'argent immobilisé 24 h, sans alerte.** `pollStaked4Lock` abandonne au bout de `MAX_LOCK_POLLS` (120 s) et met un job de remboursement en file. Si, à l'instant où ce job s'exécute, l'escrow n'a encore reçu **aucun** `join` (statut `None`), `processOnce` tombe dans la dernière branche — « nobody staked » — marque le job `failed`, écrit un `console.warn` et **retourne terminal** : plus aucun réessai. Les `join` qui minent quelques secondes plus tard font passer l'escrow en `Active` avec le pot dedans, et personne ne le vide jamais. Il faut attendre les 24 h de `refundActive` (permissionless).
-  Observé sur `7761c9b851e42fc56672c1763cbf6f4a` : quatre `join` réussis à 21:36:58–21:37:02 UTC, aucune transaction de l'arbitre vers `LudoEscrowN` (dernière tx de l'arbitre : 15 jours plus tôt), 1,00 USD₮ bloqué. Le chemin `Active → voidGame` existe et est correct — il n'est simplement jamais atteint.
-  Impact réel : un joueur dont le portefeuille signe lentement perd l'accès à sa mise pendant 24 h, en silence (le `console.warn` ne déclenche pas `onAlert`).
-  *AC : un job de remboursement sur un escrow `None` est reprogrammé au lieu d'être abandonné (au moins jusqu'à `JOIN_TIMEOUT` + marge), et l'abandon définitif passe par `onAlert`. Test : job enfilé alors que l'escrow est `None`, l'escrow devient `Active`, le job finit par appeler `voidGame`.*
+- [ ] **B4P.1 (BUG, observé en mainnet le 2026-08-23) — une mise déposée juste après l'abandon du serveur n'est récupérée par PERSONNE.** Vaut pour le 4p ET le 1v1.
+
+  **Le déclencheur.** `pollStaked4Lock` abandonne 120 s après `match.found4` et enfile un job de remboursement. `processOnce` lit le statut de l'escrow **une fois, immédiatement**. Si aucun siège n'a encore déposé (`None`), il tombe dans la dernière branche — « nobody staked » — marque le job `failed`, écrit un `console.warn` et retourne terminal.
+
+  **Terminal veut dire terminal.** `resumePending` ne reprend que les jobs `status === 'pending'` ; un job `failed` n'est jamais revisité, pas même après un redémarrage.
+
+  **Et rien d'autre ne surveille.** Aucun code client n'appelle de fonction de remboursement (`refundExpired` est dans l'ABI web, sans appelant). Aucun `setInterval` serveur ne réconcilie les escrows (watchdog des rooms, GC des tables privées, sweep du matchmaker, gas, saison, runway du bot — aucun ne regarde la chaîne). Le ré-enfilage au boot ne couvre que les parties arrivées à `game.over`.
+
+  **Conséquence : les dépôts qui minent après cette unique lecture sont immobilisés indéfiniment, pas 24 h.** `refundUnfilled` (Filling, après 120 s) et `refundActive` (Active, après 24 h) sont permissionless — mais permissionless signifie *appelable*, pas *appelé*. Preuve vivante : `7761c9b851e42fc56672c1763cbf6f4a`, quatre `join` réussis le 2026-08-23 à 21:36:58–21:37:02 UTC, 1,00 USD₮ toujours dans l'escrow `Active` treize heures plus tard, aucune transaction de l'arbitre vers `LudoEscrowN` (sa dernière remonte à quinze jours). Le chemin `Active → voidGame` existe et est correct : il n'est jamais atteint.
+
+  **Et c'est silencieux.** `console.warn`, pas `onAlert` — alors que la branche voisine « PAYOUT FAILED » alerte, et que `postOpsAlert` est utilisé à onze endroits. L'opérateur n'a aucun signal.
+
+  **Exposition.** La lecture `None` exige qu'*aucun* siège n'ait déposé dans les 120 s. Si un seul l'a fait, le statut est `Filling`, le job se reprogramme et finit par voider — ce chemin-là marche. Il faut donc que tous les sièges soient lents, puis qu'au moins un dépose en retard : quatre humains enchaînant deux confirmations de portefeuille chacun (deux en 1v1, sur le chemin à fort volume — 1969 `join`).
+
+  **Le 1v1 assume l'hypothèse à voix haute** (`settlement.ts`) : « A refund job that finds nobody staked (None) is a clean no-op: neither matched player deposited, so there is nothing to recover. » Vrai seulement si aucun dépôt n'arrive ensuite.
+
+  **Piste de correction.** Un job de remboursement qui lit `None` ne doit pas être terminal : le reprogrammer tant que la fenêtre de dépôt peut encore produire quelque chose. Attention au détail — tant que le statut est `None`, `createdAt` vaut 0 : la fenêtre ne peut pas se calculer depuis la chaîne, il faut l'ancrer sur l'horodatage d'appariement du serveur. Puis borner, et faire passer l'abandon définitif par `onAlert`. En filet, un balayage périodique qui relit le statut des escrows dont le job s'est terminé sans règlement ni remboursement.
+
+  *AC : un job de remboursement enfilé alors que l'escrow est `None` finit par appeler `voidGame`/`refundUnfilled` quand les dépôts arrivent ensuite (test avec un arbitre simulé qui passe `None` → `Active`) ; l'abandon définitif déclenche `onAlert` ; même correction appliquée à `settlement.ts`.*
 
 ## E7 — MiniPay listing
 
