@@ -10,7 +10,7 @@ commande derrière est une case qui périme en silence.
 | Livrable | État | Revérification |
 |---|---|---|
 | Vérification Celoscan des 4 contrats mainnet | ✅ les 4 vérifiés | tableau ci-dessous |
-| Hashes de transaction par méthode utilisateur | ⚠️ 5 parcours complets sur 6 — la table 4 joueurs a ses `join`, pas son `settle` | `NETWORK=celo npm run method-tx-hashes -w packages/contracts` |
+| Hashes de transaction par méthode utilisateur | ✅ **les 6 parcours** — la table 4 joueurs est allée jusqu'au paiement le 2026-08-24 | `NETWORK=celo npm run method-tx-hashes -w packages/contracts` |
 | 3 captures d'écran ≤ 500 Ko | ✅ | `node e2e/listing-shots.mjs` |
 | Engagement SLA 24 h | ✅ affiché in-app | fiche d'aide → Support |
 | Manifeste des origines réseau | ✅ | rapport d'audit |
@@ -40,7 +40,7 @@ Revérification : `https://celoscan.io/address/<adresse>#code`.
 contrat par sélecteur 4 octets et sort le **premier** et le **dernier** appel
 réussi de chaque méthode. Lecture seule, sans clé.
 
-Relevé du 2026-08-19 :
+Relevé du 2026-08-19, complété le 2026-08-24 par les deux lignes 4 joueurs :
 
 | Parcours | Contrat | Preuve on-chain |
 |---|---|---|
@@ -49,7 +49,8 @@ Relevé du 2026-08-19 :
 | Mint du Race Pass | RacePass · `mint` | 162 appels — 1er `0xd70fc736a986403aa351c2ff952c75b01b1a763e8b0865031e5f912b640b9a26` |
 | Remboursement d'une partie expirée | LudoEscrow · `refundExpired` | 198 appels — 1er `0xc8a884dab1676c2159cc00f92bce72d67bfe98beb53b26cd532c616ecb077818` |
 | Achat d'un cosmétique | CosmeticsStore · `buy` | 1 appel — `0x88a58732a9fa43767d1b9d058acf1533db40214f8dc28ae58e1f767c8e3d97e9` |
-| **Table 4 joueurs misée** | LudoEscrowN · `join` | ⚠️ 10 appels réussis (2026-08-23/24) — pas encore de `settle` |
+| **Table 4 joueurs misée** | LudoEscrowN · `join` | ✅ 14 appels — 1er `0x67e0f8203a52f0510eae3ea5d8deb27c70a2e6c957da0027c4b95d9e89858019` |
+| **Paiement du gagnant (4 joueurs)** | LudoEscrowN · `settle` | ✅ `0x8bb8270facfe124bc47609d9842e52fb1b6dd1d8932e6e10db4c2202311ab98e` |
 
 ### L'achat de cosmétique — comblé le 2026-08-19
 
@@ -72,10 +73,41 @@ l'adaptateur.
 
 Revérification : `NETWORK=celo npm run method-tx-hashes -w packages/contracts`.
 
-### Les `join` 4 joueurs sur mainnet
+### La partie 4 joueurs misée, jouée jusqu'au paiement — 2026-08-24
 
-`LudoEscrowN.join` a été appelé avec succès **dix fois** les 23 et 24 août, depuis
-quatre portefeuilles distincts, en USD₮ et à la mise du palier 25c :
+Le parcours complet a tourné en production : quatre portefeuilles distincts ont
+misé de l'USD₮ réel, la partie s'est jouée jusqu'à la victoire d'un siège, et
+l'arbitre a payé. **Table `1deca036418bc82383df4e009dd04a39`.**
+
+| Étape | Hash |
+|---|---|
+| `join` siège 1 | `0x0973e12a785e3e1e185f1b5c404499bb72861f41d2b8d35ebb4944dca8b622f7` |
+| `join` siège 2 | `0x73e11d3d76fc30097508f6fdec2d5ecaf7902a03ee5c41b5e0da22601de397c4` |
+| `join` siège 3 | `0x5b341ddb88efa32ec81949e37f778872ad11b4556c125227e589cdf1daf0a6a3` |
+| `join` siège 4 | `0x78c6f5ea91bcf791e06426151bc14263e92b664e208ca866df2fc90bed1212b7` |
+| **`settle`** | `0x8bb8270facfe124bc47609d9842e52fb1b6dd1d8932e6e10db4c2202311ab98e` |
+
+Le `settle` est `success` au 2026-08-24 14:14:42 UTC, émis par l'arbitre
+`0x7bD1F6ed…` vers `LudoEscrowN`. L'escrow est passé au statut `Settled` (3).
+
+Le flux d'argent, relu sur la chaîne plutôt que dans la sortie du script :
+
+| | avant | après |
+|---|---|---|
+| siège gagnant | 0,29 USD₮ | **0,94** |
+| trois perdants | 0,29 USD₮ | 0,04 |
+| trésorerie | 0,18 USD₮ | **0,28** |
+
+Soit **0,90 USD₮ au gagnant** (4 × 0,25 moins 10 % de rake) et **0,10 de rake**
+à la trésorerie — exactement le palier 25c posé lors de la bascule USD₮
+(`rakeBps` du jeu = 1000, lu dans le contrat).
+
+### Les `join` 4 joueurs antérieurs (tables non démarrées)
+
+Avant ce succès, `LudoEscrowN.join` avait déjà abouti **dix fois** les 23 et 24
+août, sur trois tables qui n'ont jamais démarré. Conservé ici parce que ces
+transactions sont réelles et que le dossier doit dire pourquoi elles n'ont rien
+réglé :
 
 | Table | Date (UTC) | `join` |
 |---|---|---|
@@ -93,31 +125,24 @@ quatre portefeuilles distincts, en USD₮ et à la mise du palier 25c :
 Un `refundUnfilled` a également été exécuté sur `7a5ddedb…` :
 `0x80fda7ed73daab0366ebab3b6be4ab697369e3e7ff8869f279cf409f25c617ed`.
 
-**Ce que ces hashes prouvent, et ce qu'ils ne prouvent pas.** Ils démontrent que
-le contrat 4 joueurs accepte des mises réelles en USD₮ sur mainnet, au bon
-palier, depuis des portefeuilles distincts, et que le chemin de remboursement
-fonctionne. Ils ne démontrent **pas** le parcours de bout en bout : aucune de ces
-tables n'a démarré, parce que le script de test encodait le `gameId` en bytes32
-autrement que le client et le serveur (voir `B4P.1` dans `docs/BACKLOG.md`). Les
-dépôts sont donc allés sous une clé que le serveur ne surveille pas. Le vrai
-client n'a jamais eu ce défaut.
+Aucune de ces trois tables n'a démarré : le script de test encodait le `gameId`
+en bytes32 autrement que le client et le serveur (hex pad-à-gauche contre ASCII
+pad-à-droite — voir `B4P.1` dans `docs/BACKLOG.md`). Les dépôts atterrissaient
+sous une clé que le serveur ne surveille pas, il voyait donc un escrow vide et
+annulait chaque table au bout de 120 s. **Le vrai client n'a jamais eu ce
+défaut** — c'est pourquoi le 1v1 règle normalement depuis des mois. Corrigé au
+commit `10c35e9`, ce qui a immédiatement donné la partie réglée ci-dessus.
 
-### Le trou restant : le `settle` 4 joueurs
+Les mises de ces tables sont récupérables par `refundActive` 24 h après le dépôt
+(valve permissionless du contrat) ; le mode `RESCUE` du script retombe sur la
+clé héritée pour les atteindre.
 
-`LudoEscrowN` a désormais ses `join` et un `refundUnfilled`, mais aucun `settle` :
-aucune partie 4 joueurs misée n'est encore allée jusqu'au bout en production. Le
-blocage initial — le join de la file 4p partait avant la preuve de portefeuille,
-et chaque entrée hors MiniPay était refusée — est corrigé (#189) ; le blocage
-suivant venait de l'encodage du `gameId` dans le script de test, corrigé aussi.
+### Reproduire le parcours
 
-Il faut donc une partie réellement jouée — **4 stakers, 4 portefeuilles
-financés** ; le bot-fill est interdit pour l'argent et les sessions QA sont
-exclues des files misées. À noter : le garde anti-collusion (même appareil /
-même réseau) ne s'applique **pas** ici, `collusionBlock` n'étant appelé qu'au
-matchmaking 1v1 et à la table privée.
-
-Alternative si le formulaire n'exige une preuve que par parcours effectivement
-proposé : déclarer la table 4 joueurs hors périmètre de cette soumission.
+Le bot-fill est interdit pour l'argent et les sessions QA sont exclues des files
+misées : il faut donc **4 stakers, 4 portefeuilles financés**. À noter : le garde
+anti-collusion (même appareil / même réseau) ne s'applique **pas** ici,
+`collusionBlock` n'étant appelé qu'au matchmaking 1v1 et à la table privée.
 
 #### Préparer les quatre sièges
 
